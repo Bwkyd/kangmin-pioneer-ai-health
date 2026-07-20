@@ -10,7 +10,7 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     title: "抗敏先锋 · AI 鼻健康管理",
-    description: "知识库问答、科普推送、症状量表与趋势跟踪的一体化概念演示。",
+    description: "知识库问答、科普推送、症状量表与趋势跟踪的一体化鼻健康管理工具。",
     openGraph: {
       title: "抗敏先锋 · AI 鼻健康管理",
       description: "知识库问答、科普推送、症状量表与趋势跟踪。",

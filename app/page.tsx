@@ -256,31 +256,17 @@ export default function Home() {
 
   return (
     <main className="demo-shell">
-      <section className="intro-panel" aria-labelledby="demo-title">
-        <div className="brand-mark">敏</div>
-        <p className="eyebrow">抗敏先锋 · AI 鼻健康管理</p>
-        <h1 id="demo-title">一边回答问题，<br />一边看见变化。</h1>
-        <p className="intro-copy">
-          把客户已有方案做成可检索的知识库，让 AI 有依据地回答；再用科普内容和症状趋势，陪伴患者持续管理。
-        </p>
-        <div className="journey four">
-          <div><span>01</span><strong>AI 对话</strong><small>自然交流采集症状</small></div>
-          <div><span>02</span><strong>知识库</strong><small>回答有来源可追溯</small></div>
-          <div><span>03</span><strong>量表趋势</strong><small>记录每日症状变化</small></div>
-          <div><span>04</span><strong>科普推送</strong><small>持续健康教育</small></div>
-        </div>
-        <p className="demo-note">客户概念演示 · 内容不构成医疗诊断或处方</p>
-      </section>
-
-      <section className="phone-wrap" aria-label="抗敏先锋小程序演示">
+      <section className="phone-wrap" aria-label="抗敏先锋小程序">
         <div className="phone">
-          <header className="phone-header">
+          <header className="phone-header real-header">
             <button className="icon-button" aria-label="返回">‹</button>
-            <div className="assistant-title">
-              <div className="avatar">{tab === "chat" ? "岐" : "敏"}<i /></div>
-              <div><strong>{headerTitle}</strong><span>{tab === "chat" ? "知识库已连接 · 6 类方案" : "陪你记录每一次变化"}</span></div>
+            <div className="real-title">
+              <strong>{headerTitle}</strong>
+              {tab === "chat" && <span>知识库已连接</span>}
             </div>
-            <button className="icon-button dots" onClick={resetDemo} aria-label="重新开始演示">•••</button>
+            <button className="mini-program-menu" onClick={resetDemo} aria-label="更多">
+              <span>•••</span><i />
+            </button>
           </header>
 
           <div className="app-body">
