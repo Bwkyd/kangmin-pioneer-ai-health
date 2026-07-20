@@ -9,17 +9,17 @@ export async function generateMetadata(): Promise<Metadata> {
   const imageUrl = `${protocol}://${host}/og.png`;
 
   return {
-    title: "小岐 · 鼻炎 AI 居家调理助手",
-    description: "通过自然对话了解症状，进行安全筛查，并匹配居家调理方案与操作视频。",
+    title: "抗敏先锋 · AI 鼻健康管理",
+    description: "知识库问答、科普推送、症状量表与趋势跟踪的一体化概念演示。",
     openGraph: {
-      title: "小岐 · 鼻炎 AI 居家调理助手",
-      description: "先对话了解，再匹配调理。",
-      images: [{ url: imageUrl, width: 1680, height: 945, alt: "小岐鼻炎 AI 居家调理助手" }],
+      title: "抗敏先锋 · AI 鼻健康管理",
+      description: "知识库问答、科普推送、症状量表与趋势跟踪。",
+      images: [{ url: imageUrl, width: 1680, height: 945, alt: "抗敏先锋 AI 鼻健康管理演示" }],
     },
     twitter: {
       card: "summary_large_image",
-      title: "小岐 · 鼻炎 AI 居家调理助手",
-      description: "先对话了解，再匹配调理。",
+      title: "抗敏先锋 · AI 鼻健康管理",
+      description: "知识库问答、科普推送、症状量表与趋势跟踪。",
       images: [imageUrl],
     },
   };
