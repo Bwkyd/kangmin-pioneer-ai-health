@@ -252,7 +252,7 @@ export default function Home() {
     step === 1 ? symptomOptions : step === 2 ? durationOptions : step === 3 ? warningOptions : [];
 
   const headerTitle =
-    tab === "home" ? "抗敏先锋" : tab === "chat" ? "小岐知识助手" : tab === "assessment" ? "症状评估" : "鼻健康科普";
+    tab === "home" ? "抗敏先锋" : tab === "chat" ? "小岐知识助手" : tab === "assessment" ? "过敏日历" : "鼻健康科普";
 
   return (
     <main className="demo-shell">
@@ -450,11 +450,11 @@ export default function Home() {
           </div>
 
           <nav className="bottom-nav" aria-label="主要功能">
-            <button className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}><span>⌂</span>首页</button>
-            <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}><span>◌</span>问助手</button>
+            <button className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
+            <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
             <button className="nav-add" onClick={() => { setTab("assessment"); setEntryOpen(true); }} aria-label="新增症状记录"><span>＋</span></button>
-            <button className={tab === "assessment" ? "active" : ""} onClick={() => setTab("assessment")}><span>▦</span>日历</button>
-            <button className={tab === "articles" ? "active" : ""} onClick={() => setTab("articles")}><span>□</span>科普</button>
+            <button className={tab === "assessment" ? "active" : ""} onClick={() => setTab("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
+            <button className={tab === "articles" ? "active" : ""} onClick={() => setTab("articles")}><span className="nav-glyph nav-article">□</span>科普</button>
           </nav>
 
           {entryOpen && (
