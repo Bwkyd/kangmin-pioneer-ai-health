@@ -63,6 +63,13 @@ const articles = [
 ];
 
 const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
+const calendarDays = [
+  { day: 29, muted: true }, { day: 30, muted: true }, { day: 1 }, { day: 2 }, { day: 3 }, { day: 4 }, { day: 5 },
+  { day: 6 }, { day: 7 }, { day: 8 }, { day: 9 }, { day: 10 }, { day: 11 }, { day: 12 },
+  { day: 13 }, { day: 14, level: "mild" }, { day: 15, level: "mild" }, { day: 16 }, { day: 17, level: "moderate" }, { day: 18 }, { day: 19, level: "mild" },
+  { day: 20, today: true }, { day: 21 }, { day: 22 }, { day: 23 }, { day: 24 }, { day: 25 }, { day: 26 },
+  { day: 27 }, { day: 28 }, { day: 29 }, { day: 30 }, { day: 31 }, { day: 1, muted: true }, { day: 2, muted: true },
+];
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("home");
@@ -80,6 +87,8 @@ export default function Home() {
   const [articleOpen, setArticleOpen] = useState<number | null>(null);
   const [scores, setScores] = useState([2, 2, 2, 1]);
   const [assessmentDone, setAssessmentDone] = useState(false);
+  const [entryOpen, setEntryOpen] = useState(false);
+  const [calendarMode, setCalendarMode] = useState<"calendar" | "list">("calendar");
   const chatEnd = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
 
@@ -102,25 +111,29 @@ export default function Home() {
     context.scale(ratio, ratio);
     context.clearRect(0, 0, width, height);
 
-    const values = assessmentDone ? [10, 9, 8, 7, totalScore] : [10, 9, 8, 7, 6];
-    const labels = ["7/16", "7/17", "7/18", "7/19", "今天"];
-    const pad = { left: 24, right: 18, top: 18, bottom: 28 };
+    const values = assessmentDone ? [1, 1, 2, 1, 2, 2, 1, Math.min(3, Math.ceil(totalScore / 4))] : [1, 1, 2, 1, 2, 2, 1];
+    const days = assessmentDone ? [14, 15, 17, 19, 22, 23, 25, 20] : [14, 15, 17, 19, 22, 23, 25];
+    const pad = { left: 42, right: 15, top: 15, bottom: 27 };
     const chartW = width - pad.left - pad.right;
     const chartH = height - pad.top - pad.bottom;
 
+    context.font = '9px "PingFang SC", sans-serif';
+    context.textAlign = "right";
     context.strokeStyle = "#dce8e2";
     context.lineWidth = 1;
-    [0, 4, 8, 12].forEach((value) => {
-      const y = pad.top + chartH - (value / 12) * chartH;
+    ["良好", "轻度", "中度", "重度"].forEach((label, level) => {
+      const y = pad.top + chartH - (level / 3) * chartH;
       context.beginPath();
       context.moveTo(pad.left, y);
       context.lineTo(width - pad.right, y);
       context.stroke();
+      context.fillStyle = "#87968f";
+      context.fillText(label, pad.left - 7, y + 3);
     });
 
     const points = values.map((value, index) => ({
-      x: pad.left + (chartW / 4) * index,
-      y: pad.top + chartH - (value / 12) * chartH,
+      x: pad.left + ((days[index] - 1) / 30) * chartW,
+      y: pad.top + chartH - (value / 3) * chartH,
     }));
     context.beginPath();
     points.forEach((point, index) => {
@@ -139,10 +152,13 @@ export default function Home() {
       context.fillStyle = index === 4 ? "#d98b43" : "#1c7560";
       context.fill();
     });
-    context.font = '10px "PingFang SC", sans-serif';
+    context.font = '9px "PingFang SC", sans-serif';
     context.fillStyle = "#87968f";
     context.textAlign = "center";
-    labels.forEach((label, index) => context.fillText(label, points[index].x, height - 8));
+    [1, 10, 20, 31].forEach((day) => {
+      const x = pad.left + ((day - 1) / 30) * chartW;
+      context.fillText(String(day), x, height - 8);
+    });
   }, [tab, assessmentDone, totalScore]);
 
   const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
@@ -228,6 +244,7 @@ export default function Home() {
     setStep(0);
     setAssessmentDone(false);
     setScores([2, 2, 2, 1]);
+    setEntryOpen(false);
     setTab("home");
   };
 
@@ -384,35 +401,48 @@ export default function Home() {
 
             {tab === "assessment" && (
               <div className="assessment-view">
-                <div className="assessment-intro">
-                  <span>TNSS</span><div><small>每日症状评估</small><h2>回想过去 24 小时</h2><p>0 表示没有，3 表示非常明显</p></div>
-                </div>
-                <div className="scale-card">
-                  {scaleItems.map((item, itemIndex) => (
-                    <div className="scale-row" key={item}>
-                      <div><strong>{item}</strong><span>{["无", "轻微", "明显", "严重"][scores[itemIndex]]}</span></div>
-                      <div className="score-options">
-                        {[0, 1, 2, 3].map((score) => (
-                          <button className={scores[itemIndex] === score ? "selected" : ""} key={score} onClick={() => setScores((current) => current.map((value, index) => index === itemIndex ? score : value))}>{score}</button>
+                <section className="allergy-calendar">
+                  <div className="calendar-top">
+                    <div><small>症状评估日历</small><h2>过敏日历</h2></div>
+                    <button onClick={() => setCalendarMode((mode) => mode === "calendar" ? "list" : "calendar")}>
+                      {calendarMode === "calendar" ? "☷ 列表" : "▦ 日历"}
+                    </button>
+                  </div>
+
+                  {calendarMode === "calendar" ? (
+                    <>
+                      <div className="month-switch"><button aria-label="上个月">‹</button><strong>2026年7月</strong><button aria-label="下个月">›</button></div>
+                      <div className="week-row">{["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day}>{day}</span>)}</div>
+                      <div className="calendar-grid">
+                        {calendarDays.map((item, index) => (
+                          <button
+                            key={`${item.day}-${index}`}
+                            className={`${item.muted ? "muted" : ""} ${item.level ?? ""} ${item.today ? "today" : ""}`}
+                            onClick={() => !item.muted && setEntryOpen(true)}
+                            aria-label={`${item.day}日${item.level === "mild" ? "轻度" : item.level === "moderate" ? "中度" : ""}`}
+                          >
+                            {item.day}
+                          </button>
                         ))}
                       </div>
+                      <div className="calendar-legend"><span><i className="good" />良好</span><span><i className="mild" />轻度</span><span><i className="moderate" />中度</span><span><i className="severe" />重度</span></div>
+                    </>
+                  ) : (
+                    <div className="calendar-list">
+                      <div><time>7月19日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 0</strong></div>
+                      <div><time>7月17日</time><span className="moderate">中度</span><strong>喷嚏 2 · 流涕 2 · 鼻塞 2 · 鼻痒 1</strong></div>
+                      <div><time>7月15日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 1</strong></div>
                     </div>
-                  ))}
-                  <button className="submit-assessment" onClick={() => setAssessmentDone(true)}>
-                    {assessmentDone ? "已保存今日评估" : "生成今日结果"}
-                  </button>
-                </div>
-
-                <article className={`score-result ${assessmentDone ? "visible" : ""}`}>
-                  <div><small>今日 TNSS 总分</small><strong>{assessmentDone ? totalScore : "--"}<i>/12</i></strong><span>{assessmentDone ? (totalScore <= 4 ? "轻度" : totalScore <= 8 ? "中度" : "较明显") : "完成后显示"}</span></div>
-                  <p>{assessmentDone ? "较 5 天前下降 3 分，症状总体呈缓解趋势。" : "坚持每日记录，才能更清楚地看见变化。"}</p>
-                </article>
+                  )}
+                </section>
 
                 <article className="trend-card">
-                  <div className="trend-title"><div><small>近 5 日趋势</small><h3>TNSS 症状总分</h3></div><span>分数越低越好</span></div>
-                  <canvas ref={chartRef} aria-label="近五日 TNSS 症状总分趋势图" />
-                  <div className="chart-legend"><span><i />症状总分</span><small>0 无症状 · 12 分最明显</small></div>
+                  <div className="trend-title"><div><small>本月趋势</small><h3>过敏趋势</h3></div><span>按日记录</span></div>
+                  <canvas ref={chartRef} aria-label="本月过敏严重程度趋势图" />
+                  <div className="chart-legend"><span><i />过敏严重程度</span><small>根据每日 TNSS 自动换算</small></div>
                 </article>
+
+                <button className="calendar-add-inline" onClick={() => setEntryOpen(true)}>＋ 记录今天的症状</button>
               </div>
             )}
 
@@ -436,9 +466,35 @@ export default function Home() {
           <nav className="bottom-nav" aria-label="主要功能">
             <button className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}><span>⌂</span>首页</button>
             <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}><span>◌</span>问助手</button>
-            <button className={tab === "assessment" ? "active" : ""} onClick={() => setTab("assessment")}><span>⌁</span>评估</button>
+            <button className="nav-add" onClick={() => { setTab("assessment"); setEntryOpen(true); }} aria-label="新增症状记录"><span>＋</span></button>
+            <button className={tab === "assessment" ? "active" : ""} onClick={() => setTab("assessment")}><span>▦</span>日历</button>
             <button className={tab === "articles" ? "active" : ""} onClick={() => setTab("articles")}><span>□</span>科普</button>
           </nav>
+
+          {entryOpen && (
+            <div className="entry-sheet-backdrop" role="dialog" aria-modal="true" aria-label="填写今日症状量表">
+              <div className="entry-sheet">
+                <div className="sheet-handle" />
+                <div className="sheet-title"><div><small>2026年7月20日</small><h2>记录今天的症状</h2><p>回想过去 24 小时，0 表示没有，3 表示严重</p></div><button onClick={() => setEntryOpen(false)}>×</button></div>
+                <div className="scale-card">
+                  {scaleItems.map((item, itemIndex) => (
+                    <div className="scale-row" key={item}>
+                      <div><strong>{item}</strong><span>{["无", "轻微", "明显", "严重"][scores[itemIndex]]}</span></div>
+                      <div className="score-options">
+                        {[0, 1, 2, 3].map((score) => (
+                          <button className={scores[itemIndex] === score ? "selected" : ""} key={score} onClick={() => setScores((current) => current.map((value, index) => index === itemIndex ? score : value))}>{score}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="sheet-score"><span>TNSS 总分</span><strong>{totalScore}<i>/12</i></strong><b>{totalScore <= 4 ? "轻度" : totalScore <= 8 ? "中度" : "重度"}</b></div>
+                  <button className="submit-assessment" onClick={() => { setAssessmentDone(true); setEntryOpen(false); }}>
+                    保存今日记录
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
