@@ -1224,7 +1224,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 
 .phone {
   width: 100%;
-  max-width: 560px;
+  max-width: 430px;
   height: 100dvh;
   min-height: 600px;
   margin: 0 auto;
@@ -1357,7 +1357,9 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 }
 
 .brand-banner {
-  height: 74px;
+  width: 100%;
+  height: auto;
+  aspect-ratio: 3 / 1;
   margin-bottom: 10px;
   overflow: hidden;
   border-radius: 16px;
@@ -1376,11 +1378,14 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 }
 
 .brand-banner img {
-  width: 100%;
-  height: 100%;
+  position: absolute;
+  top: 50%;
+  left: -4%;
+  width: 112.2%;
+  height: auto;
+  max-width: none;
   display: block;
-  object-fit: cover;
-  transform: scale(1.13);
+  transform: translateY(-50%);
 }
 
 .welcome-card {
