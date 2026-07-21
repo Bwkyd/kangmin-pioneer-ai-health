@@ -22,19 +22,19 @@ const knowledgeQuestions = [
     question: "为什么换季容易反复？",
     answer:
       "换季时温度、湿度和空气中的过敏原都会变化，鼻黏膜更容易受到刺激。资料库建议把症状出现时间、诱因和严重程度一起记录，便于后续判断变化规律。",
-    source: "知识库依据：《抗敏先锋小程序》· 辨证症状项 / 症状评估日历",
+    source: "知识库依据：《福建省中医药适宜技术手册》· 辨证症状项 / 症状评估日历",
   },
   {
     question: "鼻塞在家先怎么护理？",
     answer:
       "可以先减少冷空气和刺激物暴露，保持室内适宜湿度，并记录鼻塞对睡眠的影响。资料中的穴位、艾灸等操作需要经过适用性判断，儿童或操作不熟悉时应由专业人员指导。",
-    source: "知识库依据：《抗敏先锋小程序》· 鼻塞方案 / 注意事项",
+    source: "知识库依据：《福建省中医药适宜技术手册》· 鼻塞方案 / 注意事项",
   },
   {
     question: "调理效果多久记录一次？",
     answer:
       "建议每天固定时间做一次简短记录，重点观察喷嚏、流涕、鼻塞和鼻痒。系统可用 TNSS 形成趋势，每周再回顾一次生活影响。",
-    source: "知识库依据：《抗敏先锋小程序》· VAS、TNSS、RQLQ 量表",
+    source: "知识库依据：《福建省中医药适宜技术手册》· VAS、TNSS、RQLQ 量表",
   },
 ];
 
@@ -78,7 +78,7 @@ export default function Home() {
       id: 1,
       role: "ai",
       kind: "text",
-      text: "你好，我是小岐。你可以直接描述不舒服，也可以问我鼻炎护理方面的问题。我的回答会优先参考已审核的抗敏知识库。",
+      text: "你好，我是小岐。你可以直接描述不舒服，也可以问我鼻炎护理方面的问题。我的回答会优先参考《福建省中医药适宜技术手册》和团队审核知识库。",
     },
   ]);
   const [step, setStep] = useState(0);
@@ -238,7 +238,7 @@ export default function Home() {
         id: Date.now(),
         role: "ai",
         kind: "text",
-        text: "你好，我是小岐。你可以直接描述不舒服，也可以问我鼻炎护理方面的问题。我的回答会优先参考已审核的抗敏知识库。",
+        text: "你好，我是小岐。你可以直接描述不舒服，也可以问我鼻炎护理方面的问题。我的回答会优先参考《福建省中医药适宜技术手册》和团队审核知识库。",
       },
     ]);
     setStep(0);
@@ -282,6 +282,16 @@ export default function Home() {
                   <button onClick={startConsultation}><span>和小岐聊一聊</span><b>→</b></button>
                 </section>
 
+                <aside className="basis-card" aria-label="方案依据与使用说明">
+                  <span>据</span>
+                  <div>
+                    <strong>福建中医药大学“抗敏先锋”团队方案</strong>
+                    <p>本工具依据团队体质调理方案开发，为您推荐个性化外治建议。</p>
+                    <small>方案依据：团队编纂《福建省中医药适宜技术手册》</small>
+                    <em>结果仅供参考，最终方案请以门诊诊断为准。</em>
+                  </div>
+                </aside>
+
                 <section className="today-grid">
                   <button onClick={() => setTab("assessment")}>
                     <span className="feature-icon chart-icon">↘</span>
@@ -314,7 +324,7 @@ export default function Home() {
               <div className="chat-view">
                 <div className="safety-banner">
                   <span>库</span>
-                  <p><strong>答案来自已审核知识库</strong><small>高风险操作只作风险提示，不直接生成指导</small></p>
+                  <p><strong>答案来自团队审核知识库</strong><small>依据《福建省中医药适宜技术手册》 · 结果仅供参考</small></p>
                 </div>
                 <div className="chat" aria-live="polite">
                   <div className="time-label">今天 14:20</div>
@@ -361,7 +371,8 @@ export default function Home() {
                         <div className="result-head"><div><small>AI 辅助分析</small><h2>换季敏感 · 肺气虚寒倾向</h2></div><span>已匹配</span></div>
                         <p>建议先以日常防护、温和鼻部护理和连续记录为主。涉及艾灸、敷贴等操作，需专业人员评估后再进行。</p>
                         <div className="evidence"><span>清水样鼻涕</span><span>换季加重</span><span>反复半年</span></div>
-                        <div className="result-foot"><span>资料来源</span> 客户方案库 · 肺气虚寒型</div>
+                        <div className="result-foot"><span>资料来源</span> 《福建省中医药适宜技术手册》· 团队体质调理方案</div>
+                        <div className="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</div>
                       </article>
                       <article className="plan-card">
                         <div className="plan-title"><span>今日</span><div><small>第 1 天 · 安全版</small><h2>鼻部舒缓与症状记录</h2></div></div>
@@ -477,6 +488,7 @@ export default function Home() {
                     </div>
                   ))}
                   <div className="sheet-score"><span>TNSS 总分</span><strong>{totalScore}<i>/12</i></strong><b>{totalScore <= 4 ? "轻度" : totalScore <= 8 ? "中度" : "重度"}</b></div>
+                  <p className="assessment-disclaimer">量表结果仅供参考，最终方案请以门诊诊断为准。</p>
                   <button className="submit-assessment" onClick={() => { setAssessmentDone(true); setEntryOpen(false); }}>
                     保存今日记录
                   </button>
@@ -509,7 +521,7 @@ export default function Home() {
             <h3>减少常见刺激</h3>
             <p>留意温差、冷空气、粉尘和气味刺激。保持居室清洁通风，外出时根据环境做好防护。</p>
             <div className="article-warning"><strong>需要就医的情况</strong><span>如果伴随高热、剧烈头痛、呼吸困难或反复鼻出血，请及时前往正规医疗机构。</span></div>
-            <footer>内容由抗敏先锋健康团队审核 · 2026-07-20</footer>
+            <footer>内容由抗敏先锋团队审核 · 方案依据《福建省中医药适宜技术手册》· 2026-07-20</footer>
           </article>
         </div>
       )}

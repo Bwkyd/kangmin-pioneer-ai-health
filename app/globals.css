@@ -632,6 +632,36 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   z-index: 1;
 }
 
+.basis-card {
+  margin-top: 10px;
+  padding: 12px 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #d6e3f2;
+  border-radius: 15px;
+  background: linear-gradient(135deg, #f8fbff, #edf4fc);
+  box-shadow: 0 7px 18px rgba(18, 59, 115, .05);
+}
+
+.basis-card > span {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  background: #1e5aa3;
+  color: #fff;
+  font: 700 15px "STKaiti", "KaiTi", serif;
+}
+
+.basis-card div { min-width: 0; display: flex; flex-direction: column; }
+.basis-card strong { color: #173d70; font-size: 11px; line-height: 1.5; }
+.basis-card p { margin: 3px 0 0; color: #5f7390; font-size: 9px; line-height: 1.55; }
+.basis-card small { margin-top: 4px; color: #355f91; font-size: 8px; line-height: 1.5; }
+.basis-card em { margin-top: 4px; color: #8a6a32; font-size: 8px; font-style: normal; line-height: 1.5; }
+
 .today-grid {
   margin-top: 12px;
   display: grid;
@@ -756,6 +786,15 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .source-card strong { font-size: 10px; }
 .source-card small { margin-top: 2px; overflow: hidden; color: #71857d; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
 .source-card b { color: var(--green); }
+
+.result-disclaimer {
+  margin-top: 9px;
+  padding-top: 8px;
+  border-top: 1px dashed #d6e1ee;
+  color: #7b6848;
+  font-size: 9px;
+  line-height: 1.55;
+}
 
 .assessment-intro {
   padding: 12px 5px 14px;
@@ -1140,6 +1179,13 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   background: #d8eae2;
   color: var(--green);
   font-size: 10px;
+}
+
+.assessment-disclaimer {
+  margin: 8px 1px 0;
+  color: #7b6848;
+  font-size: 9px;
+  line-height: 1.5;
 }
 
 .articles-hero {
