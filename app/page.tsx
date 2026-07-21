@@ -140,7 +140,7 @@ export default function Home() {
       if (index === 0) context.moveTo(point.x, point.y);
       else context.lineTo(point.x, point.y);
     });
-    context.strokeStyle = "#1c7560";
+    context.strokeStyle = "#1E5AA3";
     context.lineWidth = 3;
     context.lineJoin = "round";
     context.lineCap = "round";
@@ -149,7 +149,7 @@ export default function Home() {
     points.forEach((point, index) => {
       context.beginPath();
       context.arc(point.x, point.y, index === 4 ? 5 : 3.5, 0, Math.PI * 2);
-      context.fillStyle = index === 4 ? "#d98b43" : "#1c7560";
+      context.fillStyle = index === 4 ? "#E2A33A" : "#1E5AA3";
       context.fill();
     });
     context.font = '9px "PingFang SC", sans-serif';
@@ -272,6 +272,9 @@ export default function Home() {
           <div className="app-body">
             {tab === "home" && (
               <div className="home-view">
+                <div className="brand-banner" aria-label="抗敏先锋">
+                  <img src="/brand-banner.jpg" alt="抗敏先锋" />
+                </div>
                 <section className="welcome-card">
                   <small>下午好</small>
                   <h2>今天鼻子感觉怎么样？</h2>

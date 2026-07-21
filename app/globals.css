@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #17352d;
-  --muted: #6c8079;
-  --green: #1c7560;
-  --green-dark: #115544;
-  --mint: #e8f4ee;
-  --paper: #f7f4ed;
-  --warm: #d98b43;
+  --ink: #172b45;
+  --muted: #6f8095;
+  --green: #1e5aa3;
+  --green-dark: #123b73;
+  --mint: #eaf2fb;
+  --paper: #f4f7fb;
+  --warm: #d2a43a;
 }
 
 * { box-sizing: border-box; }
@@ -15,7 +15,7 @@
 html, body { margin: 0; min-height: 100%; }
 
 body {
-  background: #e9eee9;
+  background: #e9eff7;
   color: var(--ink);
   font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
 }
@@ -231,9 +231,9 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   display: flex;
   align-items: center;
   gap: 9px;
-  border: 1px solid #dcece4;
+  border: 1px solid #d8e6f5;
   border-radius: 12px;
-  background: #edf7f1;
+  background: #eef5fd;
 }
 .safety-banner > span {
   width: 23px; height: 23px; display: grid; place-items: center;
@@ -353,7 +353,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 
 .plan-card { padding: 14px; }
 .plan-title { display: flex; gap: 10px; align-items: center; }
-.plan-title > span { width: 39px; height: 39px; display: grid; place-items: center; background: #e6f2ec; color: var(--green); border-radius: 12px; font-weight: 700; font-size: 11px; }
+.plan-title > span { width: 39px; height: 39px; display: grid; place-items: center; background: #eaf2fb; color: var(--green); border-radius: 12px; font-weight: 700; font-size: 11px; }
 .plan-title div { display: flex; flex-direction: column; }
 .plan-title small { color: #8b9a95; font-size: 9px; }
 .plan-title h2 { margin: 2px 0 0; font-size: 14px; }
@@ -461,7 +461,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 
 .bottom-nav button.active {
   color: var(--green);
-  background: #eef6f2;
+  background: #eaf2fb;
   font-weight: 700;
 }
 
@@ -597,7 +597,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   border-radius: 20px;
   background:
     radial-gradient(circle at 95% 0, rgba(255,255,255,.18) 0 20%, transparent 21%),
-    linear-gradient(135deg, #1c7560, #155b4b);
+    linear-gradient(135deg, #245fa7, #123b73);
   color: #fff;
   position: relative;
   box-shadow: 0 14px 28px rgba(19, 92, 74, .18);
@@ -1311,12 +1311,226 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   background: #26342f;
 }
 
+/* 抗敏先锋品牌主题：深蓝负责专业感，黄橙红仅用于症状分级。 */
+.demo-shell,
+.phone-wrap,
+.phone {
+  background: #f3f6fb;
+}
+
+.phone {
+  box-shadow: 0 0 42px rgba(18, 59, 115, .1);
+}
+
+.phone-header.real-header {
+  color: #fff;
+  background: linear-gradient(135deg, #184a86 0%, #123b73 100%);
+  border-bottom-color: rgba(255,255,255,.12);
+  box-shadow: 0 4px 16px rgba(18, 59, 115, .16);
+}
+
+.real-header .icon-button,
+.real-title strong {
+  color: #fff;
+}
+
+.real-title span {
+  color: #cfe2fb;
+}
+
+.mini-program-menu {
+  border-color: rgba(255,255,255,.35);
+  background: rgba(255,255,255,.12);
+  color: #fff;
+}
+
+.mini-program-menu span {
+  border-right-color: rgba(255,255,255,.28);
+}
+
+.mini-program-menu i {
+  border-color: #fff;
+}
+
+.mini-program-menu i::after {
+  background: #fff;
+}
+
+.brand-banner {
+  height: 74px;
+  margin-bottom: 10px;
+  overflow: hidden;
+  border-radius: 16px;
+  background: #1d4f91;
+  box-shadow: 0 10px 24px rgba(18, 59, 115, .2);
+  position: relative;
+}
+
+.brand-banner::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border: 1px solid rgba(255,255,255,.2);
+  border-radius: inherit;
+  pointer-events: none;
+}
+
+.brand-banner img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  transform: scale(1.13);
+}
+
+.welcome-card {
+  background:
+    radial-gradient(circle at 95% 0, rgba(255,255,255,.15) 0 20%, transparent 21%),
+    linear-gradient(135deg, #245fa7 0%, #123b73 100%);
+  box-shadow: 0 14px 30px rgba(18, 59, 115, .22);
+}
+
+.welcome-card > small,
+.welcome-card p {
+  color: #d9e9fb;
+}
+
+.welcome-card button {
+  color: #123b73;
+}
+
+.today-grid button,
+.mini-trend,
+.article-feature,
+.result-card,
+.plan-card,
+.video-card,
+.allergy-calendar,
+.trend-card,
+.scale-card,
+.article-list > button {
+  border-color: #dce6f2;
+  box-shadow: 0 7px 20px rgba(18, 59, 115, .055);
+}
+
+.feature-icon,
+.knowledge-options button span,
+.source-card > span,
+.plan-title > span,
+.push-note > span {
+  background: #eaf2fb;
+  color: #1e5aa3;
+}
+
+.book-icon {
+  background: #fff4d8;
+  color: #9a6d12;
+}
+
+.sparkline i {
+  background: #b7cee8;
+}
+
+.sparkline i.active {
+  background: #d2a43a;
+}
+
+.article-art {
+  background: linear-gradient(145deg, #dbe9f8, #f6eddc);
+}
+
+.article-art::before {
+  background: #7fa7d3;
+}
+
+.article-art span {
+  background: #285f9f;
+}
+
+.safety-banner,
+.source-card {
+  border-color: #d7e5f5;
+  background: #eef5fd;
+}
+
+.safety-banner small,
+.source-card small {
+  color: #657f9f;
+}
+
+.ai-bubble,
+.knowledge-options button,
+.quick-options button {
+  border-color: #dde7f3;
+}
+
+.user-bubble,
+.feedback-button,
+.submit-assessment,
+.calendar-add-inline,
+.send-button {
+  background: #1e5aa3;
+}
+
+.score-options button.selected {
+  border-color: #1e5aa3;
+  background: #1e5aa3;
+}
+
+.score-result,
+.sheet-score {
+  background: #edf4fc;
+}
+
+.articles-hero {
+  background: linear-gradient(135deg, #e7f0fb, #f8f0df);
+}
+
+.article-thumb,
+.article-thumb.blue {
+  background: #e6eff9;
+  color: #285f9f;
+}
+
+.article-thumb.amber {
+  background: #f8edda;
+  color: #9a6d12;
+}
+
+.push-note {
+  border-color: #cadced;
+  background: #f2f6fb;
+}
+
+.bottom-nav {
+  border-top-color: #dce5f0;
+}
+
+.bottom-nav button.active {
+  background: #e7f0fb;
+}
+
+.bottom-nav .nav-add {
+  border-color: #f3f6fb;
+  background: #1e5aa3;
+  box-shadow: 0 8px 22px rgba(30, 90, 163, .3);
+}
+
+.entry-sheet {
+  background: #f5f8fc;
+}
+
+.calendar-grid button.today::after,
+.chart-legend span i {
+  background: #1e5aa3;
+}
+
 @keyframes rise { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes blink { 0%, 60%, 100% { opacity: .35; transform: translateY(0); } 30% { opacity: 1; transform: translateY(-2px); } }
 @keyframes sheetUp { from { opacity: 0; transform: translateY(30px); } to { opacity: 1; transform: translateY(0); } }
 
 @media (max-width: 860px) {
-  .demo-shell { display: block; background: #e8efea; }
+  .demo-shell { display: block; background: #e9eff7; }
   .intro-panel { display: none; }
   .phone-wrap { min-height: 100dvh; padding: 0; border: 0; }
   .phone { width: 100%; height: 100dvh; min-height: 560px; border: 0; border-radius: 0; }
