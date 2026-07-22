@@ -1,8 +1,8 @@
-# vinext-starter
+# 抗敏先锋 AI 鼻健康管理系统
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+面向鼻鼽（过敏性鼻炎）居家调理场景的小程序及管理后台项目。项目包含固定辨证规则、知识库问答、症状评估、科普内容展示，以及后台知识资料和内容管理。
+
+客户报价、需求原文、决策树研究资料和品牌素材统一存放在 `docs/客户资料/`。
 
 ## Prerequisites
 

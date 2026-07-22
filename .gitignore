@@ -40,3 +40,6 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
+
+# Large customer reference retained locally; publish separately when required.
+/docs/客户资料/03-技术资料-鼻鼽辨治规律与决策树研究.pdf
