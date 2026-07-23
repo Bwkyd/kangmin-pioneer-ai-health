@@ -46,14 +46,14 @@
 | 技术决策 | completed | 项目方于 2026-07-23 批准 H5、手机号、D1/R2、DeepSeek V4 Pro/Vectorize |
 | 本地门禁 | completed | `git diff --check`、lint、生产依赖审计、构建及 28/28 自动化测试通过 |
 | 审核 | pending | 待 Draft PR 审核 |
-| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| Draft PR | completed | PR #53 已创建 |
 | 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-19-platform-architecture-decisions`
 - 提交 SHA：见 Draft PR head
-- PR：未创建
+- PR：#53
 
 ## 阻塞项
 
