@@ -7,8 +7,10 @@
 - 当前任务：Issue #14 `用服务端规则驱动动态补问与提前结束`
 - 当前分支：`codex/issue-14-dynamic-followup`
 - 当前 worktree：`.worktrees/issue-14-dynamic-followup`
-- 当前阶段：第 2 轮审核修复完成，准备最终复审
-- 当前信号：不通过（尚未完成实现、测试和双审）
+- 当前阶段：第 3 轮双审与 CI 均通过，等待合并授权
+- 当前信号：通过（代码与自动化门禁；真实点击式浏览器 UAT 单列 BLOCKED）
+- 双审产品代码 SHA：`3c0d7fb7cfe62e8f72639b8cec21f44b2c13257a`
+- Draft PR：#15
 
 ## 本轮实体（4/4）
 
@@ -38,11 +40,13 @@
 - 修复后 `npm run check` 通过：生产依赖审计 0 漏洞、build 成功、28/28 测试通过。
 - 第 2 轮：Kimi FAIL（P0=0/P1=0/P2=1），DeepSeek PASS（P0=0/P1=0/P2=0），主审判定不通过。
 - 第 2 轮 P2 已修：提交期间禁用自由描述输入，不能中止请求后遗留 submitting 状态。
+- 第 3 轮：Kimi PASS（P0=0/P1=0/P2=0），DeepSeek PASS（P0=0/P1=0/P2=0）。
+- 主审判定通过；双审共同核验产品代码 SHA `3c0d7fb7cfe62e8f72639b8cec21f44b2c13257a`。
+- PR #15 远端 CI `quality` 在该产品代码 SHA 上通过。
 
 ## 进行中
 
-- 提交并推送第 2 轮修复。
-- Kimi K3 与 DeepSeek V4 Pro 进行第 3 轮最终复审。
+- 无；当前等待后续明确授权。
 
 ## 卡住
 
@@ -51,8 +55,7 @@
 
 ## 待开始
 
-- CI quality 核验。
-- 最终 P0/P1/P2 收口；本轮为最多三轮中的最终轮。
+- 等待后续明确授权后再合并、关闭 Issue 和清理分支/worktree。
 
 ## 不在本轮范围
 
