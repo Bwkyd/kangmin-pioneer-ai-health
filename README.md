@@ -20,10 +20,14 @@ This starter does not use `wrangler.jsonc`.
 
 ## Included Shape
 
-- edit site code under `app/`
+- product source code lives under `src/`
+- `src/app/` contains the site UI and routes
+- `src/worker/` contains the Cloudflare Worker entry
+- `src/db/` contains the production database schema and access layer
+- `src/build/` contains project-specific build plugins
 - `.openai/hosting.json` declares optional Sites D1 and R2 bindings
 - `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
+- `src/db/schema.ts` starts intentionally empty
 - `examples/d1/` contains an optional D1 example surface
 - `drizzle.config.ts` supports local migration generation when needed
 
@@ -60,7 +64,7 @@ export default async function Home() {
 
 ## Optional Dispatch-Owned ChatGPT Sign-In
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
+Import the ready-to-use helpers from `src/app/chatgpt-auth.ts` when the site needs
 optional or required ChatGPT sign-in:
 
 - Use `getChatGPTUser()` for optional signed-in UI.
@@ -89,7 +93,7 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 - `npm run dev`: start local development
 - `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
+- `npm test`: build the product and verify its rendered navigation and key entry points
 - `npm run db:generate`: generate Drizzle migrations after schema changes
 
 ## Learn More

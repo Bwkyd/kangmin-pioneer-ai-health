@@ -2,9 +2,9 @@
 
 ## Project Structure & Module Organization
 
-- `app/` contains the product UI. `page.tsx` owns the interactive single-page experience, `layout.tsx` defines metadata, and `globals.css` contains the visual system.
+- `src/app/` contains the product UI. `page.tsx` owns the interactive single-page experience, `layout.tsx` defines metadata, and `globals.css` contains the visual system.
 - `public/` stores shipped assets such as the brand banner and social preview.
-- `worker/`, `db/`, and `drizzle/` contain the Cloudflare worker entry, database code, and migrations. Keep example D1 code under `examples/d1/` separate from production paths.
+- `src/worker/`, `src/db/`, and `drizzle/` contain the Cloudflare worker entry, database code, and migrations. Project-specific build code lives in `src/build/`. Keep example D1 code under `examples/d1/` separate from production paths.
 - `tests/` contains server-rendering checks. `docs/客户资料/` contains private customer requirements, quotations, and clinical references; never expose these files through `public/`.
 - Treat `dist/`, `.vinext/`, `.wrangler/`, and `node_modules/` as generated content. Do not edit or commit them.
 

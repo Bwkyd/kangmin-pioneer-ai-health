@@ -42,8 +42,8 @@ test("server-renders the anti-allergy health home page", async () => {
 });
 
 test("keeps the assistant on home and profile content on its own page", async () => {
-  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-  const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const page = await readFile(new URL("../src/app/page.tsx", import.meta.url), "utf8");
+  const css = await readFile(new URL("../src/app/globals.css", import.meta.url), "utf8");
 
   assert.match(page, /type Tab = [^;]*"profile"/);
   assert.match(page, /setTab\("chat"\)/);
