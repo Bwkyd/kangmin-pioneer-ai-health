@@ -1,5 +1,12 @@
 export type CandidateDecision = "accepted" | "ignored";
 
+export function areCandidateInteractionsLocked(
+  extracting: boolean,
+  submitting: boolean,
+): boolean {
+  return extracting || submitting;
+}
+
 export function restoreAcceptedValues<Key extends string, Value>(
   current: Partial<Record<Key, Value>>,
   candidateKeys: readonly Key[],

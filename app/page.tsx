@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  areCandidateInteractionsLocked,
   captureOriginalValues,
   restoreAcceptedValues,
   type CandidateDecision,
@@ -344,6 +345,10 @@ export default function Home() {
   const descriptionReady =
     freeText.trim().length === 0 ||
     (descriptionHandled && unresolvedCandidateCount === 0);
+  const candidateInteractionsLocked = areCandidateInteractionsLocked(
+    extracting,
+    view === "submitting",
+  );
 
   const begin = () => {
     if (!canStart) return;
@@ -552,7 +557,18 @@ export default function Home() {
     );
   };
 
+  const prepareCandidateChange = () => {
+    invalidatePendingRequests();
+    setView("review");
+    setError("");
+    setAssessment(null);
+    setExplanation(null);
+    setExplanationStatus("idle");
+  };
+
   const acceptCandidate = (candidate: CandidateEntry) => {
+    if (candidateInteractionsLocked) return;
+    prepareCandidateChange();
     setAnswers((current) => ({
       ...current,
       [candidate.key]: candidate.value,
@@ -564,6 +580,8 @@ export default function Home() {
   };
 
   const ignoreCandidate = (candidate: CandidateEntry) => {
+    if (candidateInteractionsLocked) return;
+    prepareCandidateChange();
     setAnswers((current) => {
       const restored = { ...current };
       const original = candidateOriginalAnswers[candidate.key];
@@ -970,6 +988,7 @@ export default function Home() {
                             decision === "accepted" ? "selected" : ""
                           }
                           type="button"
+                          disabled={candidateInteractionsLocked}
                           onClick={() => acceptCandidate(candidate)}
                         >
                           {decision === "accepted" ? "已采用" : "采用候选"}
@@ -979,6 +998,7 @@ export default function Home() {
                             decision === "ignored" ? "selected" : ""
                           }
                           type="button"
+                          disabled={candidateInteractionsLocked}
                           onClick={() => ignoreCandidate(candidate)}
                         >
                           {decision === "ignored" ? "已忽略" : "忽略"}

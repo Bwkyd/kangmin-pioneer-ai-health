@@ -2,9 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  areCandidateInteractionsLocked,
   captureOriginalValues,
   restoreAcceptedValues,
 } from "../../../lib/agent/candidate-state.ts";
+
+test("候选操作在提取或提交期间锁定", () => {
+  assert.equal(areCandidateInteractionsLocked(false, false), false);
+  assert.equal(areCandidateInteractionsLocked(true, false), true);
+  assert.equal(areCandidateInteractionsLocked(false, true), true);
+  assert.equal(areCandidateInteractionsLocked(true, true), true);
+});
 
 test("忽略、清空或重新提取会恢复候选采用前的结构化回答", () => {
   const originals = captureOriginalValues(

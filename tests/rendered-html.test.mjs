@@ -111,3 +111,28 @@ test("all safe result states have explicit UI handling", async () => {
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
   assert.doesNotMatch(page, /知识库已连接|症状正在缓解/);
 });
+
+test("candidate decisions cannot race an in-flight high-risk assessment", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(
+    page,
+    /const candidateInteractionsLocked = areCandidateInteractionsLocked\(\s*extracting,\s*view === "submitting",\s*\)/u,
+  );
+  assert.equal(
+    page.match(/disabled=\{candidateInteractionsLocked\}/gu)?.length,
+    2,
+  );
+  assert.match(
+    page,
+    /const acceptCandidate = \(candidate: CandidateEntry\) => \{\s*if \(candidateInteractionsLocked\) return;\s*prepareCandidateChange\(\);/u,
+  );
+  assert.match(
+    page,
+    /const ignoreCandidate = \(candidate: CandidateEntry\) => \{\s*if \(candidateInteractionsLocked\) return;\s*prepareCandidateChange\(\);/u,
+  );
+  assert.match(
+    page,
+    /const prepareCandidateChange = \(\) => \{\s*invalidatePendingRequests\(\);\s*setView\("review"\);/u,
+  );
+});
