@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 客户资料与临床规则确认
+    url: https://github.com/Bwkyd/kangmin-pioneer-ai-health/discussions
+    about: 涉及客户原文、临床规则或知识授权时，先在受控渠道确认，不要把私密资料粘贴到公开 Issue。

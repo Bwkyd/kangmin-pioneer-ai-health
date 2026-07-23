@@ -1,15 +1,33 @@
-# This repository intentionally publishes source code only.
-/*
+# Dependencies and generated output
+/node_modules/
+/dist/
+/.next/
+/.vinext/
+/.wrangler/
+/coverage/
+/out/
+/outputs/
+/work/
 
-# Keep the source directories that previously lived under src/.
-!/app/
-!/app/**
-!/build/
-!/build/**
-!/db/
-!/db/**
-!/worker/
-!/worker/**
+# Local task worktrees
+/.worktrees/
 
-# Keep the ignore policy itself.
-!/.gitignore
+# Environment and local credentials
+.env
+.env.*
+!.env.example
+*.pem
+
+# OS and tool noise
+.DS_Store
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+next-env.d.ts
+
+# Private customer material stays local and is never published by default.
+/docs/客户资料/
+/spce/
+/examples/
