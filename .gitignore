@@ -1,0 +1,15 @@
+# This repository intentionally publishes source code only.
+/*
+
+# Keep the source directories that previously lived under src/.
+!/app/
+!/app/**
+!/build/
+!/build/**
+!/db/
+!/db/**
+!/worker/
+!/worker/**
+
+# Keep the ignore policy itself.
+!/.gitignore
