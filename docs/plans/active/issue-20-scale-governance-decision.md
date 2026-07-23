@@ -16,7 +16,7 @@
 - 不复制或补写未获授权的量表题目。
 - 不实现 #41 的数据库、计分器或接口。
 - 不把量表分数解释为诊断或疗效。
-- 不推送、合并、部署或关闭 Issue。
+- 不合并、部署或关闭 Issue。
 
 ## 验收标准
 
@@ -45,14 +45,16 @@
 | 客户资料核验 | completed | 只出现 VAS/TNSS/RQLQ 名称，无题目、计分、版本或授权 |
 | 外部来源核验 | completed | TNSS 有版本/翻译管理入口；RQLQ 需确认许可；不能靠网络片段直接实现 |
 | 工程边界 | completed | 缺失值、重复记录、版本和发布门禁已形成候选 |
+| 本地门禁 | completed | `git diff --check`、lint、生产依赖审计、构建及 28/28 自动化测试通过 |
 | 审核 | blocked | 等待客户正式量表材料和批准 |
-| 合并/发布授权 | blocked | 等待明确授权 |
+| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-20-scale-governance-decision`
-- 提交 SHA：待提交
-- PR：未创建
+- 提交 SHA：见 Draft PR head
+- PR：待创建
 
 ## 阻塞项
 
