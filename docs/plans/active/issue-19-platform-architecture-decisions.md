@@ -15,7 +15,7 @@
 
 - 不创建付费生产资源。
 - 不接入微信 AppID、短信或真实用户身份。
-- 不部署、推送、合并或关闭 Issue。
+- 不合并、部署或关闭 Issue。
 - 不实现依赖这些决定的功能 Issue。
 
 ## 验收标准
@@ -44,9 +44,10 @@
 | --- | --- | --- |
 | 真实基线 | completed | 当前为 vinext H5；Sites 已有项目 ID；D1/R2 为空；DeepSeek 已接线；检索未实现 |
 | 技术决策 | completed | 项目方于 2026-07-23 批准 H5、手机号、D1/R2、DeepSeek V4 Pro/Vectorize |
-| 本地门禁 | in_progress | 正在执行文本、状态和完整质量门禁 |
+| 本地门禁 | completed | `git diff --check`、lint、生产依赖审计、构建及 28/28 自动化测试通过 |
 | 审核 | pending | 待 Draft PR 审核 |
-| 合并/发布授权 | blocked | 等待明确授权 |
+| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
