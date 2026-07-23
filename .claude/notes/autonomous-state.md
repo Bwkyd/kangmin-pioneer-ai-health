@@ -5,7 +5,7 @@
 - 最后核验时间：2026-07-23（Asia/Shanghai）
 - 基线：`origin/main` = `d67f6368473ccc06b7a97e0f3c2ca825d96fea37`
 - 集成候选：`codex/issue-8-mvp-agent`
-- 当前阶段：Issue #11 补测试；Issue #12 已中断无产出的执行者并由新执行者接管
+- 当前阶段：Issue #11 已集成并通过；Issue #12 由重试执行者实现
 - 当前信号：通过（范围明确，可以执行）
 
 ## 本轮实体（4/4）
@@ -25,10 +25,13 @@
 - Issue #10：实现确定性问诊规则核心
   - 提交：`06dcf13`
   - 门禁：lint、build、8 项测试通过
+- Issue #11：实现安全 Agent API 与 DeepSeek 降级
+  - 集成提交：`7a87b6c`
+  - 门禁：lint、build、17 项测试通过；3 个真实 HTTP 路由可用
+  - 已知 P2：单实例内存限流仅适用于 MVP
 
 ### 进行中
 
-- Issue #11：在隔离 worktree 实现 API、模型适配器及契约测试
 - Issue #12：在隔离 worktree 实现最小用户旅程及 UI 测试
 
 ### 卡住
