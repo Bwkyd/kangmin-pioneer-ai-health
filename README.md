@@ -12,6 +12,7 @@
 
 ```bash
 npm ci
+npm run setup:git
 npm run dev
 npm run check
 ```
@@ -53,6 +54,8 @@ scripts/worktree-audit.sh .worktrees/issue-123-short-slug
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) and
 [the Agent development runbook](docs/runbooks/agent-development.md).
+GitHub protection status and the local fallback are documented in
+[the repository governance runbook](docs/runbooks/github-governance.md).
 
 ## Workspace Auth Headers
 

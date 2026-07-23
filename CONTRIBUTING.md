@@ -24,8 +24,11 @@
 
 - PR 必须关联 Issue，描述用户可见结果、风险边界和验证证据。
 - 禁止直接推送 `main`，禁止 force push 或删除 `main`。
+- 首次克隆后运行 `npm run setup:git`，安装本地 `main` 推送保护钩子。
 - CI `quality` 通过后才具备合并资格。
 - 自动化门禁通过不等于授权合并、部署或客户验收；这些动作仍需明确授权。
+
+当前私有仓库套餐不支持服务端分支保护。本地钩子只能防误操作，不能替代 GitHub 强制规则；详见 `docs/runbooks/github-governance.md`。
 
 ## 5. 收尾
 

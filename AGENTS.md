@@ -39,6 +39,7 @@ Use short imperative commit subjects matching history, such as `Add knowledge so
 - Keep each Agent's writable file ownership non-overlapping. Database migrations, shared types, permissions, clinical rules, and core interfaces have one integration owner.
 - Copy `docs/plans/TEMPLATE.md` to `docs/plans/active/` for multi-step work and keep evidence, blockers, branch, PR, and candidate SHA current.
 - Do not push directly to `main`. Open a Draft PR and require the `quality` CI check.
+- Run `npm run setup:git` after cloning so the shared Git hooks block accidental direct pushes to `main`. Treat this as a local fallback, not server-side branch protection.
 - CI, readiness, or narrow tests do not authorize merge, deployment, Issue closure, or customer acceptance.
 - After merge, verify the PR state and final Git tree. Run `scripts/worktree-audit.sh` before requesting permission to remove a worktree or branch.
 - Record only proven cross-task patterns and measurable metrics in `memory/dev-loop-patterns.md` and `memory/dev-loop-metrics.md`.

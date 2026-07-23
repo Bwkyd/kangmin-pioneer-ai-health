@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+if [[ "${ALLOW_MAIN_PUSH:-0}" == "1" ]]; then
+  exit 0
+fi
+
+while read -r _local_ref _local_sha remote_ref _remote_sha; do
+  if [[ "$remote_ref" == "refs/heads/main" ]]; then
+    echo "Direct pushes to main are blocked by the repository Agent workflow." >&2
+    echo "Open a pull request instead. Emergency bypass requires explicit authorization and ALLOW_MAIN_PUSH=1." >&2
+    exit 1
+  fi
+done
