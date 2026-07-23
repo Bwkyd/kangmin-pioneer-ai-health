@@ -16,7 +16,7 @@
 - 不修改或发布正式临床规则。
 - 不把外部论文结论表述为客户产品的临床验证。
 - 不代替导师或临床负责人批准无命中分支、严重程度口径或调理方案。
-- 不推送、合并、部署或关闭 Issue。
+- 不合并、部署或关闭 Issue。
 
 ## 验收标准
 
@@ -37,8 +37,6 @@
 | Agent | 文件或目录 | 是否可写 |
 | --- | --- | --- |
 | 主 Agent | `docs/客户确认/Issue-17-证型32组真值表-待确认.md` | 是 |
-| 主 Agent | `docs/客户确认/Issue-17-证型32组真值表-待确认.docx` | 是 |
-| 主 Agent | `build/generate_issue17_truth_table_docx.py` | 是 |
 | 主 Agent | `docs/plans/active/issue-17-clinical-truth-table.md` | 是 |
 
 ## 进度
@@ -50,13 +48,14 @@
 | 文字确认材料 | completed | 已按用户要求改为可直接复制发送的简短文字；Word 不作为本轮交付门禁 |
 | 本地门禁 | completed | 关键文案和 4 个无命中情况填写区校验通过；`git diff --check` 通过 |
 | 审核 | blocked | 等待客户导师或临床负责人书面确认 |
-| 合并/发布授权 | blocked | 等待明确授权 |
+| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-17-clinical-truth-table`
-- 提交 SHA：待提交简版确认单
-- PR：未创建
+- 提交 SHA：见 Draft PR head
+- PR：待创建
 
 ## 阻塞项
 
