@@ -1,0 +1,53 @@
+name: 缺陷报告
+description: 报告可复现的产品或工程问题
+title: "[Bug] "
+labels: ["bug", "needs-triage"]
+body:
+  - type: textarea
+    id: symptom
+    attributes:
+      label: 问题现象
+      description: 实际发生了什么？
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: 复现步骤
+      placeholder: |
+        1. …
+        2. …
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 预期结果
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: 证据
+      description: 可提供脱敏后的截图、日志、提交 SHA、环境和浏览器版本。
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 严重程度
+      options:
+        - P0：安全、数据损坏或完全不可用
+        - P1：核心流程阻塞
+        - P2：有替代路径
+        - P3：轻微体验问题
+    validations:
+      required: true
+  - type: checkboxes
+    id: privacy
+    attributes:
+      label: 隐私确认
+      options:
+        - label: 证据已脱敏，不包含令牌、密码、患者信息或客户私密资料
+          required: true

@@ -1,0 +1,56 @@
+name: 开发任务
+description: 用于新功能、优化、重构和自动化任务
+title: "[Task] "
+labels: ["task", "needs-triage"]
+body:
+  - type: textarea
+    id: outcome
+    attributes:
+      label: 目标结果
+      description: 用用户可观察的结果描述，不写实现手段。
+      placeholder: 完成后，用户能够……
+    validations:
+      required: true
+  - type: textarea
+    id: scope
+    attributes:
+      label: 范围与非范围
+      description: 明确要改什么，以及本次不改什么。
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: 验收标准
+      description: 每条都应可验证。
+      placeholder: |
+        - [ ] …
+        - [ ] …
+    validations:
+      required: true
+  - type: dropdown
+    id: risk
+    attributes:
+      label: 风险等级
+      options:
+        - 低：文案、样式或局部逻辑
+        - 中：跨模块、接口或数据读写
+        - 高：数据库、权限、临床规则、部署或核心接口
+    validations:
+      required: true
+  - type: textarea
+    id: validation
+    attributes:
+      label: 验证计划
+      description: 写明需要的测试、浏览器路径、审核或真实环境验证。
+    validations:
+      required: true
+  - type: checkboxes
+    id: confirmation
+    attributes:
+      label: 开发前确认
+      options:
+        - label: 需求、范围和验收标准已获得确认
+          required: true
+        - label: 未在 Issue 中粘贴令牌、密码或客户私密资料
+          required: true

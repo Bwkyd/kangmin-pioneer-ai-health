@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import Image from "next/image";
 
 type Tab = "home" | "chat" | "assessment" | "articles" | "profile";
 type Message =
@@ -281,7 +282,7 @@ export default function Home() {
             {tab === "home" && (
               <div className="home-view">
                 <div className="brand-banner" aria-label="抗敏先锋">
-                  <img src="/brand-banner.jpg" alt="抗敏先锋" />
+                  <Image src="/brand-banner.jpg" alt="抗敏先锋" width={814} height={311} priority />
                 </div>
                 <section className="home-modules" aria-label="鼻健康服务">
                   <button className="diagnose-module" onClick={startConsultation}>
