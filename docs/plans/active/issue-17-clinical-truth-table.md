@@ -48,14 +48,14 @@
 | 文字确认材料 | completed | 已按用户要求改为可直接复制发送的简短文字；Word 不作为本轮交付门禁 |
 | 本地门禁 | completed | `git diff --check`、lint、生产依赖审计、构建及 28/28 自动化测试通过 |
 | 审核 | blocked | 等待客户导师或临床负责人书面确认 |
-| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| Draft PR | completed | PR #55 已创建 |
 | 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-17-clinical-truth-table`
 - 提交 SHA：见 Draft PR head
-- PR：待创建
+- PR：#55
 
 ## 阻塞项
 
