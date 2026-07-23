@@ -73,17 +73,6 @@ export function findNextQuestion(
   assessment: NavigationAssessment,
   answers: AnswerMap,
 ): QuestionKey | null {
-  if (
-    assessment.status === "referred" &&
-    answers.diagnosedAllergicRhinitis === undefined
-  ) {
-    return "diagnosedAllergicRhinitis";
-  }
-
-  if (assessment.status !== "need_more_information") {
-    return null;
-  }
-
   return (
     assessment.nextQuestions?.find(
       (question): question is QuestionKey =>

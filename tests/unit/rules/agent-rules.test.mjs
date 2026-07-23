@@ -195,18 +195,28 @@ test("总流程严格按安全、适用资格、严重度、证型顺序执行",
   assert.equal("severity" in blocked, false);
   assert.equal("syndrome" in blocked, false);
 
-  for (const eligibility of ["no", "unknown"]) {
-    assert.deepEqual(
-      evaluateAssessment(
-        completeInput({ diagnosedAllergicRhinitis: eligibility }),
-      ),
-      {
-        status: "referred",
-        reason: "not_diagnosed_or_uncertain",
-        rulePackageVersion: RULE_PACKAGE_VERSION,
-      },
-    );
-  }
+  assert.deepEqual(
+    evaluateAssessment(
+      completeInput({ diagnosedAllergicRhinitis: "unknown" }),
+    ),
+    {
+      status: "referred",
+      reason: "not_diagnosed_or_uncertain",
+      nextQuestions: ["diagnosedAllergicRhinitis"],
+      rulePackageVersion: RULE_PACKAGE_VERSION,
+    },
+  );
+
+  assert.deepEqual(
+    evaluateAssessment(
+      completeInput({ diagnosedAllergicRhinitis: "no" }),
+    ),
+    {
+      status: "referred",
+      reason: "not_diagnosed_or_uncertain",
+      rulePackageVersion: RULE_PACKAGE_VERSION,
+    },
+  );
 
   const result = evaluateAssessment(completeInput());
   assert.equal(result.status, "classified");

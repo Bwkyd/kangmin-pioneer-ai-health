@@ -101,6 +101,11 @@ test("all safe result states have explicit UI handling", async () => {
   assert.match(page, /AI 解释（不改变规则结果）/);
   assert.match(page, /固定规则结果已先展示/);
   assert.match(page, /已使用固定降级文案/);
+  assert.match(page, /flowVersionRef/);
+  assert.match(page, /activeRequestRef\.current\?\.abort\(\)/);
+  assert.match(page, /navigationLockRef/);
+  assert.match(page, /规则服务响应超时/);
+  assert.match(page, /本轮无法继续分类/);
   assert.match(page, /仅用于本次候选提取，不保存/);
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
   assert.doesNotMatch(page, /知识库已连接|症状正在缓解/);

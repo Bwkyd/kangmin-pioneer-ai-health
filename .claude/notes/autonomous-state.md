@@ -7,7 +7,7 @@
 - 当前任务：Issue #14 `用服务端规则驱动动态补问与提前结束`
 - 当前分支：`codex/issue-14-dynamic-followup`
 - 当前 worktree：`.worktrees/issue-14-dynamic-followup`
-- 当前阶段：完整门禁通过，准备提交 Draft PR
+- 当前阶段：第 1 轮审核修复完成，准备增量复审
 - 当前信号：不通过（尚未完成实现、测试和双审）
 
 ## 本轮实体（4/4）
@@ -30,10 +30,17 @@
 - `npm run check` 通过：生产依赖审计 0 漏洞、build 成功、28/28 测试通过。
 - `arch/002` 变更记录及两处索引已同步。
 - 新模式与路径长度基线已追加到开发飞轮。
+- Draft PR #15 已创建，首个候选提交为 `129c03d`。
+- 第 1 轮：Kimi FAIL（P0=0/P1=1/P2=2），DeepSeek PASS（P0=0/P1=0/P2=3），主审判定不通过。
+- 第 1 轮 P1 已修：重启/改答会中止并作废在途请求，旧结果不能回写新会话。
+- 第 1 轮 P2 已修：同步重复点击锁、10 秒超时、显式 unknown 文案、候选失败状态清理。
+- 确诊前提的下一题已改由服务端 `nextQuestions` 返回，前端不再硬编码该分支。
+- 修复后 `npm run check` 通过：生产依赖审计 0 漏洞、build 成功、28/28 测试通过。
 
 ## 进行中
 
-- 提交候选、推送分支并创建 Draft PR。
+- 提交并推送第 1 轮修复。
+- Kimi K3 与 DeepSeek V4 Pro 对增量差异复审。
 
 ## 卡住
 
@@ -42,8 +49,8 @@
 
 ## 待开始
 
-- `npm run check`、Draft PR、CI。
-- Kimi K3 与 DeepSeek V4 Pro 最多三轮分级审核。
+- CI quality 核验。
+- 最终 P0/P1/P2 收口；最多再进行两轮。
 
 ## 不在本轮范围
 

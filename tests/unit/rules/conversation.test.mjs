@@ -42,16 +42,21 @@ test("下一题只采用服务端 nextQuestions 且跳过已明确回答项", ()
   );
 });
 
-test("安全检查完成后先补问确诊前提，用户明确回答后允许转诊结束", () => {
-  const referred = { status: "referred" };
+test("确诊前提完全来自服务端 nextQuestions，用户明确回答后允许转诊结束", () => {
+  const eligibility = {
+    status: "referred",
+    nextQuestions: ["diagnosedAllergicRhinitis"],
+  };
 
-  assert.equal(findNextQuestion(referred, {}), "diagnosedAllergicRhinitis");
+  assert.equal(findNextQuestion(eligibility, {}), "diagnosedAllergicRhinitis");
   assert.equal(
-    findNextQuestion(referred, { diagnosedAllergicRhinitis: "unknown" }),
+    findNextQuestion(eligibility, { diagnosedAllergicRhinitis: "unknown" }),
     null,
   );
   assert.equal(
-    findNextQuestion(referred, { diagnosedAllergicRhinitis: "no" }),
+    findNextQuestion({ status: "referred" }, {
+      diagnosedAllergicRhinitis: "no",
+    }),
     null,
   );
 });

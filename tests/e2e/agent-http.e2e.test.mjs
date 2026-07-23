@@ -136,6 +136,19 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
     assert.equal(normal.body.data.assessment.status, "classified");
     assert.equal(normal.body.data.assessment.planStatus, "no_approved_plan");
 
+    const eligibility = await postJson(
+      baseUrl,
+      "/api/v1/agent/evaluate",
+      completeInput({ diagnosedAllergicRhinitis: "unknown" }),
+    );
+    assert.equal(eligibility.response.status, 200);
+    assert.deepEqual(eligibility.body.data.assessment, {
+      status: "referred",
+      reason: "not_diagnosed_or_uncertain",
+      nextQuestions: ["diagnosedAllergicRhinitis"],
+      rulePackageVersion: "draft-local-v0",
+    });
+
     const explanation = await postJson(
       baseUrl,
       "/api/v1/agent/explain",

@@ -21,7 +21,7 @@
 ## 三态问诊中的未回答与明确不确定
 
 - 适用场景：服务端规则要求完整三态载荷，但前端需要按规则动态补问。
-- 模式：传给规则引擎时把未回答字段规范化为 `unknown`；会话导航仍保留 `undefined` 与显式 `"unknown"` 的区别，只追问服务端 `nextQuestions` 中尚未回答的字段。
+- 模式：传给规则引擎时把未回答字段规范化为 `unknown`；会话导航仍保留 `undefined` 与显式 `"unknown"` 的区别，只追问服务端 `stage` / `nextQuestions` 中尚未回答的字段，适用资格也由服务端返回下一题。
 - 收益：未知不会被误当作否，用户明确选择“不确定”后也不会被同一问题循环追问；前端只负责导航，不复制临床规则。
 - 验证：用真实 `evaluateAssessment` 组合测试覆盖安全顺序、高危短路、转诊、全部 unknown 和提前分类。
 - 证据：`lib/agent/conversation.ts` 与 `tests/unit/rules/conversation.test.mjs`。
