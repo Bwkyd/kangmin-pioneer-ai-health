@@ -45,28 +45,39 @@ test("server-renders the consent and internal-test boundary", async () => {
 test("the client submits every clinical answer to the rule API", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
+  const conversation = await readFile(
+    new URL("../lib/agent/conversation.ts", import.meta.url),
+    "utf8",
+  );
 
   assert.match(page, /fetch\("\/api\/v1\/agent\/evaluate"/);
   assert.match(page, /fetch\("\/api\/v1\/agent\/extract"/);
   assert.match(page, /fetch\("\/api\/v1\/agent\/explain"/);
   assert.match(page, /method: "POST"/);
-  assert.match(page, /diagnosedAllergicRhinitis: answers\.diagnosedAllergicRhinitis/);
-  assert.match(page, /respiratoryEmergency: answers\.respiratoryEmergency/);
-  assert.match(page, /persistentHighFever: answers\.persistentHighFever/);
-  assert.match(page, /severeNoseBleed: answers\.severeNoseBleed/);
-  assert.match(page, /unilateralFoulDischarge: answers\.unilateralFoulDischarge/);
-  assert.match(page, /severeNeurologicalSymptoms: answers\.severeNeurologicalSymptoms/);
-  assert.match(page, /sleepAffected: answers\.sleepAffected/);
-  assert.match(page, /activityAffected: answers\.activityAffected/);
-  assert.match(page, /workStudyAffected: answers\.workStudyAffected/);
-  assert.match(page, /symptomTroublesome: answers\.symptomTroublesome/);
-  assert.match(page, /thirst: answers\.thirst/);
-  assert.match(page, /fatigue: answers\.fatigue/);
-  assert.match(page, /limbsNotWarm: answers\.limbsNotWarm/);
-  assert.match(page, /fearWind: answers\.fearWind/);
-  assert.match(page, /coldIntolerance: answers\.coldIntolerance/);
+  assert.match(page, /createAssessmentPayload\(nextAnswers\)/);
+  assert.match(page, /findNextQuestion\(nextAssessment, nextAnswers\)/);
+  for (const field of [
+    "diagnosedAllergicRhinitis",
+    "respiratoryEmergency",
+    "persistentHighFever",
+    "severeNoseBleed",
+    "unilateralFoulDischarge",
+    "severeNeurologicalSymptoms",
+    "sleepAffected",
+    "activityAffected",
+    "workStudyAffected",
+    "symptomTroublesome",
+    "thirst",
+    "fatigue",
+    "limbsNotWarm",
+    "fearWind",
+    "coldIntolerance",
+  ]) {
+    assert.match(conversation, new RegExp(`"${field}"`));
+  }
   assert.doesNotMatch(page, /evaluateSyndrome|DRAFT_SYNDROME_RULES/);
   assert.match(css, /\.api-error/);
+  assert.match(css, /\.navigation-status/);
 });
 
 test("all safe result states have explicit UI handling", async () => {
@@ -90,6 +101,12 @@ test("all safe result states have explicit UI handling", async () => {
   assert.match(page, /AI 解释（不改变规则结果）/);
   assert.match(page, /固定规则结果已先展示/);
   assert.match(page, /已使用固定降级文案/);
+  assert.match(page, /flowVersionRef/);
+  assert.match(page, /activeRequestRef\.current\?\.abort\(\)/);
+  assert.match(page, /navigationLockRef/);
+  assert.match(page, /规则服务响应超时/);
+  assert.match(page, /本轮无法继续分类/);
+  assert.match(page, /disabled=\{view === "submitting"\}/);
   assert.match(page, /仅用于本次候选提取，不保存/);
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
   assert.doesNotMatch(page, /知识库已连接|症状正在缓解/);

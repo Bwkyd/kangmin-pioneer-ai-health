@@ -92,6 +92,29 @@ test("evaluate 由服务端重算规则，并使用统一成功和错误结构",
   assert.equal(valid.body.data.assessment.status, "classified");
   assert.equal(valid.body.data.assessment.planStatus, "no_approved_plan");
 
+  const eligibility = await responseBody(
+    await api.evaluate(
+      post(
+        "/api/v1/agent/evaluate",
+        completeInput({ diagnosedAllergicRhinitis: "unknown" }),
+      ),
+    ),
+  );
+  assert.deepEqual(eligibility, {
+    status: 200,
+    body: {
+      ok: true,
+      data: {
+        assessment: {
+          status: "referred",
+          reason: "not_diagnosed_or_uncertain",
+          nextQuestions: ["diagnosedAllergicRhinitis"],
+          rulePackageVersion: "draft-local-v0",
+        },
+      },
+    },
+  });
+
   const invalid = await responseBody(
     await api.evaluate(
       post("/api/v1/agent/evaluate", {

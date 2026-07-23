@@ -5,29 +5,17 @@ import {
   restoreAcceptedValues,
   type CandidateDecision,
 } from "@/lib/agent/candidate-state";
-import { useMemo, useState } from "react";
+import {
+  FIRST_QUESTION_KEY,
+  createAssessmentPayload,
+  findNextQuestion,
+  type AnswerMap,
+  type QuestionKey,
+  type TriState,
+} from "@/lib/agent/conversation";
+import { useMemo, useRef, useState } from "react";
 
-type TriState = "yes" | "no" | "unknown";
 type View = "consent" | "questions" | "review" | "submitting" | "result";
-
-type QuestionKey =
-  | "diagnosedAllergicRhinitis"
-  | "respiratoryEmergency"
-  | "persistentHighFever"
-  | "severeNoseBleed"
-  | "unilateralFoulDischarge"
-  | "severeNeurologicalSymptoms"
-  | "sleepAffected"
-  | "activityAffected"
-  | "workStudyAffected"
-  | "symptomTroublesome"
-  | "thirst"
-  | "fatigue"
-  | "limbsNotWarm"
-  | "fearWind"
-  | "coldIntolerance";
-
-type AnswerMap = Partial<Record<QuestionKey, TriState>>;
 
 interface ExtractionData {
   requiresConfirmation: true;
@@ -90,6 +78,7 @@ type Assessment =
   | {
       status: "referred";
       reason: "not_diagnosed_or_uncertain";
+      nextQuestions?: string[];
       rulePackageVersion: string;
     };
 
@@ -189,31 +178,9 @@ const fieldLabels = Object.fromEntries(
   questions.map((question) => [question.key, question.title]),
 ) as Record<QuestionKey, string>;
 
-function toPayload(answers: AnswerMap) {
-  return {
-    diagnosedAllergicRhinitis: answers.diagnosedAllergicRhinitis,
-    safety: {
-      respiratoryEmergency: answers.respiratoryEmergency,
-      persistentHighFever: answers.persistentHighFever,
-      severeNoseBleed: answers.severeNoseBleed,
-      unilateralFoulDischarge: answers.unilateralFoulDischarge,
-      severeNeurologicalSymptoms: answers.severeNeurologicalSymptoms,
-    },
-    severity: {
-      sleepAffected: answers.sleepAffected,
-      activityAffected: answers.activityAffected,
-      workStudyAffected: answers.workStudyAffected,
-      symptomTroublesome: answers.symptomTroublesome,
-    },
-    syndrome: {
-      thirst: answers.thirst,
-      fatigue: answers.fatigue,
-      limbsNotWarm: answers.limbsNotWarm,
-      fearWind: answers.fearWind,
-      coldIntolerance: answers.coldIntolerance,
-    },
-  };
-}
+const FIRST_QUESTION_INDEX = questions.findIndex(
+  (question) => question.key === FIRST_QUESTION_KEY,
+);
 
 function flattenCandidates(data: ExtractionData | null): CandidateEntry[] {
   if (!data) return [];
@@ -241,7 +208,7 @@ function flattenCandidates(data: ExtractionData | null): CandidateEntry[] {
   return entries;
 }
 
-function resultCopy(assessment: Assessment) {
+function resultCopy(assessment: Assessment, answers: AnswerMap) {
   switch (assessment.status) {
     case "blocked":
       return {
@@ -260,14 +227,20 @@ function resultCopy(assessment: Assessment) {
         detail: "系统未进行证型判断。",
       };
     case "need_more_information":
+      const unansweredQuestions = assessment.nextQuestions.filter(
+        (field) => answers[field as QuestionKey] === undefined,
+      );
       return {
         tone: "warning",
         eyebrow: "信息不足",
         title: "需要补充或确认回答",
         body: "“不确定”不会被系统当作“否”。请返回问卷确认相关问题，或咨询专业人员。",
-        detail: `待确认：${assessment.nextQuestions
-          .map((field) => fieldLabels[field as QuestionKey] ?? field)
-          .join("；")}`,
+        detail:
+          unansweredQuestions.length > 0
+            ? `待确认：${unansweredQuestions
+                .map((field) => fieldLabels[field as QuestionKey] ?? field)
+                .join("；")}`
+            : "相关问题均已明确选择“不确定”，本轮无法继续分类。",
       };
     case "conflict":
       return {
@@ -301,7 +274,9 @@ export default function Home() {
   const [consented, setConsented] = useState(false);
   const [ageGroup, setAgeGroup] = useState<"" | "adult" | "minor">("");
   const [guardianConfirmed, setGuardianConfirmed] = useState(false);
-  const [questionIndex, setQuestionIndex] = useState(0);
+  const [questionIndex, setQuestionIndex] = useState(FIRST_QUESTION_INDEX);
+  const [questionHistory, setQuestionHistory] = useState<number[]>([]);
+  const [navigating, setNavigating] = useState(false);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [freeText, setFreeText] = useState("");
   const [extracting, setExtracting] = useState(false);
@@ -318,6 +293,31 @@ export default function Home() {
   const [explanationStatus, setExplanationStatus] =
     useState<ExplanationStatus>("idle");
   const [error, setError] = useState("");
+  const flowVersionRef = useRef(0);
+  const activeRequestRef = useRef<AbortController | null>(null);
+  const navigationLockRef = useRef(false);
+
+  const invalidatePendingRequests = () => {
+    flowVersionRef.current += 1;
+    activeRequestRef.current?.abort();
+    activeRequestRef.current = null;
+    navigationLockRef.current = false;
+    setNavigating(false);
+    setExtracting(false);
+  };
+
+  const startRequest = () => {
+    activeRequestRef.current?.abort();
+    const controller = new AbortController();
+    activeRequestRef.current = controller;
+    return controller;
+  };
+
+  const finishRequest = (controller: AbortController) => {
+    if (activeRequestRef.current === controller) {
+      activeRequestRef.current = null;
+    }
+  };
 
   const canStart =
     consented &&
@@ -347,12 +347,45 @@ export default function Home() {
 
   const begin = () => {
     if (!canStart) return;
+    invalidatePendingRequests();
+    setQuestionIndex(FIRST_QUESTION_INDEX);
+    setQuestionHistory([]);
+    setError("");
     setView("questions");
   };
 
-  const answerQuestion = (value: TriState) => {
+  const requestAssessment = async (
+    nextAnswers: AnswerMap,
+    signal: AbortSignal,
+  ) => {
+    const response = await fetch("/api/v1/agent/evaluate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(createAssessmentPayload(nextAnswers)),
+      signal,
+    });
+    const result = (await response.json()) as
+      | { ok: true; data: { assessment: Assessment } }
+      | { ok: false; error: { code: string; message: string } };
+    if (!response.ok || !result.ok) {
+      throw new Error(
+        result.ok ? "服务响应异常" : result.error.message,
+      );
+    }
+    return result.data.assessment;
+  };
+
+  const answerQuestion = async (value: TriState) => {
+    if (navigationLockRef.current) return;
+
+    navigationLockRef.current = true;
+    const requestVersion = flowVersionRef.current;
+    const controller = startRequest();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
     const nextAnswers = { ...answers, [currentQuestion.key]: value };
     setAnswers(nextAnswers);
+    setNavigating(true);
+    setError("");
     if (
       extractedCandidates.some(
         (candidate) => candidate.key === currentQuestion.key,
@@ -367,17 +400,67 @@ export default function Home() {
         [currentQuestion.key]: "ignored",
       }));
     }
-    if (questionIndex < questions.length - 1) {
-      setQuestionIndex((index) => index + 1);
-      return;
+
+    try {
+      const nextAssessment = await requestAssessment(
+        nextAnswers,
+        controller.signal,
+      );
+      if (flowVersionRef.current !== requestVersion) return;
+
+      const nextQuestion = findNextQuestion(nextAssessment, nextAnswers);
+      if (nextQuestion) {
+        const nextIndex = questions.findIndex(
+          (question) => question.key === nextQuestion,
+        );
+        if (nextIndex >= 0) {
+          setQuestionHistory((history) => [...history, questionIndex]);
+          setQuestionIndex(nextIndex);
+          return;
+        }
+      }
+
+      if (
+        nextAssessment.status === "blocked" ||
+        nextAssessment.status === "referred" ||
+        nextAssessment.status === "need_more_information"
+      ) {
+        setAssessment(nextAssessment);
+        setExplanation(null);
+        setExplanationStatus("idle");
+        setView("result");
+        return;
+      }
+
+      setAssessment(null);
+      setView("review");
+    } catch (navigationError) {
+      if (flowVersionRef.current !== requestVersion) return;
+      setError(
+        navigationError instanceof DOMException &&
+          navigationError.name === "AbortError"
+          ? "规则服务响应超时，请重试当前回答。"
+          : navigationError instanceof Error
+          ? navigationError.message
+          : "暂时无法决定下一步，请重试当前回答。",
+      );
+    } finally {
+      window.clearTimeout(timeoutId);
+      finishRequest(controller);
+      if (flowVersionRef.current === requestVersion) {
+        navigationLockRef.current = false;
+        setNavigating(false);
+      }
     }
-    setView("review");
   };
 
   const extractFreeText = async () => {
     const text = freeText.trim();
     if (!text) return;
 
+    const requestVersion = flowVersionRef.current;
+    const controller = startRequest();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
     const baselineAnswers = restoreAcceptedValues(
       answers,
       extractedCandidates.map((candidate) => candidate.key),
@@ -394,6 +477,7 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text }),
+        signal: controller.signal,
       });
       const result = (await response.json()) as
         | { ok: true; data: ExtractionData }
@@ -401,6 +485,7 @@ export default function Home() {
       if (!response.ok || !result.ok) {
         throw new Error(result.ok ? "提取服务响应异常" : result.error.message);
       }
+      if (flowVersionRef.current !== requestVersion) return;
 
       setExtraction(result.data);
       setDescriptionHandled(true);
@@ -426,20 +511,30 @@ export default function Home() {
         );
       }
     } catch (extractError) {
+      if (flowVersionRef.current !== requestVersion) return;
       setDescriptionHandled(false);
       setExtraction(null);
+      setCandidateDecisions({});
       setCandidateOriginalAnswers({});
       setExtractionNotice(
-        extractError instanceof Error
+        extractError instanceof DOMException &&
+          extractError.name === "AbortError"
+          ? "AI 提取响应超时，请重试或明确跳过这段描述。"
+          : extractError instanceof Error
           ? `AI 提取失败：${extractError.message}`
           : "AI 提取失败，请重试或明确跳过这段描述。",
       );
     } finally {
-      setExtracting(false);
+      window.clearTimeout(timeoutId);
+      finishRequest(controller);
+      if (flowVersionRef.current === requestVersion) {
+        setExtracting(false);
+      }
     }
   };
 
   const skipFreeText = () => {
+    invalidatePendingRequests();
     setAnswers((current) =>
       restoreAcceptedValues(
         current,
@@ -485,7 +580,14 @@ export default function Home() {
     }));
   };
 
-  const loadExplanation = async (payload: ReturnType<typeof toPayload>) => {
+  const loadExplanation = async (
+    payload: ReturnType<typeof createAssessmentPayload>,
+    requestVersion: number,
+  ) => {
+    if (flowVersionRef.current !== requestVersion) return;
+
+    const controller = startRequest();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
     setExplanation(null);
     setExplanationStatus("loading");
     try {
@@ -493,6 +595,7 @@ export default function Home() {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify(payload),
+        signal: controller.signal,
       });
       const result = (await response.json()) as
         | {
@@ -506,6 +609,7 @@ export default function Home() {
       if (!response.ok || !result.ok) {
         throw new Error(result.ok ? "解释服务响应异常" : result.error.message);
       }
+      if (flowVersionRef.current !== requestVersion) return;
 
       if (!result.data.explanation) {
         throw new Error("当前结果不适用 AI 解释");
@@ -516,55 +620,65 @@ export default function Home() {
         result.data.model.used ? "ready" : "degraded",
       );
     } catch {
+      if (flowVersionRef.current !== requestVersion) return;
       setExplanation({
         summary: "AI 解释暂时不可用，固定规则结果仍然有效。",
         disclaimer: "请勿把内部测试结果当作诊断或治疗建议。",
       });
       setExplanationStatus("error");
+    } finally {
+      window.clearTimeout(timeoutId);
+      finishRequest(controller);
     }
   };
 
   const submitAssessment = async () => {
-    const payload = toPayload(answers);
+    const requestVersion = flowVersionRef.current;
+    const controller = startRequest();
+    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
+    const payload = createAssessmentPayload(answers);
     setView("submitting");
     setError("");
     setExplanation(null);
     setExplanationStatus("idle");
     try {
-      const response = await fetch("/api/v1/agent/evaluate", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-      const result = (await response.json()) as
-        | { ok: true; data: { assessment: Assessment } }
-        | { ok: false; error: { code: string; message: string } };
-      if (!response.ok || !result.ok) {
-        throw new Error(
-          result.ok ? "服务响应异常" : result.error.message,
-        );
-      }
-      setAssessment(result.data.assessment);
+      const nextAssessment = await requestAssessment(
+        answers,
+        controller.signal,
+      );
+      if (flowVersionRef.current !== requestVersion) return;
+
+      setAssessment(nextAssessment);
       setView("result");
-      if (result.data.assessment.status === "classified") {
-        void loadExplanation(payload);
+      if (nextAssessment.status === "classified") {
+        void loadExplanation(payload, requestVersion);
       }
     } catch (submitError) {
+      if (flowVersionRef.current !== requestVersion) return;
       setError(
-        submitError instanceof Error
+        submitError instanceof DOMException &&
+          submitError.name === "AbortError"
+          ? "规则服务响应超时，请稍后重试。"
+          : submitError instanceof Error
           ? submitError.message
           : "服务暂时不可用，请稍后重试。",
       );
       setView("review");
+    } finally {
+      window.clearTimeout(timeoutId);
+      finishRequest(controller);
     }
   };
 
   const restart = () => {
+    invalidatePendingRequests();
     setView("consent");
     setConsented(false);
     setAgeGroup("");
     setGuardianConfirmed(false);
-    setQuestionIndex(0);
+    setQuestionIndex(FIRST_QUESTION_INDEX);
+    setQuestionHistory([]);
+    setNavigating(false);
     setAnswers({});
     setFreeText("");
     setExtracting(false);
@@ -579,7 +693,7 @@ export default function Home() {
     setError("");
   };
 
-  const copy = assessment ? resultCopy(assessment) : null;
+  const copy = assessment ? resultCopy(assessment, answers) : null;
 
   return (
     <main className="agent-shell">
@@ -676,20 +790,18 @@ export default function Home() {
         <section className="screen question-screen" aria-labelledby="question-title">
           <div className="progress-copy">
             <span>{currentQuestion.section}</span>
-            <b>
-              {questionIndex + 1} / {questions.length}
-            </b>
+            <b>已确认 {answeredCount} 项</b>
           </div>
           <div
             className="progress-track"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={questions.length}
-            aria-valuenow={questionIndex + 1}
+            aria-valuenow={answeredCount}
           >
             <span
               style={{
-                width: `${((questionIndex + 1) / questions.length) * 100}%`,
+                width: `${progress}%`,
               }}
             />
           </div>
@@ -700,8 +812,12 @@ export default function Home() {
             {answerLabels.map((item) => (
               <button
                 key={item.value}
+                className={
+                  answers[currentQuestion.key] === item.value ? "selected" : ""
+                }
                 type="button"
-                onClick={() => answerQuestion(item.value)}
+                disabled={navigating}
+                onClick={() => void answerQuestion(item.value)}
               >
                 <span>{item.label}</span>
                 <small>
@@ -713,13 +829,32 @@ export default function Home() {
             ))}
           </div>
 
+          {navigating && (
+            <p className="navigation-status" role="status">
+              正在由服务端固定规则确定下一步…
+            </p>
+          )}
+
+          {error && (
+            <div className="api-error" role="alert">
+              <strong>暂时无法继续</strong>
+              <span>{error}</span>
+              <small>当前回答已保留，请重新选择一次以重试。</small>
+            </div>
+          )}
+
           <button
             className="back-button"
             type="button"
-            disabled={questionIndex === 0}
-            onClick={() =>
-              setQuestionIndex((index) => Math.max(0, index - 1))
-            }
+            disabled={questionHistory.length === 0 || navigating}
+            onClick={() => {
+              const previousIndex =
+                questionHistory[questionHistory.length - 1];
+              if (previousIndex === undefined) return;
+              setQuestionHistory((history) => history.slice(0, -1));
+              setQuestionIndex(previousIndex);
+              setError("");
+            }}
           >
             返回上一题
           </button>
@@ -738,8 +873,10 @@ export default function Home() {
             <span>补充描述（选填）</span>
             <textarea
               maxLength={1000}
+              disabled={view === "submitting"}
               value={freeText}
               onChange={(event) => {
+                invalidatePendingRequests();
                 setAnswers((current) =>
                   restoreAcceptedValues(
                     current,
@@ -862,7 +999,13 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => {
+                      invalidatePendingRequests();
                       setQuestionIndex(index);
+                      setQuestionHistory([]);
+                      setAssessment(null);
+                      setExplanation(null);
+                      setExplanationStatus("idle");
+                      setError("");
                       setView("questions");
                     }}
                   >
@@ -947,23 +1090,22 @@ export default function Home() {
           <div className="result-actions">
             {(assessment.status === "need_more_information" ||
               assessment.status === "conflict" ||
-              assessment.status === "no_match") && (
+              assessment.status === "no_match" ||
+              assessment.status === "classified" ||
+              assessment.status === "referred") && (
               <button
                 className="primary-button"
                 type="button"
                 onClick={() => {
-                  const nextField =
-                    assessment.status === "need_more_information"
-                      ? assessment.nextQuestions[0]
-                      : undefined;
-                  const nextIndex = questions.findIndex(
-                    (question) => question.key === nextField,
-                  );
-                  setQuestionIndex(nextIndex >= 0 ? nextIndex : 0);
-                  setView("questions");
+                  invalidatePendingRequests();
+                  setAssessment(null);
+                  setExplanation(null);
+                  setExplanationStatus("idle");
+                  setError("");
+                  setView("review");
                 }}
               >
-                返回核对回答
+                返回查看并修改回答
               </button>
             )}
             <button className="secondary-button" type="button" onClick={restart}>

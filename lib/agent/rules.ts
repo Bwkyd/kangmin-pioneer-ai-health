@@ -154,6 +154,7 @@ export type AssessmentResult =
   | {
       status: "referred";
       reason: "not_diagnosed_or_uncertain";
+      nextQuestions?: ["diagnosedAllergicRhinitis"];
       rulePackageVersion: string;
     }
   | {
@@ -346,6 +347,9 @@ export function evaluateAssessment(input: AssessmentInput): AssessmentResult {
     return {
       status: "referred",
       reason: "not_diagnosed_or_uncertain",
+      ...(input.diagnosedAllergicRhinitis === "unknown"
+        ? { nextQuestions: ["diagnosedAllergicRhinitis"] as const }
+        : {}),
       rulePackageVersion: RULE_PACKAGE_VERSION,
     };
   }
