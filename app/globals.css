@@ -152,64 +152,10 @@ summary:focus-visible {
   line-height: 1.85;
 }
 
-.consent-row {
-  padding: 14px;
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  border: 1px solid var(--line);
-  border-radius: 13px;
-  background: #f8fafc;
-  cursor: pointer;
-  font-size: 13px;
-  line-height: 1.55;
-}
-
-.consent-row input {
-  width: 18px;
-  height: 18px;
-  margin: 1px 0 0;
-  flex: 0 0 18px;
-  accent-color: var(--blue);
-}
-
-.guardian-row {
-  margin-top: 12px;
-}
-
-.choice-fieldset {
-  margin: 20px 0 0;
-  padding: 0;
-  border: 0;
-}
-
-.choice-fieldset legend,
 .free-text > span {
   margin-bottom: 9px;
   color: var(--ink);
   font-size: 12px;
-  font-weight: 700;
-}
-
-.segmented {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8px;
-}
-
-.segmented button {
-  min-height: 49px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  background: #fff;
-  cursor: pointer;
-  font-size: 12px;
-}
-
-.segmented button.selected {
-  border-color: var(--blue);
-  background: #edf5ff;
-  color: var(--blue-dark);
   font-weight: 700;
 }
 
@@ -243,7 +189,6 @@ summary:focus-visible {
   color: var(--blue);
 }
 
-.emergency-note,
 .final-disclaimer {
   margin: 15px 0 0;
   color: #8d4a45;

@@ -15,7 +15,7 @@ import {
 } from "@/lib/agent/conversation";
 import { useMemo, useRef, useState } from "react";
 
-type View = "consent" | "questions" | "review" | "submitting" | "result";
+type View = "questions" | "review" | "submitting" | "result";
 
 interface ExtractionData {
   requiresConfirmation: true;
@@ -270,10 +270,7 @@ function resultCopy(assessment: Assessment, answers: AnswerMap) {
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("consent");
-  const [consented, setConsented] = useState(false);
-  const [ageGroup, setAgeGroup] = useState<"" | "adult" | "minor">("");
-  const [guardianConfirmed, setGuardianConfirmed] = useState(false);
+  const [view, setView] = useState<View>("questions");
   const [questionIndex, setQuestionIndex] = useState(FIRST_QUESTION_INDEX);
   const [questionHistory, setQuestionHistory] = useState<number[]>([]);
   const [navigating, setNavigating] = useState(false);
@@ -319,10 +316,6 @@ export default function Home() {
     }
   };
 
-  const canStart =
-    consented &&
-    ageGroup !== "" &&
-    (ageGroup === "adult" || guardianConfirmed);
   const answeredCount = Object.keys(answers).length;
   const progress = Math.round((answeredCount / questions.length) * 100);
   const currentQuestion = questions[questionIndex];
@@ -344,15 +337,6 @@ export default function Home() {
   const descriptionReady =
     freeText.trim().length === 0 ||
     (descriptionHandled && unresolvedCandidateCount === 0);
-
-  const begin = () => {
-    if (!canStart) return;
-    invalidatePendingRequests();
-    setQuestionIndex(FIRST_QUESTION_INDEX);
-    setQuestionHistory([]);
-    setError("");
-    setView("questions");
-  };
 
   const requestAssessment = async (
     nextAnswers: AnswerMap,
@@ -672,10 +656,7 @@ export default function Home() {
 
   const restart = () => {
     invalidatePendingRequests();
-    setView("consent");
-    setConsented(false);
-    setAgeGroup("");
-    setGuardianConfirmed(false);
+    setView("questions");
     setQuestionIndex(FIRST_QUESTION_INDEX);
     setQuestionHistory([]);
     setNavigating(false);
@@ -705,11 +686,9 @@ export default function Home() {
           <strong>抗敏先锋 · 小岐</strong>
           <span>AI 鼻健康管理内部测试</span>
         </div>
-        {view !== "consent" && (
-          <button className="text-button" type="button" onClick={restart}>
-            重新开始
-          </button>
-        )}
+        <button className="text-button" type="button" onClick={restart}>
+          重新开始
+        </button>
       </header>
 
       <aside className="prototype-notice" role="status">
@@ -718,73 +697,6 @@ export default function Home() {
           固定规则先行，模型不决定证型；结果不能替代门诊诊断。
         </span>
       </aside>
-
-      {view === "consent" && (
-        <section className="screen consent-screen" aria-labelledby="consent-title">
-          <span className="step-label">开始前确认</span>
-          <h1 id="consent-title">先确认使用边界</h1>
-          <p className="lead">
-            本轮仅验证问诊流程和固定规则。不会保存健康数据，也不会提供未经审核的知识、趋势或调理方案。
-          </p>
-
-          <label className="consent-row">
-            <input
-              type="checkbox"
-              checked={consented}
-              onChange={(event) => setConsented(event.target.checked)}
-            />
-            <span>我已阅读并同意按内部测试边界使用</span>
-          </label>
-
-          <fieldset className="choice-fieldset">
-            <legend>使用者年龄</legend>
-            <div className="segmented">
-              <button
-                className={ageGroup === "adult" ? "selected" : ""}
-                type="button"
-                onClick={() => {
-                  setAgeGroup("adult");
-                  setGuardianConfirmed(false);
-                }}
-              >
-                18 岁及以上
-              </button>
-              <button
-                className={ageGroup === "minor" ? "selected" : ""}
-                type="button"
-                onClick={() => setAgeGroup("minor")}
-              >
-                未满 18 岁
-              </button>
-            </div>
-          </fieldset>
-
-          {ageGroup === "minor" && (
-            <label className="consent-row guardian-row">
-              <input
-                type="checkbox"
-                checked={guardianConfirmed}
-                onChange={(event) =>
-                  setGuardianConfirmed(event.target.checked)
-                }
-              />
-              <span>监护人已知情并陪同完成本次内部测试</span>
-            </label>
-          )}
-
-          <button
-            className="primary-button"
-            type="button"
-            disabled={!canStart}
-            onClick={begin}
-          >
-            开始安全问诊
-          </button>
-          <p className="emergency-note">
-            如已出现呼吸困难、意识异常或大量出血，请立即就医，不要等待本工具结果。
-          </p>
-        </section>
-      )}
 
       {view === "questions" && currentQuestion && (
         <section className="screen question-screen" aria-labelledby="question-title">
