@@ -19,10 +19,10 @@
 
 ## 验收标准
 
-- [ ] 提取中和提交中候选操作不可用。
-- [ ] 候选变更不会允许旧评估结果落地。
-- [ ] 高危候选竞态有自动化覆盖。
-- [ ] `npm run check` 在本任务 worktree 通过。
+- [x] 提取中和提交中候选操作不可用。
+- [x] 候选变更不会允许旧评估结果落地。
+- [x] 高危候选竞态有自动化覆盖。
+- [x] `npm run check` 在本任务 worktree 通过。
 - [ ] 真实浏览器旅程完成，或按实时浏览器可用性明确记录 BLOCKED。
 - [ ] Kimi K3 与 DeepSeek V4 Pro 独立复审均无 P0/P1。
 
@@ -56,8 +56,8 @@
 | --- | --- | --- |
 | 需求确认 | completed | Issue #14 正文及 2026-07-23 重新打开评论 |
 | 实现 | completed | 候选操作锁 + 候选变更作废在途请求 |
-| 本地门禁 | completed | `git diff --check`、聚焦测试、`npm run check`；30/30 通过，生产依赖审计 0 漏洞 |
-| 审核 | pending | 待候选 SHA 冻结后双审 |
+| 本地门禁 | completed | `git diff --check`、聚焦测试、`npm run check`；32/32 通过，生产依赖审计 0 漏洞 |
+| 审核 | in_progress | 第 1 轮 Kimi/DeepSeek 均因仅有源码匹配测试给出 P1/FAIL；已补请求版本协调器和异步行为测试，待增量复审 |
 | 合并/发布授权 | blocked | 未获推送、合并或部署授权 |
 
 ## 候选版本
@@ -70,3 +70,11 @@
 
 - 真实点击式浏览器 E2E：实现后再次实时核验仍无可用 Browser/Chrome 实例，保持 BLOCKED。
 - 推送、PR、合并、部署、Issue 关闭及 worktree 清理：均未获授权。
+
+## 审核记录
+
+- 第 1 轮冻结 SHA：`130297b`
+- Kimi K3：P0=0、P1=1、P2=3，`REVIEW_RESULT: FAIL`
+- DeepSeek V4 Pro：P0=0、P1=1、P2=3，`REVIEW_RESULT: FAIL`
+- 共同 P1：竞态测试只匹配源码形状，未行为级证明候选变化会使旧请求结果过期。
+- 修复：新增生产使用的 `RequestVersion` 协调器；异步单测直接模拟“旧评估在途 → 候选变化 → 旧结果不得落地”，并保留 UI 禁用与接线断言。

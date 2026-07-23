@@ -14,6 +14,7 @@ import {
   type QuestionKey,
   type TriState,
 } from "@/lib/agent/conversation";
+import { RequestVersion } from "@/lib/agent/request-version";
 import { useMemo, useRef, useState } from "react";
 
 type View = "consent" | "questions" | "review" | "submitting" | "result";
@@ -294,12 +295,12 @@ export default function Home() {
   const [explanationStatus, setExplanationStatus] =
     useState<ExplanationStatus>("idle");
   const [error, setError] = useState("");
-  const flowVersionRef = useRef(0);
+  const [requestVersions] = useState(() => new RequestVersion());
   const activeRequestRef = useRef<AbortController | null>(null);
   const navigationLockRef = useRef(false);
 
   const invalidatePendingRequests = () => {
-    flowVersionRef.current += 1;
+    requestVersions.invalidate();
     activeRequestRef.current?.abort();
     activeRequestRef.current = null;
     navigationLockRef.current = false;
@@ -384,7 +385,7 @@ export default function Home() {
     if (navigationLockRef.current) return;
 
     navigationLockRef.current = true;
-    const requestVersion = flowVersionRef.current;
+    const requestVersion = requestVersions.capture();
     const controller = startRequest();
     const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
     const nextAnswers = { ...answers, [currentQuestion.key]: value };
@@ -411,7 +412,7 @@ export default function Home() {
         nextAnswers,
         controller.signal,
       );
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
 
       const nextQuestion = findNextQuestion(nextAssessment, nextAnswers);
       if (nextQuestion) {
@@ -440,7 +441,7 @@ export default function Home() {
       setAssessment(null);
       setView("review");
     } catch (navigationError) {
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
       setError(
         navigationError instanceof DOMException &&
           navigationError.name === "AbortError"
@@ -452,7 +453,7 @@ export default function Home() {
     } finally {
       window.clearTimeout(timeoutId);
       finishRequest(controller);
-      if (flowVersionRef.current === requestVersion) {
+      if (requestVersions.isCurrent(requestVersion)) {
         navigationLockRef.current = false;
         setNavigating(false);
       }
@@ -463,7 +464,7 @@ export default function Home() {
     const text = freeText.trim();
     if (!text) return;
 
-    const requestVersion = flowVersionRef.current;
+    const requestVersion = requestVersions.capture();
     const controller = startRequest();
     const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
     const baselineAnswers = restoreAcceptedValues(
@@ -490,7 +491,7 @@ export default function Home() {
       if (!response.ok || !result.ok) {
         throw new Error(result.ok ? "提取服务响应异常" : result.error.message);
       }
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
 
       setExtraction(result.data);
       setDescriptionHandled(true);
@@ -516,7 +517,7 @@ export default function Home() {
         );
       }
     } catch (extractError) {
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
       setDescriptionHandled(false);
       setExtraction(null);
       setCandidateDecisions({});
@@ -532,7 +533,7 @@ export default function Home() {
     } finally {
       window.clearTimeout(timeoutId);
       finishRequest(controller);
-      if (flowVersionRef.current === requestVersion) {
+      if (requestVersions.isCurrent(requestVersion)) {
         setExtracting(false);
       }
     }
@@ -602,7 +603,7 @@ export default function Home() {
     payload: ReturnType<typeof createAssessmentPayload>,
     requestVersion: number,
   ) => {
-    if (flowVersionRef.current !== requestVersion) return;
+    if (!requestVersions.isCurrent(requestVersion)) return;
 
     const controller = startRequest();
     const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
@@ -627,7 +628,7 @@ export default function Home() {
       if (!response.ok || !result.ok) {
         throw new Error(result.ok ? "解释服务响应异常" : result.error.message);
       }
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
 
       if (!result.data.explanation) {
         throw new Error("当前结果不适用 AI 解释");
@@ -638,7 +639,7 @@ export default function Home() {
         result.data.model.used ? "ready" : "degraded",
       );
     } catch {
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
       setExplanation({
         summary: "AI 解释暂时不可用，固定规则结果仍然有效。",
         disclaimer: "请勿把内部测试结果当作诊断或治疗建议。",
@@ -651,7 +652,7 @@ export default function Home() {
   };
 
   const submitAssessment = async () => {
-    const requestVersion = flowVersionRef.current;
+    const requestVersion = requestVersions.capture();
     const controller = startRequest();
     const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
     const payload = createAssessmentPayload(answers);
@@ -664,7 +665,7 @@ export default function Home() {
         answers,
         controller.signal,
       );
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
 
       setAssessment(nextAssessment);
       setView("result");
@@ -672,7 +673,7 @@ export default function Home() {
         void loadExplanation(payload, requestVersion);
       }
     } catch (submitError) {
-      if (flowVersionRef.current !== requestVersion) return;
+      if (!requestVersions.isCurrent(requestVersion)) return;
       setError(
         submitError instanceof DOMException &&
           submitError.name === "AbortError"
