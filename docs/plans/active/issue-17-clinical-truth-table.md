@@ -46,7 +46,7 @@
 | 需求确认 | completed | Issue #17；客户聊天确认 T1/T5 重叠时选寒热错杂 |
 | 实现 | completed | 已生成关键规则确认单，只保留 5 证型、T5 优先、ARIA 二级、4 个无命中组合和 unknown 口径 |
 | 文字确认材料 | completed | 已按用户要求改为可直接复制发送的简短文字；Word 不作为本轮交付门禁 |
-| 本地门禁 | completed | 关键文案和 4 个无命中情况填写区校验通过；`git diff --check` 通过 |
+| 本地门禁 | completed | `git diff --check`、lint、生产依赖审计、构建及 28/28 自动化测试通过 |
 | 审核 | blocked | 等待客户导师或临床负责人书面确认 |
 | Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
 | 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
