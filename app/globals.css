@@ -171,7 +171,8 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 
 .home-view,
 .assessment-view,
-.articles-view {
+.articles-view,
+.profile-view {
   height: 100%;
   padding: 14px 14px 24px;
   overflow-y: auto;
@@ -180,7 +181,8 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 
 .home-view::-webkit-scrollbar,
 .assessment-view::-webkit-scrollbar,
-.articles-view::-webkit-scrollbar { width: 0; }
+.articles-view::-webkit-scrollbar,
+.profile-view::-webkit-scrollbar { width: 0; }
 
 .chat-view {
   height: 100%;
@@ -566,6 +568,31 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   box-shadow: 0 4px currentColor, 0 8px currentColor;
 }
 
+.nav-profile::before {
+  content: "";
+  position: absolute;
+  left: 7px;
+  top: 2px;
+  width: 6px;
+  height: 6px;
+  border: 1.6px solid currentColor;
+  border-radius: 50%;
+  color: #879991;
+}
+
+.nav-profile::after {
+  content: "";
+  position: absolute;
+  left: 3px;
+  bottom: 1px;
+  width: 14px;
+  height: 8px;
+  border: 1.6px solid currentColor;
+  border-bottom: 0;
+  border-radius: 10px 10px 2px 2px;
+  color: #879991;
+}
+
 .bottom-nav button.active .nav-glyph::before,
 .bottom-nav button.active .nav-glyph::after {
   color: var(--green);
@@ -631,6 +658,72 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   position: relative;
   z-index: 1;
 }
+
+.home-modules {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.home-modules > button {
+  min-height: 190px;
+  padding: 17px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  overflow: hidden;
+  border: 0;
+  border-radius: 20px;
+  text-align: left;
+  cursor: pointer;
+  position: relative;
+  box-shadow: 0 14px 28px rgba(18, 59, 115, .13);
+}
+
+.home-modules > button::after {
+  position: absolute;
+  right: -12px;
+  bottom: -27px;
+  font: 88px/1 "STKaiti", "KaiTi", serif;
+  opacity: .08;
+}
+
+.diagnose-module {
+  background: linear-gradient(145deg, #2868b3, #123b73);
+  color: #fff;
+}
+
+.diagnose-module::after { content: "诊"; }
+
+.learn-module {
+  border: 1px solid #d8e5f4 !important;
+  background: linear-gradient(145deg, #f7fbff, #e7f0fb);
+  color: #173d70;
+}
+
+.learn-module::after { content: "学"; }
+
+.module-icon {
+  width: 37px;
+  height: 37px;
+  margin-bottom: 17px;
+  display: grid;
+  place-items: center;
+  border-radius: 12px;
+  font: 700 18px "STKaiti", "KaiTi", serif;
+}
+
+.diagnose-module .module-icon { background: rgba(255, 255, 255, .18); color: #fff; }
+.learn-module .module-icon { background: #fff; color: #1e5aa3; box-shadow: 0 5px 14px rgba(30, 90, 163, .1); }
+.home-modules small { font-size: 9px; }
+.diagnose-module small { color: #c9def6; }
+.learn-module small { color: #6f87a4; }
+.home-modules strong { margin-top: 3px; font: 700 21px "STSong", "Songti SC", serif; }
+.home-modules p { min-height: 44px; margin: 8px 0 13px; font-size: 10px; line-height: 1.6; }
+.diagnose-module p { color: #d8e6f6; }
+.learn-module p { color: #617895; }
+.home-modules b { margin-top: auto; font-size: 10px; position: relative; z-index: 1; }
+.home-modules b i { margin-left: 5px; font-size: 14px; font-style: normal; }
 
 .basis-card {
   margin-top: 10px;
@@ -1551,6 +1644,135 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .push-note {
   border-color: #cadced;
   background: #f2f6fb;
+}
+
+.profile-view {
+  background: linear-gradient(180deg, #edf4fc 0, #f5f7fb 210px);
+}
+
+.profile-hero {
+  min-height: 118px;
+  padding: 18px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, #245fa7, #123b73);
+  color: #fff;
+  box-shadow: 0 14px 28px rgba(18, 59, 115, .18);
+}
+
+.profile-avatar {
+  width: 54px;
+  height: 54px;
+  flex: 0 0 54px;
+  display: grid;
+  place-items: center;
+  border: 2px solid rgba(255, 255, 255, .72);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, .16);
+  font: 700 22px "STSong", "Songti SC", serif;
+}
+
+.profile-hero > div:nth-child(2) {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-hero small { color: #c7dcf5; font-size: 9px; }
+.profile-hero h2 { margin: 3px 0 4px; font-size: 18px; }
+.profile-hero p { margin: 0; color: #d5e4f6; font-size: 9px; }
+.profile-hero > button {
+  padding: 6px 9px;
+  border: 1px solid rgba(255, 255, 255, .45);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .12);
+  color: #fff;
+  font-size: 9px;
+  cursor: pointer;
+}
+
+.profile-summary {
+  margin: -1px 8px 14px;
+  padding: 14px 8px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  border-radius: 0 0 16px 16px;
+  background: #fff;
+  box-shadow: 0 8px 22px rgba(18, 59, 115, .08);
+}
+
+.profile-summary > div {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  border-right: 1px solid #e8edf4;
+}
+
+.profile-summary > div:last-child { border-right: 0; }
+.profile-summary strong { color: #173d70; font-size: 16px; }
+.profile-summary span { color: #8493a7; font-size: 8px; }
+
+.profile-section {
+  margin-top: 12px;
+  overflow: hidden;
+  border: 1px solid #e1e8f1;
+  border-radius: 17px;
+  background: #fff;
+}
+
+.profile-section h3 {
+  margin: 0;
+  padding: 13px 14px 8px;
+  color: #6d7e94;
+  font-size: 10px;
+}
+
+.profile-section > button {
+  width: 100%;
+  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-top: 1px solid #edf1f6;
+  background: #fff;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-section > button:hover { background: #f8fafd; }
+.profile-section > button > div { min-width: 0; flex: 1; display: flex; flex-direction: column; }
+.profile-section strong { font-size: 12px; }
+.profile-section small { margin-top: 3px; color: #8a98a9; font-size: 9px; }
+.profile-section b { color: #a6b1bf; font-size: 18px; font-weight: 400; }
+
+.profile-item-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  display: grid;
+  place-items: center;
+  border-radius: 10px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.profile-item-icon.blue { background: #e7f0fb; color: #245fa7; }
+.profile-item-icon.amber { background: #fbf0df; color: #a56d16; }
+.profile-item-icon.mint { background: #e7f5f1; color: #25775f; }
+.profile-item-icon.violet { background: #f0ebfa; color: #6b52a3; }
+.profile-item-icon.gray { background: #eef1f5; color: #667487; }
+
+.profile-disclaimer {
+  margin: 14px 10px 4px;
+  color: #8795a5;
+  font-size: 8px;
+  line-height: 1.7;
+  text-align: center;
 }
 
 .bottom-nav {

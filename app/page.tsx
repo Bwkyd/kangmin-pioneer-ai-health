@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-type Tab = "home" | "chat" | "assessment" | "articles";
+type Tab = "home" | "chat" | "assessment" | "articles" | "profile";
 type Message =
   | { id: number; role: "ai" | "user"; kind: "text"; text: string }
   | { id: number; role: "ai"; kind: "thinking" }
@@ -252,14 +252,22 @@ export default function Home() {
     step === 1 ? symptomOptions : step === 2 ? durationOptions : step === 3 ? warningOptions : [];
 
   const headerTitle =
-    tab === "home" ? "抗敏先锋" : tab === "chat" ? "小岐知识助手" : tab === "assessment" ? "过敏日历" : "鼻健康科普";
+    tab === "home"
+      ? "抗敏先锋"
+      : tab === "chat"
+        ? "小岐知识助手"
+        : tab === "assessment"
+          ? "过敏日历"
+          : tab === "articles"
+            ? "鼻健康科普"
+            : "我的";
 
   return (
     <main className="demo-shell">
       <section className="phone-wrap" aria-label="抗敏先锋小程序">
         <div className="phone">
           <header className="phone-header real-header">
-            <button className="icon-button" aria-label="返回">‹</button>
+            <button className="icon-button" onClick={() => tab !== "home" && setTab("home")} aria-label="返回">‹</button>
             <div className="real-title">
               <strong>{headerTitle}</strong>
               {tab === "chat" && <span>知识库已连接</span>}
@@ -275,11 +283,21 @@ export default function Home() {
                 <div className="brand-banner" aria-label="抗敏先锋">
                   <img src="/brand-banner.jpg" alt="抗敏先锋" />
                 </div>
-                <section className="welcome-card">
-                  <small>下午好</small>
-                  <h2>今天鼻子感觉怎么样？</h2>
-                  <p>用两分钟告诉小岐，获得有依据的护理建议。</p>
-                  <button onClick={startConsultation}><span>和小岐聊一聊</span><b>→</b></button>
+                <section className="home-modules" aria-label="鼻健康服务">
+                  <button className="diagnose-module" onClick={startConsultation}>
+                    <span className="module-icon">诊</span>
+                    <small>智能辨证参考</small>
+                    <strong>诊一诊</strong>
+                    <p>和小岐聊聊症状，获得有依据的护理建议。</p>
+                    <b>开始了解 <i>→</i></b>
+                  </button>
+                  <button className="learn-module" onClick={() => setTab("articles")}>
+                    <span className="module-icon">学</span>
+                    <small>团队审核内容</small>
+                    <strong>学一学</strong>
+                    <p>了解鼻健康知识，掌握日常防护方法。</p>
+                    <b>去学习 <i>→</i></b>
+                  </button>
                 </section>
 
                 <aside className="basis-card" aria-label="方案依据与使用说明">
@@ -461,6 +479,66 @@ export default function Home() {
                 <div className="push-note"><span>铃</span><div><strong>每周两篇，温和提醒</strong><small>可由运营人员在后台编辑、审核和定时推送</small></div></div>
               </div>
             )}
+
+            {tab === "profile" && (
+              <div className="profile-view">
+                <section className="profile-hero">
+                  <div className="profile-avatar" aria-hidden="true">陈</div>
+                  <div>
+                    <small>我的健康账户</small>
+                    <h2>鼻健康守护者</h2>
+                    <p>连续记录 7 天 · 本周症状较平稳</p>
+                  </div>
+                  <button aria-label="编辑个人资料">编辑</button>
+                </section>
+
+                <section className="profile-summary" aria-label="健康数据摘要">
+                  <div><strong>7</strong><span>连续记录/天</span></div>
+                  <div><strong>4</strong><span>本月记录/次</span></div>
+                  <div><strong>轻度</strong><span>最近评估</span></div>
+                </section>
+
+                <section className="profile-section">
+                  <h3>我的健康</h3>
+                  <button onClick={() => setTab("assessment")}>
+                    <span className="profile-item-icon blue">档</span>
+                    <div><strong>健康档案</strong><small>基础信息、过敏史与常见诱因</small></div>
+                    <b>›</b>
+                  </button>
+                  <button onClick={() => setTab("assessment")}>
+                    <span className="profile-item-icon amber">记</span>
+                    <div><strong>症状记录</strong><small>查看日历、趋势与 TNSS 评估</small></div>
+                    <b>›</b>
+                  </button>
+                  <button onClick={() => setTab("articles")}>
+                    <span className="profile-item-icon mint">科</span>
+                    <div><strong>鼻健康科普</strong><small>查看团队审核的健康内容与收藏</small></div>
+                    <b>›</b>
+                  </button>
+                </section>
+
+                <section className="profile-section">
+                  <h3>设置与服务</h3>
+                  <button>
+                    <span className="profile-item-icon violet">铃</span>
+                    <div><strong>提醒设置</strong><small>每日记录与健康内容提醒</small></div>
+                    <b>›</b>
+                  </button>
+                  <button>
+                    <span className="profile-item-icon gray">盾</span>
+                    <div><strong>隐私与授权</strong><small>查看和管理健康数据授权</small></div>
+                    <b>›</b>
+                  </button>
+                  <button>
+                    <span className="profile-item-icon gray">关</span>
+                    <div><strong>关于抗敏先锋</strong><small>团队介绍、使用说明与意见反馈</small></div>
+                    <b>›</b>
+                  </button>
+                </section>
+
+                <p className="profile-disclaimer">健康记录仅用于本工具内的评估与趋势展示，结果仅供参考，最终方案请以门诊诊断为准。</p>
+              </div>
+            )}
           </div>
 
           <nav className="bottom-nav" aria-label="主要功能">
@@ -468,7 +546,7 @@ export default function Home() {
             <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
             <button className="nav-add" onClick={() => { setTab("assessment"); setEntryOpen(true); }} aria-label="新增症状记录"><span>＋</span></button>
             <button className={tab === "assessment" ? "active" : ""} onClick={() => setTab("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
-            <button className={tab === "articles" ? "active" : ""} onClick={() => setTab("articles")}><span className="nav-glyph nav-article">□</span>科普</button>
+            <button className={tab === "profile" ? "active" : ""} onClick={() => setTab("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
           </nav>
 
           {entryOpen && (
