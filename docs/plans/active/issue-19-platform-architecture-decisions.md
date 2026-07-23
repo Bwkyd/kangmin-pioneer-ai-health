@@ -53,7 +53,7 @@
 
 - 分支：`codex/issue-19-platform-architecture-decisions`
 - 提交 SHA：见 Draft PR head
-- PR：#53
+- PR：[GitHub #53](https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/53)
 
 ## 阻塞项
 
