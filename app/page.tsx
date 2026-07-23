@@ -873,6 +873,7 @@ export default function Home() {
             <span>补充描述（选填）</span>
             <textarea
               maxLength={1000}
+              disabled={view === "submitting"}
               value={freeText}
               onChange={(event) => {
                 invalidatePendingRequests();

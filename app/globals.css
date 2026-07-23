@@ -357,6 +357,11 @@ summary:focus-visible {
   line-height: 1.6;
 }
 
+.free-text textarea:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
 .free-text small {
   margin-top: 5px;
   color: var(--muted);

@@ -106,6 +106,7 @@ test("all safe result states have explicit UI handling", async () => {
   assert.match(page, /navigationLockRef/);
   assert.match(page, /规则服务响应超时/);
   assert.match(page, /本轮无法继续分类/);
+  assert.match(page, /disabled=\{view === "submitting"\}/);
   assert.match(page, /仅用于本次候选提取，不保存/);
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
   assert.doesNotMatch(page, /知识库已连接|症状正在缓解/);
