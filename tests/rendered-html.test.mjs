@@ -23,7 +23,7 @@ async function render() {
   );
 }
 
-test("server-renders the first question and internal-test boundary", async () => {
+test("server-renders the mini-program home before consultation", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
@@ -32,14 +32,20 @@ test("server-renders the first question and internal-test boundary", async () =>
   assert.match(html, /<title>抗敏先锋 · AI 鼻健康管理<\/title>/i);
   assert.match(html, /固定规则驱动的鼻健康内部测试工具/);
   assert.doesNotMatch(html, /知识库问答|趋势跟踪|科普推送/);
-  assert.match(html, /待临床确认，仅供内部测试/);
-  assert.match(html, /固定规则先行，模型不决定证型/);
-  assert.match(html, /目前是否有呼吸困难、喘不过气或口唇发紫/);
-  assert.match(html, /回答选项/);
+  assert.match(html, /抗敏先锋小程序首页/);
+  assert.match(html, /今天鼻子感觉怎么样/);
+  assert.match(html, /开始鼻健康问诊/);
+  assert.match(html, /固定规则优先，仅供内部测试/);
+  assert.match(html, /首页/);
+  assert.match(html, /问助手/);
+  assert.match(html, /日历/);
+  assert.match(html, /科普/);
+  assert.doesNotMatch(html, /目前是否有呼吸困难、喘不过气或口唇发紫/);
   assert.doesNotMatch(html, /开始前确认|先确认使用边界/);
   assert.doesNotMatch(html, /我已阅读并同意按内部测试边界使用/);
   assert.doesNotMatch(html, /18 岁及以上|未满 18 岁/);
   assert.doesNotMatch(html, /开始安全问诊/);
+  assert.doesNotMatch(html, /知识库已连接|症状正在缓解/);
 });
 
 test("the client submits every clinical answer to the rule API", async () => {
