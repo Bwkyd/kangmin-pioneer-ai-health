@@ -30,6 +30,8 @@ test("server-renders the consent and internal-test boundary", async () => {
 
   const html = await response.text();
   assert.match(html, /<title>抗敏先锋 · AI 鼻健康管理<\/title>/i);
+  assert.match(html, /固定规则驱动的鼻健康内部测试工具/);
+  assert.doesNotMatch(html, /知识库问答|趋势跟踪|科普推送/);
   assert.match(html, /待临床确认，仅供内部测试/);
   assert.match(html, /固定规则先行，模型不决定证型/);
   assert.match(html, /我已阅读并同意按内部测试边界使用/);
