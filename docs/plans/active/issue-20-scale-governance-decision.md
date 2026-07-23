@@ -47,14 +47,14 @@
 | 工程边界 | completed | 缺失值、重复记录、版本和发布门禁已形成候选 |
 | 本地门禁 | completed | `git diff --check`、lint、生产依赖审计、构建及 28/28 自动化测试通过 |
 | 审核 | blocked | 等待客户正式量表材料和批准 |
-| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| Draft PR | completed | PR #54 已创建 |
 | 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-20-scale-governance-decision`
 - 提交 SHA：见 Draft PR head
-- PR：待创建
+- PR：#54
 
 ## 阻塞项
 
