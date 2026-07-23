@@ -52,7 +52,7 @@
 ## 候选版本
 
 - 分支：`codex/issue-17-clinical-truth-table`
-- 提交 SHA：未提交
+- 提交 SHA：待临床确认后冻结；初始候选表提交为 `bb120c9`
 - PR：未创建
 
 ## 阻塞项
