@@ -58,18 +58,19 @@
 | 实现 | completed | 候选操作锁 + 候选变更作废在途请求 |
 | 本地门禁 | completed | `git diff --check`、聚焦测试、`npm run check`；32/32 通过，生产依赖审计 0 漏洞 |
 | 审核 | completed | 第 2 轮 Kimi K3 与 DeepSeek V4 Pro 均 P0=0、P1=0、PASS |
-| 合并/发布授权 | blocked | 未获推送、合并或部署授权 |
+| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-14-candidate-submit-race`
 - 产品代码候选 SHA：`d35730db9fdbb7711bce33198b4004e1f35de9ac`
-- PR：未创建
+- PR：待创建
 
 ## 阻塞项
 
 - 真实点击式浏览器 E2E：实现后再次实时核验仍无可用 Browser/Chrome 实例，保持 BLOCKED。
-- 推送、PR、合并、部署、Issue 关闭及 worktree 清理：均未获授权。
+- 合并、部署、Issue 关闭及 worktree 清理：均未获授权。
 
 ## 审核记录
 
