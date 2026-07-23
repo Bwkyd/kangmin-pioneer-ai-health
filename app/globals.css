@@ -755,6 +755,21 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .basis-card small { margin-top: 4px; color: #355f91; font-size: 8px; line-height: 1.5; }
 .basis-card em { margin-top: 4px; color: #8a6a32; font-size: 8px; font-style: normal; line-height: 1.5; }
 
+.prototype-notice {
+  margin: 10px 0;
+  padding: 10px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border: 1px solid #e6c77c;
+  border-radius: 12px;
+  background: #fff8e7;
+  color: #72531d;
+}
+
+.prototype-notice strong { font-size: 12px; }
+.prototype-notice span { font-size: 9px; line-height: 1.5; }
+
 .today-grid {
   margin-top: 12px;
   display: grid;
@@ -804,6 +819,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 }
 .mini-trend small { color: #91a099; font-size: 10px; }
 .mini-trend h3 { margin: 4px 0 0; font-size: 14px; }
+.mini-trend p { margin: 8px 0 0; color: #788983; font-size: 9px; line-height: 1.5; }
 .mini-trend > span { margin-top: 8px; color: var(--green); font-size: 10px; }
 .sparkline { height: 48px; display: flex; align-items: flex-end; justify-content: space-around; gap: 5px; }
 .sparkline i { flex: 1; max-width: 10px; border-radius: 6px 6px 2px 2px; background: #b8d6c9; }

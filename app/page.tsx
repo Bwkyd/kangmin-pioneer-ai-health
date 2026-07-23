@@ -23,19 +23,19 @@ const knowledgeQuestions = [
     question: "为什么换季容易反复？",
     answer:
       "换季时温度、湿度和空气中的过敏原都会变化，鼻黏膜更容易受到刺激。资料库建议把症状出现时间、诱因和严重程度一起记录，便于后续判断变化规律。",
-    source: "知识库依据：《福建省中医药适宜技术手册》· 辨证症状项 / 症状评估日历",
+    source: "内部测试固定文案 · 尚未接入审核知识库",
   },
   {
     question: "鼻塞在家先怎么护理？",
     answer:
       "可以先减少冷空气和刺激物暴露，保持室内适宜湿度，并记录鼻塞对睡眠的影响。资料中的穴位、艾灸等操作需要经过适用性判断，儿童或操作不熟悉时应由专业人员指导。",
-    source: "知识库依据：《福建省中医药适宜技术手册》· 鼻塞方案 / 注意事项",
+    source: "内部测试固定文案 · 尚未接入审核知识库",
   },
   {
     question: "调理效果多久记录一次？",
     answer:
       "建议每天固定时间做一次简短记录，重点观察喷嚏、流涕、鼻塞和鼻痒。系统可用 TNSS 形成趋势，每周再回顾一次生活影响。",
-    source: "知识库依据：《福建省中医药适宜技术手册》· VAS、TNSS、RQLQ 量表",
+    source: "内部测试固定文案 · 尚未接入审核知识库",
   },
 ];
 
@@ -79,7 +79,7 @@ export default function Home() {
       id: 1,
       role: "ai",
       kind: "text",
-      text: "你好，我是小岐。你可以直接描述不舒服，也可以问我鼻炎护理方面的问题。我的回答会优先参考《福建省中医药适宜技术手册》和团队审核知识库。",
+      text: "你好，我是小岐。当前是内部测试版本：规则引擎和审核知识库尚未接入，不会根据描述生成真实证型或调理方案。",
     },
   ]);
   const [step, setStep] = useState(0);
@@ -204,9 +204,9 @@ export default function Home() {
     }
     addExchange(
       answer,
-      "信息已收集完成。目前未发现需要立即就医的危险信号。结合换季反复、清涕和喷嚏等描述，系统为你匹配了温和护理与每日评估建议。",
+      "高危筛查演示已完成。规则引擎尚未接入，因此当前不会输出证型或调理方案。",
       4,
-      "客户方案库 · 肺气虚寒倾向；已通过安全规则过滤高风险操作",
+      "内部测试边界 · 未运行临床规则，未读取客户方案",
     );
   };
 
@@ -227,9 +227,9 @@ export default function Home() {
     else
       addExchange(
         value,
-        "我已记录。为了避免资料不足时自由猜测，演示版会先检索已审核知识库；没有可靠依据的问题会建议咨询专业人员。",
+        "我已记录。审核知识库和规则引擎尚未接入，当前不会依据这段描述生成医学结论。",
         step,
-        "当前回答策略 · 知识库优先 / 无依据不扩写",
+        "内部测试边界 · 无审核依据不扩写",
       );
   };
 
@@ -239,7 +239,7 @@ export default function Home() {
         id: Date.now(),
         role: "ai",
         kind: "text",
-        text: "你好，我是小岐。你可以直接描述不舒服，也可以问我鼻炎护理方面的问题。我的回答会优先参考《福建省中医药适宜技术手册》和团队审核知识库。",
+        text: "你好，我是小岐。当前是内部测试版本：规则引擎和审核知识库尚未接入，不会根据描述生成真实证型或调理方案。",
       },
     ]);
     setStep(0);
@@ -271,7 +271,7 @@ export default function Home() {
             <button className="icon-button" onClick={() => tab !== "home" && setTab("home")} aria-label="返回">‹</button>
             <div className="real-title">
               <strong>{headerTitle}</strong>
-              {tab === "chat" && <span>知识库已连接</span>}
+              {tab === "chat" && <span>知识库未接入</span>}
             </div>
             <button className="mini-program-menu" onClick={resetDemo} aria-label="更多">
               <span>•••</span><i />
@@ -284,6 +284,10 @@ export default function Home() {
                 <div className="brand-banner" aria-label="抗敏先锋">
                   <Image src="/brand-banner.jpg" alt="抗敏先锋" width={814} height={311} priority />
                 </div>
+                <aside className="prototype-notice" role="status">
+                  <strong>待临床确认，仅供内部测试</strong>
+                  <span>当前页面不提供诊断、真实证型或调理方案。</span>
+                </aside>
                 <section className="home-modules" aria-label="鼻健康服务">
                   <button className="diagnose-module" onClick={startConsultation}>
                     <span className="module-icon">诊</span>
@@ -294,7 +298,7 @@ export default function Home() {
                   </button>
                   <button className="learn-module" onClick={() => setTab("articles")}>
                     <span className="module-icon">学</span>
-                    <small>团队审核内容</small>
+                    <small>内容模块开发中</small>
                     <strong>学一学</strong>
                     <p>了解鼻健康知识，掌握日常防护方法。</p>
                     <b>去学习 <i>→</i></b>
@@ -322,13 +326,10 @@ export default function Home() {
                   </button>
                 </section>
 
-                <section className="mini-trend" onClick={() => setTab("assessment")}>
-                  <div><small>近 5 日 TNSS</small><h3>症状正在缓解</h3></div>
-                  <div className="sparkline" aria-hidden="true">
-                    <i style={{ height: "84%" }} /><i style={{ height: "73%" }} /><i style={{ height: "64%" }} />
-                    <i style={{ height: "55%" }} /><i className="active" style={{ height: "42%" }} />
-                  </div>
-                  <span>查看趋势 ›</span>
+                <section className="mini-trend" aria-label="趋势功能开发中">
+                  <div><small>症状趋势</small><h3>功能开发中</h3></div>
+                  <p>当前没有真实记录，不展示模拟改善结论。</p>
+                  <span>暂不可用</span>
                 </section>
 
                 <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={() => setTab("articles")}>全部 ›</button></div>
@@ -342,8 +343,8 @@ export default function Home() {
             {tab === "chat" && (
               <div className="chat-view">
                 <div className="safety-banner">
-                  <span>库</span>
-                  <p><strong>答案来自团队审核知识库</strong><small>依据《福建省中医药适宜技术手册》 · 结果仅供参考</small></p>
+                  <span>测</span>
+                  <p><strong>待临床确认，仅供内部测试</strong><small>当前使用固定测试文案，审核知识库尚未接入</small></p>
                 </div>
                 <div className="chat" aria-live="polite">
                   <div className="time-label">今天 14:20</div>
@@ -387,25 +388,15 @@ export default function Home() {
                   {step === 4 && (
                     <>
                       <article className="result-card">
-                        <div className="result-head"><div><small>AI 辅助分析</small><h2>换季敏感 · 肺气虚寒倾向</h2></div><span>已匹配</span></div>
-                        <p>建议先以日常防护、温和鼻部护理和连续记录为主。涉及艾灸、敷贴等操作，需专业人员评估后再进行。</p>
-                        <div className="evidence"><span>清水样鼻涕</span><span>换季加重</span><span>反复半年</span></div>
-                        <div className="result-foot"><span>资料来源</span> 《福建省中医药适宜技术手册》· 团队体质调理方案</div>
+                        <div className="result-head"><div><small>内部测试结果</small><h2>规则引擎尚未接入</h2></div><span>未分类</span></div>
+                        <p>本轮只验证页面流程，不根据演示回答生成证型、诊断或调理建议。</p>
+                        <div className="result-foot"><span>当前状态</span> 等待确定性规则与临床真值表</div>
                         <div className="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</div>
                       </article>
                       <article className="plan-card">
-                        <div className="plan-title"><span>今日</span><div><small>第 1 天 · 安全版</small><h2>鼻部舒缓与症状记录</h2></div></div>
-                        <ol>
-                          <li><i>1</i><span><strong>减少冷空气刺激</strong><small>外出佩戴口罩，留意温差</small></span></li>
-                          <li><i>2</i><span><strong>观看护理示范</strong><small>轻柔操作，不追求疼痛或出痧</small></span></li>
-                          <li><i>3</i><span><strong>完成 TNSS 量表</strong><small>记录喷嚏、流涕、鼻塞、鼻痒</small></span></li>
-                        </ol>
+                        <div className="plan-title"><span>待</span><div><small>no_approved_plan</small><h2>暂无经审核的适用方案</h2></div></div>
+                        <p>客户方案、图片和操作视频尚未通过发布门禁，当前不会展示。</p>
                       </article>
-                      <button className="video-card" onClick={() => setVideoOpen(true)}>
-                        <div className="video-cover"><span className="sun" /><div className="face-demo"><i /><b /></div><span className="play">▶</span><small>02:36</small></div>
-                        <div className="video-copy"><small>配套示范视频</small><strong>鼻周轻柔舒缓</strong><span>专业老师示范 · 不含侵入操作</span></div>
-                      </button>
-                      <button className="feedback-button" onClick={() => setTab("assessment")}>去记录今天的症状</button>
                     </>
                   )}
                   <div ref={chatEnd} />
@@ -422,7 +413,7 @@ export default function Home() {
               <div className="assessment-view">
                 <section className="allergy-calendar">
                   <div className="calendar-top">
-                    <div><small>症状评估日历</small><h2>过敏日历</h2></div>
+                    <div><small>示例界面 · 不保存</small><h2>症状记录开发中</h2></div>
                     <button onClick={() => setCalendarMode((mode) => mode === "calendar" ? "list" : "calendar")}>
                       {calendarMode === "calendar" ? "☷ 列表" : "▦ 日历"}
                     </button>
@@ -456,9 +447,9 @@ export default function Home() {
                 </section>
 
                 <article className="trend-card">
-                  <div className="trend-title"><div><small>本月趋势</small><h3>过敏趋势</h3></div><span>按日记录</span></div>
+                  <div className="trend-title"><div><small>示例数据</small><h3>趋势功能开发中</h3></div><span>非真实记录</span></div>
                   <canvas ref={chartRef} aria-label="本月过敏严重程度趋势图" />
-                  <div className="chart-legend"><span><i />过敏严重程度</span><small>根据每日 TNSS 自动换算</small></div>
+                  <div className="chart-legend"><span><i />界面占位</span><small>量表版本未确认，不用于评估</small></div>
                 </article>
 
                 <button className="calendar-add-inline" onClick={() => setEntryOpen(true)}>＋ 记录今天的症状</button>
@@ -486,17 +477,17 @@ export default function Home() {
                 <section className="profile-hero">
                   <div className="profile-avatar" aria-hidden="true">陈</div>
                   <div>
-                    <small>我的健康账户</small>
-                    <h2>鼻健康守护者</h2>
-                    <p>连续记录 7 天 · 本周症状较平稳</p>
+                    <small>内部测试身份</small>
+                    <h2>本地演示用户</h2>
+                    <p>账号与健康档案尚未接入，不保存数据</p>
                   </div>
                   <button aria-label="编辑个人资料">编辑</button>
                 </section>
 
                 <section className="profile-summary" aria-label="健康数据摘要">
-                  <div><strong>7</strong><span>连续记录/天</span></div>
-                  <div><strong>4</strong><span>本月记录/次</span></div>
-                  <div><strong>轻度</strong><span>最近评估</span></div>
+                  <div><strong>0</strong><span>连续记录/天</span></div>
+                  <div><strong>0</strong><span>本月记录/次</span></div>
+                  <div><strong>待接入</strong><span>最近评估</span></div>
                 </section>
 
                 <section className="profile-section">
