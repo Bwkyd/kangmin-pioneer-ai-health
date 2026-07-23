@@ -5,29 +5,17 @@ import {
   restoreAcceptedValues,
   type CandidateDecision,
 } from "@/lib/agent/candidate-state";
+import {
+  FIRST_QUESTION_KEY,
+  createAssessmentPayload,
+  findNextQuestion,
+  type AnswerMap,
+  type QuestionKey,
+  type TriState,
+} from "@/lib/agent/conversation";
 import { useMemo, useState } from "react";
 
-type TriState = "yes" | "no" | "unknown";
 type View = "consent" | "questions" | "review" | "submitting" | "result";
-
-type QuestionKey =
-  | "diagnosedAllergicRhinitis"
-  | "respiratoryEmergency"
-  | "persistentHighFever"
-  | "severeNoseBleed"
-  | "unilateralFoulDischarge"
-  | "severeNeurologicalSymptoms"
-  | "sleepAffected"
-  | "activityAffected"
-  | "workStudyAffected"
-  | "symptomTroublesome"
-  | "thirst"
-  | "fatigue"
-  | "limbsNotWarm"
-  | "fearWind"
-  | "coldIntolerance";
-
-type AnswerMap = Partial<Record<QuestionKey, TriState>>;
 
 interface ExtractionData {
   requiresConfirmation: true;
@@ -189,31 +177,9 @@ const fieldLabels = Object.fromEntries(
   questions.map((question) => [question.key, question.title]),
 ) as Record<QuestionKey, string>;
 
-function toPayload(answers: AnswerMap) {
-  return {
-    diagnosedAllergicRhinitis: answers.diagnosedAllergicRhinitis,
-    safety: {
-      respiratoryEmergency: answers.respiratoryEmergency,
-      persistentHighFever: answers.persistentHighFever,
-      severeNoseBleed: answers.severeNoseBleed,
-      unilateralFoulDischarge: answers.unilateralFoulDischarge,
-      severeNeurologicalSymptoms: answers.severeNeurologicalSymptoms,
-    },
-    severity: {
-      sleepAffected: answers.sleepAffected,
-      activityAffected: answers.activityAffected,
-      workStudyAffected: answers.workStudyAffected,
-      symptomTroublesome: answers.symptomTroublesome,
-    },
-    syndrome: {
-      thirst: answers.thirst,
-      fatigue: answers.fatigue,
-      limbsNotWarm: answers.limbsNotWarm,
-      fearWind: answers.fearWind,
-      coldIntolerance: answers.coldIntolerance,
-    },
-  };
-}
+const FIRST_QUESTION_INDEX = questions.findIndex(
+  (question) => question.key === FIRST_QUESTION_KEY,
+);
 
 function flattenCandidates(data: ExtractionData | null): CandidateEntry[] {
   if (!data) return [];
@@ -301,7 +267,9 @@ export default function Home() {
   const [consented, setConsented] = useState(false);
   const [ageGroup, setAgeGroup] = useState<"" | "adult" | "minor">("");
   const [guardianConfirmed, setGuardianConfirmed] = useState(false);
-  const [questionIndex, setQuestionIndex] = useState(0);
+  const [questionIndex, setQuestionIndex] = useState(FIRST_QUESTION_INDEX);
+  const [questionHistory, setQuestionHistory] = useState<number[]>([]);
+  const [navigating, setNavigating] = useState(false);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [freeText, setFreeText] = useState("");
   const [extracting, setExtracting] = useState(false);
@@ -347,12 +315,36 @@ export default function Home() {
 
   const begin = () => {
     if (!canStart) return;
+    setQuestionIndex(FIRST_QUESTION_INDEX);
+    setQuestionHistory([]);
+    setError("");
     setView("questions");
   };
 
-  const answerQuestion = (value: TriState) => {
+  const requestAssessment = async (nextAnswers: AnswerMap) => {
+    const response = await fetch("/api/v1/agent/evaluate", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(createAssessmentPayload(nextAnswers)),
+    });
+    const result = (await response.json()) as
+      | { ok: true; data: { assessment: Assessment } }
+      | { ok: false; error: { code: string; message: string } };
+    if (!response.ok || !result.ok) {
+      throw new Error(
+        result.ok ? "服务响应异常" : result.error.message,
+      );
+    }
+    return result.data.assessment;
+  };
+
+  const answerQuestion = async (value: TriState) => {
+    if (navigating) return;
+
     const nextAnswers = { ...answers, [currentQuestion.key]: value };
     setAnswers(nextAnswers);
+    setNavigating(true);
+    setError("");
     if (
       extractedCandidates.some(
         (candidate) => candidate.key === currentQuestion.key,
@@ -367,11 +359,44 @@ export default function Home() {
         [currentQuestion.key]: "ignored",
       }));
     }
-    if (questionIndex < questions.length - 1) {
-      setQuestionIndex((index) => index + 1);
-      return;
+
+    try {
+      const nextAssessment = await requestAssessment(nextAnswers);
+      const nextQuestion = findNextQuestion(nextAssessment, nextAnswers);
+      if (nextQuestion) {
+        const nextIndex = questions.findIndex(
+          (question) => question.key === nextQuestion,
+        );
+        if (nextIndex >= 0) {
+          setQuestionHistory((history) => [...history, questionIndex]);
+          setQuestionIndex(nextIndex);
+          return;
+        }
+      }
+
+      if (
+        nextAssessment.status === "blocked" ||
+        nextAssessment.status === "referred" ||
+        nextAssessment.status === "need_more_information"
+      ) {
+        setAssessment(nextAssessment);
+        setExplanation(null);
+        setExplanationStatus("idle");
+        setView("result");
+        return;
+      }
+
+      setAssessment(null);
+      setView("review");
+    } catch (navigationError) {
+      setError(
+        navigationError instanceof Error
+          ? navigationError.message
+          : "暂时无法决定下一步，请重试当前回答。",
+      );
+    } finally {
+      setNavigating(false);
     }
-    setView("review");
   };
 
   const extractFreeText = async () => {
@@ -485,7 +510,9 @@ export default function Home() {
     }));
   };
 
-  const loadExplanation = async (payload: ReturnType<typeof toPayload>) => {
+  const loadExplanation = async (
+    payload: ReturnType<typeof createAssessmentPayload>,
+  ) => {
     setExplanation(null);
     setExplanationStatus("loading");
     try {
@@ -525,7 +552,7 @@ export default function Home() {
   };
 
   const submitAssessment = async () => {
-    const payload = toPayload(answers);
+    const payload = createAssessmentPayload(answers);
     setView("submitting");
     setError("");
     setExplanation(null);
@@ -564,7 +591,9 @@ export default function Home() {
     setConsented(false);
     setAgeGroup("");
     setGuardianConfirmed(false);
-    setQuestionIndex(0);
+    setQuestionIndex(FIRST_QUESTION_INDEX);
+    setQuestionHistory([]);
+    setNavigating(false);
     setAnswers({});
     setFreeText("");
     setExtracting(false);
@@ -676,20 +705,18 @@ export default function Home() {
         <section className="screen question-screen" aria-labelledby="question-title">
           <div className="progress-copy">
             <span>{currentQuestion.section}</span>
-            <b>
-              {questionIndex + 1} / {questions.length}
-            </b>
+            <b>已确认 {answeredCount} 项</b>
           </div>
           <div
             className="progress-track"
             role="progressbar"
             aria-valuemin={0}
             aria-valuemax={questions.length}
-            aria-valuenow={questionIndex + 1}
+            aria-valuenow={answeredCount}
           >
             <span
               style={{
-                width: `${((questionIndex + 1) / questions.length) * 100}%`,
+                width: `${progress}%`,
               }}
             />
           </div>
@@ -700,8 +727,12 @@ export default function Home() {
             {answerLabels.map((item) => (
               <button
                 key={item.value}
+                className={
+                  answers[currentQuestion.key] === item.value ? "selected" : ""
+                }
                 type="button"
-                onClick={() => answerQuestion(item.value)}
+                disabled={navigating}
+                onClick={() => void answerQuestion(item.value)}
               >
                 <span>{item.label}</span>
                 <small>
@@ -713,13 +744,32 @@ export default function Home() {
             ))}
           </div>
 
+          {navigating && (
+            <p className="navigation-status" role="status">
+              正在由服务端固定规则确定下一步…
+            </p>
+          )}
+
+          {error && (
+            <div className="api-error" role="alert">
+              <strong>暂时无法继续</strong>
+              <span>{error}</span>
+              <small>当前回答已保留，请重新选择一次以重试。</small>
+            </div>
+          )}
+
           <button
             className="back-button"
             type="button"
-            disabled={questionIndex === 0}
-            onClick={() =>
-              setQuestionIndex((index) => Math.max(0, index - 1))
-            }
+            disabled={questionHistory.length === 0 || navigating}
+            onClick={() => {
+              const previousIndex =
+                questionHistory[questionHistory.length - 1];
+              if (previousIndex === undefined) return;
+              setQuestionHistory((history) => history.slice(0, -1));
+              setQuestionIndex(previousIndex);
+              setError("");
+            }}
           >
             返回上一题
           </button>
@@ -863,6 +913,11 @@ export default function Home() {
                     type="button"
                     onClick={() => {
                       setQuestionIndex(index);
+                      setQuestionHistory([]);
+                      setAssessment(null);
+                      setExplanation(null);
+                      setExplanationStatus("idle");
+                      setError("");
                       setView("questions");
                     }}
                   >
@@ -947,23 +1002,21 @@ export default function Home() {
           <div className="result-actions">
             {(assessment.status === "need_more_information" ||
               assessment.status === "conflict" ||
-              assessment.status === "no_match") && (
+              assessment.status === "no_match" ||
+              assessment.status === "classified" ||
+              assessment.status === "referred") && (
               <button
                 className="primary-button"
                 type="button"
                 onClick={() => {
-                  const nextField =
-                    assessment.status === "need_more_information"
-                      ? assessment.nextQuestions[0]
-                      : undefined;
-                  const nextIndex = questions.findIndex(
-                    (question) => question.key === nextField,
-                  );
-                  setQuestionIndex(nextIndex >= 0 ? nextIndex : 0);
-                  setView("questions");
+                  setAssessment(null);
+                  setExplanation(null);
+                  setExplanationStatus("idle");
+                  setError("");
+                  setView("review");
                 }}
               >
-                返回核对回答
+                返回查看并修改回答
               </button>
             )}
             <button className="secondary-button" type="button" onClick={restart}>

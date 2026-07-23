@@ -305,6 +305,17 @@ summary:focus-visible {
   background: #f4f8fd;
 }
 
+.answer-grid button.selected {
+  border-color: var(--blue);
+  background: #eef5fd;
+  box-shadow: 0 0 0 2px rgb(39 108 178 / 12%);
+}
+
+.answer-grid button:disabled {
+  cursor: wait;
+  opacity: .65;
+}
+
 .answer-grid span {
   font-size: 15px;
   font-weight: 700;
@@ -322,6 +333,13 @@ summary:focus-visible {
 .back-button:disabled {
   color: #aab4c0;
   cursor: not-allowed;
+}
+
+.navigation-status {
+  margin: 18px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 .free-text {
