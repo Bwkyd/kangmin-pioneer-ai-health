@@ -1,5 +1,10 @@
 "use client";
 
+import {
+  captureOriginalValues,
+  restoreAcceptedValues,
+  type CandidateDecision,
+} from "@/lib/agent/candidate-state";
 import { useMemo, useState } from "react";
 
 type TriState = "yes" | "no" | "unknown";
@@ -23,7 +28,6 @@ type QuestionKey =
   | "coldIntolerance";
 
 type AnswerMap = Partial<Record<QuestionKey, TriState>>;
-type CandidateDecision = "accepted" | "ignored";
 
 interface ExtractionData {
   requiresConfirmation: true;
@@ -306,6 +310,8 @@ export default function Home() {
   const [candidateDecisions, setCandidateDecisions] = useState<
     Partial<Record<QuestionKey, CandidateDecision>>
   >({});
+  const [candidateOriginalAnswers, setCandidateOriginalAnswers] =
+    useState<AnswerMap>({});
   const [extractionNotice, setExtractionNotice] = useState("");
   const [assessment, setAssessment] = useState<Assessment | null>(null);
   const [explanation, setExplanation] = useState<ExplanationData | null>(null);
@@ -347,6 +353,20 @@ export default function Home() {
   const answerQuestion = (value: TriState) => {
     const nextAnswers = { ...answers, [currentQuestion.key]: value };
     setAnswers(nextAnswers);
+    if (
+      extractedCandidates.some(
+        (candidate) => candidate.key === currentQuestion.key,
+      )
+    ) {
+      setCandidateOriginalAnswers((current) => ({
+        ...current,
+        [currentQuestion.key]: value,
+      }));
+      setCandidateDecisions((current) => ({
+        ...current,
+        [currentQuestion.key]: "ignored",
+      }));
+    }
     if (questionIndex < questions.length - 1) {
       setQuestionIndex((index) => index + 1);
       return;
@@ -358,9 +378,17 @@ export default function Home() {
     const text = freeText.trim();
     if (!text) return;
 
+    const baselineAnswers = restoreAcceptedValues(
+      answers,
+      extractedCandidates.map((candidate) => candidate.key),
+      candidateDecisions,
+      candidateOriginalAnswers,
+    ) as AnswerMap;
+    setAnswers(baselineAnswers);
     setExtracting(true);
     setExtractionNotice("");
     setCandidateDecisions({});
+    setCandidateOriginalAnswers({});
     try {
       const response = await fetch("/api/v1/agent/extract", {
         method: "POST",
@@ -376,7 +404,14 @@ export default function Home() {
 
       setExtraction(result.data);
       setDescriptionHandled(true);
-      const count = flattenCandidates(result.data).length;
+      const candidates = flattenCandidates(result.data);
+      const count = candidates.length;
+      setCandidateOriginalAnswers(
+        captureOriginalValues(
+          candidates.map((candidate) => candidate.key),
+          baselineAnswers,
+        ),
+      );
       if (count > 0) {
         setExtractionNotice(
           `发现 ${count} 项待确认候选；系统不会自动改写回答，请逐项采用或忽略。`,
@@ -393,6 +428,7 @@ export default function Home() {
     } catch (extractError) {
       setDescriptionHandled(false);
       setExtraction(null);
+      setCandidateOriginalAnswers({});
       setExtractionNotice(
         extractError instanceof Error
           ? `AI 提取失败：${extractError.message}`
@@ -404,9 +440,18 @@ export default function Home() {
   };
 
   const skipFreeText = () => {
+    setAnswers((current) =>
+      restoreAcceptedValues(
+        current,
+        extractedCandidates.map((candidate) => candidate.key),
+        candidateDecisions,
+        candidateOriginalAnswers,
+      ) as AnswerMap,
+    );
     setDescriptionHandled(true);
     setExtraction(null);
     setCandidateDecisions({});
+    setCandidateOriginalAnswers({});
     setExtractionNotice(
       "已选择不使用这段描述。固定规则只读取你逐项确认的结构化回答。",
     );
@@ -424,6 +469,16 @@ export default function Home() {
   };
 
   const ignoreCandidate = (candidate: CandidateEntry) => {
+    setAnswers((current) => {
+      const restored = { ...current };
+      const original = candidateOriginalAnswers[candidate.key];
+      if (original === undefined) {
+        delete restored[candidate.key];
+      } else {
+        restored[candidate.key] = original;
+      }
+      return restored;
+    });
     setCandidateDecisions((current) => ({
       ...current,
       [candidate.key]: "ignored",
@@ -516,6 +571,7 @@ export default function Home() {
     setDescriptionHandled(false);
     setExtraction(null);
     setCandidateDecisions({});
+    setCandidateOriginalAnswers({});
     setExtractionNotice("");
     setAssessment(null);
     setExplanation(null);
@@ -684,10 +740,19 @@ export default function Home() {
               maxLength={1000}
               value={freeText}
               onChange={(event) => {
+                setAnswers((current) =>
+                  restoreAcceptedValues(
+                    current,
+                    extractedCandidates.map((candidate) => candidate.key),
+                    candidateDecisions,
+                    candidateOriginalAnswers,
+                  ) as AnswerMap,
+                );
                 setFreeText(event.target.value);
                 setDescriptionHandled(event.target.value.trim().length === 0);
                 setExtraction(null);
                 setCandidateDecisions({});
+                setCandidateOriginalAnswers({});
                 setExtractionNotice("");
               }}
               placeholder="例如：什么时候开始、什么情况下更明显……"
