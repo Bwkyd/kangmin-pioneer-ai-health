@@ -5,7 +5,7 @@
 - 最后核验时间：2026-07-23（Asia/Shanghai）
 - 基线：`origin/main` = `d67f6368473ccc06b7a97e0f3c2ca825d96fea37`
 - 集成候选：`codex/issue-8-mvp-agent`
-- 当前阶段：Issue #9–#12 已集成并通过本地门禁；准备变更文档与 PR
+- 当前阶段：Draft PR #13 已创建；双审第 1 轮
 - 当前信号：通过（lint、build、19 项测试及完整服务 HTTP E2E 通过）
 
 ## 本轮实体（4/4）
@@ -36,7 +36,7 @@
 
 ### 进行中
 
-- 变更文档、开发飞轮和 PR 准备
+- Kimi K3 与 DeepSeek V4 Pro 第 1 轮 P0/P1/P2 审核
 
 ### 卡住
 
@@ -45,10 +45,16 @@
 
 ### 待开始
 
-- 创建 PR（不合并）
 - Kimi K3 与 DeepSeek V4 Pro 最多 3 轮 P0/P1/P2 双审
 - 变更文档、开发飞轮和 Codex 记忆记录
 - 经双审通过后关闭已完成 Issues，并报告 worktree/分支清理条件
+
+## 候选版本
+
+- 远端分支：`codex/issue-8-mvp-agent`
+- 候选提交：`423abc448b4d58f2be96b4ed3c155f62babe2c38`
+- Draft PR：#13
+- 合并：禁止，等待双审与后续明确授权
 
 ## 异常处理记录
 
