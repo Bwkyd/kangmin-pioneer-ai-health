@@ -1,0 +1,12 @@
+# 项目文档
+
+## 架构变更
+
+| 编号 | 日期 | 标题 |
+| --- | --- | --- |
+| [001](changes/arch/001_deterministic-agent-mvp.md) | 2026-07-23 | 确定性鼻健康智能体 MVP |
+
+## Runbook
+
+- [Agent 自动化开发](runbooks/agent-development.md)
+- [GitHub 仓库治理](runbooks/github-governance.md)
