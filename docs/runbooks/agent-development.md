@@ -28,6 +28,8 @@ npm ci
 - 分支：`codex/issue-123-short-slug`
 - 路径：`.worktrees/issue-123-short-slug`
 
+`WORKTREE_BASE_REF` 仅用于受控测试或明确指定其他已验证基线；正常开发不要覆盖默认值。
+
 ## 任务计划
 
 复制 `docs/plans/TEMPLATE.md` 到 `docs/plans/active/issue-123-short-slug.md`，持续记录范围、状态、负责人、测试证据、阻塞项和候选提交 SHA。

@@ -22,6 +22,7 @@ fi
 repo_root="$(git rev-parse --show-toplevel)"
 branch_name="codex/issue-${issue_number}-${slug}"
 worktree_path="${repo_root}/.worktrees/issue-${issue_number}-${slug}"
+base_ref="${WORKTREE_BASE_REF:-origin/main}"
 
 if [[ -e "$worktree_path" ]]; then
   echo "Worktree path already exists: $worktree_path" >&2
@@ -33,10 +34,19 @@ if git show-ref --verify --quiet "refs/heads/${branch_name}"; then
   exit 1
 fi
 
-git fetch origin main
+if [[ "$base_ref" == "origin/main" ]]; then
+  git fetch origin main
+fi
+
+if ! git rev-parse --verify "$base_ref" >/dev/null 2>&1; then
+  echo "Base ref does not exist: $base_ref" >&2
+  exit 1
+fi
+
 mkdir -p "${repo_root}/.worktrees"
-git worktree add -b "$branch_name" "$worktree_path" origin/main
+git worktree add -b "$branch_name" "$worktree_path" "$base_ref"
 
 echo "Created branch: $branch_name"
 echo "Created worktree: $worktree_path"
+echo "Base ref: $base_ref"
 echo "Next: cd \"$worktree_path\" && npm ci"
