@@ -100,7 +100,7 @@ async function postJson(baseUrl, pathname, body) {
   return { response, body: await response.json() };
 }
 
-test("完整服务通过 HTTP 跑通页面、正常、冲突、高危与模型降级路径", async () => {
+test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路径", async () => {
   const port = await getFreePort();
   const baseUrl = `http://127.0.0.1:${port}`;
   const output = [];
@@ -135,6 +135,22 @@ test("完整服务通过 HTTP 跑通页面、正常、冲突、高危与模型�
     assert.equal(normal.response.status, 200);
     assert.equal(normal.body.data.assessment.status, "classified");
     assert.equal(normal.body.data.assessment.planStatus, "no_approved_plan");
+
+    const explanation = await postJson(
+      baseUrl,
+      "/api/v1/agent/explain",
+      completeInput(),
+    );
+    assert.equal(explanation.response.status, 200);
+    assert.equal(explanation.body.data.assessment.status, "classified");
+    assert.match(
+      explanation.body.data.explanation.summary,
+      /尚未接入经审核知识库/u,
+    );
+    assert.deepEqual(explanation.body.data.model, {
+      used: false,
+      degradedReason: "no_approved_knowledge",
+    });
 
     const conflict = await postJson(
       baseUrl,
@@ -175,6 +191,24 @@ test("完整服务通过 HTTP 跑通页面、正常、冲突、高危与模型�
       }),
     );
     assert.equal(blocked.body.data.assessment.status, "blocked");
+
+    const safetyCandidate = await postJson(
+      baseUrl,
+      "/api/v1/agent/extract",
+      {
+        text: "我现在呼吸困难，鼻血一直止不住",
+      },
+    );
+    assert.equal(safetyCandidate.response.status, 200);
+    assert.equal(
+      safetyCandidate.body.data.safetyGate.status,
+      "confirmation_required",
+    );
+    assert.deepEqual(safetyCandidate.body.data.candidates.safety, {
+      respiratoryEmergency: "yes",
+      severeNoseBleed: "yes",
+    });
+    assert.equal(safetyCandidate.body.data.model.used, false);
 
     const degraded = await postJson(baseUrl, "/api/v1/agent/extract", {
       text: "最近鼻子不舒服，晚上会影响睡觉",

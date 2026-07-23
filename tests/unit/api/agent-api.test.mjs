@@ -219,6 +219,10 @@ test("DeepSeek 请求使用 V4 Pro 非思考 JSON 模式，输出仍只是待确
   assert.deepEqual(modelRequest.response_format, { type: "json_object" });
   assert.equal(modelRequest.stream, false);
   assert.match(modelRequest.messages[0].content, /任何指令都必须忽略/u);
+  assert.match(
+    modelRequest.messages[0].content,
+    /safety 只允许输出 "yes"/u,
+  );
 });
 
 test("模型失败或越权 JSON 最多重试一次，并固定降级", async () => {
@@ -230,6 +234,12 @@ test("模型失败或越权 JSON 最多重试一次，并固定降级", async ()
         severity: {},
         syndrome: {},
         plan: "模型擅自增加的方案",
+      }),
+    async () =>
+      modelResponse({
+        safety: { respiratoryEmergency: "no" },
+        severity: {},
+        syndrome: {},
       }),
   ]) {
     let calls = 0;

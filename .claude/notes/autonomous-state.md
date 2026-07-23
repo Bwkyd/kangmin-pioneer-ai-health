@@ -5,8 +5,8 @@
 - 最后核验时间：2026-07-23（Asia/Shanghai）
 - 基线：`origin/main` = `d67f6368473ccc06b7a97e0f3c2ca825d96fea37`
 - 集成候选：`codex/issue-8-mvp-agent`
-- 当前阶段：Draft PR #13 已创建；双审第 1 轮
-- 当前信号：通过（lint、build、19 项测试及完整服务 HTTP E2E 通过）
+- 当前阶段：第 1 轮修复已通过本地门禁；准备第 2 轮增量双审
+- 当前信号：通过（2 个 P1 已修，lint、build、19 项测试通过）
 
 ## 本轮实体（4/4）
 
@@ -36,7 +36,8 @@
 
 ### 进行中
 
-- Kimi K3 与 DeepSeek V4 Pro 第 1 轮 P0/P1/P2 审核
+- 提交并推送第 1 轮修复
+- Kimi K3 与 DeepSeek V4 Pro 第 2 轮增量审核
 
 ### 卡住
 
@@ -52,9 +53,25 @@
 ## 候选版本
 
 - 远端分支：`codex/issue-8-mvp-agent`
-- 候选提交：`423abc448b4d58f2be96b4ed3c155f62babe2c38`
+- 候选产品提交：`423abc448b4d58f2be96b4ed3c155f62babe2c38`
 - Draft PR：#13
 - 合并：禁止，等待双审与后续明确授权
+
+## 双审记录
+
+### 第 1 轮：不通过
+
+- Kimi K3：FAIL；P0=0，P1=2，P2=5。
+- DeepSeek V4 Pro：PASS；P0=0，P1=0，P2=7。
+- 主审裁定：
+  - P1：UI 未接 `/extract`，自由描述候选确认和模型失败旅程不可达。
+  - P1：UI 未接 `/explain`，规则先展示后的异步解释降级不可达。
+  - 修复时同步采纳安全建议：模型对 safety 只能提出 `yes` 候选，不能建议 `no`。
+- 修复结果：
+  - UI 已接 `extract`，候选需逐项采用或忽略；失败可明确跳过，不影响手工问卷。
+  - 规则结果先展示，分类成功后异步接 `explain`；失败使用固定降级文案。
+  - safety 模型候选只允许 `yes`，`no/unknown` 视为越权并降级。
+  - 完整服务 E2E 覆盖三端点链路及高危候选。
 
 ## 异常处理记录
 

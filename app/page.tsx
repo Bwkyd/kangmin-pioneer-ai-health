@@ -23,6 +23,37 @@ type QuestionKey =
   | "coldIntolerance";
 
 type AnswerMap = Partial<Record<QuestionKey, TriState>>;
+type CandidateDecision = "accepted" | "ignored";
+
+interface ExtractionData {
+  requiresConfirmation: true;
+  candidates: {
+    diagnosedAllergicRhinitis?: TriState;
+    safety: Partial<Record<QuestionKey, TriState>>;
+    severity: Partial<Record<QuestionKey, TriState>>;
+    syndrome: Partial<Record<QuestionKey, TriState>>;
+  };
+  safetyGate: {
+    status: "clear" | "confirmation_required";
+    candidateFields: QuestionKey[];
+  };
+  model: {
+    used: boolean;
+    degradedReason?: "model_not_configured" | "model_unavailable";
+  };
+}
+
+interface CandidateEntry {
+  key: QuestionKey;
+  value: TriState;
+}
+
+interface ExplanationData {
+  summary: string;
+  disclaimer: string;
+}
+
+type ExplanationStatus = "idle" | "loading" | "ready" | "degraded" | "error";
 
 type Assessment =
   | {
@@ -180,6 +211,32 @@ function toPayload(answers: AnswerMap) {
   };
 }
 
+function flattenCandidates(data: ExtractionData | null): CandidateEntry[] {
+  if (!data) return [];
+
+  const entries: CandidateEntry[] = [];
+  if (data.candidates.diagnosedAllergicRhinitis) {
+    entries.push({
+      key: "diagnosedAllergicRhinitis",
+      value: data.candidates.diagnosedAllergicRhinitis,
+    });
+  }
+
+  for (const group of [
+    data.candidates.safety,
+    data.candidates.severity,
+    data.candidates.syndrome,
+  ]) {
+    for (const [key, value] of Object.entries(group)) {
+      if (value) {
+        entries.push({ key: key as QuestionKey, value });
+      }
+    }
+  }
+
+  return entries;
+}
+
 function resultCopy(assessment: Assessment) {
   switch (assessment.status) {
     case "blocked":
@@ -243,7 +300,17 @@ export default function Home() {
   const [questionIndex, setQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState<AnswerMap>({});
   const [freeText, setFreeText] = useState("");
+  const [extracting, setExtracting] = useState(false);
+  const [descriptionHandled, setDescriptionHandled] = useState(false);
+  const [extraction, setExtraction] = useState<ExtractionData | null>(null);
+  const [candidateDecisions, setCandidateDecisions] = useState<
+    Partial<Record<QuestionKey, CandidateDecision>>
+  >({});
+  const [extractionNotice, setExtractionNotice] = useState("");
   const [assessment, setAssessment] = useState<Assessment | null>(null);
+  const [explanation, setExplanation] = useState<ExplanationData | null>(null);
+  const [explanationStatus, setExplanationStatus] =
+    useState<ExplanationStatus>("idle");
   const [error, setError] = useState("");
 
   const canStart =
@@ -261,6 +328,16 @@ export default function Home() {
       })),
     [answers],
   );
+  const extractedCandidates = useMemo(
+    () => flattenCandidates(extraction),
+    [extraction],
+  );
+  const unresolvedCandidateCount = extractedCandidates.filter(
+    (candidate) => !candidateDecisions[candidate.key],
+  ).length;
+  const descriptionReady =
+    freeText.trim().length === 0 ||
+    (descriptionHandled && unresolvedCandidateCount === 0);
 
   const begin = () => {
     if (!canStart) return;
@@ -277,14 +354,132 @@ export default function Home() {
     setView("review");
   };
 
+  const extractFreeText = async () => {
+    const text = freeText.trim();
+    if (!text) return;
+
+    setExtracting(true);
+    setExtractionNotice("");
+    setCandidateDecisions({});
+    try {
+      const response = await fetch("/api/v1/agent/extract", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text }),
+      });
+      const result = (await response.json()) as
+        | { ok: true; data: ExtractionData }
+        | { ok: false; error: { code: string; message: string } };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.ok ? "提取服务响应异常" : result.error.message);
+      }
+
+      setExtraction(result.data);
+      setDescriptionHandled(true);
+      const count = flattenCandidates(result.data).length;
+      if (count > 0) {
+        setExtractionNotice(
+          `发现 ${count} 项待确认候选；系统不会自动改写回答，请逐项采用或忽略。`,
+        );
+      } else if (result.data.model.degradedReason) {
+        setExtractionNotice(
+          "AI 提取当前不可用，已安全降级。原有手工回答不受影响，可继续运行固定规则。",
+        );
+      } else {
+        setExtractionNotice(
+          "没有提取到明确候选。原有手工回答不受影响，可继续运行固定规则。",
+        );
+      }
+    } catch (extractError) {
+      setDescriptionHandled(false);
+      setExtraction(null);
+      setExtractionNotice(
+        extractError instanceof Error
+          ? `AI 提取失败：${extractError.message}`
+          : "AI 提取失败，请重试或明确跳过这段描述。",
+      );
+    } finally {
+      setExtracting(false);
+    }
+  };
+
+  const skipFreeText = () => {
+    setDescriptionHandled(true);
+    setExtraction(null);
+    setCandidateDecisions({});
+    setExtractionNotice(
+      "已选择不使用这段描述。固定规则只读取你逐项确认的结构化回答。",
+    );
+  };
+
+  const acceptCandidate = (candidate: CandidateEntry) => {
+    setAnswers((current) => ({
+      ...current,
+      [candidate.key]: candidate.value,
+    }));
+    setCandidateDecisions((current) => ({
+      ...current,
+      [candidate.key]: "accepted",
+    }));
+  };
+
+  const ignoreCandidate = (candidate: CandidateEntry) => {
+    setCandidateDecisions((current) => ({
+      ...current,
+      [candidate.key]: "ignored",
+    }));
+  };
+
+  const loadExplanation = async (payload: ReturnType<typeof toPayload>) => {
+    setExplanation(null);
+    setExplanationStatus("loading");
+    try {
+      const response = await fetch("/api/v1/agent/explain", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const result = (await response.json()) as
+        | {
+            ok: true;
+            data: {
+              explanation: ExplanationData | null;
+              model: { used: boolean; degradedReason?: string };
+            };
+          }
+        | { ok: false; error: { code: string; message: string } };
+      if (!response.ok || !result.ok) {
+        throw new Error(result.ok ? "解释服务响应异常" : result.error.message);
+      }
+
+      if (!result.data.explanation) {
+        throw new Error("当前结果不适用 AI 解释");
+      }
+
+      setExplanation(result.data.explanation);
+      setExplanationStatus(
+        result.data.model.used ? "ready" : "degraded",
+      );
+    } catch {
+      setExplanation({
+        summary: "AI 解释暂时不可用，固定规则结果仍然有效。",
+        disclaimer: "请勿把内部测试结果当作诊断或治疗建议。",
+      });
+      setExplanationStatus("error");
+    }
+  };
+
   const submitAssessment = async () => {
+    const payload = toPayload(answers);
     setView("submitting");
     setError("");
+    setExplanation(null);
+    setExplanationStatus("idle");
     try {
       const response = await fetch("/api/v1/agent/evaluate", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify(toPayload(answers)),
+        body: JSON.stringify(payload),
       });
       const result = (await response.json()) as
         | { ok: true; data: { assessment: Assessment } }
@@ -296,6 +491,9 @@ export default function Home() {
       }
       setAssessment(result.data.assessment);
       setView("result");
+      if (result.data.assessment.status === "classified") {
+        void loadExplanation(payload);
+      }
     } catch (submitError) {
       setError(
         submitError instanceof Error
@@ -314,7 +512,14 @@ export default function Home() {
     setQuestionIndex(0);
     setAnswers({});
     setFreeText("");
+    setExtracting(false);
+    setDescriptionHandled(false);
+    setExtraction(null);
+    setCandidateDecisions({});
+    setExtractionNotice("");
     setAssessment(null);
+    setExplanation(null);
+    setExplanationStatus("idle");
     setError("");
   };
 
@@ -470,7 +675,7 @@ export default function Home() {
           <span className="step-label">提交前确认 · 已回答 {progress}%</span>
           <h1 id="review-title">确认信息后运行固定规则</h1>
           <p className="lead">
-            自由描述仅帮助你整理情况，本轮不会根据这段文字自动改写任何答案。
+            自由描述可交给 AI 提取为待确认候选，但不会自动改写答案，也不会直接参与规则判断。
           </p>
 
           <label className="free-text">
@@ -478,11 +683,111 @@ export default function Home() {
             <textarea
               maxLength={1000}
               value={freeText}
-              onChange={(event) => setFreeText(event.target.value)}
+              onChange={(event) => {
+                setFreeText(event.target.value);
+                setDescriptionHandled(event.target.value.trim().length === 0);
+                setExtraction(null);
+                setCandidateDecisions({});
+                setExtractionNotice("");
+              }}
               placeholder="例如：什么时候开始、什么情况下更明显……"
             />
-            <small>{freeText.length} / 1000 · 不保存、不作为规则输入</small>
+            <small>
+              {freeText.length} / 1000 · 仅用于本次候选提取，不保存
+            </small>
           </label>
+
+          {freeText.trim() && (
+            <div className="extraction-actions">
+              <button
+                className="secondary-button"
+                type="button"
+                disabled={extracting || view === "submitting"}
+                onClick={extractFreeText}
+              >
+                {extracting ? "正在提取候选…" : "提取待确认候选"}
+              </button>
+              <button
+                className="text-button"
+                type="button"
+                disabled={extracting || view === "submitting"}
+                onClick={skipFreeText}
+              >
+                不使用这段描述
+              </button>
+            </div>
+          )}
+
+          {extractionNotice && (
+            <div
+              className={`extraction-notice ${
+                extraction?.safetyGate.status === "confirmation_required"
+                  ? "danger"
+                  : ""
+              }`}
+              role="status"
+            >
+              <strong>
+                {extraction?.safetyGate.status === "confirmation_required"
+                  ? "文字中可能含高危信号"
+                  : "AI 候选提取状态"}
+              </strong>
+              <span>{extractionNotice}</span>
+            </div>
+          )}
+
+          {extractedCandidates.length > 0 && (
+            <section
+              className="candidate-panel"
+              aria-labelledby="candidate-title"
+            >
+              <h2 id="candidate-title">逐项确认 AI 候选</h2>
+              <p>每项都必须明确采用或忽略；AI 不能替你决定。</p>
+              <ul>
+                {extractedCandidates.map((candidate) => {
+                  const decision = candidateDecisions[candidate.key];
+                  const label =
+                    answerLabels.find(
+                      (answer) => answer.value === candidate.value,
+                    )?.label ?? candidate.value;
+                  const currentLabel =
+                    answerLabels.find(
+                      (answer) => answer.value === answers[candidate.key],
+                    )?.label ?? "未答";
+                  return (
+                    <li key={candidate.key}>
+                      <div>
+                        <strong>{fieldLabels[candidate.key]}</strong>
+                        <span>
+                          当前：{currentLabel} · 候选：{label}
+                        </span>
+                      </div>
+                      <div className="candidate-actions">
+                        <button
+                          className={
+                            decision === "accepted" ? "selected" : ""
+                          }
+                          type="button"
+                          onClick={() => acceptCandidate(candidate)}
+                        >
+                          {decision === "accepted" ? "已采用" : "采用候选"}
+                        </button>
+                        <button
+                          className={
+                            decision === "ignored" ? "selected" : ""
+                          }
+                          type="button"
+                          onClick={() => ignoreCandidate(candidate)}
+                        >
+                          {decision === "ignored" ? "已忽略" : "忽略"}
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          )}
 
           <details className="answer-summary">
             <summary>查看并修改 15 项回答</summary>
@@ -518,11 +823,16 @@ export default function Home() {
           <button
             className="primary-button"
             type="button"
-            disabled={view === "submitting"}
+            disabled={view === "submitting" || extracting || !descriptionReady}
             onClick={submitAssessment}
           >
             {view === "submitting" ? "正在运行规则…" : "确认并查看结果"}
           </button>
+          {!descriptionReady && (
+            <p className="review-hint">
+              请先提取并处理全部候选，或明确选择“不使用这段描述”。
+            </p>
+          )}
         </section>
       )}
 
@@ -535,6 +845,30 @@ export default function Home() {
             <p>{copy.body}</p>
             <small>{copy.detail}</small>
           </article>
+
+          {assessment.status === "classified" && (
+            <article
+              className={`explanation-card ${explanationStatus}`}
+              aria-live="polite"
+            >
+              <strong>AI 解释（不改变规则结果）</strong>
+              {explanationStatus === "loading" && (
+                <p>固定规则结果已先展示，正在获取安全解释…</p>
+              )}
+              {explanation && (
+                <>
+                  <p>{explanation.summary}</p>
+                  <small>{explanation.disclaimer}</small>
+                </>
+              )}
+              {(explanationStatus === "degraded" ||
+                explanationStatus === "error") && (
+                <span>
+                  已使用固定降级文案；没有生成诊断或调理方案。
+                </span>
+              )}
+            </article>
+          )}
 
           {assessment.status === "classified" && (
             <article className="empty-plan">

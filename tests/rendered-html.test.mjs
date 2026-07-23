@@ -47,6 +47,8 @@ test("the client submits every clinical answer to the rule API", async () => {
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
   assert.match(page, /fetch\("\/api\/v1\/agent\/evaluate"/);
+  assert.match(page, /fetch\("\/api\/v1\/agent\/extract"/);
+  assert.match(page, /fetch\("\/api\/v1\/agent\/explain"/);
   assert.match(page, /method: "POST"/);
   assert.match(page, /diagnosedAllergicRhinitis: answers\.diagnosedAllergicRhinitis/);
   assert.match(page, /respiratoryEmergency: answers\.respiratoryEmergency/);
@@ -81,7 +83,14 @@ test("all safe result states have explicit UI handling", async () => {
   assert.match(page, /提交失败/);
   assert.match(page, /可直接重试/);
   assert.match(page, /补充描述（选填）/);
-  assert.match(page, /不保存、不作为规则输入/);
+  assert.match(page, /提取待确认候选/);
+  assert.match(page, /逐项确认 AI 候选/);
+  assert.match(page, /采用候选/);
+  assert.match(page, /不使用这段描述/);
+  assert.match(page, /AI 解释（不改变规则结果）/);
+  assert.match(page, /固定规则结果已先展示/);
+  assert.match(page, /已使用固定降级文案/);
+  assert.match(page, /仅用于本次候选提取，不保存/);
   assert.doesNotMatch(page, /localStorage|sessionStorage/);
   assert.doesNotMatch(page, /知识库已连接|症状正在缓解/);
 });
