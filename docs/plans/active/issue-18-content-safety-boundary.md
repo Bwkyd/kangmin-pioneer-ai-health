@@ -46,14 +46,14 @@
 | 候选边界 | completed | 默认拒绝、儿童专项审核、A/B/C 展示规则、视频不可变版本和下架墓碑 |
 | 本地门禁 | completed | `git diff --check`、lint、生产依赖审计、构建及 28/28 自动化测试通过 |
 | 审核 | blocked | 等待导师或临床负责人书面确认 |
-| Draft PR | in_progress | 已获推送和创建 Draft PR 授权 |
+| Draft PR | completed | PR #56 已创建 |
 | 合并/部署授权 | blocked | 尚未获得合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-18-content-safety-boundary`
 - 提交 SHA：见 Draft PR head
-- PR：待创建
+- PR：#56
 
 ## 阻塞项
 
