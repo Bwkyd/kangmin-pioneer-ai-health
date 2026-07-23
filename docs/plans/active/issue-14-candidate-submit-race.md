@@ -24,7 +24,7 @@
 - [x] 高危候选竞态有自动化覆盖。
 - [x] `npm run check` 在本任务 worktree 通过。
 - [ ] 真实浏览器旅程完成，或按实时浏览器可用性明确记录 BLOCKED。
-- [ ] Kimi K3 与 DeepSeek V4 Pro 独立复审均无 P0/P1。
+- [x] Kimi K3 与 DeepSeek V4 Pro 独立复审均无 P0/P1。
 
 ## 风险
 
@@ -57,13 +57,13 @@
 | 需求确认 | completed | Issue #14 正文及 2026-07-23 重新打开评论 |
 | 实现 | completed | 候选操作锁 + 候选变更作废在途请求 |
 | 本地门禁 | completed | `git diff --check`、聚焦测试、`npm run check`；32/32 通过，生产依赖审计 0 漏洞 |
-| 审核 | in_progress | 第 1 轮 Kimi/DeepSeek 均因仅有源码匹配测试给出 P1/FAIL；已补请求版本协调器和异步行为测试，待增量复审 |
+| 审核 | completed | 第 2 轮 Kimi K3 与 DeepSeek V4 Pro 均 P0=0、P1=0、PASS |
 | 合并/发布授权 | blocked | 未获推送、合并或部署授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-14-candidate-submit-race`
-- 提交 SHA：由本地提交后冻结并在审核记录中注明
+- 产品代码候选 SHA：`d35730db9fdbb7711bce33198b4004e1f35de9ac`
 - PR：未创建
 
 ## 阻塞项
@@ -78,3 +78,6 @@
 - DeepSeek V4 Pro：P0=0、P1=1、P2=3，`REVIEW_RESULT: FAIL`
 - 共同 P1：竞态测试只匹配源码形状，未行为级证明候选变化会使旧请求结果过期。
 - 修复：新增生产使用的 `RequestVersion` 协调器；异步单测直接模拟“旧评估在途 → 候选变化 → 旧结果不得落地”，并保留 UI 禁用与接线断言。
+- 第 2 轮冻结 SHA：`d35730db9fdbb7711bce33198b4004e1f35de9ac`
+- Kimi K3：P0=0、P1=0、P2=2，`REVIEW_RESULT: PASS`
+- DeepSeek V4 Pro：P0=0、P1=0、P2=3，`REVIEW_RESULT: PASS`
