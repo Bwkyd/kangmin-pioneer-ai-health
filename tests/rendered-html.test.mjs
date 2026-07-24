@@ -33,9 +33,10 @@ test("server-renders the mini-program home before consultation", async () => {
   assert.match(html, /固定规则驱动的鼻健康内部测试工具/);
   assert.doesNotMatch(html, /知识库问答|趋势跟踪|科普推送/);
   assert.match(html, /抗敏先锋小程序首页/);
-  assert.match(html, /今天鼻子感觉怎么样/);
-  assert.match(html, /开始鼻健康问诊/);
-  assert.match(html, /固定规则优先，仅供内部测试/);
+  assert.match(html, /诊一诊/);
+  assert.match(html, /学一学/);
+  assert.match(html, /固定规则安全问诊/);
+  assert.match(html, /固定规则优先，内容审核后开放/);
   assert.match(html, /首页/);
   assert.match(html, /问助手/);
   assert.match(html, /日历/);
@@ -46,6 +47,18 @@ test("server-renders the mini-program home before consultation", async () => {
   assert.doesNotMatch(html, /18 岁及以上|未满 18 岁/);
   assert.doesNotMatch(html, /开始安全问诊/);
   assert.doesNotMatch(html, /知识库已连接|症状正在缓解/);
+});
+
+test("the restored learning entry stays within reviewed content boundaries", async () => {
+  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
+
+  assert.match(page, /type View = "home" \| "learn"/);
+  assert.match(page, /鼻健康学习内容/);
+  assert.match(page, /出现哪些情况应及时就医/);
+  assert.match(page, /未经审核的调理方案不会开放/);
+  assert.match(page, /onLearn=\{openLearning\}/);
+  assert.match(page, /setView\("learn"\)/);
+  assert.doesNotMatch(page, /知识库已连接|症状正在缓解/);
 });
 
 test("the client submits every clinical answer to the rule API", async () => {

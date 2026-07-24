@@ -15,7 +15,7 @@ import {
 } from "@/lib/agent/conversation";
 import { useMemo, useRef, useState } from "react";
 
-type View = "home" | "questions" | "review" | "submitting" | "result";
+type View = "home" | "learn" | "questions" | "review" | "submitting" | "result";
 
 interface ExtractionData {
   requiresConfirmation: true;
@@ -182,7 +182,13 @@ const FIRST_QUESTION_INDEX = questions.findIndex(
   (question) => question.key === FIRST_QUESTION_KEY,
 );
 
-function MiniProgramHome({ onStart }: { onStart: () => void }) {
+function MiniProgramHome({
+  onLearn,
+  onStart,
+}: {
+  onLearn: () => void;
+  onStart: () => void;
+}) {
   const [notice, setNotice] = useState("");
 
   const showPending = (feature: string) => {
@@ -209,36 +215,47 @@ function MiniProgramHome({ onStart }: { onStart: () => void }) {
             <img src="/brand-banner.jpg" alt="抗敏先锋" />
           </div>
 
-          <section className="mini-welcome">
-            <small>鼻健康管理</small>
-            <h1>今天鼻子感觉怎么样？</h1>
-            <p>从安全问诊开始，逐步了解当前情况。</p>
-            <button type="button" onClick={onStart}>
-              <span>开始鼻健康问诊</span>
-              <b>→</b>
+          <section className="home-modules" aria-label="鼻健康服务">
+            <button className="diagnose-module" type="button" onClick={onStart}>
+              <span className="module-icon">诊</span>
+              <small>固定规则安全问诊</small>
+              <strong>诊一诊</strong>
+              <p>和小岐逐项确认症状，先完成高危筛查。</p>
+              <b>
+                开始了解 <i>→</i>
+              </b>
+            </button>
+            <button className="learn-module" type="button" onClick={onLearn}>
+              <span className="module-icon">学</span>
+              <small>审核中的鼻健康内容</small>
+              <strong>学一学</strong>
+              <p>了解内容边界与日常记录方法。</p>
+              <b>
+                去学习 <i>→</i>
+              </b>
             </button>
           </section>
 
           <aside className="mini-boundary">
-            <span aria-hidden="true">安</span>
+            <span aria-hidden="true">据</span>
             <div>
-              <strong>固定规则优先，仅供内部测试</strong>
-              <p>高危情况先提示就医，结果不能替代门诊诊断。</p>
+              <strong>固定规则优先，内容审核后开放</strong>
+              <p>本工具仅供内部测试，高危情况先提示就医，结果不能替代门诊诊断。</p>
             </div>
           </aside>
 
           <section className="mini-feature-grid" aria-label="常用功能">
             <button type="button" onClick={onStart}>
-              <span className="mini-feature-icon">问</span>
-              <small>约 2 分钟</small>
-              <strong>智能问诊</strong>
-              <i>开始了解情况</i>
-            </button>
-            <button type="button" onClick={onStart}>
               <span className="mini-feature-icon">评</span>
-              <small>安全规则</small>
+              <small>今日待完成</small>
               <strong>症状评估</strong>
-              <i>逐项确认信息</i>
+              <i>逐项确认实际情况</i>
+            </button>
+            <button type="button" onClick={onLearn}>
+              <span className="mini-feature-icon">知</span>
+              <small>内容审核中</small>
+              <strong>换季为何反复？</strong>
+              <i>查看科普边界</i>
             </button>
           </section>
 
@@ -255,10 +272,10 @@ function MiniProgramHome({ onStart }: { onStart: () => void }) {
 
           <div className="mini-section-heading">
             <div>
-              <small>鼻健康内容</small>
-              <h2>科普与日常管理</h2>
+              <small>为你推荐</small>
+              <h2>今天读点什么</h2>
             </div>
-            <button type="button" onClick={() => showPending("科普内容")}>
+            <button type="button" onClick={onLearn}>
               查看 ›
             </button>
           </div>
@@ -266,7 +283,7 @@ function MiniProgramHome({ onStart }: { onStart: () => void }) {
           <button
             className="mini-article-card"
             type="button"
-            onClick={() => showPending("经审核科普内容")}
+            onClick={onLearn}
           >
             <span aria-hidden="true">知</span>
             <div>
@@ -296,7 +313,96 @@ function MiniProgramHome({ onStart }: { onStart: () => void }) {
           <button type="button" onClick={() => showPending("健康日历")}>
             <span>▦</span>日历
           </button>
-          <button type="button" onClick={() => showPending("科普内容")}>
+          <button type="button" onClick={onLearn}>
+            <span>□</span>科普
+          </button>
+        </nav>
+      </section>
+    </main>
+  );
+}
+
+function LearningPage({
+  onBack,
+  onStart,
+}: {
+  onBack: () => void;
+  onStart: () => void;
+}) {
+  return (
+    <main className="mini-program-shell">
+      <section className="mini-program" aria-label="鼻健康科普">
+        <header className="mini-header">
+          <button type="button" aria-label="返回首页" onClick={onBack}>
+            ‹
+          </button>
+          <strong>学一学</strong>
+          <button className="mini-menu" type="button" aria-label="更多">
+            ••• <i />
+          </button>
+        </header>
+
+        <div className="mini-body learning-body">
+          <section className="learning-hero">
+            <small>鼻健康科普</small>
+            <h1>先了解，再决定怎么做</h1>
+            <p>这里仅展示安全边界明确的基础内容，未经审核的调理方案不会开放。</p>
+          </section>
+
+          <aside className="mini-boundary">
+            <span aria-hidden="true">安</span>
+            <div>
+              <strong>内容仍在审核</strong>
+              <p>当前内容用于内部测试，不替代医生建议，也不提供个性化治疗方案。</p>
+            </div>
+          </aside>
+
+          <section className="learning-list" aria-label="鼻健康学习内容">
+            <article>
+              <span>防</span>
+              <div>
+                <small>日常防护</small>
+                <h2>换季鼻敏感，先从记录诱因开始</h2>
+                <p>记录出现时间、环境变化和对睡眠的影响，就诊时更容易说明情况。</p>
+              </div>
+            </article>
+            <article>
+              <span>诊</span>
+              <div>
+                <small>安全提醒</small>
+                <h2>出现哪些情况应及时就医？</h2>
+                <p>呼吸困难、大量出血、持续高热或严重神经症状，应停止自助评估。</p>
+              </div>
+            </article>
+            <article>
+              <span>记</span>
+              <div>
+                <small>症状记录</small>
+                <h2>每天记录哪些信息更有用？</h2>
+                <p>如实记录鼻塞、喷嚏、流涕、鼻痒，以及是否影响睡眠和日常活动。</p>
+              </div>
+            </article>
+          </section>
+
+          <button className="learning-start" type="button" onClick={onStart}>
+            进入“诊一诊”完成安全问诊
+          </button>
+        </div>
+
+        <nav className="mini-bottom-nav" aria-label="小程序主要功能">
+          <button type="button" onClick={onBack}>
+            <span>⌂</span>首页
+          </button>
+          <button type="button" onClick={onStart}>
+            <span>◌</span>问助手
+          </button>
+          <button className="mini-add" type="button" onClick={onStart}>
+            <span>＋</span>
+          </button>
+          <button type="button" onClick={onBack}>
+            <span>▦</span>日历
+          </button>
+          <button className="active" type="button">
             <span>□</span>科普
           </button>
         </nav>
@@ -799,11 +905,18 @@ export default function Home() {
 
   const restart = () => resetFlow("home");
   const startAssessment = () => resetFlow("questions");
+  const openLearning = () => setView("learn");
 
   const copy = assessment ? resultCopy(assessment, answers) : null;
 
   if (view === "home") {
-    return <MiniProgramHome onStart={startAssessment} />;
+    return (
+      <MiniProgramHome onLearn={openLearning} onStart={startAssessment} />
+    );
+  }
+
+  if (view === "learn") {
+    return <LearningPage onBack={restart} onStart={startAssessment} />;
   }
 
   return (
