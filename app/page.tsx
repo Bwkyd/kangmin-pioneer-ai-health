@@ -15,7 +15,7 @@ import {
 } from "@/lib/agent/conversation";
 import { useMemo, useRef, useState } from "react";
 
-type View = "consent" | "questions" | "review" | "submitting" | "result";
+type View = "home" | "questions" | "review" | "submitting" | "result";
 
 interface ExtractionData {
   requiresConfirmation: true;
@@ -182,6 +182,129 @@ const FIRST_QUESTION_INDEX = questions.findIndex(
   (question) => question.key === FIRST_QUESTION_KEY,
 );
 
+function MiniProgramHome({ onStart }: { onStart: () => void }) {
+  const [notice, setNotice] = useState("");
+
+  const showPending = (feature: string) => {
+    setNotice(`${feature}将在内容与数据通过审核后开放。`);
+  };
+
+  return (
+    <main className="mini-program-shell">
+      <section className="mini-program" aria-label="抗敏先锋小程序首页">
+        <header className="mini-header">
+          <button type="button" aria-label="返回" disabled>
+            ‹
+          </button>
+          <strong>抗敏先锋</strong>
+          <button className="mini-menu" type="button" aria-label="更多">
+            ••• <i />
+          </button>
+        </header>
+
+        <div className="mini-body">
+          <div className="mini-brand-banner">
+            {/* vinext does not provide Next image optimization in this worker. */}
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src="/brand-banner.jpg" alt="抗敏先锋" />
+          </div>
+
+          <section className="mini-welcome">
+            <small>鼻健康管理</small>
+            <h1>今天鼻子感觉怎么样？</h1>
+            <p>从安全问诊开始，逐步了解当前情况。</p>
+            <button type="button" onClick={onStart}>
+              <span>开始鼻健康问诊</span>
+              <b>→</b>
+            </button>
+          </section>
+
+          <aside className="mini-boundary">
+            <span aria-hidden="true">安</span>
+            <div>
+              <strong>固定规则优先，仅供内部测试</strong>
+              <p>高危情况先提示就医，结果不能替代门诊诊断。</p>
+            </div>
+          </aside>
+
+          <section className="mini-feature-grid" aria-label="常用功能">
+            <button type="button" onClick={onStart}>
+              <span className="mini-feature-icon">问</span>
+              <small>约 2 分钟</small>
+              <strong>智能问诊</strong>
+              <i>开始了解情况</i>
+            </button>
+            <button type="button" onClick={onStart}>
+              <span className="mini-feature-icon">评</span>
+              <small>安全规则</small>
+              <strong>症状评估</strong>
+              <i>逐项确认信息</i>
+            </button>
+          </section>
+
+          <section className="mini-status-card">
+            <div>
+              <small>健康记录</small>
+              <h2>尚无可展示趋势</h2>
+              <p>完成正式数据能力与授权后开放。</p>
+            </div>
+            <button type="button" onClick={() => showPending("健康记录")}>
+              了解进度 ›
+            </button>
+          </section>
+
+          <div className="mini-section-heading">
+            <div>
+              <small>鼻健康内容</small>
+              <h2>科普与日常管理</h2>
+            </div>
+            <button type="button" onClick={() => showPending("科普内容")}>
+              查看 ›
+            </button>
+          </div>
+
+          <button
+            className="mini-article-card"
+            type="button"
+            onClick={() => showPending("经审核科普内容")}
+          >
+            <span aria-hidden="true">知</span>
+            <div>
+              <small>内容审核中</small>
+              <strong>换季鼻敏感，先从记录与防护开始</strong>
+              <p>审核通过后再向用户展示，不由模型自由生成。</p>
+            </div>
+          </button>
+
+          {notice && (
+            <p className="mini-pending-notice" role="status">
+              {notice}
+            </p>
+          )}
+        </div>
+
+        <nav className="mini-bottom-nav" aria-label="小程序主要功能">
+          <button className="active" type="button">
+            <span>⌂</span>首页
+          </button>
+          <button type="button" onClick={onStart}>
+            <span>◌</span>问助手
+          </button>
+          <button className="mini-add" type="button" onClick={onStart}>
+            <span>＋</span>
+          </button>
+          <button type="button" onClick={() => showPending("健康日历")}>
+            <span>▦</span>日历
+          </button>
+          <button type="button" onClick={() => showPending("科普内容")}>
+            <span>□</span>科普
+          </button>
+        </nav>
+      </section>
+    </main>
+  );
+}
+
 function flattenCandidates(data: ExtractionData | null): CandidateEntry[] {
   if (!data) return [];
 
@@ -270,10 +393,7 @@ function resultCopy(assessment: Assessment, answers: AnswerMap) {
 }
 
 export default function Home() {
-  const [view, setView] = useState<View>("consent");
-  const [consented, setConsented] = useState(false);
-  const [ageGroup, setAgeGroup] = useState<"" | "adult" | "minor">("");
-  const [guardianConfirmed, setGuardianConfirmed] = useState(false);
+  const [view, setView] = useState<View>("home");
   const [questionIndex, setQuestionIndex] = useState(FIRST_QUESTION_INDEX);
   const [questionHistory, setQuestionHistory] = useState<number[]>([]);
   const [navigating, setNavigating] = useState(false);
@@ -319,10 +439,6 @@ export default function Home() {
     }
   };
 
-  const canStart =
-    consented &&
-    ageGroup !== "" &&
-    (ageGroup === "adult" || guardianConfirmed);
   const answeredCount = Object.keys(answers).length;
   const progress = Math.round((answeredCount / questions.length) * 100);
   const currentQuestion = questions[questionIndex];
@@ -344,15 +460,6 @@ export default function Home() {
   const descriptionReady =
     freeText.trim().length === 0 ||
     (descriptionHandled && unresolvedCandidateCount === 0);
-
-  const begin = () => {
-    if (!canStart) return;
-    invalidatePendingRequests();
-    setQuestionIndex(FIRST_QUESTION_INDEX);
-    setQuestionHistory([]);
-    setError("");
-    setView("questions");
-  };
 
   const requestAssessment = async (
     nextAnswers: AnswerMap,
@@ -670,12 +777,9 @@ export default function Home() {
     }
   };
 
-  const restart = () => {
+  const resetFlow = (nextView: "home" | "questions") => {
     invalidatePendingRequests();
-    setView("consent");
-    setConsented(false);
-    setAgeGroup("");
-    setGuardianConfirmed(false);
+    setView(nextView);
     setQuestionIndex(FIRST_QUESTION_INDEX);
     setQuestionHistory([]);
     setNavigating(false);
@@ -693,7 +797,14 @@ export default function Home() {
     setError("");
   };
 
+  const restart = () => resetFlow("home");
+  const startAssessment = () => resetFlow("questions");
+
   const copy = assessment ? resultCopy(assessment, answers) : null;
+
+  if (view === "home") {
+    return <MiniProgramHome onStart={startAssessment} />;
+  }
 
   return (
     <main className="agent-shell">
@@ -705,11 +816,9 @@ export default function Home() {
           <strong>抗敏先锋 · 小岐</strong>
           <span>AI 鼻健康管理内部测试</span>
         </div>
-        {view !== "consent" && (
-          <button className="text-button" type="button" onClick={restart}>
-            重新开始
-          </button>
-        )}
+        <button className="text-button" type="button" onClick={restart}>
+          返回首页
+        </button>
       </header>
 
       <aside className="prototype-notice" role="status">
@@ -718,73 +827,6 @@ export default function Home() {
           固定规则先行，模型不决定证型；结果不能替代门诊诊断。
         </span>
       </aside>
-
-      {view === "consent" && (
-        <section className="screen consent-screen" aria-labelledby="consent-title">
-          <span className="step-label">开始前确认</span>
-          <h1 id="consent-title">先确认使用边界</h1>
-          <p className="lead">
-            本轮仅验证问诊流程和固定规则。不会保存健康数据，也不会提供未经审核的知识、趋势或调理方案。
-          </p>
-
-          <label className="consent-row">
-            <input
-              type="checkbox"
-              checked={consented}
-              onChange={(event) => setConsented(event.target.checked)}
-            />
-            <span>我已阅读并同意按内部测试边界使用</span>
-          </label>
-
-          <fieldset className="choice-fieldset">
-            <legend>使用者年龄</legend>
-            <div className="segmented">
-              <button
-                className={ageGroup === "adult" ? "selected" : ""}
-                type="button"
-                onClick={() => {
-                  setAgeGroup("adult");
-                  setGuardianConfirmed(false);
-                }}
-              >
-                18 岁及以上
-              </button>
-              <button
-                className={ageGroup === "minor" ? "selected" : ""}
-                type="button"
-                onClick={() => setAgeGroup("minor")}
-              >
-                未满 18 岁
-              </button>
-            </div>
-          </fieldset>
-
-          {ageGroup === "minor" && (
-            <label className="consent-row guardian-row">
-              <input
-                type="checkbox"
-                checked={guardianConfirmed}
-                onChange={(event) =>
-                  setGuardianConfirmed(event.target.checked)
-                }
-              />
-              <span>监护人已知情并陪同完成本次内部测试</span>
-            </label>
-          )}
-
-          <button
-            className="primary-button"
-            type="button"
-            disabled={!canStart}
-            onClick={begin}
-          >
-            开始安全问诊
-          </button>
-          <p className="emergency-note">
-            如已出现呼吸困难、意识异常或大量出血，请立即就医，不要等待本工具结果。
-          </p>
-        </section>
-      )}
 
       {view === "questions" && currentQuestion && (
         <section className="screen question-screen" aria-labelledby="question-title">
@@ -1109,7 +1151,7 @@ export default function Home() {
               </button>
             )}
             <button className="secondary-button" type="button" onClick={restart}>
-              清空并重新开始
+              返回小程序首页
             </button>
           </div>
 

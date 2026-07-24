@@ -124,8 +124,13 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
   try {
     const pageResponse = await waitForServer(baseUrl, child, output);
     const pageHtml = await pageResponse.text();
-    assert.match(pageHtml, /待临床确认，仅供内部测试/u);
-    assert.match(pageHtml, /开始安全问诊/u);
+    assert.match(pageHtml, /抗敏先锋小程序首页/u);
+    assert.match(pageHtml, /开始鼻健康问诊/u);
+    assert.doesNotMatch(
+      pageHtml,
+      /目前是否有呼吸困难、喘不过气或口唇发紫/u,
+    );
+    assert.doesNotMatch(pageHtml, /开始安全问诊/u);
 
     const normal = await postJson(
       baseUrl,
