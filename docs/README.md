@@ -6,6 +6,7 @@
 | --- | --- | --- |
 | [001](changes/arch/001_deterministic-agent-mvp.md) | 2026-07-23 | 确定性鼻健康智能体 MVP |
 | [002](changes/arch/002_server-driven-dynamic-followup.md) | 2026-07-23 | 服务端规则驱动动态补问 |
+| [003](changes/arch/003_admin-content-governance.md) | 2026-07-24 | 单管理员内容治理后台 |
 
 ## Runbook
 

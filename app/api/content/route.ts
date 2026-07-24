@@ -1,0 +1,17 @@
+import { contentTypes } from "@/lib/admin/validation";
+import { jsonError, runtime, type ContentType } from "@/lib/admin/store";
+
+export async function GET(request: Request) {
+  try {
+    const url = new URL(request.url);
+    const type = url.searchParams.get("type") as ContentType;
+    const id = url.searchParams.get("id");
+    if (!contentTypes.has(type)) return jsonError("无效内容类型");
+    if (id) {
+      const item = await (await runtime()).DB.prepare("SELECT id, type, title, category, summary, body, source, metadata, media_id mediaId, published_at publishedAt FROM content_items WHERE id = ? AND type = ? AND status = 'published'").bind(id, type).first();
+      return item ? Response.json({ item }) : jsonError("内容不存在或已下架", 404);
+    }
+    const rows = await (await runtime()).DB.prepare("SELECT id, type, title, category, summary, media_id mediaId, published_at publishedAt FROM content_items WHERE type = ? AND status = 'published' ORDER BY published_at DESC").bind(type).all();
+    return Response.json({ items: rows.results });
+  } catch { return jsonError("内容服务暂不可用", 503); }
+}
