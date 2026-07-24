@@ -23,97 +23,41 @@ async function render() {
   );
 }
 
-test("server-renders the mini-program home before consultation", async () => {
+test("server-renders the original mini-program home", async () => {
   const response = await render();
   assert.equal(response.status, 200);
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
   assert.match(html, /<title>抗敏先锋 · AI 鼻健康管理<\/title>/i);
-  assert.match(html, /固定规则驱动的鼻健康内部测试工具/);
-  assert.doesNotMatch(html, /知识库问答|趋势跟踪|科普推送/);
-  assert.match(html, /抗敏先锋小程序首页/);
-  assert.match(html, /今天鼻子感觉怎么样/);
-  assert.match(html, /开始鼻健康问诊/);
-  assert.match(html, /固定规则优先，仅供内部测试/);
-  assert.match(html, /首页/);
-  assert.match(html, /问助手/);
-  assert.match(html, /日历/);
-  assert.match(html, /科普/);
-  assert.doesNotMatch(html, /目前是否有呼吸困难、喘不过气或口唇发紫/);
-  assert.doesNotMatch(html, /开始前确认|先确认使用边界/);
-  assert.doesNotMatch(html, /我已阅读并同意按内部测试边界使用/);
-  assert.doesNotMatch(html, /18 岁及以上|未满 18 岁/);
-  assert.doesNotMatch(html, /开始安全问诊/);
-  assert.doesNotMatch(html, /知识库已连接|症状正在缓解/);
+  assert.match(html, /诊一诊/);
+  assert.match(html, /学一学/);
+  assert.match(html, /抗敏先锋鼻健康交互 Demo/);
+  assert.match(html, /暂无真实健康记录/);
+  assert.match(html, /aria-label="主要功能"/);
+  assert.match(html, />首页<\/button>/);
+  assert.match(html, />问助手<\/button>/);
+  assert.match(html, />日历<\/button>/);
+  assert.match(html, /aria-label="新增症状记录"/);
+  assert.match(html, />我的<\/button>/);
+  assert.doesNotMatch(html, /知识库已连接|症状正在缓解|肺气虚寒倾向|个性化外治建议/);
 });
 
-test("the client submits every clinical answer to the rule API", async () => {
+test("keeps every original demo section without presenting simulated medical facts", async () => {
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
-  const conversation = await readFile(
-    new URL("../lib/agent/conversation.ts", import.meta.url),
-    "utf8",
-  );
 
-  assert.match(page, /fetch\("\/api\/v1\/agent\/evaluate"/);
-  assert.match(page, /fetch\("\/api\/v1\/agent\/extract"/);
-  assert.match(page, /fetch\("\/api\/v1\/agent\/explain"/);
-  assert.match(page, /method: "POST"/);
-  assert.match(page, /createAssessmentPayload\(nextAnswers\)/);
-  assert.match(page, /findNextQuestion\(nextAssessment, nextAnswers\)/);
-  for (const field of [
-    "diagnosedAllergicRhinitis",
-    "respiratoryEmergency",
-    "persistentHighFever",
-    "severeNoseBleed",
-    "unilateralFoulDischarge",
-    "severeNeurologicalSymptoms",
-    "sleepAffected",
-    "activityAffected",
-    "workStudyAffected",
-    "symptomTroublesome",
-    "thirst",
-    "fatigue",
-    "limbsNotWarm",
-    "fearWind",
-    "coldIntolerance",
-  ]) {
-    assert.match(conversation, new RegExp(`"${field}"`));
-  }
-  assert.doesNotMatch(page, /evaluateSyndrome|DRAFT_SYNDROME_RULES/);
-  assert.match(css, /\.api-error/);
-  assert.match(css, /\.navigation-status/);
-});
-
-test("all safe result states have explicit UI handling", async () => {
-  const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
-
-  assert.match(page, /case "classified"/);
-  assert.match(page, /no_approved_plan/);
-  assert.match(page, /case "blocked"/);
-  assert.match(page, /请停止自助评估并尽快就医/);
-  assert.match(page, /case "conflict"/);
-  assert.match(page, /case "no_match"/);
-  assert.match(page, /case "need_more_information"/);
-  assert.match(page, /case "referred"/);
-  assert.match(page, /提交失败/);
-  assert.match(page, /可直接重试/);
-  assert.match(page, /补充描述（选填）/);
-  assert.match(page, /提取待确认候选/);
-  assert.match(page, /逐项确认 AI 候选/);
-  assert.match(page, /采用候选/);
-  assert.match(page, /不使用这段描述/);
-  assert.match(page, /AI 解释（不改变规则结果）/);
-  assert.match(page, /固定规则结果已先展示/);
-  assert.match(page, /已使用固定降级文案/);
-  assert.match(page, /flowVersionRef/);
-  assert.match(page, /activeRequestRef\.current\?\.abort\(\)/);
-  assert.match(page, /navigationLockRef/);
-  assert.match(page, /规则服务响应超时/);
-  assert.match(page, /本轮无法继续分类/);
-  assert.match(page, /disabled=\{view === "submitting"\}/);
-  assert.match(page, /仅用于本次候选提取，不保存/);
-  assert.doesNotMatch(page, /localStorage|sessionStorage/);
-  assert.doesNotMatch(page, /知识库已连接|症状正在缓解/);
+  assert.match(page, /type Tab = "home" \| "chat" \| "assessment" \| "articles" \| "profile"/);
+  assert.match(page, /setTab\("chat"\)/);
+  assert.match(page, /诊一诊/);
+  assert.match(page, /学一学/);
+  assert.match(page, /过敏日历/);
+  assert.match(page, /鼻健康科普/);
+  assert.match(page, /tab === "profile"/);
+  assert.match(page, /当前不会输出诊断、证型或个性化治疗方案/);
+  assert.match(page, /内部演示内容 · 待医学审核/);
+  assert.match(page, /暂无真实健康记录/);
+  assert.doesNotMatch(page, /知识库已连接|症状正在缓解|肺气虚寒倾向|个性化外治建议/);
+  assert.match(css, /grid-template-columns:\s*repeat\(5, 1fr\)/);
+  assert.match(css, /\.profile-view/);
 });

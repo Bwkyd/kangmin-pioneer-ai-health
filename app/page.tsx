@@ -1,1164 +1,607 @@
 "use client";
 
-import {
-  captureOriginalValues,
-  restoreAcceptedValues,
-  type CandidateDecision,
-} from "@/lib/agent/candidate-state";
-import {
-  FIRST_QUESTION_KEY,
-  createAssessmentPayload,
-  findNextQuestion,
-  type AnswerMap,
-  type QuestionKey,
-  type TriState,
-} from "@/lib/agent/conversation";
-import { useMemo, useRef, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 
-type View = "home" | "questions" | "review" | "submitting" | "result";
+type Tab = "home" | "chat" | "assessment" | "articles" | "profile";
+type Message =
+  | { id: number; role: "ai" | "user"; kind: "text"; text: string }
+  | { id: number; role: "ai"; kind: "thinking" }
+  | { id: number; role: "ai"; kind: "source"; title: string; detail: string };
 
-interface ExtractionData {
-  requiresConfirmation: true;
-  candidates: {
-    diagnosedAllergicRhinitis?: TriState;
-    safety: Partial<Record<QuestionKey, TriState>>;
-    severity: Partial<Record<QuestionKey, TriState>>;
-    syndrome: Partial<Record<QuestionKey, TriState>>;
-  };
-  safetyGate: {
-    status: "clear" | "confirmation_required";
-    candidateFields: QuestionKey[];
-  };
-  model: {
-    used: boolean;
-    degradedReason?: "model_not_configured" | "model_unavailable";
-  };
-}
+const symptomOptions = [
+  "鼻塞、打喷嚏、流清鼻涕",
+  "晚上鼻塞，睡眠受影响",
+  "鼻涕黄稠，还有咽部不适",
+];
 
-interface CandidateEntry {
-  key: QuestionKey;
-  value: TriState;
-}
+const durationOptions = ["最近 3 天出现", "反复半年，换季加重", "已经持续两年以上"];
+const warningOptions = ["以上情况都没有", "有高热或明显头痛", "呼吸不畅或胸闷"];
 
-interface ExplanationData {
-  summary: string;
-  disclaimer: string;
-}
-
-type ExplanationStatus = "idle" | "loading" | "ready" | "degraded" | "error";
-
-type Assessment =
-  | {
-      status: "classified";
-      severity: "mild" | "moderate_severe";
-      syndrome: { syndromeCode: string; ruleId: string };
-      planStatus: "no_approved_plan";
-      rulePackageVersion: string;
-    }
-  | {
-      status: "blocked";
-      safety: { matchedRuleIds: string[] };
-      rulePackageVersion: string;
-    }
-  | {
-      status: "conflict" | "no_match";
-      severity: "mild" | "moderate_severe";
-      syndrome: {
-        candidateSyndromes?: string[];
-        matchedRuleIds?: string[];
-      };
-      rulePackageVersion: string;
-    }
-  | {
-      status: "need_more_information";
-      stage: "safety" | "severity" | "syndrome";
-      nextQuestions: string[];
-      rulePackageVersion: string;
-    }
-  | {
-      status: "referred";
-      reason: "not_diagnosed_or_uncertain";
-      nextQuestions?: string[];
-      rulePackageVersion: string;
-    };
-
-interface Question {
-  key: QuestionKey;
-  section: "就诊前提" | "高危筛查" | "严重程度" | "证型信息";
-  title: string;
-  help?: string;
-}
-
-const questions: Question[] = [
+const knowledgeQuestions = [
   {
-    key: "diagnosedAllergicRhinitis",
-    section: "就诊前提",
-    title: "是否已由正规医疗机构确诊为过敏性鼻炎？",
-    help: "未确诊或不确定时，本工具不会继续给出分类结果。",
+    question: "为什么换季容易反复？",
+    answer:
+      "换季时温度、湿度和空气中的过敏原可能发生变化，鼻部也可能更容易受到刺激。可以记录症状出现时间、诱因和严重程度，供就医时参考。",
+    source: "内部演示内容 · 待医学审核",
   },
   {
-    key: "respiratoryEmergency",
-    section: "高危筛查",
-    title: "目前是否有呼吸困难、喘不过气或口唇发紫？",
+    question: "鼻塞在家先怎么护理？",
+    answer:
+      "可以先减少冷空气和刺激物暴露，并记录鼻塞对睡眠的影响。若症状持续、加重或伴随高危信号，请及时咨询正规医疗机构。",
+    source: "内部演示内容 · 待医学审核",
   },
   {
-    key: "persistentHighFever",
-    section: "高危筛查",
-    title: "目前是否有持续高热？",
-  },
-  {
-    key: "severeNoseBleed",
-    section: "高危筛查",
-    title: "目前是否有大量鼻出血或鼻血止不住？",
-  },
-  {
-    key: "unilateralFoulDischarge",
-    section: "高危筛查",
-    title: "目前是否有单侧、带明显臭味的鼻腔分泌物？",
-  },
-  {
-    key: "severeNeurologicalSymptoms",
-    section: "高危筛查",
-    title: "目前是否有剧烈头痛、意识模糊、抽搐等严重表现？",
-  },
-  {
-    key: "sleepAffected",
-    section: "严重程度",
-    title: "鼻部不适是否影响睡眠？",
-  },
-  {
-    key: "activityAffected",
-    section: "严重程度",
-    title: "鼻部不适是否影响日常活动？",
-  },
-  {
-    key: "workStudyAffected",
-    section: "严重程度",
-    title: "鼻部不适是否影响工作或学习？",
-  },
-  {
-    key: "symptomTroublesome",
-    section: "严重程度",
-    title: "这些症状是否让你明显困扰？",
-  },
-  {
-    key: "thirst",
-    section: "证型信息",
-    title: "近期是否容易口渴？",
-  },
-  {
-    key: "fatigue",
-    section: "证型信息",
-    title: "近期是否经常感到乏力？",
-  },
-  {
-    key: "limbsNotWarm",
-    section: "证型信息",
-    title: "近期是否经常手脚不温？",
-  },
-  {
-    key: "fearWind",
-    section: "证型信息",
-    title: "近期是否明显怕风？",
-  },
-  {
-    key: "coldIntolerance",
-    section: "证型信息",
-    title: "近期是否明显怕冷？",
+    question: "调理效果多久记录一次？",
+    answer:
+      "可以在固定时间做简短记录，关注喷嚏、流涕、鼻塞和鼻痒等变化。当前页面中的记录与趋势均为交互演示。",
+    source: "内部演示内容 · 待医学审核",
   },
 ];
 
-const answerLabels: Array<{ value: TriState; label: string }> = [
-  { value: "yes", label: "是" },
-  { value: "no", label: "否" },
-  { value: "unknown", label: "不确定" },
+const articles = [
+  {
+    tag: "日常防护",
+    title: "换季鼻敏感，先做好这 4 件小事",
+    summary: "从温差、卧室环境到外出防护，用简单方法减少鼻部刺激。",
+    read: "3 分钟",
+    tone: "mint",
+  },
+  {
+    tag: "安全提醒",
+    title: "鼻塞时，哪些情况需要及时就医？",
+    summary: "高热、剧烈头痛、呼吸困难等信号，不适合只靠居家调理。",
+    read: "2 分钟",
+    tone: "amber",
+  },
+  {
+    tag: "亲子健康",
+    title: "孩子总揉鼻子，家长该记录什么？",
+    summary: "记下时间、诱因和睡眠影响，比只说“最近鼻炎犯了”更有用。",
+    read: "4 分钟",
+    tone: "blue",
+  },
 ];
 
-const fieldLabels = Object.fromEntries(
-  questions.map((question) => [question.key, question.title]),
-) as Record<QuestionKey, string>;
-
-const FIRST_QUESTION_INDEX = questions.findIndex(
-  (question) => question.key === FIRST_QUESTION_KEY,
-);
-
-function MiniProgramHome({ onStart }: { onStart: () => void }) {
-  const [notice, setNotice] = useState("");
-
-  const showPending = (feature: string) => {
-    setNotice(`${feature}将在内容与数据通过审核后开放。`);
-  };
-
-  return (
-    <main className="mini-program-shell">
-      <section className="mini-program" aria-label="抗敏先锋小程序首页">
-        <header className="mini-header">
-          <button type="button" aria-label="返回" disabled>
-            ‹
-          </button>
-          <strong>抗敏先锋</strong>
-          <button className="mini-menu" type="button" aria-label="更多">
-            ••• <i />
-          </button>
-        </header>
-
-        <div className="mini-body">
-          <div className="mini-brand-banner">
-            {/* vinext does not provide Next image optimization in this worker. */}
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src="/brand-banner.jpg" alt="抗敏先锋" />
-          </div>
-
-          <section className="mini-welcome">
-            <small>鼻健康管理</small>
-            <h1>今天鼻子感觉怎么样？</h1>
-            <p>从安全问诊开始，逐步了解当前情况。</p>
-            <button type="button" onClick={onStart}>
-              <span>开始鼻健康问诊</span>
-              <b>→</b>
-            </button>
-          </section>
-
-          <aside className="mini-boundary">
-            <span aria-hidden="true">安</span>
-            <div>
-              <strong>固定规则优先，仅供内部测试</strong>
-              <p>高危情况先提示就医，结果不能替代门诊诊断。</p>
-            </div>
-          </aside>
-
-          <section className="mini-feature-grid" aria-label="常用功能">
-            <button type="button" onClick={onStart}>
-              <span className="mini-feature-icon">问</span>
-              <small>约 2 分钟</small>
-              <strong>智能问诊</strong>
-              <i>开始了解情况</i>
-            </button>
-            <button type="button" onClick={onStart}>
-              <span className="mini-feature-icon">评</span>
-              <small>安全规则</small>
-              <strong>症状评估</strong>
-              <i>逐项确认信息</i>
-            </button>
-          </section>
-
-          <section className="mini-status-card">
-            <div>
-              <small>健康记录</small>
-              <h2>尚无可展示趋势</h2>
-              <p>完成正式数据能力与授权后开放。</p>
-            </div>
-            <button type="button" onClick={() => showPending("健康记录")}>
-              了解进度 ›
-            </button>
-          </section>
-
-          <div className="mini-section-heading">
-            <div>
-              <small>鼻健康内容</small>
-              <h2>科普与日常管理</h2>
-            </div>
-            <button type="button" onClick={() => showPending("科普内容")}>
-              查看 ›
-            </button>
-          </div>
-
-          <button
-            className="mini-article-card"
-            type="button"
-            onClick={() => showPending("经审核科普内容")}
-          >
-            <span aria-hidden="true">知</span>
-            <div>
-              <small>内容审核中</small>
-              <strong>换季鼻敏感，先从记录与防护开始</strong>
-              <p>审核通过后再向用户展示，不由模型自由生成。</p>
-            </div>
-          </button>
-
-          {notice && (
-            <p className="mini-pending-notice" role="status">
-              {notice}
-            </p>
-          )}
-        </div>
-
-        <nav className="mini-bottom-nav" aria-label="小程序主要功能">
-          <button className="active" type="button">
-            <span>⌂</span>首页
-          </button>
-          <button type="button" onClick={onStart}>
-            <span>◌</span>问助手
-          </button>
-          <button className="mini-add" type="button" onClick={onStart}>
-            <span>＋</span>
-          </button>
-          <button type="button" onClick={() => showPending("健康日历")}>
-            <span>▦</span>日历
-          </button>
-          <button type="button" onClick={() => showPending("科普内容")}>
-            <span>□</span>科普
-          </button>
-        </nav>
-      </section>
-    </main>
-  );
-}
-
-function flattenCandidates(data: ExtractionData | null): CandidateEntry[] {
-  if (!data) return [];
-
-  const entries: CandidateEntry[] = [];
-  if (data.candidates.diagnosedAllergicRhinitis) {
-    entries.push({
-      key: "diagnosedAllergicRhinitis",
-      value: data.candidates.diagnosedAllergicRhinitis,
-    });
-  }
-
-  for (const group of [
-    data.candidates.safety,
-    data.candidates.severity,
-    data.candidates.syndrome,
-  ]) {
-    for (const [key, value] of Object.entries(group)) {
-      if (value) {
-        entries.push({ key: key as QuestionKey, value });
-      }
-    }
-  }
-
-  return entries;
-}
-
-function resultCopy(assessment: Assessment, answers: AnswerMap) {
-  switch (assessment.status) {
-    case "blocked":
-      return {
-        tone: "danger",
-        eyebrow: "高危筛查已拦截",
-        title: "请停止自助评估并尽快就医",
-        body: "你确认的信息触发了高危规则。若正在呼吸困难或症状快速加重，请立即寻求急诊帮助。",
-        detail: `触发规则：${assessment.safety.matchedRuleIds.join("、")}`,
-      };
-    case "referred":
-      return {
-        tone: "warning",
-        eyebrow: "不满足评估前提",
-        title: "请先到正规医疗机构明确诊断",
-        body: "当前未确认已经确诊过敏性鼻炎，本工具不继续输出分类结果。",
-        detail: "系统未进行证型判断。",
-      };
-    case "need_more_information":
-      const unansweredQuestions = assessment.nextQuestions.filter(
-        (field) => answers[field as QuestionKey] === undefined,
-      );
-      return {
-        tone: "warning",
-        eyebrow: "信息不足",
-        title: "需要补充或确认回答",
-        body: "“不确定”不会被系统当作“否”。请返回问卷确认相关问题，或咨询专业人员。",
-        detail:
-          unansweredQuestions.length > 0
-            ? `待确认：${unansweredQuestions
-                .map((field) => fieldLabels[field as QuestionKey] ?? field)
-                .join("；")}`
-            : "相关问题均已明确选择“不确定”，本轮无法继续分类。",
-      };
-    case "conflict":
-      return {
-        tone: "warning",
-        eyebrow: "规则结果冲突",
-        title: "本轮不输出单一证型",
-        body: "多条固定规则同时命中，系统没有自行猜测。请由临床人员复核。",
-        detail: `候选代码：${assessment.syndrome.candidateSyndromes?.join("、") || "未提供"}`,
-      };
-    case "no_match":
-      return {
-        tone: "warning",
-        eyebrow: "无匹配结果",
-        title: "当前回答未命中固定规则",
-        body: "系统不会为了给出结果而扩写或猜测，请由临床人员复核。",
-        detail: `严重程度代码：${assessment.severity}`,
-      };
-    case "classified":
-      return {
-        tone: "success",
-        eyebrow: "固定规则已完成分类",
-        title: `证型代码：${assessment.syndrome.syndromeCode}`,
-        body: "这是待临床确认的内部测试输出，不是诊断。当前没有经审核的个性化调理方案。",
-        detail: `严重程度：${assessment.severity} · 规则：${assessment.syndrome.ruleId} · no_approved_plan`,
-      };
-  }
-}
+const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
+const calendarDays = [
+  { day: 29, muted: true }, { day: 30, muted: true }, { day: 1 }, { day: 2 }, { day: 3 }, { day: 4 }, { day: 5 },
+  { day: 6 }, { day: 7 }, { day: 8 }, { day: 9 }, { day: 10 }, { day: 11 }, { day: 12 },
+  { day: 13 }, { day: 14, level: "mild" }, { day: 15, level: "mild" }, { day: 16 }, { day: 17, level: "moderate" }, { day: 18 }, { day: 19, level: "mild" },
+  { day: 20, today: true }, { day: 21 }, { day: 22 }, { day: 23 }, { day: 24 }, { day: 25 }, { day: 26 },
+  { day: 27 }, { day: 28 }, { day: 29 }, { day: 30 }, { day: 31 }, { day: 1, muted: true }, { day: 2, muted: true },
+];
 
 export default function Home() {
-  const [view, setView] = useState<View>("home");
-  const [questionIndex, setQuestionIndex] = useState(FIRST_QUESTION_INDEX);
-  const [questionHistory, setQuestionHistory] = useState<number[]>([]);
-  const [navigating, setNavigating] = useState(false);
-  const [answers, setAnswers] = useState<AnswerMap>({});
-  const [freeText, setFreeText] = useState("");
-  const [extracting, setExtracting] = useState(false);
-  const [descriptionHandled, setDescriptionHandled] = useState(false);
-  const [extraction, setExtraction] = useState<ExtractionData | null>(null);
-  const [candidateDecisions, setCandidateDecisions] = useState<
-    Partial<Record<QuestionKey, CandidateDecision>>
-  >({});
-  const [candidateOriginalAnswers, setCandidateOriginalAnswers] =
-    useState<AnswerMap>({});
-  const [extractionNotice, setExtractionNotice] = useState("");
-  const [assessment, setAssessment] = useState<Assessment | null>(null);
-  const [explanation, setExplanation] = useState<ExplanationData | null>(null);
-  const [explanationStatus, setExplanationStatus] =
-    useState<ExplanationStatus>("idle");
-  const [error, setError] = useState("");
-  const flowVersionRef = useRef(0);
-  const activeRequestRef = useRef<AbortController | null>(null);
-  const navigationLockRef = useRef(false);
+  const [tab, setTab] = useState<Tab>("home");
+  const [messages, setMessages] = useState<Message[]>([
+    {
+      id: 1,
+      role: "ai",
+      kind: "text",
+      text: "你好，我是小岐。这是内部交互演示，你可以体验描述症状和查看鼻健康内容；当前不会输出诊断、证型或个性化治疗方案。",
+    },
+  ]);
+  const [step, setStep] = useState(0);
+  const [input, setInput] = useState("");
+  const [videoOpen, setVideoOpen] = useState(false);
+  const [articleOpen, setArticleOpen] = useState<number | null>(null);
+  const [scores, setScores] = useState([2, 2, 2, 1]);
+  const [assessmentDone, setAssessmentDone] = useState(false);
+  const [entryOpen, setEntryOpen] = useState(false);
+  const [calendarMode, setCalendarMode] = useState<"calendar" | "list">("calendar");
+  const chatEnd = useRef<HTMLDivElement>(null);
+  const chartRef = useRef<HTMLCanvasElement>(null);
 
-  const invalidatePendingRequests = () => {
-    flowVersionRef.current += 1;
-    activeRequestRef.current?.abort();
-    activeRequestRef.current = null;
-    navigationLockRef.current = false;
-    setNavigating(false);
-    setExtracting(false);
-  };
+  const totalScore = scores.reduce((sum, score) => sum + score, 0);
 
-  const startRequest = () => {
-    activeRequestRef.current?.abort();
-    const controller = new AbortController();
-    activeRequestRef.current = controller;
-    return controller;
-  };
+  useEffect(() => {
+    chatEnd.current?.scrollIntoView({ behavior: "smooth" });
+  }, [messages, step]);
 
-  const finishRequest = (controller: AbortController) => {
-    if (activeRequestRef.current === controller) {
-      activeRequestRef.current = null;
-    }
-  };
+  useEffect(() => {
+    const canvas = chartRef.current;
+    if (!canvas || tab !== "assessment") return;
+    const ratio = window.devicePixelRatio || 1;
+    const width = canvas.clientWidth;
+    const height = canvas.clientHeight;
+    canvas.width = width * ratio;
+    canvas.height = height * ratio;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.scale(ratio, ratio);
+    context.clearRect(0, 0, width, height);
 
-  const answeredCount = Object.keys(answers).length;
-  const progress = Math.round((answeredCount / questions.length) * 100);
-  const currentQuestion = questions[questionIndex];
-  const summary = useMemo(
-    () =>
-      questions.map((question) => ({
-        ...question,
-        answer: answers[question.key],
-      })),
-    [answers],
-  );
-  const extractedCandidates = useMemo(
-    () => flattenCandidates(extraction),
-    [extraction],
-  );
-  const unresolvedCandidateCount = extractedCandidates.filter(
-    (candidate) => !candidateDecisions[candidate.key],
-  ).length;
-  const descriptionReady =
-    freeText.trim().length === 0 ||
-    (descriptionHandled && unresolvedCandidateCount === 0);
+    const values = assessmentDone ? [1, 1, 2, 1, 2, 2, 1, Math.min(3, Math.ceil(totalScore / 4))] : [1, 1, 2, 1, 2, 2, 1];
+    const days = assessmentDone ? [14, 15, 17, 19, 22, 23, 25, 20] : [14, 15, 17, 19, 22, 23, 25];
+    const pad = { left: 42, right: 15, top: 15, bottom: 27 };
+    const chartW = width - pad.left - pad.right;
+    const chartH = height - pad.top - pad.bottom;
 
-  const requestAssessment = async (
-    nextAnswers: AnswerMap,
-    signal: AbortSignal,
-  ) => {
-    const response = await fetch("/api/v1/agent/evaluate", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(createAssessmentPayload(nextAnswers)),
-      signal,
+    context.font = '9px "PingFang SC", sans-serif';
+    context.textAlign = "right";
+    context.strokeStyle = "#dce8e2";
+    context.lineWidth = 1;
+    ["良好", "轻度", "中度", "重度"].forEach((label, level) => {
+      const y = pad.top + chartH - (level / 3) * chartH;
+      context.beginPath();
+      context.moveTo(pad.left, y);
+      context.lineTo(width - pad.right, y);
+      context.stroke();
+      context.fillStyle = "#87968f";
+      context.fillText(label, pad.left - 7, y + 3);
     });
-    const result = (await response.json()) as
-      | { ok: true; data: { assessment: Assessment } }
-      | { ok: false; error: { code: string; message: string } };
-    if (!response.ok || !result.ok) {
-      throw new Error(
-        result.ok ? "服务响应异常" : result.error.message,
-      );
-    }
-    return result.data.assessment;
+
+    const points = values.map((value, index) => ({
+      x: pad.left + ((days[index] - 1) / 30) * chartW,
+      y: pad.top + chartH - (value / 3) * chartH,
+    }));
+    context.beginPath();
+    points.forEach((point, index) => {
+      if (index === 0) context.moveTo(point.x, point.y);
+      else context.lineTo(point.x, point.y);
+    });
+    context.strokeStyle = "#1E5AA3";
+    context.lineWidth = 3;
+    context.lineJoin = "round";
+    context.lineCap = "round";
+    context.stroke();
+
+    points.forEach((point, index) => {
+      context.beginPath();
+      context.arc(point.x, point.y, index === 4 ? 5 : 3.5, 0, Math.PI * 2);
+      context.fillStyle = index === 4 ? "#E2A33A" : "#1E5AA3";
+      context.fill();
+    });
+    context.font = '9px "PingFang SC", sans-serif';
+    context.fillStyle = "#87968f";
+    context.textAlign = "center";
+    [1, 10, 20, 31].forEach((day) => {
+      const x = pad.left + ((day - 1) / 30) * chartW;
+      context.fillText(String(day), x, height - 8);
+    });
+  }, [tab, assessmentDone, totalScore]);
+
+  const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
+    setMessages((current) => [
+      ...current,
+      { id: Date.now(), role: "user", kind: "text", text: answer },
+      { id: Date.now() + 1, role: "ai", kind: "thinking" },
+    ]);
+    window.setTimeout(() => {
+      setMessages((current) => [
+        ...current.filter((message) => message.kind !== "thinking"),
+        { id: Date.now() + 2, role: "ai", kind: "text", text: reply },
+        ...(source
+          ? [{ id: Date.now() + 3, role: "ai" as const, kind: "source" as const, title: "回答依据", detail: source }]
+          : []),
+      ]);
+      setStep(nextStep);
+    }, 550);
   };
 
-  const answerQuestion = async (value: TriState) => {
-    if (navigationLockRef.current) return;
-
-    navigationLockRef.current = true;
-    const requestVersion = flowVersionRef.current;
-    const controller = startRequest();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
-    const nextAnswers = { ...answers, [currentQuestion.key]: value };
-    setAnswers(nextAnswers);
-    setNavigating(true);
-    setError("");
-    if (
-      extractedCandidates.some(
-        (candidate) => candidate.key === currentQuestion.key,
-      )
-    ) {
-      setCandidateOriginalAnswers((current) => ({
-        ...current,
-        [currentQuestion.key]: value,
-      }));
-      setCandidateDecisions((current) => ({
-        ...current,
-        [currentQuestion.key]: "ignored",
-      }));
-    }
-
-    try {
-      const nextAssessment = await requestAssessment(
-        nextAnswers,
-        controller.signal,
-      );
-      if (flowVersionRef.current !== requestVersion) return;
-
-      const nextQuestion = findNextQuestion(nextAssessment, nextAnswers);
-      if (nextQuestion) {
-        const nextIndex = questions.findIndex(
-          (question) => question.key === nextQuestion,
-        );
-        if (nextIndex >= 0) {
-          setQuestionHistory((history) => [...history, questionIndex]);
-          setQuestionIndex(nextIndex);
-          return;
-        }
-      }
-
-      if (
-        nextAssessment.status === "blocked" ||
-        nextAssessment.status === "referred" ||
-        nextAssessment.status === "need_more_information"
-      ) {
-        setAssessment(nextAssessment);
-        setExplanation(null);
-        setExplanationStatus("idle");
-        setView("result");
-        return;
-      }
-
-      setAssessment(null);
-      setView("review");
-    } catch (navigationError) {
-      if (flowVersionRef.current !== requestVersion) return;
-      setError(
-        navigationError instanceof DOMException &&
-          navigationError.name === "AbortError"
-          ? "规则服务响应超时，请重试当前回答。"
-          : navigationError instanceof Error
-          ? navigationError.message
-          : "暂时无法决定下一步，请重试当前回答。",
-      );
-    } finally {
-      window.clearTimeout(timeoutId);
-      finishRequest(controller);
-      if (flowVersionRef.current === requestVersion) {
-        navigationLockRef.current = false;
-        setNavigating(false);
-      }
+  const startConsultation = () => {
+    setTab("chat");
+    if (step === 0) {
+      addExchange("开始了解", "好的。你现在最明显的不舒服是什么？可以直接描述，也可以点击常见情况。", 1);
     }
   };
 
-  const extractFreeText = async () => {
-    const text = freeText.trim();
-    if (!text) return;
+  const selectSymptom = (answer: string) =>
+    addExchange(answer, "了解了。这个情况大概持续多久？是否在换季、遇冷空气或早晨起床时更明显？", 2);
 
-    const requestVersion = flowVersionRef.current;
-    const controller = startRequest();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
-    const baselineAnswers = restoreAcceptedValues(
-      answers,
-      extractedCandidates.map((candidate) => candidate.key),
-      candidateDecisions,
-      candidateOriginalAnswers,
-    ) as AnswerMap;
-    setAnswers(baselineAnswers);
-    setExtracting(true);
-    setExtractionNotice("");
-    setCandidateDecisions({});
-    setCandidateOriginalAnswers({});
-    try {
-      const response = await fetch("/api/v1/agent/extract", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ text }),
-        signal: controller.signal,
-      });
-      const result = (await response.json()) as
-        | { ok: true; data: ExtractionData }
-        | { ok: false; error: { code: string; message: string } };
-      if (!response.ok || !result.ok) {
-        throw new Error(result.ok ? "提取服务响应异常" : result.error.message);
-      }
-      if (flowVersionRef.current !== requestVersion) return;
-
-      setExtraction(result.data);
-      setDescriptionHandled(true);
-      const candidates = flattenCandidates(result.data);
-      const count = candidates.length;
-      setCandidateOriginalAnswers(
-        captureOriginalValues(
-          candidates.map((candidate) => candidate.key),
-          baselineAnswers,
-        ),
-      );
-      if (count > 0) {
-        setExtractionNotice(
-          `发现 ${count} 项待确认候选；系统不会自动改写回答，请逐项采用或忽略。`,
-        );
-      } else if (result.data.model.degradedReason) {
-        setExtractionNotice(
-          "AI 提取当前不可用，已安全降级。原有手工回答不受影响，可继续运行固定规则。",
-        );
-      } else {
-        setExtractionNotice(
-          "没有提取到明确候选。原有手工回答不受影响，可继续运行固定规则。",
-        );
-      }
-    } catch (extractError) {
-      if (flowVersionRef.current !== requestVersion) return;
-      setDescriptionHandled(false);
-      setExtraction(null);
-      setCandidateDecisions({});
-      setCandidateOriginalAnswers({});
-      setExtractionNotice(
-        extractError instanceof DOMException &&
-          extractError.name === "AbortError"
-          ? "AI 提取响应超时，请重试或明确跳过这段描述。"
-          : extractError instanceof Error
-          ? `AI 提取失败：${extractError.message}`
-          : "AI 提取失败，请重试或明确跳过这段描述。",
-      );
-    } finally {
-      window.clearTimeout(timeoutId);
-      finishRequest(controller);
-      if (flowVersionRef.current === requestVersion) {
-        setExtracting(false);
-      }
-    }
-  };
-
-  const skipFreeText = () => {
-    invalidatePendingRequests();
-    setAnswers((current) =>
-      restoreAcceptedValues(
-        current,
-        extractedCandidates.map((candidate) => candidate.key),
-        candidateDecisions,
-        candidateOriginalAnswers,
-      ) as AnswerMap,
+  const selectDuration = (answer: string) =>
+    addExchange(
+      answer,
+      "收到。我先做安全确认：目前有没有高热、明显头痛、面部肿痛、呼吸困难，或者鼻出血不止？",
+      3,
     );
-    setDescriptionHandled(true);
-    setExtraction(null);
-    setCandidateDecisions({});
-    setCandidateOriginalAnswers({});
-    setExtractionNotice(
-      "已选择不使用这段描述。固定规则只读取你逐项确认的结构化回答。",
+
+  const selectWarning = (answer: string) => {
+    if (answer !== warningOptions[0]) {
+      addExchange(answer, "这种情况不适合只在家调理。建议尽快前往耳鼻喉科就诊；如果呼吸困难，请立即寻求急诊帮助。", 5);
+      return;
+    }
+    addExchange(
+      answer,
+      "信息已收集完成。当前交互演示不会输出诊断、证型或个性化调理方案；如需判断，请咨询正规医疗机构。",
+      4,
+      "演示流程 · 未接入正式临床规则与审核内容",
     );
   };
 
-  const acceptCandidate = (candidate: CandidateEntry) => {
-    setAnswers((current) => ({
-      ...current,
-      [candidate.key]: candidate.value,
-    }));
-    setCandidateDecisions((current) => ({
-      ...current,
-      [candidate.key]: "accepted",
-    }));
+  const askKnowledge = (index: number) => {
+    const item = knowledgeQuestions[index];
+    setTab("chat");
+    addExchange(item.question, item.answer, step || 0, item.source);
   };
 
-  const ignoreCandidate = (candidate: CandidateEntry) => {
-    setAnswers((current) => {
-      const restored = { ...current };
-      const original = candidateOriginalAnswers[candidate.key];
-      if (original === undefined) {
-        delete restored[candidate.key];
-      } else {
-        restored[candidate.key] = original;
-      }
-      return restored;
-    });
-    setCandidateDecisions((current) => ({
-      ...current,
-      [candidate.key]: "ignored",
-    }));
-  };
-
-  const loadExplanation = async (
-    payload: ReturnType<typeof createAssessmentPayload>,
-    requestVersion: number,
-  ) => {
-    if (flowVersionRef.current !== requestVersion) return;
-
-    const controller = startRequest();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
-    setExplanation(null);
-    setExplanationStatus("loading");
-    try {
-      const response = await fetch("/api/v1/agent/explain", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-      const result = (await response.json()) as
-        | {
-            ok: true;
-            data: {
-              explanation: ExplanationData | null;
-              model: { used: boolean; degradedReason?: string };
-            };
-          }
-        | { ok: false; error: { code: string; message: string } };
-      if (!response.ok || !result.ok) {
-        throw new Error(result.ok ? "解释服务响应异常" : result.error.message);
-      }
-      if (flowVersionRef.current !== requestVersion) return;
-
-      if (!result.data.explanation) {
-        throw new Error("当前结果不适用 AI 解释");
-      }
-
-      setExplanation(result.data.explanation);
-      setExplanationStatus(
-        result.data.model.used ? "ready" : "degraded",
+  const sendCustom = (event: FormEvent) => {
+    event.preventDefault();
+    const value = input.trim();
+    if (!value) return;
+    setInput("");
+    if (step === 1) selectSymptom(value);
+    else if (step === 2) selectDuration(value);
+    else if (step === 3) selectWarning(value);
+    else
+      addExchange(
+        value,
+        "我已记录。这是内部交互演示，当前不会根据自由输入生成诊断或治疗建议。",
+        step,
+        "内部演示 · 内容待审核",
       );
-    } catch {
-      if (flowVersionRef.current !== requestVersion) return;
-      setExplanation({
-        summary: "AI 解释暂时不可用，固定规则结果仍然有效。",
-        disclaimer: "请勿把内部测试结果当作诊断或治疗建议。",
-      });
-      setExplanationStatus("error");
-    } finally {
-      window.clearTimeout(timeoutId);
-      finishRequest(controller);
-    }
   };
 
-  const submitAssessment = async () => {
-    const requestVersion = flowVersionRef.current;
-    const controller = startRequest();
-    const timeoutId = window.setTimeout(() => controller.abort(), 10_000);
-    const payload = createAssessmentPayload(answers);
-    setView("submitting");
-    setError("");
-    setExplanation(null);
-    setExplanationStatus("idle");
-    try {
-      const nextAssessment = await requestAssessment(
-        answers,
-        controller.signal,
-      );
-      if (flowVersionRef.current !== requestVersion) return;
-
-      setAssessment(nextAssessment);
-      setView("result");
-      if (nextAssessment.status === "classified") {
-        void loadExplanation(payload, requestVersion);
-      }
-    } catch (submitError) {
-      if (flowVersionRef.current !== requestVersion) return;
-      setError(
-        submitError instanceof DOMException &&
-          submitError.name === "AbortError"
-          ? "规则服务响应超时，请稍后重试。"
-          : submitError instanceof Error
-          ? submitError.message
-          : "服务暂时不可用，请稍后重试。",
-      );
-      setView("review");
-    } finally {
-      window.clearTimeout(timeoutId);
-      finishRequest(controller);
-    }
+  const resetDemo = () => {
+    setMessages([
+      {
+        id: Date.now(),
+        role: "ai",
+        kind: "text",
+        text: "你好，我是小岐。这是内部交互演示，你可以体验描述症状和查看鼻健康内容；当前不会输出诊断、证型或个性化治疗方案。",
+      },
+    ]);
+    setStep(0);
+    setAssessmentDone(false);
+    setScores([2, 2, 2, 1]);
+    setEntryOpen(false);
+    setTab("home");
   };
 
-  const resetFlow = (nextView: "home" | "questions") => {
-    invalidatePendingRequests();
-    setView(nextView);
-    setQuestionIndex(FIRST_QUESTION_INDEX);
-    setQuestionHistory([]);
-    setNavigating(false);
-    setAnswers({});
-    setFreeText("");
-    setExtracting(false);
-    setDescriptionHandled(false);
-    setExtraction(null);
-    setCandidateDecisions({});
-    setCandidateOriginalAnswers({});
-    setExtractionNotice("");
-    setAssessment(null);
-    setExplanation(null);
-    setExplanationStatus("idle");
-    setError("");
-  };
+  const activeOptions =
+    step === 1 ? symptomOptions : step === 2 ? durationOptions : step === 3 ? warningOptions : [];
 
-  const restart = () => resetFlow("home");
-  const startAssessment = () => resetFlow("questions");
-
-  const copy = assessment ? resultCopy(assessment, answers) : null;
-
-  if (view === "home") {
-    return <MiniProgramHome onStart={startAssessment} />;
-  }
+  const headerTitle =
+    tab === "home"
+      ? "抗敏先锋"
+      : tab === "chat"
+        ? "小岐知识助手"
+        : tab === "assessment"
+          ? "过敏日历"
+          : tab === "articles"
+            ? "鼻健康科普"
+            : "我的";
 
   return (
-    <main className="agent-shell">
-      <header className="agent-header">
-        <div className="brand-mark" aria-hidden="true">
-          岐
-        </div>
-        <div>
-          <strong>抗敏先锋 · 小岐</strong>
-          <span>AI 鼻健康管理内部测试</span>
-        </div>
-        <button className="text-button" type="button" onClick={restart}>
-          返回首页
-        </button>
-      </header>
-
-      <aside className="prototype-notice" role="status">
-        <strong>待临床确认，仅供内部测试</strong>
-        <span>
-          固定规则先行，模型不决定证型；结果不能替代门诊诊断。
-        </span>
-      </aside>
-
-      {view === "questions" && currentQuestion && (
-        <section className="screen question-screen" aria-labelledby="question-title">
-          <div className="progress-copy">
-            <span>{currentQuestion.section}</span>
-            <b>已确认 {answeredCount} 项</b>
-          </div>
-          <div
-            className="progress-track"
-            role="progressbar"
-            aria-valuemin={0}
-            aria-valuemax={questions.length}
-            aria-valuenow={answeredCount}
-          >
-            <span
-              style={{
-                width: `${progress}%`,
-              }}
-            />
-          </div>
-          <h1 id="question-title">{currentQuestion.title}</h1>
-          {currentQuestion.help && <p className="lead">{currentQuestion.help}</p>}
-
-          <div className="answer-grid" aria-label="回答选项">
-            {answerLabels.map((item) => (
-              <button
-                key={item.value}
-                className={
-                  answers[currentQuestion.key] === item.value ? "selected" : ""
-                }
-                type="button"
-                disabled={navigating}
-                onClick={() => void answerQuestion(item.value)}
-              >
-                <span>{item.label}</span>
-                <small>
-                  {item.value === "unknown"
-                    ? "需要后续确认"
-                    : "按当前实际情况选择"}
-                </small>
-              </button>
-            ))}
-          </div>
-
-          {navigating && (
-            <p className="navigation-status" role="status">
-              正在由服务端固定规则确定下一步…
-            </p>
-          )}
-
-          {error && (
-            <div className="api-error" role="alert">
-              <strong>暂时无法继续</strong>
-              <span>{error}</span>
-              <small>当前回答已保留，请重新选择一次以重试。</small>
+    <main className="demo-shell">
+      <section className="phone-wrap" aria-label="抗敏先锋小程序">
+        <div className="phone">
+          <header className="phone-header real-header">
+            <button className="icon-button" onClick={() => tab !== "home" && setTab("home")} aria-label="返回">‹</button>
+            <div className="real-title">
+              <strong>{headerTitle}</strong>
+              {tab === "chat" && <span>内部交互演示</span>}
             </div>
-          )}
-
-          <button
-            className="back-button"
-            type="button"
-            disabled={questionHistory.length === 0 || navigating}
-            onClick={() => {
-              const previousIndex =
-                questionHistory[questionHistory.length - 1];
-              if (previousIndex === undefined) return;
-              setQuestionHistory((history) => history.slice(0, -1));
-              setQuestionIndex(previousIndex);
-              setError("");
-            }}
-          >
-            返回上一题
-          </button>
-        </section>
-      )}
-
-      {(view === "review" || view === "submitting") && (
-        <section className="screen review-screen" aria-labelledby="review-title">
-          <span className="step-label">提交前确认 · 已回答 {progress}%</span>
-          <h1 id="review-title">确认信息后运行固定规则</h1>
-          <p className="lead">
-            自由描述可交给 AI 提取为待确认候选，但不会自动改写答案，也不会直接参与规则判断。
-          </p>
-
-          <label className="free-text">
-            <span>补充描述（选填）</span>
-            <textarea
-              maxLength={1000}
-              disabled={view === "submitting"}
-              value={freeText}
-              onChange={(event) => {
-                invalidatePendingRequests();
-                setAnswers((current) =>
-                  restoreAcceptedValues(
-                    current,
-                    extractedCandidates.map((candidate) => candidate.key),
-                    candidateDecisions,
-                    candidateOriginalAnswers,
-                  ) as AnswerMap,
-                );
-                setFreeText(event.target.value);
-                setDescriptionHandled(event.target.value.trim().length === 0);
-                setExtraction(null);
-                setCandidateDecisions({});
-                setCandidateOriginalAnswers({});
-                setExtractionNotice("");
-              }}
-              placeholder="例如：什么时候开始、什么情况下更明显……"
-            />
-            <small>
-              {freeText.length} / 1000 · 仅用于本次候选提取，不保存
-            </small>
-          </label>
-
-          {freeText.trim() && (
-            <div className="extraction-actions">
-              <button
-                className="secondary-button"
-                type="button"
-                disabled={extracting || view === "submitting"}
-                onClick={extractFreeText}
-              >
-                {extracting ? "正在提取候选…" : "提取待确认候选"}
-              </button>
-              <button
-                className="text-button"
-                type="button"
-                disabled={extracting || view === "submitting"}
-                onClick={skipFreeText}
-              >
-                不使用这段描述
-              </button>
-            </div>
-          )}
-
-          {extractionNotice && (
-            <div
-              className={`extraction-notice ${
-                extraction?.safetyGate.status === "confirmation_required"
-                  ? "danger"
-                  : ""
-              }`}
-              role="status"
-            >
-              <strong>
-                {extraction?.safetyGate.status === "confirmation_required"
-                  ? "文字中可能含高危信号"
-                  : "AI 候选提取状态"}
-              </strong>
-              <span>{extractionNotice}</span>
-            </div>
-          )}
-
-          {extractedCandidates.length > 0 && (
-            <section
-              className="candidate-panel"
-              aria-labelledby="candidate-title"
-            >
-              <h2 id="candidate-title">逐项确认 AI 候选</h2>
-              <p>每项都必须明确采用或忽略；AI 不能替你决定。</p>
-              <ul>
-                {extractedCandidates.map((candidate) => {
-                  const decision = candidateDecisions[candidate.key];
-                  const label =
-                    answerLabels.find(
-                      (answer) => answer.value === candidate.value,
-                    )?.label ?? candidate.value;
-                  const currentLabel =
-                    answerLabels.find(
-                      (answer) => answer.value === answers[candidate.key],
-                    )?.label ?? "未答";
-                  return (
-                    <li key={candidate.key}>
-                      <div>
-                        <strong>{fieldLabels[candidate.key]}</strong>
-                        <span>
-                          当前：{currentLabel} · 候选：{label}
-                        </span>
-                      </div>
-                      <div className="candidate-actions">
-                        <button
-                          className={
-                            decision === "accepted" ? "selected" : ""
-                          }
-                          type="button"
-                          onClick={() => acceptCandidate(candidate)}
-                        >
-                          {decision === "accepted" ? "已采用" : "采用候选"}
-                        </button>
-                        <button
-                          className={
-                            decision === "ignored" ? "selected" : ""
-                          }
-                          type="button"
-                          onClick={() => ignoreCandidate(candidate)}
-                        >
-                          {decision === "ignored" ? "已忽略" : "忽略"}
-                        </button>
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          )}
-
-          <details className="answer-summary">
-            <summary>查看并修改 15 项回答</summary>
-            <ol>
-              {summary.map((item, index) => (
-                <li key={item.key}>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      invalidatePendingRequests();
-                      setQuestionIndex(index);
-                      setQuestionHistory([]);
-                      setAssessment(null);
-                      setExplanation(null);
-                      setExplanationStatus("idle");
-                      setError("");
-                      setView("questions");
-                    }}
-                  >
-                    <span>{item.title}</span>
-                    <b>
-                      {answerLabels.find((answer) => answer.value === item.answer)
-                        ?.label ?? "未答"}
-                    </b>
-                  </button>
-                </li>
-              ))}
-            </ol>
-          </details>
-
-          {error && (
-            <div className="api-error" role="alert">
-              <strong>提交失败</strong>
-              <span>{error}</span>
-              <small>回答仍保留在本页，可直接重试。</small>
-            </div>
-          )}
-
-          <button
-            className="primary-button"
-            type="button"
-            disabled={view === "submitting" || extracting || !descriptionReady}
-            onClick={submitAssessment}
-          >
-            {view === "submitting" ? "正在运行规则…" : "确认并查看结果"}
-          </button>
-          {!descriptionReady && (
-            <p className="review-hint">
-              请先提取并处理全部候选，或明确选择“不使用这段描述”。
-            </p>
-          )}
-        </section>
-      )}
-
-      {view === "result" && assessment && copy && (
-        <section className="screen result-screen" aria-labelledby="result-title">
-          <span className="step-label">规则包 {assessment.rulePackageVersion}</span>
-          <article className={`result-card ${copy.tone}`}>
-            <span>{copy.eyebrow}</span>
-            <h1 id="result-title">{copy.title}</h1>
-            <p>{copy.body}</p>
-            <small>{copy.detail}</small>
-          </article>
-
-          {assessment.status === "classified" && (
-            <article
-              className={`explanation-card ${explanationStatus}`}
-              aria-live="polite"
-            >
-              <strong>AI 解释（不改变规则结果）</strong>
-              {explanationStatus === "loading" && (
-                <p>固定规则结果已先展示，正在获取安全解释…</p>
-              )}
-              {explanation && (
-                <>
-                  <p>{explanation.summary}</p>
-                  <small>{explanation.disclaimer}</small>
-                </>
-              )}
-              {(explanationStatus === "degraded" ||
-                explanationStatus === "error") && (
-                <span>
-                  已使用固定降级文案；没有生成诊断或调理方案。
-                </span>
-              )}
-            </article>
-          )}
-
-          {assessment.status === "classified" && (
-            <article className="empty-plan">
-              <strong>暂无经审核的适用方案</strong>
-              <p>
-                no_approved_plan：客户方案、知识内容与操作素材未通过发布门禁，因此不展示。
-              </p>
-            </article>
-          )}
-
-          <div className="result-actions">
-            {(assessment.status === "need_more_information" ||
-              assessment.status === "conflict" ||
-              assessment.status === "no_match" ||
-              assessment.status === "classified" ||
-              assessment.status === "referred") && (
-              <button
-                className="primary-button"
-                type="button"
-                onClick={() => {
-                  invalidatePendingRequests();
-                  setAssessment(null);
-                  setExplanation(null);
-                  setExplanationStatus("idle");
-                  setError("");
-                  setView("review");
-                }}
-              >
-                返回查看并修改回答
-              </button>
-            )}
-            <button className="secondary-button" type="button" onClick={restart}>
-              返回小程序首页
+            <button className="mini-program-menu" onClick={resetDemo} aria-label="更多">
+              <span>•••</span><i />
             </button>
+          </header>
+
+          <div className="app-body">
+            {tab === "home" && (
+              <div className="home-view">
+                <div className="brand-banner" aria-label="抗敏先锋">
+                  <img src="/brand-banner.jpg" alt="抗敏先锋" />
+                </div>
+                <section className="home-modules" aria-label="鼻健康服务">
+                  <button className="diagnose-module" onClick={startConsultation}>
+                    <span className="module-icon">诊</span>
+                    <small>交互流程演示</small>
+                    <strong>诊一诊</strong>
+                    <p>和小岐聊聊症状，体验问答与安全提示。</p>
+                    <b>开始了解 <i>→</i></b>
+                  </button>
+                  <button className="learn-module" onClick={() => setTab("articles")}>
+                    <span className="module-icon">学</span>
+                    <small>内容审核中</small>
+                    <strong>学一学</strong>
+                    <p>了解鼻健康知识，掌握日常防护方法。</p>
+                    <b>去学习 <i>→</i></b>
+                  </button>
+                </section>
+
+                <aside className="basis-card" aria-label="方案依据与使用说明">
+                  <span>据</span>
+                  <div>
+                    <strong>抗敏先锋鼻健康交互 Demo</strong>
+                    <p>用于演示小程序页面与操作流程，不输出诊断、证型或个性化治疗方案。</p>
+                    <small>正式内容、规则与数据仍待审核接入</small>
+                    <em>结果仅供参考，最终方案请以门诊诊断为准。</em>
+                  </div>
+                </aside>
+
+                <section className="today-grid">
+                  <button onClick={() => setTab("assessment")}>
+                    <span className="feature-icon chart-icon">↘</span>
+                    <small>今日待完成</small><strong>症状评估</strong><i>约 1 分钟</i>
+                  </button>
+                  <button onClick={() => askKnowledge(0)}>
+                    <span className="feature-icon book-icon">知</span>
+                    <small>科普内容演示</small><strong>换季为何反复？</strong><i>查看示例</i>
+                  </button>
+                </section>
+
+                <section className="mini-trend" onClick={() => setTab("assessment")}>
+                  <div><small>趋势展示占位</small><h3>暂无真实健康记录</h3></div>
+                  <div className="sparkline" aria-hidden="true">
+                    <i style={{ height: "84%" }} /><i style={{ height: "73%" }} /><i style={{ height: "64%" }} />
+                    <i style={{ height: "55%" }} /><i className="active" style={{ height: "42%" }} />
+                  </div>
+                  <span>查看演示 ›</span>
+                </section>
+
+                <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={() => setTab("articles")}>全部 ›</button></div>
+                <button className="article-feature" onClick={() => setArticleOpen(0)}>
+                  <div className="article-art"><span /><i>4</i></div>
+                  <div><small>日常防护 · 3 分钟</small><strong>换季鼻敏感，先做好这 4 件小事</strong><span>温差、卧室环境与外出防护</span></div>
+                </button>
+              </div>
+            )}
+
+            {tab === "chat" && (
+              <div className="chat-view">
+                <div className="safety-banner">
+                  <span>库</span>
+                  <p><strong>内部交互演示</strong><small>当前内容待审核 · 不替代门诊诊断</small></p>
+                </div>
+                <div className="chat" aria-live="polite">
+                  <div className="time-label">今天 14:20</div>
+                  {messages.map((message) => {
+                    if (message.kind === "thinking") {
+                      return <div className="message-row ai-row" key={message.id}><div className="mini-avatar">岐</div><div className="bubble ai-bubble typing"><b /><b /><b /></div></div>;
+                    }
+                    if (message.kind === "source") {
+                      return <div className="source-card" key={message.id}><span>✓</span><div><strong>{message.title}</strong><small>{message.detail}</small></div><b>›</b></div>;
+                    }
+                    return (
+                      <div className={`message-row ${message.role}-row`} key={message.id}>
+                        {message.role === "ai" && <div className="mini-avatar">岐</div>}
+                        <div className={`bubble ${message.role}-bubble`}>{message.text}</div>
+                      </div>
+                    );
+                  })}
+
+                  {step === 0 && messages.length === 1 && (
+                    <>
+                      <div className="quick-ask-label">你可以这样问</div>
+                      <div className="knowledge-options">
+                        {knowledgeQuestions.map((item, index) => <button key={item.question} onClick={() => askKnowledge(index)}><span>问</span>{item.question}<b>›</b></button>)}
+                      </div>
+                      <button className="start-card" onClick={startConsultation}>
+                        <span className="start-icon">聊</span><span><strong>开始了解我的情况</strong><small>约 2 分钟 · 随时可以退出</small></span><b>›</b>
+                      </button>
+                    </>
+                  )}
+
+                  {activeOptions.length > 0 && (
+                    <div className="quick-options">
+                      {activeOptions.map((option) => (
+                        <button key={option} onClick={() => step === 1 ? selectSymptom(option) : step === 2 ? selectDuration(option) : selectWarning(option)}>
+                          {option}<span>›</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+
+                  {step === 4 && (
+                    <>
+                      <article className="result-card">
+                        <div className="result-head"><div><small>交互演示已完成</small><h2>未输出诊断或证型</h2></div><span>仅作演示</span></div>
+                        <p>当前版本仅展示交互流程，不依据本次回答生成个性化调理方案。</p>
+                        <div className="evidence"><span>症状已记录</span><span>安全项已确认</span><span>建议线下咨询</span></div>
+                        <div className="result-foot"><span>内容状态</span> 内部演示，待正式规则与医学审核</div>
+                        <div className="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</div>
+                      </article>
+                      <article className="plan-card">
+                        <div className="plan-title"><span>演示</span><div><small>功能未开放</small><h2>正式方案待审核后接入</h2></div></div>
+                        <ol>
+                          <li><i>1</i><span><strong>保留症状记录入口</strong><small>当前记录仅用于界面演示</small></span></li>
+                          <li><i>2</i><span><strong>出现高危信号及时就医</strong><small>呼吸困难等情况请立即寻求帮助</small></span></li>
+                          <li><i>3</i><span><strong>等待正式内容开放</strong><small>规则与医学内容审核完成后再接入</small></span></li>
+                        </ol>
+                      </article>
+                      <button className="video-card" onClick={() => setVideoOpen(true)}>
+                        <div className="video-cover"><span className="sun" /><div className="face-demo"><i /><b /></div><span className="play">▶</span><small>02:36</small></div>
+                        <div className="video-copy"><small>示范内容未开放</small><strong>护理视频待审核</strong><span>审核通过后再展示</span></div>
+                      </button>
+                      <button className="feedback-button" onClick={() => setTab("assessment")}>去记录今天的症状</button>
+                    </>
+                  )}
+                  <div ref={chatEnd} />
+                </div>
+                <form className="composer" onSubmit={sendCustom}>
+                  <button type="button" aria-label="语音输入">⌁</button>
+                  <input aria-label="输入症状或问题" value={input} onChange={(event) => setInput(event.target.value)} placeholder="问问题或描述症状…" />
+                  <button className="send-button" type="submit" aria-label="发送">↑</button>
+                </form>
+              </div>
+            )}
+
+            {tab === "assessment" && (
+              <div className="assessment-view">
+                <section className="allergy-calendar">
+                  <div className="calendar-top">
+                    <div><small>症状评估日历 · 演示数据</small><h2>过敏日历</h2></div>
+                    <button onClick={() => setCalendarMode((mode) => mode === "calendar" ? "list" : "calendar")}>
+                      {calendarMode === "calendar" ? "☷ 列表" : "▦ 日历"}
+                    </button>
+                  </div>
+
+                  {calendarMode === "calendar" ? (
+                    <>
+                      <div className="month-switch"><button aria-label="上个月">‹</button><strong>2026年7月</strong><button aria-label="下个月">›</button></div>
+                      <div className="week-row">{["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day}>{day}</span>)}</div>
+                      <div className="calendar-grid">
+                        {calendarDays.map((item, index) => (
+                          <button
+                            key={`${item.day}-${index}`}
+                            className={`${item.muted ? "muted" : ""} ${item.level ?? ""} ${item.today ? "today" : ""}`}
+                            onClick={() => !item.muted && setEntryOpen(true)}
+                            aria-label={`${item.day}日${item.level === "mild" ? "轻度" : item.level === "moderate" ? "中度" : ""}`}
+                          >
+                            {item.day}
+                          </button>
+                        ))}
+                      </div>
+                      <div className="calendar-legend"><span><i className="good" />良好</span><span><i className="mild" />轻度</span><span><i className="moderate" />中度</span><span><i className="severe" />重度</span></div>
+                    </>
+                  ) : (
+                    <div className="calendar-list">
+                      <div><time>7月19日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 0</strong></div>
+                      <div><time>7月17日</time><span className="moderate">中度</span><strong>喷嚏 2 · 流涕 2 · 鼻塞 2 · 鼻痒 1</strong></div>
+                      <div><time>7月15日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 1</strong></div>
+                    </div>
+                  )}
+                </section>
+
+                <article className="trend-card">
+                  <div className="trend-title"><div><small>演示趋势</small><h3>过敏趋势</h3></div><span>非真实数据</span></div>
+                  <canvas ref={chartRef} aria-label="本月过敏严重程度趋势图" />
+                  <div className="chart-legend"><span><i />过敏严重程度</span><small>仅用于展示界面，不代表个人数据</small></div>
+                </article>
+
+                <button className="calendar-add-inline" onClick={() => setEntryOpen(true)}>＋ 记录今天的症状</button>
+              </div>
+            )}
+
+            {tab === "articles" && (
+              <div className="articles-view">
+                <div className="articles-hero"><small>健康专栏演示</small><h2>懂一点，鼻子舒服一点</h2><p>内容处于内部演示与审核阶段，不由模型自由生成。</p></div>
+                <div className="topic-chips"><button className="active">为你推荐</button><button>日常防护</button><button>亲子健康</button></div>
+                <div className="article-list">
+                  {articles.map((article, index) => (
+                    <button key={article.title} onClick={() => setArticleOpen(index)}>
+                      <div className={`article-thumb ${article.tone}`}><span>{index === 0 ? "护" : index === 1 ? "安" : "童"}</span></div>
+                      <div><small>{article.tag} · {article.read}</small><strong>{article.title}</strong><p>{article.summary}</p></div>
+                    </button>
+                  ))}
+                </div>
+                <div className="push-note"><span>铃</span><div><strong>内容提醒演示</strong><small>审核通过后再开放正式提醒</small></div></div>
+              </div>
+            )}
+
+            {tab === "profile" && (
+              <div className="profile-view">
+                <section className="profile-hero">
+                  <div className="profile-avatar" aria-hidden="true">访</div>
+                  <div>
+                    <small>演示账户</small>
+                    <h2>尚未登录</h2>
+                    <p>暂无真实健康记录</p>
+                  </div>
+                  <button aria-label="编辑个人资料">编辑</button>
+                </section>
+
+                <section className="profile-summary" aria-label="健康数据摘要">
+                  <div><strong>--</strong><span>连续记录/天</span></div>
+                  <div><strong>--</strong><span>本月记录/次</span></div>
+                  <div><strong>暂无</strong><span>最近评估</span></div>
+                </section>
+
+                <section className="profile-section">
+                  <h3>我的健康</h3>
+                  <button onClick={() => setTab("assessment")}>
+                    <span className="profile-item-icon blue">档</span>
+                    <div><strong>健康档案</strong><small>基础信息、过敏史与常见诱因</small></div>
+                    <b>›</b>
+                  </button>
+                  <button onClick={() => setTab("assessment")}>
+                    <span className="profile-item-icon amber">记</span>
+                    <div><strong>症状记录</strong><small>查看日历、趋势与 TNSS 评估</small></div>
+                    <b>›</b>
+                  </button>
+                  <button onClick={() => setTab("articles")}>
+                    <span className="profile-item-icon mint">科</span>
+                    <div><strong>鼻健康科普</strong><small>查看待审核的演示内容</small></div>
+                    <b>›</b>
+                  </button>
+                </section>
+
+                <section className="profile-section">
+                  <h3>设置与服务</h3>
+                  <button>
+                    <span className="profile-item-icon violet">铃</span>
+                    <div><strong>提醒设置</strong><small>每日记录与健康内容提醒</small></div>
+                    <b>›</b>
+                  </button>
+                  <button>
+                    <span className="profile-item-icon gray">盾</span>
+                    <div><strong>隐私与授权</strong><small>查看和管理健康数据授权</small></div>
+                    <b>›</b>
+                  </button>
+                  <button>
+                    <span className="profile-item-icon gray">关</span>
+                    <div><strong>关于抗敏先锋</strong><small>团队介绍、使用说明与意见反馈</small></div>
+                    <b>›</b>
+                  </button>
+                </section>
+
+                <p className="profile-disclaimer">当前为交互 Demo，不保存真实健康档案或趋势数据；结果不能替代门诊诊断。</p>
+              </div>
+            )}
           </div>
 
-          <p className="final-disclaimer">
-            结果仅供内部流程测试，不能替代医生诊断或个体化治疗建议。
-          </p>
-        </section>
+          <nav className="bottom-nav" aria-label="主要功能">
+            <button className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
+            <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
+            <button className="nav-add" onClick={() => { setTab("assessment"); setEntryOpen(true); }} aria-label="新增症状记录"><span>＋</span></button>
+            <button className={tab === "assessment" ? "active" : ""} onClick={() => setTab("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
+            <button className={tab === "profile" ? "active" : ""} onClick={() => setTab("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
+          </nav>
+
+          {entryOpen && (
+            <div className="entry-sheet-backdrop" role="dialog" aria-modal="true" aria-label="填写今日症状量表">
+              <div className="entry-sheet">
+                <div className="sheet-handle" />
+                <div className="sheet-title"><div><small>演示记录</small><h2>记录今天的症状</h2><p>仅用于界面演示，不会保存真实健康数据</p></div><button onClick={() => setEntryOpen(false)}>×</button></div>
+                <div className="scale-card">
+                  {scaleItems.map((item, itemIndex) => (
+                    <div className="scale-row" key={item}>
+                      <div><strong>{item}</strong><span>{["无", "轻微", "明显", "严重"][scores[itemIndex]]}</span></div>
+                      <div className="score-options">
+                        {[0, 1, 2, 3].map((score) => (
+                          <button className={scores[itemIndex] === score ? "selected" : ""} key={score} onClick={() => setScores((current) => current.map((value, index) => index === itemIndex ? score : value))}>{score}</button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="sheet-score"><span>TNSS 总分</span><strong>{totalScore}<i>/12</i></strong><b>{totalScore <= 4 ? "轻度" : totalScore <= 8 ? "中度" : "重度"}</b></div>
+                  <p className="assessment-disclaimer">量表结果仅供参考，最终方案请以门诊诊断为准。</p>
+                  <button className="submit-assessment" onClick={() => { setAssessmentDone(true); setEntryOpen(false); }}>
+                    保存演示记录
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      </section>
+
+      {videoOpen && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="操作视频演示">
+          <div className="video-modal">
+            <button onClick={() => setVideoOpen(false)} aria-label="关闭视频">×</button>
+            <div className="video-stage"><div className="video-person"><span>请用指腹轻柔按揉鼻翼两侧</span><i /><b /></div><div className="video-progress"><span /></div></div>
+            <h2>鼻周轻柔舒缓</h2><p>力度以轻柔、舒适为准。如出现疼痛、出血或其他不适，请立即停止。</p>
+          </div>
+        </div>
+      )}
+
+      {articleOpen !== null && (
+        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="科普文章">
+          <article className="article-modal">
+            <button onClick={() => setArticleOpen(null)} aria-label="关闭文章">×</button>
+            <small>{articles[articleOpen].tag} · {articles[articleOpen].read}</small>
+            <h2>{articles[articleOpen].title}</h2>
+            <p className="lead">{articles[articleOpen].summary}</p>
+            <h3>先观察，再行动</h3>
+            <p>记录症状出现的时间、持续多久，以及是否影响睡眠和学习。连续记录比一次性的感受更有参考价值。</p>
+            <h3>减少常见刺激</h3>
+            <p>留意温差、冷空气、粉尘和气味刺激。保持居室清洁通风，外出时根据环境做好防护。</p>
+            <div className="article-warning"><strong>需要就医的情况</strong><span>如果伴随高热、剧烈头痛、呼吸困难或反复鼻出血，请及时前往正规医疗机构。</span></div>
+            <footer>内部演示内容 · 待团队与医学审核 · 不替代门诊诊断</footer>
+          </article>
+        </div>
       )}
     </main>
   );
