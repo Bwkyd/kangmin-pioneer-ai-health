@@ -63,7 +63,7 @@ export async function PATCH(request: Request) {
         ? await DB.prepare("SELECT COUNT(*) count, SUM(CASE WHEN title = '' OR instruction = '' THEN 1 ELSE 0 END) invalid, SUM(CASE WHEN EXISTS (SELECT 1 FROM content_items video WHERE video.type = 'video' AND video.status = 'published' AND video.media_id = plan_steps.media_id) THEN 1 ELSE 0 END) valid_media FROM plan_steps WHERE plan_id = ?").bind(id).first<{ count: number; invalid: number; valid_media: number }>()
         : null;
       if (stepStats?.invalid) return jsonError("调理步骤标题和说明不能为空", 422);
-      const problem = publishProblem(item.type, { ...item, mediaId: item.media_id }, Number(stepStats?.count ?? 0), Number(stepStats?.valid_media ?? 0));
+      const problem = publishProblem(item.type, { ...item, mediaId: item.media_id });
       if (problem) return jsonError(problem, 422);
       if (item.media_id) {
         const asset = await DB.prepare("SELECT status FROM media_assets WHERE id = ?").bind(item.media_id).first<{ status: string }>();

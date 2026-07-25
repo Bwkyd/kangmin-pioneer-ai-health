@@ -67,15 +67,17 @@ test("暴露是诱因唯一事实源，编辑和删除会实时改变档案投�
   assert.deepEqual(profile.body.exposureTriggerProjection, []);
 });
 
-test("健康档案接受显式 unknown，但拒绝客户端写入派生诱因", async () => {
+test("健康档案接受显式 unknown，并拒绝客户端写入派生诱因", async () => {
   const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
   const value = { basicInfo: { displayName: { status: "unknown" }, birthDate: { status: "unknown" }, sex: { status: "unknown" } }, allergyHistory: [{ id: null, allergenName: "尘螨", certainty: "suspected", note: null }], commonTriggers: ["冷空气"] };
-  const saved = await result(await api.saveProfile(request("/", "PATCH", value, { "if-match": '"0"' })));
+  const rejected = await result(await api.saveProfile(request("/", "PATCH", value, { "if-match": '"0"' })));
+  assert.equal(rejected.status, 422);
+  assert.match(rejected.body.error.message, /过敏原患者自述记录派生/);
+  const profileWithoutDerivedTriggers = Object.fromEntries(Object.entries(value).filter(([key]) => key !== "commonTriggers"));
+  const saved = await result(await api.saveProfile(request("/", "PATCH", profileWithoutDerivedTriggers, { "if-match": '"0"' })));
   assert.equal(saved.status, 200);
   assert.equal(saved.body.profile.version, 1);
-  assert.deepEqual(saved.body.profile.commonTriggers, ["冷空气"]);
-  const derived = await result(await api.saveProfile(request("/", "PATCH", { ...value, triggers: [] }, { "if-match": '"1"' })));
-  assert.equal(derived.status, 422);
+  assert.equal("commonTriggers" in saved.body.profile, false);
 });
 
 test("症状记录按服务端身份和日期保存，更新时阻止旧版本覆盖", async () => {
@@ -91,11 +93,23 @@ test("症状记录按服务端身份和日期保存，更新时阻止旧版本�
   assert.equal(conflict.body.error.code, "VERSION_CONFLICT");
 });
 
+test("已有记录缺少 If-Match 时拒绝静默覆盖", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  const profile = { basicInfo: { displayName: "用户", birthDate: "1990-01-01", sex: "female" }, allergyHistory: "" };
+  assert.equal((await result(await api.saveProfile(request("/", "PATCH", profile)))).status, 200);
+  assert.equal((await result(await api.saveProfile(request("/", "PATCH", profile)))).body.error.code, "PRECONDITION_REQUIRED");
+  await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }), symptom.date);
+  assert.equal((await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }), symptom.date))).body.error.code, "PRECONDITION_REQUIRED");
+  const created = await result(await api.createExposure(request("/", "POST", exposure, { "idempotency-key": "if-match-exposure" })));
+  assert.equal((await result(await api.updateExposure(request("/", "PATCH", exposure), created.body.record.id))).body.error.code, "PRECONDITION_REQUIRED");
+  assert.equal((await result(await api.deleteExposure(request("/", "DELETE"), created.body.record.id))).body.error.code, "PRECONDITION_REQUIRED");
+});
+
 test("与 issue-72 前端契约一致：PUT 档案、allergen-exposures 字段和根响应", async () => {
   const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
-  const profileDraft = { basicInfo: { displayName: "测试用户", birthDate: "1990-01-02", sex: "female" }, allergyHistory: "尘螨待确认", commonTriggers: ["冷空气"] };
+  const profileDraft = { basicInfo: { displayName: "测试用户", birthDate: "1990-01-02", sex: "female" }, allergyHistory: "尘螨待确认" };
   const saved = await result(await api.saveProfile(request("/api/v1/health-records/profile", "PUT", profileDraft)));
-  assert.deepEqual(saved.body.profile.commonTriggers, ["冷空气"]);
+  assert.equal("commonTriggers" in saved.body.profile, false);
   assert.equal(saved.body.profile.allergyHistory, "尘螨待确认");
   const exposureDraft = { date: "2026-07-26", factors: ["花粉", "动物/宠物毛"], otherDescription: "" };
   const created = await result(await api.createExposure(request("/api/v1/health-records/allergen-exposures", "POST", exposureDraft)));
@@ -106,10 +120,10 @@ test("与 issue-72 前端契约一致：PUT 档案、allergen-exposures 字段�
   assert.equal(replay.status, 200);
   assert.equal(replay.headers.get("idempotency-replayed"), "true");
   assert.equal(replay.body.record.id, created.body.record.id);
-  const edited = await result(await api.updateExposure(request("/api/v1/health-records/allergen-exposures/id", "PUT", { ...exposureDraft, factors: ["尘螨"] }), created.body.record.id));
+  const edited = await result(await api.updateExposure(request("/api/v1/health-records/allergen-exposures/id", "PUT", { ...exposureDraft, factors: ["尘螨"] }, { "if-match": '"1"' }), created.body.record.id));
   assert.equal(edited.status, 200);
   assert.deepEqual(edited.body.record.factors, ["尘螨"]);
-  assert.equal((await api.deleteExposure(request("/api/v1/health-records/allergen-exposures/id", "DELETE"), created.body.record.id)).status, 204);
+  assert.equal((await api.deleteExposure(request("/api/v1/health-records/allergen-exposures/id", "DELETE", undefined, { "if-match": '"2"' }), created.body.record.id)).status, 204);
 });
 
 test("不同服务端身份不能读取、编辑或删除他人的记录", async () => {

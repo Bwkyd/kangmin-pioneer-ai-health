@@ -45,6 +45,24 @@ git diff --check
 
 PR 默认 Draft，并使用仓库模板关联 Issue。CI 通过后仍需按任务风险获得审核和合并授权。
 
+## 健康记录身份边界
+
+健康档案、过敏原、症状和用药接口不接受客户端传入的 `x-user-id` 或 `userId`。
+用户身份必须由服务端解析：一期本地/集成测试可以显式启用合成身份，staging/production
+默认拒绝请求，直到接入已验证手机号的服务端身份解析器。
+
+本地 Cloudflare Worker 需要把以下示例变量放入未入库的 `.dev.vars`（不要把真实用户标识、
+手机号或令牌提交到仓库）：
+
+```dotenv
+APP_ENV=local
+HEALTH_IDENTITY_MODE=synthetic
+HEALTH_SYNTHETIC_USER_ID=usr_test_demo
+```
+
+部署到 staging/production 时不要配置 `HEALTH_IDENTITY_MODE=synthetic`；在真实手机号身份
+解析器上线前，健康记录接口返回 401 是预期的 fail-closed 行为。
+
 ## 收尾审计
 
 ```bash

@@ -64,6 +64,7 @@ test("keeps every original demo section without presenting simulated medical fac
   assert.match(page, /常见诱因/);
   assert.match(page, /用药记录/);
   assert.match(page, /患者自述/);
+  assert.doesNotMatch(page, /护理视频待审核|请用指腹轻柔按揉鼻翼两侧/);
   assert.match(page, /不会自动判定为症状病因/);
   assert.match(page, /当前不会输出诊断、证型或个性化治疗方案/);
   assert.match(page, /内部演示内容 · 待医学审核/);

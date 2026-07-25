@@ -19,7 +19,7 @@ export function parseMetadata(value: unknown) {
   };
 }
 
-export function publishProblem(type: ContentType, item: { title?: string; body?: string; version?: number; mediaId?: string | null; metadata?: string }, stepCount = 0, validStepMediaCount = 0) {
+export function publishProblem(type: ContentType, item: { title?: string; body?: string; version?: number; mediaId?: string | null; metadata?: string }) {
   if (!item.title?.trim()) return "请先填写标题";
   if (type === "article" && !item.body?.trim()) return "文章正文不能为空";
   if (type === "video" && !item.mediaId) return "视频发布前必须上传视频文件";
@@ -29,10 +29,7 @@ export function publishProblem(type: ContentType, item: { title?: string; body?:
     if (!raw.indexedChunks || raw.indexedVersion !== item.version) return "知识资料必须先完成当前版本索引";
   }
   if (type === "plan") {
-    const metadata = parseMetadata(item.metadata ? JSON.parse(item.metadata) : {});
-    if (!metadata.risks || !metadata.contraindications || metadata.syndromeCodes.length === 0) return "调理方案必须填写风险、禁忌并绑定已批准证型";
-    if (stepCount === 0) return "调理方案至少需要一个操作步骤";
-    if (validStepMediaCount === 0) return "调理方案至少需要绑定一个已发布视频";
+    return "调理方案临床审核流程尚未接入，当前禁止发布";
   }
   return null;
 }

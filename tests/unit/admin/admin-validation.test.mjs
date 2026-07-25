@@ -25,10 +25,8 @@ test("knowledge requires source and completed index", () => {
   assert.equal(publishProblem("knowledge", { title: "来源", version: 2, mediaId: "media_1", metadata: "{\"indexedChunks\":2,\"indexedVersion\":2}" }), null);
 });
 
-test("plan requires risks, contraindications, approved syndrome, step and published video", () => {
+test("plan publication stays blocked until the clinical approval workflow exists", () => {
   const metadata = JSON.stringify({ risks: "有风险", contraindications: "有禁忌", syndromeCodes: ["LUNG_HEAT"] });
-  assert.match(publishProblem("plan", { title: "方案", metadata: "{}" }, 1, 1), /风险/);
-  assert.match(publishProblem("plan", { title: "方案", metadata }, 0, 0), /步骤/);
-  assert.match(publishProblem("plan", { title: "方案", metadata }, 1, 0), /已发布视频/);
-  assert.equal(publishProblem("plan", { title: "方案", metadata }, 1, 1), null);
+  assert.match(publishProblem("plan", { title: "方案", metadata: "{}" }), /临床审核/);
+  assert.match(publishProblem("plan", { title: "方案", metadata }), /禁止发布/);
 });

@@ -70,7 +70,8 @@ test("健康档案客户端兼容当前服务端的扁平档案响应", async ()
   const profile = await getHealthProfile(async () => Response.json({
     profile: {
       basicInfo: { displayName: "体验用户", birthDate: "1992-01-02", sex: "female" },
-      allergyHistory: "尘螨待确认",
+      allergyHistory: [{ id: "allergy_1", allergenName: "尘螨", certainty: "suspected", note: "既往检查待复核" }],
+      allergyHistoryEntries: [{ id: "allergy_1", allergenName: "尘螨", certainty: "suspected", note: "既往检查待复核" }],
       commonTriggers: [],
       version: 1,
       updatedAt: "2026-07-26T00:00:00.000Z",
@@ -78,8 +79,22 @@ test("健康档案客户端兼容当前服务端的扁平档案响应", async ()
     exposureTriggerProjection: [],
   }));
   assert.deepEqual(profile.basicInfo, { displayName: "体验用户", birthDate: "1992-01-02", sex: "female" });
-  assert.equal(profile.allergyHistory, "尘螨待确认");
+  assert.equal(profile.allergyHistory, "尘螨");
+  assert.deepEqual(profile.allergyHistoryEntries, [{ id: "allergy_1", allergenName: "尘螨", certainty: "suspected", note: "既往检查待复核" }]);
   assert.deepEqual(profile.commonTriggers, []);
+});
+
+test("健康档案未编辑过敏史时保留结构化 certainty、note 和 id", async () => {
+  let request;
+  await saveHealthProfile({
+    basicInfo: { displayName: "体验用户", birthDate: "1992-01-02", sex: "female" },
+    allergyHistory: "尘螨",
+    allergyHistoryEntries: [{ id: "allergy_1", allergenName: "尘螨", certainty: "suspected", note: "既往检查待复核" }],
+  }, 1, async (path, init) => {
+    request = { path, init };
+    return Response.json({ profile: { basicInfo: { displayName: "体验用户", birthDate: "1992-01-02", sex: "female" }, allergyHistory: [], version: 2, updatedAt: "2026-07-26T00:00:00.000Z" }, exposureTriggerProjection: [] });
+  });
+  assert.deepEqual(JSON.parse(request.init.body).allergyHistory, [{ id: "allergy_1", allergenName: "尘螨", certainty: "suspected", note: "既往检查待复核" }]);
 });
 
 test("暴露创建使用正式字段与幂等键，401 原样失败且不修改输入", async () => {

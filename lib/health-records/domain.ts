@@ -230,15 +230,14 @@ function parseKnowledge<T>(
 }
 
 export function parseProfileInput(value: unknown): HealthProfileInput | null {
-  if (!isRecord(value) || !Object.keys(value).every((key) => ["basicInfo", "allergyHistory", "commonTriggers"].includes(key)) || !("basicInfo" in value) || !("allergyHistory" in value)) return null;
+  if (!isRecord(value) || !Object.keys(value).every((key) => ["basicInfo", "allergyHistory"].includes(key)) || !("basicInfo" in value) || !("allergyHistory" in value)) return null;
   if (!isRecord(value.basicInfo) || !hasExactKeys(value.basicInfo, ["displayName", "birthDate", "sex"])) return null;
   const displayName = parseKnowledge(value.basicInfo.displayName, (item) => cleanText(item, 80));
   const birthDate = parseKnowledge(value.basicInfo.birthDate, validDate);
   const sex = parseKnowledge(value.basicInfo.sex, (item) =>
     item === "female" || item === "male" || item === "other" ? item : null,
   );
-  const rawCommonTriggers = value.commonTriggers === undefined ? [] : value.commonTriggers;
-  if (!displayName || !birthDate || !sex || !Array.isArray(value.allergyHistory) || value.allergyHistory.length > 100 || !Array.isArray(rawCommonTriggers) || rawCommonTriggers.length > 100) return null;
+  if (!displayName || !birthDate || !sex || !Array.isArray(value.allergyHistory) || value.allergyHistory.length > 100) return null;
   const allergyHistory: AllergyHistoryEntry[] = [];
   for (const item of value.allergyHistory) {
     if (!isRecord(item) || !hasExactKeys(item, ["id", "allergenName", "certainty", "note"])) return null;
@@ -250,9 +249,9 @@ export function parseProfileInput(value: unknown): HealthProfileInput | null {
     allergyHistory.push({ id, allergenName, certainty: item.certainty, note });
   }
   if (new Set(allergyHistory.map((item) => item.id)).size !== allergyHistory.length) return null;
-  const commonTriggers = rawCommonTriggers.map((item) => cleanText(item, 120));
-  if (commonTriggers.some((item) => item === null)) return null;
-  return { basicInfo: { displayName, birthDate, sex }, allergyHistory, commonTriggers: [...new Set(commonTriggers as string[])] };
+  // Kept on the internal repository type for migration compatibility. It is
+  // never accepted from the client and is no longer an authoritative source.
+  return { basicInfo: { displayName, birthDate, sex }, allergyHistory, commonTriggers: [] };
 }
 
 function score(value: unknown) {

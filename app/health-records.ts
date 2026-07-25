@@ -16,9 +16,17 @@ export type TriggerProjection = {
   sourceRecordIds: string[];
 };
 
+export type AllergyHistoryEntry = {
+  id: string;
+  allergenName: string;
+  certainty: "confirmed" | "suspected" | "unknown";
+  note: string | null;
+};
+
 export type HealthProfile = {
   basicInfo: BasicHealthInfo;
   allergyHistory: string;
+  allergyHistoryEntries: AllergyHistoryEntry[];
   commonTriggers: TriggerProjection[];
   version: number;
   updatedAt: string;
@@ -34,7 +42,7 @@ export type AllergenExposure = {
   updatedAt: string;
 };
 
-export type HealthProfileDraft = Pick<HealthProfile, "basicInfo" | "allergyHistory">;
+export type HealthProfileDraft = Pick<HealthProfile, "basicInfo" | "allergyHistory"> & { allergyHistoryEntries?: AllergyHistoryEntry[] };
 export type AllergenExposureDraft = Pick<AllergenExposure, "date" | "factors" | "otherDescription">;
 
 export type MedicationRecord = {
@@ -98,6 +106,7 @@ const labelByCode = new Map(
 export const emptyHealthProfile: HealthProfileDraft = {
   basicInfo: { displayName: "", birthDate: "", sex: "unspecified" },
   allergyHistory: "",
+  allergyHistoryEntries: [],
 };
 
 export const emptyMedication: MedicationDraft = {
@@ -283,7 +292,9 @@ function profilePayload(draft: HealthProfileDraft) {
       birthDate: knowledge(draft.basicInfo.birthDate),
       sex: draft.basicInfo.sex === "unspecified" ? { status: "unknown" as const } : { status: "known" as const, value: draft.basicInfo.sex },
     },
-    allergyHistory: draft.allergyHistory.trim() ? [{ id: null, allergenName: draft.allergyHistory.trim(), certainty: "unknown", note: null }] : [],
+    allergyHistory: draft.allergyHistoryEntries !== undefined
+      ? draft.allergyHistoryEntries.map((entry) => ({ ...entry }))
+      : draft.allergyHistory.trim() ? [{ id: null, allergenName: draft.allergyHistory.trim(), certainty: "unknown" as const, note: null }] : [],
   };
 }
 
@@ -309,6 +320,11 @@ function medicationPayload(draft: MedicationDraft) {
 function normalizeProfile(profile: Record<string, unknown>, triggers: TriggerProjection[]): HealthProfile {
   const basic = profile.basicInfo as Record<string, unknown>;
   const history = profile.allergyHistory;
+  const historyEntries = Array.isArray(profile.allergyHistoryEntries)
+    ? profile.allergyHistoryEntries.filter((item): item is Record<string, unknown> => isRecord(item) && typeof item.id === "string" && typeof item.allergenName === "string" && (item.certainty === "confirmed" || item.certainty === "suspected" || item.certainty === "unknown") && (item.note === null || typeof item.note === "string")).map((item) => ({ id: item.id, allergenName: item.allergenName, certainty: item.certainty as AllergyHistoryEntry["certainty"], note: item.note as string | null }))
+    : Array.isArray(history)
+      ? history.filter((item): item is Record<string, unknown> => isRecord(item) && typeof item.id === "string" && typeof item.allergenName === "string" && (item.certainty === "confirmed" || item.certainty === "suspected" || item.certainty === "unknown") && (item.note === null || typeof item.note === "string")).map((item) => ({ id: item.id, allergenName: item.allergenName, certainty: item.certainty as AllergyHistoryEntry["certainty"], note: item.note as string | null }))
+      : [];
   return {
     basicInfo: {
       displayName: textValue(basic.displayName),
@@ -318,6 +334,7 @@ function normalizeProfile(profile: Record<string, unknown>, triggers: TriggerPro
     allergyHistory: Array.isArray(history)
       ? history.map((item) => isRecord(item) ? String(item.allergenName ?? "") : "").filter(Boolean).join("、")
       : typeof history === "string" ? history : "",
+    allergyHistoryEntries: historyEntries,
     commonTriggers: triggers,
     version: Number(profile.version),
     updatedAt: String(profile.updatedAt),
