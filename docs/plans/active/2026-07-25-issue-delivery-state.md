@@ -8,11 +8,11 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 03:40:04 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 03:41:55 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前 HEAD：`d0ba73fc3326ba67d338fd082d748eef25556f10`；旧候选 `75d5bdb7127b27dcf51d936633b8ca31d88441b7` 已因独立审查 P1 作废；本轮 14 个文件仍在工作树中，待提交后冻结新的代码候选；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：实现修改已停止，`git diff --check` 通过；候选提交前最后一轮已在授权主机环境完成完整测试和真实浏览器 E2E。当前仍未提交，提交后必须以新 SHA 重新执行独立审查，不能复用旧 SHA 结论。
+- 当前 HEAD：`468f40b18c61ab8768c10dac9357cee371b62c31`；这是本轮 14 个已核对文件的代码候选；旧候选 `75d5bdb7127b27dcf51d936633b8ca31d88441b7` 已因独立审查 P1 作废；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：候选提交后干净；`git diff --check`、授权主机完整测试和真实浏览器 E2E 均已完成。后续独立审查必须绑定精确 SHA `468f40b18c61ab8768c10dac9357cee371b62c31`，不能复用旧 SHA 结论。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 只读 HEAD 核验返回 HTTP 200；未登录、未写入
@@ -30,6 +30,14 @@
 - caution：以上是合成身份与隔离本地 D1 的代码/浏览器证据；生产 verified-phone resolver、生产 D1、客户登录、客户 UAT 均未验证。
 - pending：将当前工作树提交并冻结代码候选 SHA；只对该 SHA 重跑三类对抗审查及 Kimi/DeepSeek 复审。旧候选的 FAIL/PASS 不能复用。
 - blocked：GitHub token 已失效，当前不能创建 Draft PR/CI；未获授权不得推送、合并、部署、关闭 Issue 或清理 worktree/分支。
+
+## 2026-07-26 03:41 代码候选冻结
+
+- completed：提交 `468f40b18c61ab8768c10dac9357cee371b62c31`（`Harden health records and clinical content gates`），包含健康档案结构化过敏史、过敏原目录契约、患者自述暴露、用药时间/剂量/实际用量、症状 unknown 门禁、异步请求保护、错误态、一期范围文档和临床内容 fail-closed。
+- completed：候选 SHA 的工作树干净；授权主机 `npm test` 55/55 PASS，`npm run lint` 0 errors/1 既有 warning，浏览器 E2E 已在提交前对同一业务代码树通过。
+- in_progress：对精确 SHA `468f40b18c61ab8768c10dac9357cee371b62c31` 重跑重复/冗余、并发/边界、旧功能/临床门禁三类独立审查；旧候选审查结果不作结论。
+- pending：三类审查 P0/P1 清零后，执行 Kimi/DeepSeek 对同一精确 SHA 的独立评审；若发现 P0/P1，继续下一轮真修并重新测试/冻结。
+- blocked：GitHub 认证失效，暂不能创建 PR/CI；生产 verified-phone resolver、生产 D1、临床批准、客户 UAT 未完成，因此不推送、不部署、不合并、不关闭 Issue。
 
 ## 2026-07-26 01:04 看门狗运行记录
 
