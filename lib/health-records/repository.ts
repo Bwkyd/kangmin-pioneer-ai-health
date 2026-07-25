@@ -6,6 +6,8 @@ import type {
   IdempotentCreate,
   MedicationInput,
   MedicationRecord,
+  SymptomRecord,
+  SymptomRecordInput,
   TriggerProjection,
 } from "./domain.ts";
 
@@ -21,6 +23,8 @@ export interface HealthRecordsRepository {
   ): Promise<IdempotentCreate<MedicationRecord>>;
   updateMedication(userId: string, id: string, expectedVersion: number, input: MedicationInput): Promise<MedicationRecord>;
   deleteMedication(userId: string, id: string, expectedVersion: number): Promise<void>;
+  listSymptoms(userId: string, date: string | null): Promise<SymptomRecord[]>;
+  saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput): Promise<SymptomRecord>;
   listExposures(userId: string, date: string | null): Promise<ExposureRecord[]>;
   createExposure(
     userId: string,

@@ -115,6 +115,21 @@ export const medicationRecords = sqliteTable("medication_records", {
   index("medication_records_user_time_idx").on(table.userId, table.takenAt, table.id),
 ]);
 
+export const symptomRecords = sqliteTable("symptom_records", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  symptomDate: text("symptom_date").notNull(),
+  sneezing: integer("sneezing").notNull(),
+  rhinorrhea: integer("rhinorrhea").notNull(),
+  congestion: integer("congestion").notNull(),
+  itching: integer("itching").notNull(),
+  totalScore: integer("total_score").notNull(),
+  version: integer("version").notNull().default(1),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("symptom_records_user_date_idx").on(table.userId, table.symptomDate),
+]);
+
 export const allergenExposureRecords = sqliteTable("allergen_exposure_records", {
   id: text("id").primaryKey(),
   userId: text("user_id").notNull(),

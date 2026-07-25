@@ -8,6 +8,8 @@ import {
   type IdempotentCreate,
   type MedicationInput,
   type MedicationRecord,
+  type SymptomRecord,
+  type SymptomRecordInput,
   type TriggerProjection,
 } from "./domain.ts";
 import type { HealthRecordsRepository } from "./repository.ts";
@@ -31,6 +33,7 @@ function withoutOwner<T>(value: Owned<T>): T {
 export class InMemoryHealthRecordsRepository implements HealthRecordsRepository {
   private profiles = new Map<string, HealthProfile>();
   private medications = new Map<string, Owned<MedicationRecord>>();
+  private symptoms = new Map<string, Owned<SymptomRecord>>();
   private exposures = new Map<string, Owned<ExposureRecord>>();
   private idempotency = new Map<string, { requestHash: string; response: unknown }>();
 
@@ -88,6 +91,32 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
     const current = this.owned(this.medications, userId, id, "用药记录");
     if (current.version !== expectedVersion) throw new HealthRecordError(409, "VERSION_CONFLICT", "用药记录已被更新，请刷新后重试");
     this.medications.delete(id);
+  }
+
+  async listSymptoms(userId: string, date: string | null) {
+    return [...this.symptoms.values()]
+      .filter((item) => item.userId === userId && (date === null || item.date === date))
+      .sort((left, right) => right.date.localeCompare(left.date) || right.id.localeCompare(left.id))
+      .map(withoutOwner);
+  }
+
+  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput) {
+    const key = `${userId}\u0000${date}`;
+    const current = this.symptoms.get(key);
+    if (!current && expectedVersion !== 0) throw new HealthRecordError(404, "NOT_FOUND", "症状记录不存在");
+    if ((current?.version ?? 0) !== expectedVersion) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
+    const now = timestamp();
+    const value: SymptomRecord = {
+      id: current?.id ?? `symptom_${crypto.randomUUID()}`,
+      date,
+      scores: clone(input.scores),
+      totalScore: Object.values(input.scores).reduce((sum, item) => sum + item, 0),
+      version: expectedVersion + 1,
+      createdAt: current?.createdAt ?? now,
+      updatedAt: now,
+    };
+    this.symptoms.set(key, { ...value, userId });
+    return clone(value);
   }
 
   async listExposures(userId: string, date: string | null) {

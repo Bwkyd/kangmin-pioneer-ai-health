@@ -5,8 +5,11 @@ import {
   HealthRecordsApiError,
   NONE_IDENTIFIED,
   OTHER_ALLERGEN,
+  getHealthProfile,
   saveAllergenExposure,
   saveHealthProfile,
+  saveMedication,
+  saveSymptom,
   toggleAllergen,
   validateExposureDraft,
 } from "../../../app/health-records.ts";
@@ -46,6 +49,22 @@ test("健康档案 PATCH 只提交后端字段并使用服务端身份和版本"
   assert.equal("commonTriggers" in body, false);
 });
 
+test("健康档案客户端兼容当前服务端的扁平档案响应", async () => {
+  const profile = await getHealthProfile(async () => Response.json({
+    profile: {
+      basicInfo: { displayName: "体验用户", birthDate: "1992-01-02", sex: "female" },
+      allergyHistory: "尘螨待确认",
+      commonTriggers: [],
+      version: 1,
+      updatedAt: "2026-07-26T00:00:00.000Z",
+    },
+    exposureTriggerProjection: [],
+  }));
+  assert.deepEqual(profile.basicInfo, { displayName: "体验用户", birthDate: "1992-01-02", sex: "female" });
+  assert.equal(profile.allergyHistory, "尘螨待确认");
+  assert.deepEqual(profile.commonTriggers, []);
+});
+
 test("暴露创建使用正式字段与幂等键，401 原样失败且不修改输入", async () => {
   const draft = { date: "2026-07-26", factors: ["花粉", "宠物皮屑或动物毛"], otherDescription: "" };
   let request;
@@ -68,4 +87,29 @@ test("暴露创建使用正式字段与幂等键，401 原样失败且不修改�
   const denied = async () => Response.json({ ok: false, error: { code: "AUTHENTICATION_REQUIRED", message: "保存或查看健康历史前需要完成服务端身份认证" } }, { status: 401 });
   await assert.rejects(() => saveAllergenExposure(draft, null, denied), (error) => error instanceof HealthRecordsApiError && error.status === 401 && /服务端身份认证/.test(error.message));
   assert.deepEqual(draft, before);
+});
+
+test("用药客户端提交时间、名称、剂量和实际用量，不发送客户端身份", async () => {
+  let request;
+  const saved = await saveMedication({ takenAt: "2026-07-26T08:30", medicationName: "氯雷他定", dosageValue: "10", dosageUnit: "mg", dosageUnknown: false, actualUseDescription: "按医嘱服用一次", actualUseUnknown: false }, null, async (path, init) => {
+    request = { path, init };
+    return Response.json({ record: { id: "med_1", takenAt: "2026-07-26T00:30:00.000Z", medicationName: "氯雷他定", dosage: { status: "known", value: "10", unit: "mg" }, actualUse: { status: "known", description: "按医嘱服用一次" }, version: 1, updatedAt: "2026-07-26T00:30:00.000Z" } }, { status: 201 });
+  });
+  assert.equal(saved.medicationName, "氯雷他定");
+  assert.equal(request.path, "/api/v1/health-records/medications");
+  assert.equal(request.init.headers["x-user-id"], undefined);
+  assert.deepEqual(JSON.parse(request.init.body).dosage, { status: "known", value: "10", unit: "mg" });
+  assert.deepEqual(JSON.parse(request.init.body).actualUse, { status: "known", description: "按医嘱服用一次" });
+});
+
+test("症状客户端提交四项评分，并用 If-Match 更新同一日期", async () => {
+  let request;
+  await saveSymptom({ date: "2026-07-26", scores: { sneezing: 1, rhinorrhea: 1, congestion: 2, itching: 0 } }, { id: "symptom_1", date: "2026-07-26", scores: { sneezing: 0, rhinorrhea: 0, congestion: 0, itching: 0 }, totalScore: 0, version: 2, updatedAt: "2026-07-26T00:00:00.000Z" }, async (path, init) => {
+    request = { path, init };
+    return Response.json({ record: { id: "symptom_1", date: "2026-07-26", scores: { sneezing: 1, rhinorrhea: 1, congestion: 2, itching: 0 }, totalScore: 4, version: 3, updatedAt: "2026-07-26T00:00:00.000Z" } });
+  });
+  assert.equal(request.path, "/api/v1/health-records/symptoms/2026-07-26");
+  assert.equal(request.init.method, "PUT");
+  assert.equal(request.init.headers["if-match"], '"2"');
+  assert.deepEqual(JSON.parse(request.init.body).scores, { sneezing: 1, rhinorrhea: 1, congestion: 2, itching: 0 });
 });

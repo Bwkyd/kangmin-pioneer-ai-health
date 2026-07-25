@@ -45,6 +45,26 @@ export type MedicationRecord = MedicationInput & {
   updatedAt: string;
 };
 
+export type SymptomScores = {
+  sneezing: number;
+  rhinorrhea: number;
+  congestion: number;
+  itching: number;
+};
+
+export type SymptomRecordInput = {
+  date: string;
+  scores: SymptomScores;
+};
+
+export type SymptomRecord = SymptomRecordInput & {
+  id: string;
+  totalScore: number;
+  version: number;
+  createdAt: string;
+  updatedAt: string;
+};
+
 export const ALLERGEN_GROUPS = [
   {
     code: "environment",
@@ -210,14 +230,15 @@ function parseKnowledge<T>(
 }
 
 export function parseProfileInput(value: unknown): HealthProfileInput | null {
-  if (!isRecord(value) || !hasExactKeys(value, ["basicInfo", "allergyHistory", "commonTriggers"])) return null;
+  if (!isRecord(value) || !Object.keys(value).every((key) => ["basicInfo", "allergyHistory", "commonTriggers"].includes(key)) || !("basicInfo" in value) || !("allergyHistory" in value)) return null;
   if (!isRecord(value.basicInfo) || !hasExactKeys(value.basicInfo, ["displayName", "birthDate", "sex"])) return null;
   const displayName = parseKnowledge(value.basicInfo.displayName, (item) => cleanText(item, 80));
   const birthDate = parseKnowledge(value.basicInfo.birthDate, validDate);
   const sex = parseKnowledge(value.basicInfo.sex, (item) =>
     item === "female" || item === "male" || item === "other" ? item : null,
   );
-  if (!displayName || !birthDate || !sex || !Array.isArray(value.allergyHistory) || value.allergyHistory.length > 100 || !Array.isArray(value.commonTriggers) || value.commonTriggers.length > 100) return null;
+  const rawCommonTriggers = value.commonTriggers === undefined ? [] : value.commonTriggers;
+  if (!displayName || !birthDate || !sex || !Array.isArray(value.allergyHistory) || value.allergyHistory.length > 100 || !Array.isArray(rawCommonTriggers) || rawCommonTriggers.length > 100) return null;
   const allergyHistory: AllergyHistoryEntry[] = [];
   for (const item of value.allergyHistory) {
     if (!isRecord(item) || !hasExactKeys(item, ["id", "allergenName", "certainty", "note"])) return null;
@@ -229,9 +250,26 @@ export function parseProfileInput(value: unknown): HealthProfileInput | null {
     allergyHistory.push({ id, allergenName, certainty: item.certainty, note });
   }
   if (new Set(allergyHistory.map((item) => item.id)).size !== allergyHistory.length) return null;
-  const commonTriggers = value.commonTriggers.map((item) => cleanText(item, 120));
+  const commonTriggers = rawCommonTriggers.map((item) => cleanText(item, 120));
   if (commonTriggers.some((item) => item === null)) return null;
   return { basicInfo: { displayName, birthDate, sex }, allergyHistory, commonTriggers: [...new Set(commonTriggers as string[])] };
+}
+
+function score(value: unknown) {
+  return typeof value === "number" && Number.isInteger(value) && value >= 0 && value <= 3 ? value : null;
+}
+
+export function parseSymptomRecordInput(value: unknown): SymptomRecordInput | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["date", "scores"]) || !isRecord(value.scores) || !hasExactKeys(value.scores, ["sneezing", "rhinorrhea", "congestion", "itching"])) return null;
+  const date = validDate(value.date);
+  const scores = {
+    sneezing: score(value.scores.sneezing),
+    rhinorrhea: score(value.scores.rhinorrhea),
+    congestion: score(value.scores.congestion),
+    itching: score(value.scores.itching),
+  };
+  if (!date || Object.values(scores).some((item) => item === null)) return null;
+  return { date, scores: scores as SymptomScores };
 }
 
 export function parseMedicationInput(value: unknown): MedicationInput | null {

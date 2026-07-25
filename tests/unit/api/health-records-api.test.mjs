@@ -11,6 +11,7 @@ function request(path, method = "GET", value, headers = {}) {
 async function result(response) { return { status: response.status, headers: response.headers, body: response.status === 204 ? null : await response.json() }; }
 const medication = { takenAt: "2026-07-26T08:30:00+08:00", medicationName: "合成测试药物", dosage: { status: "unknown" }, actualUse: { status: "known", description: "患者自述使用一次" } };
 const exposure = { date: "2026-07-26", selections: [{ group: "environment", code: "dust_mite" }, { group: "contact", code: "pet_dander" }], otherDescription: null, note: "患者自述当天接触" };
+const symptom = { date: "2026-07-26", scores: { sneezing: 1, rhinorrhea: 2, congestion: 1, itching: 0 } };
 
 test("身份默认拒绝，x-user-id 和客户端 userId 均不能指定归属", async () => {
   const repository = new InMemoryHealthRecordsRepository();
@@ -75,6 +76,19 @@ test("健康档案接受显式 unknown，但拒绝客户端写入派生诱因", 
   assert.deepEqual(saved.body.profile.commonTriggers, ["冷空气"]);
   const derived = await result(await api.saveProfile(request("/", "PATCH", { ...value, triggers: [] }, { "if-match": '"1"' })));
   assert.equal(derived.status, 422);
+});
+
+test("症状记录按服务端身份和日期保存，更新时阻止旧版本覆盖", async () => {
+  const repository = new InMemoryHealthRecordsRepository();
+  const api = createHealthRecordsApi(repository, fixedHealthIdentity("usr_test_owner"));
+  const created = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }), symptom.date));
+  assert.equal(created.status, 200);
+  assert.equal(created.body.record.totalScore, 4);
+  assert.equal((await result(await api.listSymptoms(request("/api/v1/health-records/symptoms?date=2026-07-26")))).body.items.length, 1);
+  const changed = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: { ...symptom.scores, congestion: 3 } }, { "if-match": '"1"' }), symptom.date));
+  assert.equal(changed.body.record.totalScore, 6);
+  const conflict = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }, { "if-match": '"1"' }), symptom.date));
+  assert.equal(conflict.body.error.code, "VERSION_CONFLICT");
 });
 
 test("与 issue-72 前端契约一致：PUT 档案、allergen-exposures 字段和根响应", async () => {

@@ -5,16 +5,25 @@ import {
   AllergenExposure,
   AllergenExposureDraft,
   allergenGroups,
+  deleteMedication,
   deleteAllergenExposure,
   emptyHealthProfile,
+  emptyMedication,
   getHealthProfile,
   HealthProfile,
   HealthProfileDraft,
+  listMedications,
   listAllergenExposures,
+  listSymptoms,
   localDateValue,
+  MedicationDraft,
+  MedicationRecord,
   OTHER_ALLERGEN,
   saveAllergenExposure,
   saveHealthProfile,
+  saveMedication,
+  saveSymptom,
+  SymptomRecord,
   toggleAllergen,
   upsertExposure,
   validateExposureDraft,
@@ -88,29 +97,69 @@ const articles = [
 ];
 
 const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
-const symptomDates: Record<string, string> = {
-  "2026-07-14": "轻度",
-  "2026-07-15": "轻度",
-  "2026-07-17": "中度",
-  "2026-07-19": "轻度",
-};
-const calendarDays = [
-  { day: 29, muted: true }, { day: 30, muted: true }, { day: 1 }, { day: 2 }, { day: 3 }, { day: 4 }, { day: 5 },
-  { day: 6 }, { day: 7 }, { day: 8 }, { day: 9 }, { day: 10 }, { day: 11 }, { day: 12 },
-  { day: 13 }, { day: 14, level: "mild" }, { day: 15, level: "mild" }, { day: 16 }, { day: 17, level: "moderate" }, { day: 18 }, { day: 19, level: "mild" },
-  { day: 20, today: true }, { day: 21 }, { day: 22 }, { day: 23 }, { day: 24 }, { day: 25 }, { day: 26 },
-  { day: 27 }, { day: 28 }, { day: 29 }, { day: 30 }, { day: 31 }, { day: 1, muted: true }, { day: 2, muted: true },
-];
-
-function calendarDateValue(day: number, index: number): string {
-  const month = index < 2 ? "06" : index > 32 ? "08" : "07";
-  return `2026-${month}-${String(day).padStart(2, "0")}`;
-}
 
 function displayDate(value: string): string {
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return value;
   return `${year}年${Number(month)}月${Number(day)}日`;
+}
+
+function monthValue(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function shiftMonth(value: string, offset: number): string {
+  const [year, month] = value.split("-").map(Number);
+  const shifted = new Date(Date.UTC(year, month - 1 + offset, 1));
+  return `${shifted.getUTCFullYear()}-${String(shifted.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+function daysInMonth(value: string): number {
+  const [year, month] = value.split("-").map(Number);
+  return new Date(Date.UTC(year, month, 0)).getUTCDate();
+}
+
+function monthLabel(value: string): string {
+  const [year, month] = value.split("-").map(Number);
+  return `${year}年${month}月`;
+}
+
+function calendarCells(value: string) {
+  const [year, month] = value.split("-").map(Number);
+  const firstDay = new Date(Date.UTC(year, month - 1, 1));
+  const firstWeekday = firstDay.getUTCDay();
+  const today = localDateValue();
+  return Array.from({ length: 42 }, (_, index) => {
+    const date = new Date(Date.UTC(year, month - 1, index - firstWeekday + 1));
+    const dateValue = `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, "0")}-${String(date.getUTCDate()).padStart(2, "0")}`;
+    return {
+      date: dateValue,
+      day: date.getUTCDate(),
+      muted: date.getUTCMonth() !== month - 1,
+      today: dateValue === today,
+    };
+  });
+}
+
+function localDateTimeValue(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.valueOf())) return "";
+  const pad = (item: number) => String(item).padStart(2, "0");
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function symptomLevel(totalScore: number): "good" | "mild" | "moderate" | "severe" {
+  if (totalScore === 0) return "good";
+  if (totalScore <= 4) return "mild";
+  if (totalScore <= 8) return "moderate";
+  return "severe";
+}
+
+function symptomLabel(totalScore: number): string {
+  if (totalScore === 0) return "无明显症状";
+  if (totalScore <= 4) return "轻度";
+  if (totalScore <= 8) return "中度";
+  return "重度";
 }
 
 export default function Home() {
@@ -131,6 +180,7 @@ export default function Home() {
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<"calendar" | "list">("calendar");
+  const [calendarMonth, setCalendarMonth] = useState(() => monthValue());
   const [selectedDate, setSelectedDate] = useState(localDateValue);
   const [allergenReturnTab, setAllergenReturnTab] = useState<"assessment" | "healthProfile">("assessment");
   const [healthProfile, setHealthProfile] = useState<HealthProfile | null>(null);
@@ -139,6 +189,15 @@ export default function Home() {
   const [profileStatus, setProfileStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
   const [profileNotice, setProfileNotice] = useState("");
   const [exposures, setExposures] = useState<AllergenExposure[]>([]);
+  const [medications, setMedications] = useState<MedicationRecord[]>([]);
+  const [medicationDraft, setMedicationDraft] = useState<MedicationDraft>(emptyMedication);
+  const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
+  const [medicationEditing, setMedicationEditing] = useState(false);
+  const [medicationStatus, setMedicationStatus] = useState<"idle" | "saving" | "ready" | "error">("idle");
+  const [medicationNotice, setMedicationNotice] = useState("");
+  const [symptoms, setSymptoms] = useState<SymptomRecord[]>([]);
+  const [symptomStatus, setSymptomStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
+  const [symptomNotice, setSymptomNotice] = useState("");
   const [exposureDraft, setExposureDraft] = useState<AllergenExposureDraft>({
     date: localDateValue(),
     factors: [],
@@ -152,6 +211,16 @@ export default function Home() {
 
   const totalScore = scores.reduce((sum, score) => sum + score, 0);
   const exposureValidation = validateExposureDraft(exposureDraft);
+  const symptomsByDate = new Map(symptoms.map((record) => [record.date, record]));
+  const medicationValidation = !medicationDraft.takenAt
+    ? "请选择用药时间"
+    : !medicationDraft.medicationName.trim()
+      ? "请填写药物名称"
+      : !medicationDraft.dosageUnknown && (!medicationDraft.dosageValue.trim() || !medicationDraft.dosageUnit.trim())
+        ? "请填写药物剂量和单位，或勾选剂量不详"
+        : !medicationDraft.actualUseUnknown && !medicationDraft.actualUseDescription.trim()
+          ? "请填写实际用量情况，或勾选实际用量不详"
+          : null;
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -170,8 +239,10 @@ export default function Home() {
     context.scale(ratio, ratio);
     context.clearRect(0, 0, width, height);
 
-    const values = assessmentDone ? [1, 1, 2, 1, 2, 2, 1, Math.min(3, Math.ceil(totalScore / 4))] : [1, 1, 2, 1, 2, 2, 1];
-    const days = assessmentDone ? [14, 15, 17, 19, 22, 23, 25, 20] : [14, 15, 17, 19, 22, 23, 25];
+    const records = symptoms.filter((record) => record.date.startsWith(calendarMonth)).sort((left, right) => left.date.localeCompare(right.date));
+    const values = records.map((record) => Math.min(3, Math.ceil(record.totalScore / 4)));
+    const days = records.map((record) => Number(record.date.slice(-2)));
+    const monthDays = daysInMonth(calendarMonth);
     const pad = { left: 42, right: 15, top: 15, bottom: 27 };
     const chartW = width - pad.left - pad.right;
     const chartH = height - pad.top - pad.bottom;
@@ -191,26 +262,28 @@ export default function Home() {
     });
 
     const points = values.map((value, index) => ({
-      x: pad.left + ((days[index] - 1) / 30) * chartW,
+      x: pad.left + ((days[index] - 1) / Math.max(1, monthDays - 1)) * chartW,
       y: pad.top + chartH - (value / 3) * chartH,
     }));
-    context.beginPath();
-    points.forEach((point, index) => {
-      if (index === 0) context.moveTo(point.x, point.y);
-      else context.lineTo(point.x, point.y);
-    });
-    context.strokeStyle = "#1E5AA3";
-    context.lineWidth = 3;
-    context.lineJoin = "round";
-    context.lineCap = "round";
-    context.stroke();
-
-    points.forEach((point, index) => {
+    if (points.length > 0) {
       context.beginPath();
-      context.arc(point.x, point.y, index === 4 ? 5 : 3.5, 0, Math.PI * 2);
-      context.fillStyle = index === 4 ? "#E2A33A" : "#1E5AA3";
-      context.fill();
-    });
+      points.forEach((point, index) => {
+        if (index === 0) context.moveTo(point.x, point.y);
+        else context.lineTo(point.x, point.y);
+      });
+      context.strokeStyle = "#1E5AA3";
+      context.lineWidth = 3;
+      context.lineJoin = "round";
+      context.lineCap = "round";
+      context.stroke();
+
+      points.forEach((point) => {
+        context.beginPath();
+        context.arc(point.x, point.y, 3.5, 0, Math.PI * 2);
+        context.fillStyle = "#1E5AA3";
+        context.fill();
+      });
+    }
     context.font = '9px "PingFang SC", sans-serif';
     context.fillStyle = "#87968f";
     context.textAlign = "center";
@@ -218,13 +291,13 @@ export default function Home() {
       const x = pad.left + ((day - 1) / 30) * chartW;
       context.fillText(String(day), x, height - 8);
     });
-  }, [tab, assessmentDone, totalScore]);
+  }, [tab, assessmentDone, totalScore, symptoms, calendarMonth]);
 
   useEffect(() => {
     if (tab !== "healthProfile") return;
     let cancelled = false;
-    Promise.all([getHealthProfile(), listAllergenExposures()])
-      .then(([profile, items]) => {
+    Promise.all([getHealthProfile(), listAllergenExposures(), listMedications()])
+      .then(([profile, items, medicationItems]) => {
         if (cancelled) return;
         setHealthProfile(profile);
         setProfileDraft(profile ? {
@@ -232,6 +305,7 @@ export default function Home() {
           allergyHistory: profile.allergyHistory,
         } : emptyHealthProfile);
         setExposures(items);
+        setMedications(medicationItems);
         setProfileStatus("ready");
         setProfileNotice(profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
       })
@@ -239,6 +313,24 @@ export default function Home() {
         if (cancelled) return;
         setProfileStatus("error");
         setProfileNotice(error instanceof Error ? error.message : "健康档案暂时无法读取");
+      });
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "assessment") return;
+    let cancelled = false;
+    listSymptoms()
+      .then((items) => {
+        if (cancelled) return;
+        setSymptoms(items);
+        setSymptomStatus("ready");
+        setSymptomNotice(items.length > 0 ? "已读取服务端症状记录" : "暂无服务端症状记录，请选择日期开始记录");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setSymptomStatus("error");
+        setSymptomNotice(error instanceof Error ? error.message : "症状历史暂时无法读取");
       });
     return () => { cancelled = true; };
   }, [tab]);
@@ -375,6 +467,10 @@ export default function Home() {
 
   const openSymptomDate = (date: string) => {
     setSelectedDate(date);
+    setCalendarMonth(date.slice(0, 7));
+    const existing = symptomsByDate.get(date);
+    setScores(existing ? [existing.scores.sneezing, existing.scores.rhinorrhea, existing.scores.congestion, existing.scores.itching] : [0, 0, 0, 0]);
+    setSymptomNotice(existing ? "已读取该日期的服务端症状记录" : "填写后保存到服务端症状记录");
     setEntryOpen(true);
   };
 
@@ -403,6 +499,78 @@ export default function Home() {
     } catch (error) {
       setProfileStatus("error");
       setProfileNotice(error instanceof Error ? error.message : "健康档案保存失败，填写内容仍保留在本页");
+    }
+  };
+
+  const submitSymptom = async () => {
+    setSymptomStatus("saving");
+    setSymptomNotice("正在保存症状记录…");
+    try {
+      const saved = await saveSymptom({
+        date: selectedDate,
+        scores: { sneezing: scores[0], rhinorrhea: scores[1], congestion: scores[2], itching: scores[3] },
+      }, symptomsByDate.get(selectedDate) ?? null);
+      setSymptoms((current) => current.some((item) => item.id === saved.id) ? current.map((item) => item.id === saved.id ? saved : item) : [saved, ...current]);
+      setAssessmentDone(true);
+      setSymptomStatus("ready");
+      setSymptomNotice("症状记录已由服务端确认保存");
+      setEntryOpen(false);
+    } catch (error) {
+      setSymptomStatus("error");
+      setSymptomNotice(error instanceof Error ? error.message : "症状记录保存失败，当前评分仍保留");
+    }
+  };
+
+  const beginMedication = (record: MedicationRecord | null = null) => {
+    setEditingMedicationId(record?.id ?? null);
+    setMedicationDraft(record ? {
+      takenAt: localDateTimeValue(record.takenAt),
+      medicationName: record.medicationName,
+      dosageValue: record.dosage.status === "known" ? record.dosage.value : "",
+      dosageUnit: record.dosage.status === "known" ? record.dosage.unit : "",
+      dosageUnknown: record.dosage.status === "unknown",
+      actualUseDescription: record.actualUse.status === "known" ? record.actualUse.description : "",
+      actualUseUnknown: record.actualUse.status === "unknown",
+    } : { ...emptyMedication, takenAt: localDateTimeValue(new Date().toISOString()) });
+    setMedicationStatus("idle");
+    setMedicationNotice("");
+    setMedicationEditing(true);
+  };
+
+  const submitMedication = async (event: FormEvent) => {
+    event.preventDefault();
+    if (medicationValidation) {
+      setMedicationStatus("error");
+      setMedicationNotice(medicationValidation);
+      return;
+    }
+    setMedicationStatus("saving");
+    setMedicationNotice("正在保存用药记录…");
+    try {
+      const current = editingMedicationId ? medications.find((item) => item.id === editingMedicationId) ?? null : null;
+      const saved = await saveMedication(medicationDraft, current);
+      setMedications((items) => items.some((item) => item.id === saved.id) ? items.map((item) => item.id === saved.id ? saved : item) : [saved, ...items]);
+      setMedicationEditing(false);
+      setEditingMedicationId(null);
+      setMedicationStatus("ready");
+      setMedicationNotice("用药记录已由服务端确认保存");
+    } catch (error) {
+      setMedicationStatus("error");
+      setMedicationNotice(error instanceof Error ? error.message : "用药记录保存失败，填写内容仍保留");
+    }
+  };
+
+  const removeMedication = async (record: MedicationRecord) => {
+    setMedicationStatus("saving");
+    setMedicationNotice("正在删除用药记录…");
+    try {
+      await deleteMedication(record);
+      setMedications((items) => items.filter((item) => item.id !== record.id));
+      setMedicationStatus("ready");
+      setMedicationNotice("用药记录已由服务端确认删除");
+    } catch (error) {
+      setMedicationStatus("error");
+      setMedicationNotice(error instanceof Error ? error.message : "删除失败，原记录未变更");
     }
   };
 
@@ -650,7 +818,7 @@ export default function Home() {
               <div className="assessment-view">
                 <section className="allergy-calendar">
                   <div className="calendar-top">
-                    <div><small>症状评估日历 · 演示数据</small><h2>过敏日历</h2></div>
+                    <div><small>症状评估日历 · 服务端记录</small><h2>过敏日历</h2></div>
                     <button onClick={() => setCalendarMode((mode) => mode === "calendar" ? "list" : "calendar")}>
                       {calendarMode === "calendar" ? "☷ 列表" : "▦ 日历"}
                     </button>
@@ -658,27 +826,30 @@ export default function Home() {
 
                   {calendarMode === "calendar" ? (
                     <>
-                      <div className="month-switch"><button aria-label="上个月">‹</button><strong>2026年7月</strong><button aria-label="下个月">›</button></div>
+                      <div className="month-switch"><button type="button" aria-label="上个月" onClick={() => setCalendarMonth((current) => shiftMonth(current, -1))}>‹</button><strong>{monthLabel(calendarMonth)}</strong><button type="button" aria-label="下个月" onClick={() => setCalendarMonth((current) => shiftMonth(current, 1))}>›</button></div>
                       <div className="week-row">{["日", "一", "二", "三", "四", "五", "六"].map((day) => <span key={day}>{day}</span>)}</div>
                       <div className="calendar-grid">
-                        {calendarDays.map((item, index) => (
-                          <button
-                            key={`${item.day}-${index}`}
-                            className={`${item.muted ? "muted" : ""} ${item.level ?? ""} ${item.today ? "today" : ""}`}
-                            onClick={() => !item.muted && openSymptomDate(calendarDateValue(item.day, index))}
-                            aria-label={`${item.day}日${item.level === "mild" ? "轻度" : item.level === "moderate" ? "中度" : ""}`}
+                        {calendarCells(calendarMonth).map((item) => (
+                          (() => {
+                            const record = symptomsByDate.get(item.date);
+                            const level = record ? symptomLevel(record.totalScore) : "";
+                            return <button
+                            key={item.date}
+                            className={`${item.muted ? "muted" : ""} ${level} ${item.today ? "today" : ""}`}
+                            onClick={() => !item.muted && openSymptomDate(item.date)}
+                            disabled={item.muted}
+                            aria-label={`${item.day}日${record ? `已记录${record.totalScore}分` : "未记录"}`}
                           >
                             {item.day}
-                          </button>
+                          </button>;
+                          })()
                         ))}
                       </div>
                       <div className="calendar-legend"><span><i className="good" />良好</span><span><i className="mild" />轻度</span><span><i className="moderate" />中度</span><span><i className="severe" />重度</span></div>
                     </>
                   ) : (
                     <div className="calendar-list">
-                      <button onClick={() => openSymptomDate("2026-07-19")}><time>7月19日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 0</strong><b>关联过敏原 ›</b></button>
-                      <button onClick={() => openSymptomDate("2026-07-17")}><time>7月17日</time><span className="moderate">中度</span><strong>喷嚏 2 · 流涕 2 · 鼻塞 2 · 鼻痒 1</strong><b>关联过敏原 ›</b></button>
-                      <button onClick={() => openSymptomDate("2026-07-15")}><time>7月15日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 1</strong><b>关联过敏原 ›</b></button>
+                      {symptoms.length > 0 ? symptoms.map((record) => <button key={record.id} onClick={() => openSymptomDate(record.date)}><time>{displayDate(record.date)}</time><span className={symptomLevel(record.totalScore)}>{symptomLabel(record.totalScore)}</span><strong>喷嚏 {record.scores.sneezing} · 流涕 {record.scores.rhinorrhea} · 鼻塞 {record.scores.congestion} · 鼻痒 {record.scores.itching}</strong><b>关联过敏原 ›</b></button>) : <p className="record-empty">暂无真实症状记录；选择日期后保存，才会出现在这里。</p>}
                     </div>
                   )}
                 </section>
@@ -687,16 +858,16 @@ export default function Home() {
                   <div>
                     <small>按同一天关联患者自述</small>
                     <strong>{displayDate(selectedDate)}</strong>
-                    <p>{symptomDates[selectedDate] ? `该日期有${symptomDates[selectedDate]}症状演示记录` : "该日期暂无真实症状记录"}</p>
+                    <p>{symptomsByDate.has(selectedDate) ? "该日期已有服务端症状记录" : "该日期暂无真实症状记录"}</p>
                   </div>
                   <button onClick={() => startAllergenRecord(selectedDate)}>记录当天过敏原</button>
                   <p>这里只关联记录日期，不会把接触因素自动判定为症状病因。</p>
                 </section>
 
                 <article className="trend-card">
-                  <div className="trend-title"><div><small>演示趋势</small><h3>过敏趋势</h3></div><span>非真实数据</span></div>
-                  <canvas ref={chartRef} aria-label="本月过敏严重程度趋势图" />
-                  <div className="chart-legend"><span><i />过敏严重程度</span><small>仅用于展示界面，不代表个人数据</small></div>
+                  <div className="trend-title"><div><small>服务端记录趋势</small><h3>过敏趋势</h3></div><span>{symptoms.length > 0 ? "真实记录" : "暂无数据"}</span></div>
+                  {symptoms.length > 0 ? <canvas ref={chartRef} aria-label="本月过敏严重程度趋势图" /> : <p className="record-empty">保存症状记录后，这里显示你的记录趋势。</p>}
+                  <div className="chart-legend"><span><i />过敏严重程度</span><small>仅根据用户主动保存的症状记录展示，不代表诊断。</small></div>
                 </article>
 
                 <button className="calendar-add-inline" onClick={() => openSymptomDate(localDateValue())}>＋ 记录今天的症状</button>
@@ -721,7 +892,7 @@ export default function Home() {
                     <section className="health-record-card">
                       <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>由用户本人填写</small></div></div>
                       <label>姓名或称呼<input value={profileDraft.basicInfo.displayName} onChange={(event) => setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, displayName: event.target.value } }))} placeholder="待填写" /></label>
-                      <label>出生日期<input type="date" value={profileDraft.basicInfo.birthDate} onChange={(event) => setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, birthDate: event.target.value } }))} /></label>
+                      <label>出生日期<input type="date" value={profileDraft.basicInfo.birthDate} onChange={(event) => setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, birthDate: event.target.value } }))} onInput={(event) => { const value = event.currentTarget.value; setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, birthDate: value } })); }} /></label>
                       <label>性别<select value={profileDraft.basicInfo.sex} onChange={(event) => setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, sex: event.target.value as HealthProfileDraft["basicInfo"]["sex"] } }))}><option value="unspecified">暂不填写</option><option value="female">女</option><option value="male">男</option></select></label>
                     </section>
                     <section className="health-record-card">
@@ -763,9 +934,22 @@ export default function Home() {
                         )) : <small>暂无可追溯的患者自述记录</small>}
                       </div>
                     </section>
-                    <button className="medication-entry" onClick={() => { setProfileStatus("error"); setProfileNotice("用药记录为独立后端依赖；接口完成前本页不会伪造保存状态"); }}>
-                      <span>药</span><div><strong>用药记录</strong><small>记录正在使用或曾使用的药物</small></div><b>进入 ›</b>
-                    </button>
+                    <section className="health-record-card medication-card">
+                      <div className="record-card-title"><span>药</span><div><h3>用药记录</h3><small>记录时间、药物名称、剂量和实际用量</small></div><button type="button" onClick={() => beginMedication()}>新增记录</button></div>
+                      {medicationEditing && (
+                        <form className="medication-form" onSubmit={submitMedication}>
+                          <label>使用时间<input type="datetime-local" value={medicationDraft.takenAt} onChange={(event) => setMedicationDraft((current) => ({ ...current, takenAt: event.target.value }))} /></label>
+                          <label>药物名称<input value={medicationDraft.medicationName} onChange={(event) => setMedicationDraft((current) => ({ ...current, medicationName: event.target.value }))} placeholder="例如：氯雷他定" /></label>
+                          <div className="medication-inline"><label>剂量<input value={medicationDraft.dosageValue} disabled={medicationDraft.dosageUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, dosageValue: event.target.value }))} placeholder="例如：10" /></label><label>单位<input value={medicationDraft.dosageUnit} disabled={medicationDraft.dosageUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, dosageUnit: event.target.value }))} placeholder="mg、片…" /></label></div>
+                          <label className="checkbox-line"><input type="checkbox" checked={medicationDraft.dosageUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, dosageUnknown: event.target.checked }))} />剂量不详</label>
+                          <label>实际用量情况<textarea value={medicationDraft.actualUseDescription} disabled={medicationDraft.actualUseUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, actualUseDescription: event.target.value }))} placeholder="例如：按医嘱服用一次，未记录具体用量" /></label>
+                          <label className="checkbox-line"><input type="checkbox" checked={medicationDraft.actualUseUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, actualUseUnknown: event.target.checked }))} />实际用量不详</label>
+                          {medicationNotice && <p className={`form-validation ${medicationStatus === "error" ? "error-text" : ""}`} role="status">{medicationNotice}</p>}
+                          <div className="record-form-actions"><button type="button" onClick={() => setMedicationEditing(false)}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
+                        </form>
+                      )}
+                      {medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus === "saving"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
+                    </section>
                   </>
                 )}
 
@@ -783,7 +967,7 @@ export default function Home() {
 
                 <section className="linked-date-card" aria-label="关联日期">
                   <label>记录日期<input type="date" value={exposureDraft.date} onChange={(event) => selectExposureDate(event.target.value)} /></label>
-                  <div><span>关联症状日期</span><strong>{displayDate(exposureDraft.date)}</strong><small>{symptomDates[exposureDraft.date] ? `${symptomDates[exposureDraft.date]}症状演示记录` : "暂无真实症状记录"}</small></div>
+                  <div><span>关联症状日期</span><strong>{displayDate(exposureDraft.date)}</strong><small>{symptomsByDate.has(exposureDraft.date) ? "已有服务端症状记录" : "暂无真实症状记录"}</small></div>
                   <button onClick={() => { setSelectedDate(exposureDraft.date); setEntryOpen(true); setTab("assessment"); }}>查看当天症状</button>
                 </section>
 
@@ -900,7 +1084,7 @@ export default function Home() {
                   </button>
                 </section>
 
-                <p className="profile-disclaimer">当前为交互 Demo，不保存真实健康档案或趋势数据；结果不能替代门诊诊断。</p>
+                <p className="profile-disclaimer">未完成服务端身份认证时不会保存健康历史；已保存的记录仅供本人回顾，不能替代门诊诊断。</p>
               </div>
             )}
           </div>
@@ -917,7 +1101,7 @@ export default function Home() {
             <div className="entry-sheet-backdrop" role="dialog" aria-modal="true" aria-label="填写所选日期症状量表">
               <div className="entry-sheet">
                 <div className="sheet-handle" />
-                <div className="sheet-title"><div><small>症状记录 · {displayDate(selectedDate)}</small><h2>记录当天的症状</h2><p>仅用于界面演示，不会保存真实健康数据</p></div><button onClick={() => setEntryOpen(false)}>×</button></div>
+                <div className="sheet-title"><div><small>症状记录 · {displayDate(selectedDate)}</small><h2>记录当天的症状</h2><p>保存后会与同一天的过敏原患者自述记录关联展示，不自动判断因果。</p></div><button onClick={() => setEntryOpen(false)}>×</button></div>
                 <div className="scale-card">
                   {scaleItems.map((item, itemIndex) => (
                     <div className="scale-row" key={item}>
@@ -929,15 +1113,16 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
-                  <div className="sheet-score"><span>TNSS 总分</span><strong>{totalScore}<i>/12</i></strong><b>{totalScore <= 4 ? "轻度" : totalScore <= 8 ? "中度" : "重度"}</b></div>
+                  <div className="sheet-score"><span>TNSS 总分</span><strong>{totalScore}<i>/12</i></strong><b>{symptomLabel(totalScore)}</b></div>
                   <p className="assessment-disclaimer">量表结果仅供参考，最终方案请以门诊诊断为准。</p>
                   <div className="sheet-allergen-link">
                     <div><strong>当天过敏原暴露</strong><small>与本次症状使用同一记录日期</small></div>
                     <button type="button" onClick={() => startAllergenRecord(selectedDate)}>去记录</button>
                     <p>过敏原仅为患者自述，不自动判定医学因果。</p>
                   </div>
-                  <button className="submit-assessment" onClick={() => { setAssessmentDone(true); setEntryOpen(false); }}>
-                    保存演示记录
+                  {symptomNotice && <p className={`assessment-disclaimer ${symptomStatus === "error" ? "error-text" : ""}`} role="status">{symptomNotice}</p>}
+                  <button className="submit-assessment" onClick={submitSymptom} disabled={symptomStatus === "saving"}>
+                    {symptomStatus === "saving" ? "保存中…" : "保存症状记录"}
                   </button>
                 </div>
               </div>

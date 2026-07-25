@@ -35,6 +35,37 @@ export type AllergenExposure = {
 export type HealthProfileDraft = Pick<HealthProfile, "basicInfo" | "allergyHistory">;
 export type AllergenExposureDraft = Pick<AllergenExposure, "date" | "factors" | "otherDescription">;
 
+export type MedicationRecord = {
+  id: string;
+  takenAt: string;
+  medicationName: string;
+  dosage: { status: "known"; value: string; unit: string } | { status: "unknown" };
+  actualUse: { status: "known"; description: string } | { status: "unknown" };
+  version: number;
+  updatedAt: string;
+};
+
+export type MedicationDraft = {
+  takenAt: string;
+  medicationName: string;
+  dosageValue: string;
+  dosageUnit: string;
+  dosageUnknown: boolean;
+  actualUseDescription: string;
+  actualUseUnknown: boolean;
+};
+
+export type SymptomRecord = {
+  id: string;
+  date: string;
+  scores: { sneezing: number; rhinorrhea: number; congestion: number; itching: number };
+  totalScore: number;
+  version: number;
+  updatedAt: string;
+};
+
+export type SymptomDraft = Pick<SymptomRecord, "date" | "scores">;
+
 export type AllergenGroup = {
   name: string;
   options: string[];
@@ -66,6 +97,16 @@ const labelByCode = new Map(
 export const emptyHealthProfile: HealthProfileDraft = {
   basicInfo: { displayName: "", birthDate: "", sex: "unspecified" },
   allergyHistory: "",
+};
+
+export const emptyMedication: MedicationDraft = {
+  takenAt: "",
+  medicationName: "",
+  dosageValue: "",
+  dosageUnit: "",
+  dosageUnknown: false,
+  actualUseDescription: "",
+  actualUseUnknown: false,
 };
 
 type Fetcher = typeof fetch;
@@ -113,11 +154,12 @@ export function localDateValue(date = new Date()): string {
 
 export async function getHealthProfile(fetcher: Fetcher = fetch): Promise<HealthProfile | null> {
   const data = await requestData(fetcher, "/api/v1/health-records/profile", { method: "GET" });
-  if (!isRecord(data) || !(data.profile === null || isApiProfile(data.profile)) || !Array.isArray(data.triggers) || !data.triggers.every(isTrigger)) {
+  const triggers = isRecord(data) ? data.exposureTriggerProjection ?? data.triggers : null;
+  if (!isRecord(data) || !(data.profile === null || isApiProfile(data.profile)) || !Array.isArray(triggers) || !triggers.every(isTrigger)) {
     throw new HealthRecordsApiError("健康档案接口返回格式不正确", 502);
   }
   if (data.profile === null) return null;
-  return normalizeProfile(data.profile, data.triggers);
+  return normalizeProfile(data.profile, triggers);
 }
 
 export async function saveHealthProfile(draft: HealthProfileDraft, expectedVersion: number, fetcher: Fetcher = fetch): Promise<HealthProfile> {
@@ -126,10 +168,11 @@ export async function saveHealthProfile(draft: HealthProfileDraft, expectedVersi
     headers: { "if-match": `"${expectedVersion}"` },
     body: JSON.stringify(profilePayload(draft)),
   });
-  if (!isRecord(data) || !isApiProfile(data.profile) || !Array.isArray(data.triggers) || !data.triggers.every(isTrigger)) {
+  const triggers = isRecord(data) ? data.exposureTriggerProjection ?? data.triggers : null;
+  if (!isRecord(data) || !isApiProfile(data.profile) || !Array.isArray(triggers) || !triggers.every(isTrigger)) {
     throw new HealthRecordsApiError("健康档案接口返回格式不正确", 502);
   }
-  return normalizeProfile(data.profile, data.triggers);
+  return normalizeProfile(data.profile, triggers);
 }
 
 export async function listAllergenExposures(fetcher: Fetcher = fetch): Promise<AllergenExposure[]> {
@@ -162,6 +205,46 @@ export async function deleteAllergenExposure(record: AllergenExposure, fetcher: 
   });
 }
 
+export async function listMedications(fetcher: Fetcher = fetch): Promise<MedicationRecord[]> {
+  const data = await requestData(fetcher, "/api/v1/health-records/medications", { method: "GET" });
+  if (!isRecord(data) || !Array.isArray(data.items) || !data.items.every(isApiMedication)) throw new HealthRecordsApiError("用药记录接口返回格式不正确", 502);
+  return data.items.map(normalizeMedication);
+}
+
+export async function saveMedication(draft: MedicationDraft, current: MedicationRecord | null, fetcher: Fetcher = fetch): Promise<MedicationRecord> {
+  const payload = medicationPayload(draft);
+  const data = await requestData(fetcher, current ? `/api/v1/health-records/medications/${encodeURIComponent(current.id)}` : "/api/v1/health-records/medications", {
+    method: current ? "PATCH" : "POST",
+    headers: current ? { "if-match": `"${current.version}"` } : { "idempotency-key": crypto.randomUUID() },
+    body: JSON.stringify(payload),
+  });
+  if (!isRecord(data) || !isApiMedication(data.record)) throw new HealthRecordsApiError("用药记录接口返回格式不正确", 502);
+  return normalizeMedication(data.record);
+}
+
+export async function deleteMedication(record: MedicationRecord, fetcher: Fetcher = fetch): Promise<void> {
+  await requestData(fetcher, `/api/v1/health-records/medications/${encodeURIComponent(record.id)}`, {
+    method: "DELETE",
+    headers: { "if-match": `"${record.version}"` },
+  });
+}
+
+export async function listSymptoms(fetcher: Fetcher = fetch): Promise<SymptomRecord[]> {
+  const data = await requestData(fetcher, "/api/v1/health-records/symptoms", { method: "GET" });
+  if (!isRecord(data) || !Array.isArray(data.items) || !data.items.every(isApiSymptom)) throw new HealthRecordsApiError("症状记录接口返回格式不正确", 502);
+  return data.items.map(normalizeSymptom);
+}
+
+export async function saveSymptom(draft: SymptomDraft, current: SymptomRecord | null, fetcher: Fetcher = fetch): Promise<SymptomRecord> {
+  const data = await requestData(fetcher, `/api/v1/health-records/symptoms/${encodeURIComponent(draft.date)}`, {
+    method: "PUT",
+    headers: current ? { "if-match": `"${current.version}"` } : undefined,
+    body: JSON.stringify({ scores: draft.scores }),
+  });
+  if (!isRecord(data) || !isApiSymptom(data.record)) throw new HealthRecordsApiError("症状记录接口返回格式不正确", 502);
+  return normalizeSymptom(data.record);
+}
+
 async function requestData(fetcher: Fetcher, path: string, init: RequestInit): Promise<unknown> {
   let response: Response;
   try {
@@ -181,8 +264,8 @@ async function requestData(fetcher: Fetcher, path: string, init: RequestInit): P
     const fallback = response.status === 404 ? "健康记录接口不存在或记录不可用，当前输入没有保存" : `健康记录服务返回 HTTP ${response.status}，当前输入没有保存`;
     throw new HealthRecordsApiError(backendMessage ?? fallback, response.status);
   }
-  if (!isRecord(payload) || payload.ok !== true || !("data" in payload)) throw new HealthRecordsApiError("健康记录接口返回格式不正确", 502);
-  return payload.data;
+  if (!isRecord(payload) || payload.ok === false) throw new HealthRecordsApiError("健康记录接口返回格式不正确", 502);
+  return payload.ok === true && "data" in payload ? payload.data : payload;
 }
 
 function profilePayload(draft: HealthProfileDraft) {
@@ -206,16 +289,28 @@ function exposurePayload(draft: AllergenExposureDraft) {
   };
 }
 
+function medicationPayload(draft: MedicationDraft) {
+  const takenAt = draft.takenAt ? new Date(draft.takenAt).toISOString() : "";
+  return {
+    takenAt,
+    medicationName: draft.medicationName.trim(),
+    dosage: draft.dosageUnknown ? { status: "unknown" as const } : { status: "known" as const, value: draft.dosageValue.trim(), unit: draft.dosageUnit.trim() },
+    actualUse: draft.actualUseUnknown ? { status: "unknown" as const } : { status: "known" as const, description: draft.actualUseDescription.trim() },
+  };
+}
+
 function normalizeProfile(profile: Record<string, unknown>, triggers: TriggerProjection[]): HealthProfile {
   const basic = profile.basicInfo as Record<string, unknown>;
-  const history = profile.allergyHistory as Array<Record<string, unknown>>;
+  const history = profile.allergyHistory;
   return {
     basicInfo: {
-      displayName: knowledgeValue(basic.displayName),
-      birthDate: knowledgeValue(basic.birthDate),
-      sex: knowledgeValue(basic.sex) as BasicHealthInfo["sex"] || "unspecified",
+      displayName: textValue(basic.displayName),
+      birthDate: textValue(basic.birthDate),
+      sex: (textValue(basic.sex) as BasicHealthInfo["sex"]) || "unspecified",
     },
-    allergyHistory: history.map((item) => String(item.allergenName)).join("、"),
+    allergyHistory: Array.isArray(history)
+      ? history.map((item) => isRecord(item) ? String(item.allergenName ?? "") : "").filter(Boolean).join("、")
+      : typeof history === "string" ? history : "",
     commonTriggers: triggers,
     version: Number(profile.version),
     updatedAt: String(profile.updatedAt),
@@ -232,18 +327,47 @@ function normalizeExposure(value: Record<string, unknown>): AllergenExposure {
   };
 }
 
+function normalizeMedication(value: Record<string, unknown>): MedicationRecord {
+  return {
+    id: String(value.id), takenAt: String(value.takenAt), medicationName: String(value.medicationName),
+    dosage: isRecord(value.dosage) && value.dosage.status === "known" ? { status: "known", value: String(value.dosage.value), unit: String(value.dosage.unit) } : { status: "unknown" },
+    actualUse: isRecord(value.actualUse) && value.actualUse.status === "known" ? { status: "known", description: String(value.actualUse.description) } : { status: "unknown" },
+    version: Number(value.version), updatedAt: String(value.updatedAt),
+  };
+}
+
+function normalizeSymptom(value: Record<string, unknown>): SymptomRecord {
+  const scores = value.scores as Record<string, unknown>;
+  return {
+    id: String(value.id), date: String(value.date),
+    scores: { sneezing: Number(scores.sneezing), rhinorrhea: Number(scores.rhinorrhea), congestion: Number(scores.congestion), itching: Number(scores.itching) },
+    totalScore: Number(value.totalScore), version: Number(value.version), updatedAt: String(value.updatedAt),
+  };
+}
+
 function knowledgeValue(value: unknown): string {
   return isRecord(value) && value.status === "known" && typeof value.value === "string" ? value.value : "";
 }
 
+function textValue(value: unknown): string {
+  return typeof value === "string" ? value : knowledgeValue(value);
+}
+
 function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null; }
 function isKnowledge(value: unknown) { return isRecord(value) && (value.status === "unknown" || (value.status === "known" && typeof value.value === "string")); }
+function isKnowledgeOrText(value: unknown) { return typeof value === "string" || isKnowledge(value); }
 function isApiProfile(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && isRecord(value.basicInfo) && isKnowledge(value.basicInfo.displayName) && isKnowledge(value.basicInfo.birthDate) && isKnowledge(value.basicInfo.sex) && Array.isArray(value.allergyHistory) && typeof value.version === "number" && typeof value.updatedAt === "string";
+  return isRecord(value) && isRecord(value.basicInfo) && isKnowledgeOrText(value.basicInfo.displayName) && isKnowledgeOrText(value.basicInfo.birthDate) && isKnowledgeOrText(value.basicInfo.sex) && (Array.isArray(value.allergyHistory) || typeof value.allergyHistory === "string") && typeof value.version === "number" && typeof value.updatedAt === "string";
 }
 function isTrigger(value: unknown): value is TriggerProjection {
   return isRecord(value) && typeof value.code === "string" && typeof value.label === "string" && typeof value.group === "string" && typeof value.latestDate === "string" && typeof value.occurrenceCount === "number" && value.source === "patient_reported_exposure" && Array.isArray(value.sourceRecordIds);
 }
 function isApiExposure(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && typeof value.id === "string" && typeof value.date === "string" && Array.isArray(value.selections) && value.selections.every((item) => isRecord(item) && typeof item.group === "string" && typeof item.code === "string") && (value.otherDescription === null || typeof value.otherDescription === "string") && typeof value.version === "number" && typeof value.updatedAt === "string";
+}
+function isApiMedication(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && typeof value.id === "string" && typeof value.takenAt === "string" && typeof value.medicationName === "string" && isRecord(value.dosage) && (value.dosage.status === "unknown" || (value.dosage.status === "known" && typeof value.dosage.value === "string" && typeof value.dosage.unit === "string")) && isRecord(value.actualUse) && (value.actualUse.status === "unknown" || (value.actualUse.status === "known" && typeof value.actualUse.description === "string")) && typeof value.version === "number" && typeof value.updatedAt === "string";
+}
+function isApiSymptom(value: unknown): value is Record<string, unknown> {
+  return isRecord(value) && typeof value.id === "string" && typeof value.date === "string" && isRecord(value.scores) && ["sneezing", "rhinorrhea", "congestion", "itching"].every((key) => typeof value.scores[key] === "number") && typeof value.totalScore === "number" && typeof value.version === "number" && typeof value.updatedAt === "string";
 }

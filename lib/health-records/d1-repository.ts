@@ -7,6 +7,8 @@ import {
   type HealthProfileInput,
   type MedicationInput,
   type MedicationRecord,
+  type SymptomRecord,
+  type SymptomRecordInput,
   type TriggerProjection,
 } from "./domain.ts";
 import type { HealthRecordsRepository } from "./repository.ts";
@@ -29,6 +31,19 @@ type MedicationRow = {
   dosage_unit: string | null;
   actual_use_status: "known" | "unknown";
   actual_use_description: string | null;
+  version: number;
+  created_at: string;
+  updated_at: string;
+};
+
+type SymptomRow = {
+  id: string;
+  symptom_date: string;
+  sneezing: number;
+  rhinorrhea: number;
+  congestion: number;
+  itching: number;
+  total_score: number;
   version: number;
   created_at: string;
   updated_at: string;
@@ -76,6 +91,18 @@ function mapMedication(row: MedicationRow): MedicationRecord {
     actualUse: row.actual_use_status === "unknown"
       ? { status: "unknown" }
       : { status: "known", description: row.actual_use_description! },
+    version: row.version,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+  };
+}
+
+function mapSymptom(row: SymptomRow): SymptomRecord {
+  return {
+    id: row.id,
+    date: row.symptom_date,
+    scores: { sneezing: row.sneezing, rhinorrhea: row.rhinorrhea, congestion: row.congestion, itching: row.itching },
+    totalScore: row.total_score,
     version: row.version,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -173,6 +200,34 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     await this.medication(database, userId, id);
     const result = await database.prepare("DELETE FROM medication_records WHERE id = ? AND user_id = ? AND version = ?").bind(id, userId, expectedVersion).run();
     if (result.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "用药记录已被更新，请刷新后重试");
+  }
+
+  async listSymptoms(userId: string, date: string | null) {
+    const database = await this.getDatabase();
+    const query = date
+      ? database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ? ORDER BY symptom_date DESC, id DESC LIMIT 366").bind(userId, date)
+      : database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? ORDER BY symptom_date DESC, id DESC LIMIT 366").bind(userId);
+    const rows = await query.all<SymptomRow>();
+    return rows.results.map(mapSymptom);
+  }
+
+  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput) {
+    const database = await this.getDatabase();
+    const timestamp = now();
+    const id = `symptom_${crypto.randomUUID()}`;
+    const totalScore = Object.values(input.scores).reduce((sum, item) => sum + item, 0);
+    if (expectedVersion === 0) {
+      const inserted = await database.prepare("INSERT OR IGNORE INTO symptom_records (id, user_id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
+        .bind(id, userId, date, input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, timestamp).run();
+      if (inserted.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已存在，请刷新后重试");
+    } else {
+      const updated = await database.prepare("UPDATE symptom_records SET sneezing = ?, rhinorrhea = ?, congestion = ?, itching = ?, total_score = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND symptom_date = ? AND version = ?")
+        .bind(input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, userId, date, expectedVersion).run();
+      if (updated.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
+    }
+    const row = await database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ?").bind(userId, date).first<SymptomRow>();
+    if (!row) throw new HealthRecordError(500, "INTERNAL_ERROR", "症状记录保存后无法读取");
+    return mapSymptom(row);
   }
 
   async listExposures(userId: string, date: string | null) {

@@ -999,6 +999,12 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   cursor: default;
 }
 
+.calendar-grid button.good {
+  background: #edf1ef;
+  color: #5f726a;
+  font-weight: 700;
+}
+
 .calendar-grid button.mild {
   background: #ffe087;
   color: #7d5c13;
@@ -1092,9 +1098,19 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   color: #8d6b18;
 }
 
+.calendar-list span.good {
+  background: #edf1ef;
+  color: #5f726a;
+}
+
 .calendar-list span.moderate {
   background: #fee3c2;
   color: #a25d1e;
+}
+
+.calendar-list span.severe {
+  background: #f9d8d0;
+  color: #a44838;
 }
 
 .calendar-list strong {
@@ -1869,6 +1885,31 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .medication-entry strong { font-size: 12px; }
 .medication-entry small { margin-top: 3px; color: #8998aa; font-size: 9px; }
 .medication-entry b { color: #1e5aa3; font-size: 9px; }
+
+.medication-form { margin-top: 11px; padding-top: 11px; border-top: 1px solid #e7edf4; }
+.medication-form label { margin-top: 9px; display: flex; flex-direction: column; gap: 5px; color: #62768e; font-size: 9px; }
+.medication-form label:first-child { margin-top: 0; }
+.medication-form input,
+.medication-form textarea { width: 100%; padding: 9px 10px; border: 1px solid #d9e3ef; border-radius: 10px; outline: 0; background: #f8fafd; color: #243c59; font-size: 11px; }
+.medication-form textarea { min-height: 58px; resize: vertical; line-height: 1.55; }
+.medication-form input:focus,
+.medication-form textarea:focus { border-color: #568bc7; box-shadow: 0 0 0 2px rgba(30, 90, 163, .1); }
+.medication-form input:disabled,
+.medication-form textarea:disabled { background: #eef2f6; color: #9aa7b4; }
+.medication-inline { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.medication-inline label { margin-top: 9px; }
+.checkbox-line { flex-direction: row !important; align-items: center; gap: 6px !important; color: #6c7d91 !important; }
+.checkbox-line input { width: 14px; height: 14px; padding: 0; accent-color: #1e5aa3; }
+.medication-history { margin-top: 11px; border-top: 1px solid #e7edf4; }
+.medication-history article { padding: 10px 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 8px; border-bottom: 1px solid #edf1f6; }
+.medication-history article time { grid-column: 1 / -1; color: #71849b; font-size: 8px; }
+.medication-history article strong { color: #243c59; font-size: 10px; }
+.medication-history article span { color: #50749d; font-size: 9px; text-align: right; }
+.medication-history article small { grid-column: 1 / -1; color: #7f8ea1; font-size: 8px; line-height: 1.5; }
+.medication-history article div { grid-column: 1 / -1; display: flex; justify-content: flex-end; gap: 7px; }
+.medication-history article button { padding: 5px 9px; border: 0; border-radius: 8px; background: #edf3fa; color: #1e5aa3; font-size: 8px; cursor: pointer; }
+.medication-history article button:last-child { background: #fff2ed; color: #a85a42; }
+.error-text { color: #a85a42 !important; }
 
 .profile-edit-form { display: flex; flex-direction: column; }
 .profile-edit-form label { margin-top: 11px; display: flex; flex-direction: column; gap: 5px; color: #62768e; font-size: 9px; }
