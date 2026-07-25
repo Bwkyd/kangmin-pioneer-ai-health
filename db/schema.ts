@@ -1,4 +1,4 @@
-import { index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, integer, primaryKey, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 const timestamps = {
   createdAt: text("created_at").notNull(),
@@ -89,3 +89,64 @@ export const idempotencyKeys = sqliteTable("idempotency_keys", {
   response: text("response").notNull(),
   createdAt: text("created_at").notNull(),
 });
+
+export const healthProfiles = sqliteTable("health_profiles", {
+  userId: text("user_id").primaryKey(),
+  basicInfo: text("basic_info").notNull(),
+  allergyHistory: text("allergy_history").notNull(),
+  commonTriggers: text("common_triggers").notNull().default("[]"),
+  version: integer("version").notNull().default(1),
+  ...timestamps,
+});
+
+export const medicationRecords = sqliteTable("medication_records", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  takenAt: text("taken_at").notNull(),
+  medicationName: text("medication_name").notNull(),
+  dosageStatus: text("dosage_status", { enum: ["known", "unknown"] }).notNull(),
+  dosageValue: text("dosage_value"),
+  dosageUnit: text("dosage_unit"),
+  actualUseStatus: text("actual_use_status", { enum: ["known", "unknown"] }).notNull(),
+  actualUseDescription: text("actual_use_description"),
+  version: integer("version").notNull().default(1),
+  ...timestamps,
+}, (table) => [
+  index("medication_records_user_time_idx").on(table.userId, table.takenAt, table.id),
+]);
+
+export const allergenExposureRecords = sqliteTable("allergen_exposure_records", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  exposureDate: text("exposure_date").notNull(),
+  otherDescription: text("other_description"),
+  note: text("note"),
+  mutationId: text("mutation_id").notNull(),
+  version: integer("version").notNull().default(1),
+  ...timestamps,
+}, (table) => [
+  index("allergen_exposure_records_user_date_idx").on(table.userId, table.exposureDate, table.id),
+]);
+
+export const allergenExposureSelections = sqliteTable("allergen_exposure_selections", {
+  exposureId: text("exposure_id").notNull().references(() => allergenExposureRecords.id, { onDelete: "cascade" }),
+  groupCode: text("group_code").notNull(),
+  optionCode: text("option_code").notNull(),
+}, (table) => [
+  primaryKey({ columns: [table.exposureId, table.optionCode] }),
+  index("allergen_exposure_selections_option_idx").on(table.optionCode, table.exposureId),
+]);
+
+export const healthRecordIdempotency = sqliteTable("health_record_idempotency", {
+  id: text("id").primaryKey(),
+  userId: text("user_id").notNull(),
+  scope: text("scope").notNull(),
+  key: text("key").notNull(),
+  requestHash: text("request_hash").notNull(),
+  state: text("state", { enum: ["pending", "completed"] }).notNull(),
+  response: text("response"),
+  createdAt: text("created_at").notNull(),
+  completedAt: text("completed_at"),
+}, (table) => [
+  uniqueIndex("health_record_idempotency_user_scope_key_idx").on(table.userId, table.scope, table.key),
+]);
