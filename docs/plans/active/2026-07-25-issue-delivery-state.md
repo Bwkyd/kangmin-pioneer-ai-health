@@ -8,15 +8,15 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 05:00:51 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 05:02:28 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
 - 当前代码候选：`cbf6bc06d90623ac1eff71ce192f9bb80972481b`（`Harden health records and clinical approval gates`）；本状态文件将在代码候选之后单独提交，最终评审必须绑定状态文件提交后的精确 HEAD；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
 - 工作树：当前仅本状态文件未提交；代码候选已冻结，旧候选 `1b83e882...` 与 `02e32949...` 的测试和审查结论不覆盖当前候选。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
-- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 04:02 主机网络只读核验返回 HTTP 200；未登录、未写入
-- 本地服务：`127.0.0.1:3000` 于 2026-07-26 04:02 主机网络只读核验返回 HTTP 200；最新隔离 D1 Worker 使用当前构建完成浏览器验收后已停止，不代表生产 D1 已验收
+- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 05:02 主机网络只读核验返回 HTTP 200；未登录、未写入
+- 本地服务：`127.0.0.1:3000` 于 2026-07-26 05:02 主机网络只读核验返回 HTTP 200；最新隔离 D1 Worker 使用当前构建完成浏览器验收后已停止，不代表生产 D1 已验收
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
 
@@ -29,6 +29,16 @@
 - completed：一期边界保持不变：花粉监测、花粉指数/数据源/地区/更新频率不做；过敏原页面中的花粉若存在仅是患者自述。#88–#99 是穴位/按摩/鼻三线姜刮/耳穴压豆/艾灸等康复方案建议，不是用药；用药记录单独记录时间、药名、剂量和实际用量。
 - in_progress：对状态文件提交后的精确 HEAD 执行四视角对抗审查，并执行 Kimi/DeepSeek 同 SHA 评审；任何 P0/P1 继续真修、重测、重新冻结，旧候选结论全部作废。
 - blocked：GitHub token 已失效，不能创建 Draft PR/CI；生产 verified-phone resolver、生产 D1、临床书面批准/审核写入和客户 UAT 未完成；未获逐项授权前不得推送、合并、部署、关闭 Issue 或清理 worktree/分支。
+
+## 2026-07-26 05:02 看门狗运行记录
+
+- completed：主机网络实时刷新 `origin/main`，仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`；当前业务代码候选为 `cbf6bc06d90623ac1eff71ce192f9bb80972481b`，除本状态文件外工作树无修改，`git diff --check` PASS。
+- completed：GitHub 实时查询仍有 35 个 open Issue（#69–#103），均无 `agent-ready`；open PR 仍仅 #66（Dependabot Vite 更新），与本轮候选无关。
+- completed：主机网络只读探测 `http://127.0.0.1:3000/` 与客户后台 `/admin` 均返回 HTTP 200；这仅证明基础可达，不替代登录、真实数据、浏览器 UAT、生产或客户验收。
+- in_progress：进入最终状态锚点阶段；先提交本状态文件，使后续四视角对抗审查与 Kimi/DeepSeek 都绑定同一个精确 HEAD。任何候选漂移、P0/P1 或缺失最终 verdict 均使旧结论作废。
+- blocked：#88–#99 仍等待临床负责人书面批准；#101 花粉监测继续延期。生产 verified-phone resolver、生产 D1、临床审核写入、客户 UAT、推送、Draft PR/CI、合并、部署和 Issue 关闭均缺少凭据、真实证据或逐项授权。
+- pending：状态锚点提交后先执行四视角只读对抗审查；P0/P1 清零后才执行 Kimi/DeepSeek 同 SHA 评审。
+- 本轮动作边界：未修改业务代码或临床规则，未推送、未创建或合并 PR、未部署、未关闭 Issue、未清理 worktree/分支。
 
 ## 2026-07-26 04:14 最终候选验收记录
 
