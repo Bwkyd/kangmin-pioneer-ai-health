@@ -77,6 +77,7 @@ test("keeps every original demo section without presenting simulated medical fac
 
 test("uses the server-owned health-record contract without a client user id", async () => {
   const adapter = await readFile(new URL("../app/health-records.ts", import.meta.url), "utf8");
+  const discover = await readFile(new URL("../app/discover/page.tsx", import.meta.url), "utf8");
 
   assert.match(adapter, /commonTriggers: TriggerProjection\[\]/);
   assert.match(adapter, /"\/api\/v1\/health-records\/profile"/);
@@ -86,5 +87,6 @@ test("uses the server-owned health-record contract without a client user id", as
   assert.match(adapter, /"idempotency-key"/);
   assert.match(adapter, /credentials: "same-origin"/);
   assert.doesNotMatch(adapter, /["']x-user-id["']/i);
+  assert.doesNotMatch(discover, /["']x-user-id["']/i);
   assert.doesNotMatch(adapter, /花粉监测/);
 });

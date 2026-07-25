@@ -15,14 +15,14 @@ export default function DiscoverPage() {
 
   useEffect(() => {
     if (tab === "messages") {
-      fetch("/api/messages", { headers: { "x-user-id": "h5-demo-user" } }).then((response) => response.json()).then((payload) => setMessages(payload.items || [])).catch(() => setNotice("消息暂时无法加载"));
+      fetch("/api/messages").then((response) => response.json()).then((payload) => setMessages(payload.items || [])).catch(() => setNotice("消息暂时无法加载"));
       return;
     }
     fetch(`/api/content?type=${tab}`).then((response) => response.json()).then((payload) => setItems(payload.items || [])).catch(() => setNotice("内容暂时无法加载"));
   }, [tab]);
 
   async function markRead(id: string) {
-    await fetch("/api/messages", { method: "PATCH", headers: { "content-type": "application/json", "x-user-id": "h5-demo-user" }, body: JSON.stringify({ id }) });
+    await fetch("/api/messages", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
     setMessages((current) => current.map((item) => item.id === id ? { ...item, isRead: 1 } : item));
   }
 
