@@ -8,5 +8,6 @@ test("plan step writes invalidate approval and cannot mutate a published plan", 
   assert.match(route, /If-Match/);
   assert.match(route, /version = version \+ 1/);
   assert.match(route, /DELETE FROM clinical_approvals/);
+  assert.match(route, /write_token/);
   assert.match(route, /status IN \('draft', 'offline', 'index_failed'\)/);
 });

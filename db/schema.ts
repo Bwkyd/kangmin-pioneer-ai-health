@@ -18,6 +18,7 @@ export const contentItems = sqliteTable("content_items", {
   mediaId: text("media_id"),
   metadata: text("metadata").notNull().default("{}"),
   publishedAt: text("published_at"),
+  writeToken: text("write_token"),
   ...timestamps,
 }, (table) => [
   index("content_items_type_status_idx").on(table.type, table.status, table.publishedAt),

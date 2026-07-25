@@ -14,6 +14,8 @@ test("health records migration defines ownership, grouped exposures, cascade and
 
 test("latest health migration makes one patient-reported exposure record per day", async () => {
   const sql = await readFile(new URL("../../../drizzle/0007_handy_mephisto.sql", import.meta.url), "utf8");
+  assert.match(sql, /merge_duplicate_exposure/u);
+  assert.match(sql, /INSERT INTO `audit_logs`/u);
   assert.match(sql, /DELETE FROM `allergen_exposure_selections`/u);
   assert.match(sql, /DELETE FROM `allergen_exposure_records`/u);
   assert.match(sql, /CREATE UNIQUE INDEX `allergen_exposure_records_user_date_idx` ON `allergen_exposure_records` \(`user_id`,`exposure_date`\)/u);

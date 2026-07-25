@@ -113,6 +113,179 @@ const articles = [
 
 const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
 
+type TriState = "yes" | "no" | "unknown";
+type AgentGroup = "safety" | "severity" | "syndrome" | "rehabSafety";
+
+type AgentAssessmentDraft = {
+  diagnosedAllergicRhinitis: TriState;
+  safety: Record<string, TriState>;
+  severity: Record<string, TriState>;
+  syndrome: Record<string, TriState>;
+  rehabMethod: string;
+  rehabSafety: Record<string, TriState>;
+};
+
+type AgentResult = {
+  assessment?: { status?: string; planStatus?: string; disclaimer?: string; nextQuestions?: string[] };
+  rehabSafety?: { status?: string; nextQuestions?: string[]; blockedBy?: string[]; disclaimer?: string };
+  explanation?: {
+    summary?: string;
+    disclaimer?: string;
+    plan?: {
+      title: string;
+      summary: string;
+      risks: string;
+      contraindications: string;
+      steps: Array<{ title: string; instruction: string }>;
+    };
+  };
+  model?: { used?: boolean; degradedReason?: string };
+};
+
+const triStateOptions: Array<[TriState, string]> = [["yes", "有"], ["no", "没有"], ["unknown", "不确定"]];
+const agentSafetyFields = [
+  ["respiratoryEmergency", "呼吸困难、喘不过气或口唇发紫"],
+  ["persistentHighFever", "持续高热或明显头痛"],
+  ["facialSwelling", "面部肿胀或剧烈疼痛"],
+  ["severeNoseBleed", "鼻出血不止"],
+  ["unilateralFoulDischarge", "单侧恶臭鼻涕"],
+  ["severeNeurologicalSymptoms", "严重头晕、意识异常等神经症状"],
+] as const;
+const agentSeverityFields = [
+  ["sleepAffected", "症状影响睡眠"],
+  ["activityAffected", "症状影响日常活动"],
+  ["workStudyAffected", "症状影响学习或工作"],
+  ["symptomTroublesome", "症状让你明显困扰"],
+] as const;
+const agentSyndromeFields = [
+  ["thirst", "口渴或咽干"],
+  ["fatigue", "容易疲劳"],
+  ["limbsNotWarm", "四肢不温"],
+  ["fearWind", "怕风"],
+  ["coldIntolerance", "怕冷"],
+] as const;
+const agentRehabFields = [
+  ["acuteColdRhinitis", "感冒引起的急性鼻炎，或正在发热"],
+  ["feverOrInfection", "有发热、感染或明显头痛"],
+  ["acuteAllergicFlare", "过敏性鼻炎正处于严重急性发作"],
+  ["skinDamageOrInflammation", "操作部位有破损、感染、炎症、湿疹或疱疹"],
+  ["bleedingRisk", "有血小板减少、血友病或严重贫血等出血风险"],
+  ["anticoagulantUse", "正在使用阿司匹林、华法林等抗凝药"],
+  ["severeChronicDisease", "有严重心脑血管、肝肾等慢性疾病"],
+  ["specialPhysicalState", "过饱、过饿、过渴、过劳、醉酒、孕期或经期"],
+  ["mediumAllergy", "对姜、油、乳液等操作介质过敏"],
+  ["lungHeatPattern", "鼻涕黄稠、口干怕热，或已知肺经蕴热"],
+] as const;
+const rehabMethodOptions = [
+  ["nose_three_line_ginger_scrape", "鼻三线姜刮（不等同于普通刮痧）"],
+  ["finger_pressure_yingxiang", "指腹擦迎香"],
+  ["acupoint_massage", "穴位按摩"],
+  ["ear_acupressure", "耳穴压豆"],
+  ["moxa_or_blow_dazhui", "艾灸/电吹风吹大椎、风池"],
+] as const;
+
+function createAgentDraft(): AgentAssessmentDraft {
+  const unknowns = (fields: readonly (readonly [string, string])[]) => Object.fromEntries(fields.map(([key]) => [key, "unknown"] as const));
+  return {
+    diagnosedAllergicRhinitis: "unknown",
+    safety: unknowns(agentSafetyFields),
+    severity: unknowns(agentSeverityFields),
+    syndrome: unknowns(agentSyndromeFields),
+    rehabMethod: "finger_pressure_yingxiang",
+    rehabSafety: unknowns(agentRehabFields),
+  };
+}
+
+function AgentAssessmentPanel({
+  draft,
+  setDraft,
+  status,
+  notice,
+  result,
+  onSubmit,
+}: {
+  draft: AgentAssessmentDraft;
+  setDraft: React.Dispatch<React.SetStateAction<AgentAssessmentDraft>>;
+  status: "idle" | "submitting" | "ready" | "error";
+  notice: string;
+  result: AgentResult | null;
+  onSubmit: () => void;
+}) {
+  const updateGroup = (group: AgentGroup, key: string, value: TriState) => {
+    setDraft((current) => ({ ...current, [group]: { ...current[group], [key]: value } }));
+  };
+  const renderFields = (group: AgentGroup, fields: readonly (readonly [string, string])[]) => (
+    <div className="agent-field-list">
+      {fields.map(([key, label]) => (
+        <label key={key} className="agent-field">
+          <span>{label}</span>
+          <select value={draft[group][key]} onChange={(event) => updateGroup(group, key, event.target.value as TriState)}>
+            {triStateOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+          </select>
+        </label>
+      ))}
+    </div>
+  );
+
+  return (
+    <section className="agent-assessment-panel" aria-label="智能体安全评估与康复方案建议">
+      <div className="agent-panel-intro">
+        <strong>安全评估与康复方案建议</strong>
+        <p>请按你目前的情况选择“有、没有或不确定”。服务端规则会先排除危险情况，再匹配当前已审核的康复方案；不确定不会被当成没有。</p>
+      </div>
+      <label className="agent-field agent-diagnosis-field">
+        <span>是否已经被医生或检查确认过敏性鼻炎？</span>
+        <select value={draft.diagnosedAllergicRhinitis} onChange={(event) => setDraft((current) => ({ ...current, diagnosedAllergicRhinitis: event.target.value as TriState }))}>
+          {triStateOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+        </select>
+      </label>
+      <details open>
+        <summary>第一步：危险信号</summary>
+        {renderFields("safety", agentSafetyFields)}
+      </details>
+      <details>
+        <summary>第二步：症状影响程度</summary>
+        {renderFields("severity", agentSeverityFields)}
+      </details>
+      <details>
+        <summary>第三步：体质相关信息</summary>
+        {renderFields("syndrome", agentSyndromeFields)}
+      </details>
+      <details>
+        <summary>第四步：想了解哪种康复方法</summary>
+        <label className="agent-field">
+          <span>康复方法</span>
+          <select value={draft.rehabMethod} onChange={(event) => setDraft((current) => ({ ...current, rehabMethod: event.target.value }))}>
+            {rehabMethodOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
+          </select>
+        </label>
+        <p className="agent-method-note">鼻三线姜刮不等同于普通刮痧；如果信息不完整，智能体不会直接给出操作建议。</p>
+        {renderFields("rehabSafety", agentRehabFields)}
+      </details>
+      {notice && <p className={`agent-notice ${status === "error" ? "error-text" : ""}`} role="status">{notice}</p>}
+      <button className="agent-submit" type="button" disabled={status === "submitting"} onClick={onSubmit}>{status === "submitting" ? "正在安全评估…" : "获取安全建议"}</button>
+      {result && (
+        <article className="agent-result" aria-label="智能体评估结果">
+          <div className="agent-result-title"><strong>服务端评估结果</strong><span>{result.assessment?.planStatus === "approved_plan" ? "已匹配审核方案" : result.assessment?.status === "blocked" || result.rehabSafety?.status === "blocked" ? "先暂停操作" : "需继续确认"}</span></div>
+          {result.explanation?.summary && <p>{result.explanation.summary}</p>}
+          {result.rehabSafety?.status === "blocked" && <p className="error-text">当前情况不适合直接进行这项操作，请先咨询专业人员。</p>}
+          {result.rehabSafety?.status === "need_more_information" && <p>还有安全信息未确认：{result.rehabSafety.nextQuestions?.join("、") || "请补充后再试"}。</p>}
+          {result.explanation?.plan && (
+            <div className="agent-plan-detail">
+              <h3>{result.explanation.plan.title}</h3>
+              <p>{result.explanation.plan.summary}</p>
+              <p><strong>风险提示：</strong>{result.explanation.plan.risks}</p>
+              <p><strong>禁忌事项：</strong>{result.explanation.plan.contraindications}</p>
+              <ol>{result.explanation.plan.steps.map((step, index) => <li key={`${step.title}-${index}`}><strong>{step.title}</strong><span>{step.instruction}</span></li>)}</ol>
+            </div>
+          )}
+          <small>{result.explanation?.disclaimer || result.rehabSafety?.disclaimer || result.assessment?.disclaimer || "结果不能替代门诊诊断。"}</small>
+        </article>
+      )}
+    </section>
+  );
+}
+
 function displayDate(value: string): string {
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) return value;
@@ -188,6 +361,11 @@ export default function Home() {
     },
   ]);
   const [step, setStep] = useState(0);
+  const [agentAssessmentOpen, setAgentAssessmentOpen] = useState(false);
+  const [agentDraft, setAgentDraft] = useState<AgentAssessmentDraft>(createAgentDraft);
+  const [agentStatus, setAgentStatus] = useState<"idle" | "submitting" | "ready" | "error">("idle");
+  const [agentNotice, setAgentNotice] = useState("");
+  const [agentResult, setAgentResult] = useState<AgentResult | null>(null);
   const [input, setInput] = useState("");
   const [articleOpen, setArticleOpen] = useState<number | null>(null);
   const [scores, setScores] = useState<Array<number | null>>([...emptySymptomScores]);
@@ -433,8 +611,32 @@ export default function Home() {
 
   const startConsultation = () => {
     setTab("chat");
-    if (step === 0) {
-      addExchange("开始了解", "好的。你现在最明显的不舒服是什么？可以直接描述，也可以点击常见情况。", 1);
+    setAgentAssessmentOpen(true);
+    setAgentStatus("idle");
+    setAgentNotice("");
+    setAgentResult(null);
+  };
+
+  const submitAgentAssessment = async () => {
+    setAgentStatus("submitting");
+    setAgentNotice("正在提交服务端规则和操作安全筛查…");
+    setAgentResult(null);
+    const { rehabMethod, rehabSafety, ...assessment } = agentDraft;
+    try {
+      const response = await fetch("/api/v1/agent/explain", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        credentials: "same-origin",
+        body: JSON.stringify({ ...assessment, rehabSafety: { method: rehabMethod, answers: rehabSafety } }),
+      });
+      const payload = await response.json() as { ok?: boolean; data?: AgentResult; error?: { message?: string } };
+      if (!response.ok || !payload.ok || !payload.data) throw new Error(payload.error?.message || "智能体暂时无法完成评估");
+      setAgentResult(payload.data);
+      setAgentStatus("ready");
+      setAgentNotice(payload.data.explanation?.plan ? "已返回当前已审核的康复方案" : "服务端已完成筛查；没有已审核方案时不会直接推荐操作");
+    } catch (error) {
+      setAgentStatus("error");
+      setAgentNotice(error instanceof Error ? error.message : "智能体评估失败，请稍后重试");
     }
   };
 
@@ -775,6 +977,11 @@ export default function Home() {
       },
     ]);
     setStep(0);
+    setAgentAssessmentOpen(false);
+    setAgentDraft(createAgentDraft());
+    setAgentStatus("idle");
+    setAgentNotice("");
+    setAgentResult(null);
     setAssessmentDone(false);
     setScores([...emptySymptomScores]);
     setEntryOpen(false);
@@ -833,10 +1040,10 @@ export default function Home() {
                 <section className="home-modules" aria-label="鼻健康服务">
                   <button className="diagnose-module" onClick={startConsultation}>
                     <span className="module-icon">诊</span>
-                    <small>交互流程演示</small>
+                    <small>安全评估与方案建议</small>
                     <strong>诊一诊</strong>
-                    <p>和小岐聊聊症状，体验问答与安全提示。</p>
-                    <b>开始了解 <i>→</i></b>
+                    <p>先做服务端规则和操作安全筛查，再匹配已审核康复方案。</p>
+                    <b>开始安全评估 <i>→</i></b>
                   </button>
                   <button className="learn-module" onClick={openDiscover}>
                     <span className="module-icon">学</span>
@@ -851,8 +1058,8 @@ export default function Home() {
                   <span>据</span>
                   <div>
                     <strong>抗敏先锋鼻健康交互 Demo</strong>
-                    <p>用于演示小程序页面与操作流程，不输出诊断、证型或个性化治疗方案。</p>
-                    <small>正式内容、规则与数据仍待审核接入</small>
+                    <p>服务端规则优先，不输出诊断；康复建议只来自当前已审核内容。</p>
+                    <small>未完成身份认证或临床审核时不会保存或推荐正式方案</small>
                     <em>结果仅供参考，最终方案请以门诊诊断为准。</em>
                   </div>
                 </aside>
@@ -862,7 +1069,7 @@ export default function Home() {
                     <span className="feature-icon chart-icon">↘</span>
                     <small>今日待完成</small><strong>过敏原记录</strong><i>记录今天</i>
                   </button>
-                  <button onClick={() => askKnowledge(0)}>
+                  <button onClick={openDiscover}>
                     <span className="feature-icon book-icon">知</span>
                     <small>科普内容演示</small><strong>换季为何反复？</strong><i>查看示例</i>
                   </button>
@@ -878,7 +1085,7 @@ export default function Home() {
                 </section>
 
                 <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={openDiscover}>全部 ›</button></div>
-                <button className="article-feature" onClick={() => setArticleOpen(0)}>
+                <button className="article-feature" onClick={openDiscover}>
                   <div className="article-art"><span /><i>4</i></div>
                   <div><small>日常防护 · 3 分钟</small><strong>换季鼻敏感，先做好这 4 件小事</strong><span>温差、卧室环境与外出防护</span></div>
                 </button>
@@ -889,7 +1096,7 @@ export default function Home() {
               <div className="chat-view">
                 <div className="safety-banner">
                   <span>库</span>
-                  <p><strong>内部交互演示</strong><small>当前内容待审核 · 不替代门诊诊断</small></p>
+                  <p><strong>安全评估与方案建议</strong><small>固定规则优先 · 不替代门诊诊断</small></p>
                 </div>
                 <div className="chat" aria-live="polite">
                   <div className="time-label">今天 14:20</div>
@@ -908,7 +1115,18 @@ export default function Home() {
                     );
                   })}
 
-                  {step === 0 && messages.length === 1 && (
+                  {agentAssessmentOpen && (
+                    <AgentAssessmentPanel
+                      draft={agentDraft}
+                      setDraft={setAgentDraft}
+                      status={agentStatus}
+                      notice={agentNotice}
+                      result={agentResult}
+                      onSubmit={submitAgentAssessment}
+                    />
+                  )}
+
+                  {step === 0 && messages.length === 1 && !agentAssessmentOpen && (
                     <>
                       <div className="quick-ask-label">你可以这样问</div>
                       <div className="knowledge-options">
@@ -1092,6 +1310,7 @@ export default function Home() {
                     </section>
                     <section className="health-record-card medication-card">
                       <div className="record-card-title"><span>药</span><div><h3>用药记录</h3><small>记录时间、药物名称、剂量和实际用量</small></div><button type="button" onClick={() => beginMedication()}>新增记录</button></div>
+                      {medicationStatus === "error" && <div className="record-notice error" role="alert"><strong>用药历史暂时无法读取</strong><span>{medicationNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div>}
                       {medicationEditing && (
                         <form className="medication-form" onSubmit={submitMedication}>
                           <label>使用时间<input type="datetime-local" value={medicationDraft.takenAt} onChange={(event) => setMedicationDraft((current) => ({ ...current, takenAt: event.target.value }))} /></label>
@@ -1104,7 +1323,7 @@ export default function Home() {
                           <div className="record-form-actions"><button type="button" disabled={medicationStatus === "saving"} onClick={() => { medicationRequest.next(); setMedicationCreateKey(null); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
                         </form>
                       )}
-                      {medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)} disabled={medicationStatus !== "ready"}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus !== "ready"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
+                      {medicationStatus === "error" ? <p className="record-empty error-text">读取失败，不能判断当前是否没有用药记录；请先重试。</p> : medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)} disabled={medicationStatus !== "ready"}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus !== "ready"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
                     </section>
                   </>
                 )}

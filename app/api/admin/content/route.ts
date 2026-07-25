@@ -119,9 +119,10 @@ export async function PATCH(request: Request) {
         if (Number(reference?.count ?? 0) > 0) return jsonError("该视频仍被已发布调理方案使用，请先下架相关方案", 409);
       }
       const timestamp = now();
+      const writeToken = crypto.randomUUID();
       const nextVersion = item.version + 1;
       const results = await DB.batch([
-        DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published'").bind(timestamp, id, item.version),
+        DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published'").bind(timestamp, writeToken, id, item.version),
         DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'offline' AND version = ?)").bind(id, id, nextVersion),
         DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'offline', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'offline' AND version = ?)").bind(identifier("audit"), session.username, item.type, id, timestamp, id, nextVersion),
       ]);
@@ -132,9 +133,10 @@ export async function PATCH(request: Request) {
       if (item.status === "published") return jsonError("已发布内容不能直接修改，请先下架并重新审核", 409);
       const metadata = parseMetadata(body.metadata);
       const timestamp = now();
+      const writeToken = crypto.randomUUID();
       const results = await DB.batch([
-        DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', published_at = NULL, updated_at = ?, version = version + 1 WHERE id = ? AND version = ?")
-          .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), timestamp, id, item.version),
+        DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', published_at = NULL, write_token = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
+          .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), writeToken, timestamp, id, item.version),
         DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft')").bind(id, id, item.version + 1),
         DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'update', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft')").bind(identifier("audit"), session.username, item.type, id, timestamp, id, item.version + 1),
       ]);

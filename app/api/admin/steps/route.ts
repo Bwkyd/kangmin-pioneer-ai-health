@@ -40,16 +40,17 @@ export async function POST(request: Request) {
     }
     const id = identifier("step");
     const timestamp = now();
+    const writeToken = crypto.randomUUID();
     const nextVersion = plan.version + 1;
     const results = await values.DB.batch([
-      values.DB.prepare("UPDATE content_items SET status = 'draft', published_at = NULL, version = version + 1, updated_at = ? WHERE id = ? AND type = 'plan' AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
-        .bind(timestamp, planId, plan.version),
-      values.DB.prepare("DELETE FROM clinical_approvals WHERE content_id = ? AND content_version = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft')")
-        .bind(planId, plan.version, planId, nextVersion),
-      values.DB.prepare("INSERT INTO plan_steps (id, plan_id, position, title, instruction, media_id, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND type = 'plan' AND version = ? AND status = 'draft')")
-        .bind(id, planId, position, title, instruction, mediaId, timestamp, timestamp, planId, nextVersion),
-      values.DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'create_step', 'plan', ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft')")
-        .bind(identifier("audit"), session.username, planId, JSON.stringify({ stepId: id, contentVersion: nextVersion }), timestamp, planId, nextVersion),
+      values.DB.prepare("UPDATE content_items SET status = 'draft', published_at = NULL, version = version + 1, write_token = ?, updated_at = ? WHERE id = ? AND type = 'plan' AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
+        .bind(writeToken, timestamp, planId, plan.version),
+      values.DB.prepare("DELETE FROM clinical_approvals WHERE content_id = ? AND content_version = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)")
+        .bind(planId, plan.version, planId, nextVersion, writeToken),
+      values.DB.prepare("INSERT INTO plan_steps (id, plan_id, position, title, instruction, media_id, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND type = 'plan' AND version = ? AND status = 'draft' AND write_token = ?)")
+        .bind(id, planId, position, title, instruction, mediaId, timestamp, timestamp, planId, nextVersion, writeToken),
+      values.DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'create_step', 'plan', ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)")
+        .bind(identifier("audit"), session.username, planId, JSON.stringify({ stepId: id, contentVersion: nextVersion }), timestamp, planId, nextVersion, writeToken),
     ]);
     if (results[0].meta.changes === 0 || results[2].meta.changes === 0) return jsonError("方案已被其他管理员更新，请刷新后重试", 409);
     return Response.json({ id, version: nextVersion }, { status: 201 });
