@@ -47,6 +47,18 @@ export const planSteps = sqliteTable("plan_steps", {
   updatedAt: text("updated_at").notNull(),
 }, (table) => [uniqueIndex("plan_steps_plan_position_idx").on(table.planId, table.position)]);
 
+export const knowledgeChunks = sqliteTable("knowledge_chunks", {
+  id: text("id").primaryKey(),
+  knowledgeId: text("knowledge_id").notNull().references(() => contentItems.id, { onDelete: "cascade" }),
+  sourceVersion: integer("source_version").notNull(),
+  position: integer("position").notNull(),
+  chunkText: text("chunk_text").notNull(),
+  createdAt: text("created_at").notNull(),
+}, (table) => [
+  uniqueIndex("knowledge_chunks_source_position_idx").on(table.knowledgeId, table.sourceVersion, table.position),
+  index("knowledge_chunks_source_version_idx").on(table.knowledgeId, table.sourceVersion),
+]);
+
 export const notifications = sqliteTable("notifications", {
   id: text("id").primaryKey(),
   contentId: text("content_id").notNull().references(() => contentItems.id),

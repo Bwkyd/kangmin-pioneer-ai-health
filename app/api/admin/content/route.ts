@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/admin/auth";
-import { audit, executeIdempotent, identifier, jsonError, now, runtime, type ContentStatus, type ContentType } from "@/lib/admin/store";
+import { adminRouteError, executeIdempotent, identifier, jsonError, now, runtime, type ContentStatus, type ContentType } from "@/lib/admin/store";
 import { cleanText, contentTypes, parseMetadata, publishProblem } from "@/lib/admin/validation";
 
 type ContentRow = { id: string; type: ContentType; title: string; category: string; summary: string; body: string; source: string; status: ContentStatus; version: number; media_id: string | null; metadata: string; published_at: string | null; created_at: string; updated_at: string };
@@ -19,8 +19,8 @@ export async function GET(request: Request) {
       : DB.prepare("SELECT * FROM content_items ORDER BY updated_at DESC");
     const rows = await query.all<ContentRow>();
     return Response.json({ items: rows.results.map(serialize) });
-  } catch {
-    return jsonError("未授权", 401);
+  } catch (error) {
+    return adminRouteError(error);
   }
 }
 
@@ -36,13 +36,16 @@ export async function POST(request: Request) {
       const id = identifier(type);
       const timestamp = now();
       const metadata = parseMetadata(body.metadata);
-      await (await runtime()).DB.prepare("INSERT INTO content_items (id, type, title, category, summary, body, source, status, version, media_id, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?, ?)")
-        .bind(id, type, title, cleanText(body.category, 80) || "未分类", cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), timestamp, timestamp).run();
-      await audit(session.username, "create", type, id);
+      const { DB } = await runtime();
+      await DB.batch([
+        DB.prepare("INSERT INTO content_items (id, type, title, category, summary, body, source, status, version, media_id, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?, ?)")
+          .bind(id, type, title, cleanText(body.category, 80) || "未分类", cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), timestamp, timestamp),
+        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) VALUES (?, ?, 'create', ?, ?, '{}', ?)").bind(identifier("audit"), session.username, type, id, timestamp),
+      ]);
       return Response.json({ id, status: "draft" }, { status: 201 });
     });
-  } catch {
-    return jsonError("未授权", 401);
+  } catch (error) {
+    return adminRouteError(error);
   }
 }
 
@@ -67,7 +70,7 @@ export async function PATCH(request: Request) {
         if (!asset || asset.status !== "ready") return jsonError("关联文件不可用", 422);
       }
       const timestamp = now();
-      const statements = [DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, updated_at = ?, version = version + 1 WHERE id = ?").bind(timestamp, timestamp, id)];
+      const statements = [DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, updated_at = ? WHERE id = ?").bind(timestamp, timestamp, id)];
       if (body.notify === true && (item.type === "article" || item.type === "video")) {
         statements.push(DB.prepare("INSERT INTO notifications (id, content_id, title, body, published_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(content_id) DO UPDATE SET title = excluded.title, body = excluded.body, published_at = excluded.published_at").bind(identifier("notice"), id, item.title, item.summary || "有新内容已发布", timestamp));
       }
@@ -76,6 +79,10 @@ export async function PATCH(request: Request) {
       return Response.json({ id, status: "published" });
     }
     if (action === "offline") {
+      if (item.type === "video" && item.media_id) {
+        const reference = await DB.prepare("SELECT COUNT(*) count FROM plan_steps step JOIN content_items plan ON plan.id = step.plan_id WHERE step.media_id = ? AND plan.status = 'published'").bind(item.media_id).first<{ count: number }>();
+        if (Number(reference?.count ?? 0) > 0) return jsonError("该视频仍被已发布调理方案使用，请先下架相关方案", 409);
+      }
       const timestamp = now();
       await DB.batch([
         DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ? WHERE id = ?").bind(timestamp, id),
@@ -86,13 +93,17 @@ export async function PATCH(request: Request) {
     }
     if (action === "update") {
       const metadata = parseMetadata(body.metadata);
-      await DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', updated_at = ?, version = version + 1 WHERE id = ?")
-        .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), now(), id).run();
-      await audit(session.username, "update", item.type, id);
+      const timestamp = now();
+      await DB.batch([
+        DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', published_at = NULL, updated_at = ?, version = version + 1 WHERE id = ?")
+          .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), timestamp, id),
+        DB.prepare("DELETE FROM notifications WHERE content_id = ?").bind(id),
+        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) VALUES (?, ?, 'update', ?, ?, '{}', ?)").bind(identifier("audit"), session.username, item.type, id, timestamp),
+      ]);
       return Response.json({ id, status: "draft" });
     }
     return jsonError("无效操作");
-  } catch {
-    return jsonError("未授权", 401);
+  } catch (error) {
+    return adminRouteError(error);
   }
 }

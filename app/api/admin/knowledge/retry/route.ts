@@ -1,38 +1,36 @@
 import { requireAdmin } from "@/lib/admin/auth";
-import { audit, jsonError, now, runtime } from "@/lib/admin/store";
-
-function textChunks(text: string, size = 900) {
-  const chunks: string[] = [];
-  for (let offset = 0; offset < text.length; offset += size) chunks.push(text.slice(offset, offset + size));
-  return chunks;
-}
+import { textChunks, writeOptionalVectorIndex } from "@/lib/admin/knowledge-index";
+import { identifier, jsonError, now, runtime } from "@/lib/admin/store";
 
 export async function POST(request: Request) {
   try {
     const session = await requireAdmin();
     const { id } = await request.json() as { id?: string };
     const values = await runtime();
-    const item = await values.DB.prepare("SELECT id, title, body, media_id FROM content_items WHERE id = ? AND type = 'knowledge'").bind(id).first<{ id: string; title: string; body: string; media_id: string | null }>();
+    const item = await values.DB.prepare("SELECT id, title, source, body, version, metadata, media_id FROM content_items WHERE id = ? AND type = 'knowledge'").bind(id).first<{ id: string; title: string; source: string; body: string; version: number; metadata: string; media_id: string | null }>();
     if (!item) return jsonError("知识资料不存在", 404);
     await values.DB.prepare("UPDATE content_items SET status = 'indexing', updated_at = ? WHERE id = ?").bind(now(), id).run();
     try {
-      if (!values.VECTORIZE) throw new Error("VECTORIZE_NOT_CONFIGURED");
       const chunks = textChunks(item.body || item.title);
       if (chunks.length === 0) throw new Error("KNOWLEDGE_TEXT_EMPTY");
-      // Embeddings must be supplied by the configured indexing gateway. This route
-      // never lets the language model alter clinical rules or publish state.
-      const gateway = values as typeof values & { EMBEDDINGS?: Fetcher };
-      if (!gateway.EMBEDDINGS) throw new Error("EMBEDDINGS_NOT_CONFIGURED");
-      const response = await gateway.EMBEDDINGS.fetch("https://internal/embed", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ texts: chunks }) });
-      if (!response.ok) throw new Error("EMBEDDINGS_UNAVAILABLE");
-      const payload = await response.json() as { vectors: number[][] };
-      await values.VECTORIZE.upsert(payload.vectors.map((vector, index) => ({ id: `${item.id}:${index}`, values: vector, metadata: { sourceId: item.id, chunk: index } })));
-      await values.DB.prepare("UPDATE content_items SET status = 'draft', metadata = json_set(metadata, '$.indexedChunks', ?), updated_at = ? WHERE id = ?").bind(chunks.length, now(), id).run();
-      await audit(session.username, "index", "knowledge", item.id, { chunks: chunks.length });
-      return Response.json({ id, status: "draft", chunks: chunks.length });
+      const previous = JSON.parse(item.metadata || "{}") as { indexedChunks?: number };
+      const mode = await writeOptionalVectorIndex(values, item, chunks, Number(previous.indexedChunks ?? 0));
+      const timestamp = now();
+      const metadata = JSON.stringify({ ...previous, indexedChunks: chunks.length, indexedVersion: item.version, indexMode: mode, indexError: null });
+      const statements: D1PreparedStatement[] = [values.DB.prepare("DELETE FROM knowledge_chunks WHERE knowledge_id = ?").bind(item.id)];
+      chunks.forEach((chunk, position) => statements.push(values.DB.prepare("INSERT INTO knowledge_chunks (id, knowledge_id, source_version, position, chunk_text, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(`${item.id}:${position}`, item.id, item.version, position, chunk, timestamp)));
+      statements.push(
+        values.DB.prepare("UPDATE content_items SET status = 'draft', metadata = ?, updated_at = ? WHERE id = ?").bind(metadata, timestamp, id),
+        values.DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) VALUES (?, ?, 'index', 'knowledge', ?, ?, ?)").bind(identifier("audit"), session.username, item.id, JSON.stringify({ chunks: chunks.length, version: item.version, mode }), timestamp),
+      );
+      await values.DB.batch(statements);
+      return Response.json({ id, status: "draft", chunks: chunks.length, version: item.version, mode });
     } catch (error) {
       await values.DB.prepare("UPDATE content_items SET status = 'index_failed', metadata = json_set(metadata, '$.indexError', ?), updated_at = ? WHERE id = ?").bind(error instanceof Error ? error.message : "INDEX_FAILED", now(), id).run();
-      return jsonError("知识索引失败，可在资源配置完成后重试", 503);
+      return jsonError("知识索引失败，可安全重试", 503);
     }
-  } catch { return jsonError("未授权", 401); }
+  } catch (error) {
+    if (error instanceof Error && error.message === "ADMIN_UNAUTHORIZED") return jsonError("未授权", 401);
+    return jsonError("知识索引服务暂不可用", 503);
+  }
 }

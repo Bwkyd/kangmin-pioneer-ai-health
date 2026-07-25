@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/admin/auth";
-import { audit, identifier, jsonError, now, runtime } from "@/lib/admin/store";
+import { adminRouteError, identifier, jsonError, now, runtime } from "@/lib/admin/store";
 
 const accepted = new Map([
   ["image/jpeg", { kind: "image", maximum: 10 * 1024 * 1024 }],
@@ -32,9 +32,11 @@ export async function POST(request: Request) {
     await values.MEDIA.put(objectKey, file.stream(), { httpMetadata: { contentType: file.type }, customMetadata: { originalName: filename } });
     try {
       const timestamp = now();
-      await values.DB.prepare("INSERT INTO media_assets (id, kind, filename, object_key, content_type, byte_size, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?)")
-        .bind(id, rule.kind, filename, objectKey, file.type, file.size, timestamp, timestamp).run();
-      await audit(session.username, "upload", "media", id, { filename, byteSize: file.size });
+      await values.DB.batch([
+        values.DB.prepare("INSERT INTO media_assets (id, kind, filename, object_key, content_type, byte_size, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 'ready', ?, ?)")
+          .bind(id, rule.kind, filename, objectKey, file.type, file.size, timestamp, timestamp),
+        values.DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) VALUES (?, ?, 'upload', 'media', ?, ?, ?)").bind(identifier("audit"), session.username, id, JSON.stringify({ filename, byteSize: file.size }), timestamp),
+      ]);
     } catch (error) {
       await values.MEDIA.delete(objectKey);
       throw error;
@@ -51,5 +53,5 @@ export async function GET() {
     await requireAdmin();
     const rows = await (await runtime()).DB.prepare("SELECT id, kind, filename, content_type contentType, byte_size byteSize, status, created_at createdAt FROM media_assets ORDER BY created_at DESC").all();
     return Response.json({ items: rows.results });
-  } catch { return jsonError("未授权", 401); }
+  } catch (error) { return adminRouteError(error); }
 }

@@ -15,6 +15,13 @@
       "when": 1784903437147,
       "tag": "0001_smart_revanche",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1784940133390,
+      "tag": "0002_robust_triathlon",
+      "breakpoints": true
     }
   ]
 }

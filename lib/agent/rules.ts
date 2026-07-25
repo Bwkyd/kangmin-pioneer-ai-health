@@ -1,3 +1,5 @@
+import type { SyndromeCode } from "./syndromes.ts";
+
 export type TriState = "yes" | "no" | "unknown";
 
 export const RULE_PACKAGE_VERSION = "draft-local-v0";
@@ -35,12 +37,7 @@ export const SYNDROME_FIELDS = [
 export type SyndromeField = (typeof SYNDROME_FIELDS)[number];
 export type SyndromeAnswers = Record<SyndromeField, TriState>;
 
-export type SyndromeCode =
-  | "LUNG_HEAT"
-  | "LUNG_QI_COLD"
-  | "SPLEEN_QI_DEF"
-  | "KIDNEY_YANG_DEF"
-  | "MIXED_COLD_HEAT";
+export type { SyndromeCode } from "./syndromes.ts";
 
 export interface SyndromeRule {
   id: string;

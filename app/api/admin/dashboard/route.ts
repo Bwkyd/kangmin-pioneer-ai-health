@@ -1,5 +1,5 @@
 import { requireAdmin } from "@/lib/admin/auth";
-import { runtime } from "@/lib/admin/store";
+import { adminRouteError, runtime } from "@/lib/admin/store";
 
 export async function GET() {
   try {
@@ -11,7 +11,7 @@ export async function GET() {
       DB.prepare("SELECT COUNT(*) count FROM notifications").first(),
     ]);
     return Response.json({ contents: contents.results, media, messages });
-  } catch {
-    return Response.json({ error: "未授权" }, { status: 401 });
+  } catch (error) {
+    return adminRouteError(error);
   }
 }

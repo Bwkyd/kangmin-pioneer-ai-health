@@ -1,10 +1,12 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readdir, readFile } from "node:fs/promises";
 import test from "node:test";
 
 test("admin migration contains durable content, media, notification and audit tables", async () => {
-  const sql = await readFile(new URL("../../../drizzle/0000_sturdy_gideon.sql", import.meta.url), "utf8");
-  for (const table of ["content_items", "media_assets", "plan_steps", "notifications", "notification_reads", "audit_logs", "idempotency_keys"]) {
+  const directory = new URL("../../../drizzle/", import.meta.url);
+  const migrations = (await readdir(directory)).filter((name) => name.endsWith(".sql")).sort();
+  const sql = (await Promise.all(migrations.map((name) => readFile(new URL(name, directory), "utf8")))).join("\n");
+  for (const table of ["content_items", "media_assets", "plan_steps", "knowledge_chunks", "notifications", "notification_reads", "audit_logs", "idempotency_keys"]) {
     assert.match(sql, new RegExp("CREATE TABLE `" + table + "`"));
   }
   assert.match(sql, /ON DELETE cascade/);
