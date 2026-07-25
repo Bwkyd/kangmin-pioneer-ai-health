@@ -11,8 +11,8 @@
 - 核验时间：2026-07-26 07:20:30 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前 HEAD：`98a81f9b155b70f25717ea23607feb20b5180428`（`Connect safe rehab advice flow`，本轮代码候选）；上一冻结代码候选 `397cb885fa58b0070d41fdb052e7e771a7077c3c` 已作废；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：代码提交后仅待更新本状态锚点，当前业务代码树已冻结；状态锚点提交完成后，四视角和双模型审查均必须绑定 `98a81f9e0c2154144c4c8ad7d60f9e7a4145d52f`。
+- 当前业务代码候选：`98a81f9b155b70f25717ea23607feb20b5180428`（`Connect safe rehab advice flow`）；当前分支另有状态锚点提交，实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：代码与状态锚点均已提交，当前工作树干净；四视角和双模型审查必须绑定业务代码候选 `98a81f9b155b70f25717ea23607feb20b5180428`，状态文件不改变业务代码树。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 07:02 主机网络只读核验返回 HTTP 200；未登录、未写入
