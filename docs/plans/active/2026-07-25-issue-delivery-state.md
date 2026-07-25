@@ -11,8 +11,8 @@
 - 核验时间：2026-07-26 07:20:30 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前 HEAD：`4973ff3952968bd8f82121878b4644f7040e5a71`（状态锚点提交）；上一冻结代码候选 `397cb885fa58b0070d41fdb052e7e771a7077c3c` 已因后续实现写入失效；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：当前不是冻结候选；有 10 个已跟踪文件修改、3 个未跟踪文件，包含内容版本写入令牌、方案步骤、D1 schema/迁移、正式智能体评估 UI、用药读取重试和回归测试；最近实现写入为 2026-07-26 07:14:55 +0800。
+- 当前 HEAD：`98a81f9b155b70f25717ea23607feb20b5180428`（`Connect safe rehab advice flow`，本轮代码候选）；上一冻结代码候选 `397cb885fa58b0070d41fdb052e7e771a7077c3c` 已作废；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：代码提交后仅待更新本状态锚点，当前业务代码树已冻结；状态锚点提交完成后，四视角和双模型审查均必须绑定 `98a81f9e0c2154144c4c8ad7d60f9e7a4145d52f`。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 07:02 主机网络只读核验返回 HTTP 200；未登录、未写入
@@ -27,7 +27,7 @@
 - completed：隔离 Worker `127.0.0.1:39996` 最新构建浏览器验收确认：未知信息不直接给方案；“感冒引起的急性鼻炎/正在发热”命中时显示“先暂停操作”；发布测试方案经当前版本审核后，智能体只展示该已审核方案的风险、禁忌和步骤；健康档案用药时间、药名、10 mg、实际用量保存回读；患者自述过敏原页面无花粉监测入口。
 - completed：在独立临时 D1 中验证 0007 迁移：重复暴露只保留最新记录和选择项，同时写入 `merge_duplicate_exposure` 审计日志；0008 写入令牌迁移成功；并发同版本步骤请求一个 201、一个 409，旧请求不能写入新版本。
 - completed：授权主机最新 `npm test` 为 77/77 PASS；`npm run build` PASS；`npm run lint` 为 0 errors、1 个既有 `<img>` warning；`git diff --check` PASS。
-- in_progress：待把当前工作树提交并冻结新精确候选 SHA；随后必须对新 SHA 重跑 sequential-thinking、重复/冗余、并发/边界、回归/旧功能、临床/交付四视角审查。旧候选 `4973ff...` 的任何 verdict 不覆盖当前修改。
+- in_progress：代码已提交为 `98a81f9b155b70f25717ea23607feb20b5180428`；状态锚点提交后，必须对该精确 SHA 重跑 sequential-thinking、重复/冗余、并发/边界、回归/旧功能、临床/交付四视角审查。旧候选 `4973ff...` 的任何 verdict 不覆盖当前代码。
 - blocked：生产 verified-phone resolver、生产 D1、临床书面批准、Word/PDF 正文解析和文章图片导入发布、客户浏览器 UAT、GitHub token/PR/CI、推送、合并、部署和 Issue 关闭仍未具备真实凭据、规格或逐项授权；不以 synthetic、本地测试或隔离测试内容冒充生产完成。
 
 ## 2026-07-26 07:03 看门狗实时核验阶段
