@@ -192,10 +192,8 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
       }),
     );
     assert.equal(conflict.body.data.assessment.status, "conflict");
-    assert.deepEqual(
-      conflict.body.data.assessment.syndrome.matchedRuleIds,
-      ["T1", "T5"],
-    );
+    assert.equal("syndrome" in conflict.body.data.assessment, false);
+    assert.match(conflict.body.data.assessment.disclaimer, /不是诊断或证型结论/u);
 
     const blocked = await postJson(
       baseUrl,

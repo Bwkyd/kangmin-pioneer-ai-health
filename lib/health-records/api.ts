@@ -32,6 +32,9 @@ function failed(error: unknown) {
 function profilePayload(profile: HealthProfile | null) {
   if (!profile) return null;
   const known = <T>(value: { status: "known"; value: T } | { status: "unknown" }, fallback: T) => value.status === "known" ? value.value : fallback;
+  const legacyCommonTriggers = Array.isArray(profile.commonTriggers)
+    ? profile.commonTriggers.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+    : [];
   return {
     basicInfo: {
       displayName: known(profile.basicInfo.displayName, ""),
@@ -40,6 +43,7 @@ function profilePayload(profile: HealthProfile | null) {
     },
     allergyHistory: profile.allergyHistory.map((item) => item.allergenName).join("、"),
     allergyHistoryEntries: profile.allergyHistory,
+    legacyCommonTriggers,
     version: profile.version,
     updatedAt: profile.updatedAt,
   };
@@ -49,12 +53,17 @@ function profileInput(value: unknown) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     const record = value as Record<string, unknown>;
     const basic = record.basicInfo;
-    if (basic && typeof basic === "object" && !Array.isArray(basic) && typeof record.allergyHistory === "string") {
+    if (basic && typeof basic === "object" && !Array.isArray(basic) && (typeof record.allergyHistory === "string" || Array.isArray(record.allergyHistoryEntries))) {
       const info = basic as Record<string, unknown>;
       const displayName = typeof info.displayName === "string" && info.displayName.trim() ? { status: "known" as const, value: info.displayName } : { status: "unknown" as const };
       const birthDate = typeof info.birthDate === "string" && info.birthDate ? { status: "known" as const, value: info.birthDate } : { status: "unknown" as const };
       const sex = info.sex === "female" || info.sex === "male" ? { status: "known" as const, value: info.sex } : { status: "unknown" as const };
-      return parseProfileInput({ basicInfo: { displayName, birthDate, sex }, allergyHistory: record.allergyHistory.trim() ? [{ id: null, allergenName: record.allergyHistory, certainty: "unknown", note: null }] : [] });
+      const allergyHistory = Array.isArray(record.allergyHistoryEntries)
+        ? record.allergyHistoryEntries
+        : typeof record.allergyHistory === "string" && record.allergyHistory.trim()
+          ? [{ id: null, allergenName: record.allergyHistory, certainty: "unknown", note: null }]
+          : [];
+      return parseProfileInput({ basicInfo: { displayName, birthDate, sex }, allergyHistory });
     }
   }
   return parseProfileInput(value);
@@ -77,7 +86,7 @@ function exposureInput(value: unknown) {
     if (Array.isArray(record.factors)) {
       const selections = record.factors.map((factor) => typeof factor === "string" ? factorAliases[factor] : null);
       if (selections.some((item) => !item)) return null;
-      return parseExposureInput({ date: record.date, selections, otherDescription: typeof record.otherDescription === "string" && record.otherDescription.trim() ? record.otherDescription : null, note: null });
+      return parseExposureInput({ date: record.date, selections, otherDescription: typeof record.otherDescription === "string" && record.otherDescription.trim() ? record.otherDescription : null, note: typeof record.note === "string" && record.note.trim() ? record.note : "患者自述当天接触" });
     }
   }
   return parseExposureInput(value);

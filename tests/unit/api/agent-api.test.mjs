@@ -180,7 +180,7 @@ test("extract 先执行高危关键词门禁，命中时不调用模型", async 
 
 test("extract 覆盖界面高危提示中的发热、头痛、面部肿胀和胸闷表达", async () => {
   const api = createAgentApi({ apiKey: "test-only", fetchImpl: async () => { throw new Error("must not call model"); } });
-  const result = await responseBody(await api.extract(post("/api/v1/agent/extract", { text: "我高热、明显头痛、面部肿痛、胸闷，鼻血也止不住" })));
+  const result = await responseBody(await api.extract(post("/api/v1/agent/extract", { text: "我高热、明显头痛、面部肿痛、胸闷，鼻出血不止" })));
   assert.deepEqual(result.body.data.safetyGate.candidateFields, [
     "respiratoryEmergency",
     "persistentHighFever",

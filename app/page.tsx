@@ -320,9 +320,10 @@ export default function Home() {
   useEffect(() => {
     if (tab !== "healthProfile") return;
     let cancelled = false;
+    const requestVersion = profileRequest.next();
     Promise.all([getHealthProfile(), listAllergenExposures(), listMedications()])
       .then(([profile, items, medicationItems]) => {
-        if (cancelled) return;
+        if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
         setHealthProfile(profile);
         setProfileDraft(profile ? {
           basicInfo: profile.basicInfo,
@@ -336,42 +337,47 @@ export default function Home() {
         setProfileNotice(profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
         setProfileLoadError(true);
         setProfileStatus("error");
         setProfileNotice(error instanceof Error ? error.message : "健康档案暂时无法读取");
       });
     return () => { cancelled = true; };
-  }, [tab, profileReload]);
+  }, [tab, profileReload, profileRequest]);
 
   useEffect(() => {
     if (tab !== "assessment") return;
     let cancelled = false;
+    const requestVersion = symptomRequest.next();
     listSymptoms()
       .then((items) => {
-        if (cancelled) return;
+        if (cancelled || !symptomRequest.isCurrent(requestVersion)) return;
         setSymptoms(items);
         setSymptomStatus("ready");
         setSymptomNotice(items.length > 0 ? "已读取服务端症状记录" : "暂无服务端症状记录，请选择日期开始记录");
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (cancelled || !symptomRequest.isCurrent(requestVersion)) return;
+        setSymptoms([]);
         setSymptomStatus("error");
         setSymptomNotice(error instanceof Error ? error.message : "症状历史暂时无法读取");
       });
     return () => { cancelled = true; };
-  }, [tab, assessmentReload]);
+  }, [tab, assessmentReload, symptomRequest]);
 
   useEffect(() => {
     if (tab !== "allergenRecord") return;
     let cancelled = false;
+    const requestVersion = exposureRequest.next();
     listAllergenExposures()
       .then((items) => {
-        if (cancelled) return;
+        if (cancelled || !exposureRequest.isCurrent(requestVersion)) return;
         setExposures(items);
         setExposureStatus("ready");
         setExposureNotice(items.length > 0 ? "已读取服务端患者自述记录" : "该账户暂无过敏原记录");
-        const sameDay = items.find((item) => item.date === selectedDate);
+        const sameDay = editingExposureId
+          ? items.find((item) => item.id === editingExposureId)
+          : items.find((item) => item.date === selectedDate);
         if (sameDay) {
           setEditingExposureId(sameDay.id);
           setExposureDraft({
@@ -383,12 +389,12 @@ export default function Home() {
         }
       })
       .catch((error: unknown) => {
-        if (cancelled) return;
+        if (cancelled || !exposureRequest.isCurrent(requestVersion)) return;
         setExposureStatus("error");
         setExposureNotice(error instanceof Error ? error.message : "过敏原历史暂时无法读取");
       });
     return () => { cancelled = true; };
-  }, [tab, selectedDate]);
+  }, [tab, selectedDate, editingExposureId, exposureRequest]);
 
   const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
     setMessages((current) => [
@@ -707,14 +713,14 @@ export default function Home() {
     setSymptomStatus((current) => current === "saving" ? "idle" : current);
     setMedicationStatus((current) => current === "saving" ? "idle" : current);
     setExposureStatus((current) => current === "saving" ? "idle" : current);
-    setMedicationCreateKey(null);
-    setExposureCreateKey(null);
+    if (next === "assessment") setSymptomStatus("loading");
+    if (next === "allergenRecord") setExposureStatus("loading");
     setTab(next);
   };
 
   const goBack = () => {
     if (tab === "healthProfile") { profileRequest.next(); setProfileStatus("idle"); setProfileNotice(""); setProfileLoadError(false); setTab("profile"); }
-    else if (tab === "allergenRecord") { exposureRequest.next(); setExposureStatus("idle"); setExposureNotice(""); setExposureCreateKey(null); setTab(allergenReturnTab); }
+    else if (tab === "allergenRecord") { exposureRequest.next(); setExposureStatus("idle"); setExposureNotice(""); setTab(allergenReturnTab); }
     else if (tab !== "home") setTab("home");
   };
 
@@ -739,12 +745,10 @@ export default function Home() {
     setProfileNotice("");
     setMedicationStatus("idle");
     setMedicationNotice("");
-    setMedicationCreateKey(null);
     setSymptomStatus("idle");
     setSymptomNotice("");
     setExposureStatus("idle");
     setExposureNotice("");
-    setExposureCreateKey(null);
     setProfileEditing(false);
     setExposureNotice("");
     setTab("home");
@@ -941,14 +945,15 @@ export default function Home() {
                       <div className="calendar-grid">
                         {calendarCells(calendarMonth).map((item) => (
                           (() => {
-                            const record = symptomsByDate.get(item.date);
+                            const canReadSymptoms = symptomStatus === "ready";
+                            const record = canReadSymptoms ? symptomsByDate.get(item.date) : null;
                             const level = record ? symptomLevel(record.totalScore) : "";
                             return <button
                             key={item.date}
                             className={`${item.muted ? "muted" : ""} ${level} ${item.today ? "today" : ""}`}
-                            onClick={() => !item.muted && openSymptomDate(item.date)}
-                            disabled={item.muted}
-                            aria-label={`${item.day}日${record ? `已记录${record.totalScore}分` : "未记录"}`}
+                            onClick={() => canReadSymptoms && !item.muted && openSymptomDate(item.date)}
+                            disabled={item.muted || !canReadSymptoms}
+                            aria-label={`${item.day}日${symptomStatus === "error" ? "无法读取" : symptomStatus === "loading" ? "读取中" : record ? `已记录${record.totalScore}分` : "未记录"}`}
                           >
                             {item.day}
                           </button>;
@@ -959,7 +964,7 @@ export default function Home() {
                     </>
                   ) : (
                     <div className="calendar-list">
-                      {symptoms.length > 0 ? symptoms.map((record) => <button key={record.id} onClick={() => openSymptomDate(record.date)}><time>{displayDate(record.date)}</time><span className={symptomLevel(record.totalScore)}>{symptomLabel(record.totalScore)}</span><strong>喷嚏 {record.scores.sneezing} · 流涕 {record.scores.rhinorrhea} · 鼻塞 {record.scores.congestion} · 鼻痒 {record.scores.itching}</strong><b>查看症状记录 ›</b></button>) : <p className="record-empty">{symptomStatus === "error" ? "读取失败，不能判断当前是否没有记录。" : "暂无真实症状记录；选择日期后保存，才会出现在这里。"}</p>}
+                      {symptomStatus === "error" ? <p className="record-empty">读取失败，不能判断当前是否没有记录。</p> : symptoms.length > 0 ? symptoms.map((record) => <button key={record.id} onClick={() => openSymptomDate(record.date)}><time>{displayDate(record.date)}</time><span className={symptomLevel(record.totalScore)}>{symptomLabel(record.totalScore)}</span><strong>喷嚏 {record.scores.sneezing} · 流涕 {record.scores.rhinorrhea} · 鼻塞 {record.scores.congestion} · 鼻痒 {record.scores.itching}</strong><b>查看症状记录 ›</b></button>) : <p className="record-empty">{symptomStatus === "loading" ? "正在读取服务端记录…" : "暂无真实症状记录；选择日期后保存，才会出现在这里。"}</p>}
                     </div>
                   )}
                 </section>
@@ -1034,6 +1039,7 @@ export default function Home() {
                     </section>
                     <section className="health-record-card trigger-card">
                       <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>区分档案内容与患者每日自述</small></div><button onClick={() => startAllergenRecord(localDateValue(), "healthProfile")}>新增记录</button></div>
+                      {healthProfile?.legacyCommonTriggers?.length ? <p className="record-notice"><strong>历史诱因待迁移</strong><span>{healthProfile.legacyCommonTriggers.join("、")} 是旧版档案字段，暂不作为患者自述或当前投影；请重新填写过敏原记录确认。</span></p> : null}
                       {healthProfile?.commonTriggers.length ? <div className="record-tags">{healthProfile.commonTriggers.map((item) => <span key={item.code}>{item.label}<small>患者自述 · 最近 {displayDate(item.latestDate)}</small></span>)}</div> : <p className="record-empty">暂无已持久化暴露记录生成的常见诱因</p>}
                       <div className="patient-records">
                         <strong>患者自述暴露记录</strong>
@@ -1058,7 +1064,7 @@ export default function Home() {
                           <label>实际用量情况<textarea value={medicationDraft.actualUseDescription} disabled={medicationDraft.actualUseUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, actualUseDescription: event.target.value }))} placeholder="例如：按医嘱服用一次，未记录具体用量" /></label>
                           <label className="checkbox-line"><input type="checkbox" checked={medicationDraft.actualUseUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, actualUseUnknown: event.target.checked }))} />实际用量不详</label>
                           {medicationNotice && <p className={`form-validation ${medicationStatus === "error" ? "error-text" : ""}`} role="status">{medicationNotice}</p>}
-                          <div className="record-form-actions"><button type="button" onClick={() => { medicationRequest.next(); setMedicationCreateKey(null); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
+                          <div className="record-form-actions"><button type="button" disabled={medicationStatus === "saving"} onClick={() => { medicationRequest.next(); setMedicationCreateKey(null); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
                         </form>
                       )}
                       {medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus === "saving"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
@@ -1081,7 +1087,7 @@ export default function Home() {
                 <section className="linked-date-card" aria-label="关联日期">
                   <label>记录日期<input type="date" value={exposureDraft.date} onChange={(event) => selectExposureDate(event.target.value)} /></label>
                   <div><span>关联症状日期</span><strong>{displayDate(exposureDraft.date)}</strong><small>{symptomsByDate.has(exposureDraft.date) ? "已有服务端症状记录" : "暂无真实症状记录"}</small></div>
-                  <button onClick={() => { setSelectedDate(exposureDraft.date); setEntryOpen(true); setTab("assessment"); }}>查看当天症状</button>
+                  <button type="button" onClick={() => openSymptomDate(exposureDraft.date)}>查看当天症状</button>
                 </section>
 
                 <div className={`record-notice ${exposureStatus === "error" ? "error" : ""}`} role="status">

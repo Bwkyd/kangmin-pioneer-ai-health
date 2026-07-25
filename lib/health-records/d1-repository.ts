@@ -184,7 +184,7 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
 
   async listMedications(userId: string) {
     const rows = await (await this.getDatabase()).prepare(
-      "SELECT id, taken_at, medication_name, dosage_status, dosage_value, dosage_unit, actual_use_status, actual_use_description, version, created_at, updated_at FROM medication_records WHERE user_id = ? ORDER BY taken_at DESC, id DESC LIMIT 200",
+      "SELECT id, taken_at, medication_name, dosage_status, dosage_value, dosage_unit, actual_use_status, actual_use_description, version, created_at, updated_at FROM medication_records WHERE user_id = ? ORDER BY taken_at DESC, id DESC",
     ).bind(userId).all<MedicationRow>();
     return rows.results.map(mapMedication);
   }
@@ -198,8 +198,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     const value: MedicationRecord = { id, ...input, version: 1, createdAt: timestamp, updatedAt: timestamp };
     try {
       await database.batch([
-        database.prepare("INSERT INTO medication_records (id, user_id, taken_at, medication_name, dosage_status, dosage_value, dosage_unit, actual_use_status, actual_use_description, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
-          .bind(id, userId, input.takenAt, input.medicationName, input.dosage.status, input.dosage.status === "known" ? input.dosage.value : null, input.dosage.status === "known" ? input.dosage.unit : null, input.actualUse.status, input.actualUse.status === "known" ? input.actualUse.description : null, timestamp, timestamp),
+        database.prepare("INSERT INTO medication_records (id, user_id, taken_at, medication_name, dosage_status, dosage_value, dosage_unit, actual_use_status, actual_use_description, version, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM health_record_idempotency WHERE id = ? AND state = 'pending')")
+          .bind(id, userId, input.takenAt, input.medicationName, input.dosage.status, input.dosage.status === "known" ? input.dosage.value : null, input.dosage.status === "known" ? input.dosage.unit : null, input.actualUse.status, input.actualUse.status === "known" ? input.actualUse.description : null, timestamp, timestamp, claim.id),
         database.prepare("UPDATE health_record_idempotency SET state = 'completed', response = ?, completed_at = ? WHERE id = ? AND state = 'pending'")
           .bind(JSON.stringify(value), timestamp, claim.id),
       ]);
@@ -230,8 +230,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
   async listSymptoms(userId: string, date: string | null) {
     const database = await this.getDatabase();
     const query = date
-      ? database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ? ORDER BY symptom_date DESC, id DESC LIMIT 366").bind(userId, date)
-      : database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? ORDER BY symptom_date DESC, id DESC LIMIT 366").bind(userId);
+      ? database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ? ORDER BY symptom_date DESC, id DESC").bind(userId, date)
+      : database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? ORDER BY symptom_date DESC, id DESC").bind(userId);
     const rows = await query.all<SymptomRow>();
     return rows.results.map(mapSymptom);
   }
@@ -258,8 +258,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
   async listExposures(userId: string, date: string | null) {
     const database = await this.getDatabase();
     const query = date
-      ? database.prepare("SELECT e.id, e.exposure_date, e.other_description, e.note, e.version, e.created_at, e.updated_at, s.group_code, s.option_code FROM (SELECT id, exposure_date, other_description, note, version, created_at, updated_at FROM allergen_exposure_records WHERE user_id = ? AND exposure_date = ? ORDER BY created_at DESC LIMIT 200) e LEFT JOIN allergen_exposure_selections s ON s.exposure_id = e.id ORDER BY e.created_at DESC, s.option_code").bind(userId, date)
-      : database.prepare("SELECT e.id, e.exposure_date, e.other_description, e.note, e.version, e.created_at, e.updated_at, s.group_code, s.option_code FROM (SELECT id, exposure_date, other_description, note, version, created_at, updated_at FROM allergen_exposure_records WHERE user_id = ? ORDER BY exposure_date DESC, created_at DESC LIMIT 200) e LEFT JOIN allergen_exposure_selections s ON s.exposure_id = e.id ORDER BY e.exposure_date DESC, e.created_at DESC, s.option_code").bind(userId);
+      ? database.prepare("SELECT e.id, e.exposure_date, e.other_description, e.note, e.version, e.created_at, e.updated_at, s.group_code, s.option_code FROM allergen_exposure_records e LEFT JOIN allergen_exposure_selections s ON s.exposure_id = e.id WHERE e.user_id = ? AND e.exposure_date = ? ORDER BY e.created_at DESC, s.option_code").bind(userId, date)
+      : database.prepare("SELECT e.id, e.exposure_date, e.other_description, e.note, e.version, e.created_at, e.updated_at, s.group_code, s.option_code FROM allergen_exposure_records e LEFT JOIN allergen_exposure_selections s ON s.exposure_id = e.id WHERE e.user_id = ? ORDER BY e.exposure_date DESC, e.created_at DESC, s.option_code").bind(userId);
     const rows = await query.all<ExposureWithSelectionRow>();
     const grouped = new Map<string, { row: ExposureRow; selections: SelectionRow[] }>();
     for (const row of rows.results) {
@@ -279,9 +279,9 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     const value: ExposureRecord = { id, ...input, version: 1, createdAt: timestamp, updatedAt: timestamp };
     try {
       await database.batch([
-        database.prepare("INSERT INTO allergen_exposure_records (id, user_id, exposure_date, other_description, note, mutation_id, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?)")
-          .bind(id, userId, input.date, input.otherDescription, input.note, `mutation_${crypto.randomUUID()}`, timestamp, timestamp),
-        ...input.selections.map((selection) => database.prepare("INSERT INTO allergen_exposure_selections (exposure_id, group_code, option_code) VALUES (?, ?, ?)").bind(id, selection.group, selection.code)),
+        database.prepare("INSERT INTO allergen_exposure_records (id, user_id, exposure_date, other_description, note, mutation_id, version, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM health_record_idempotency WHERE id = ? AND state = 'pending')")
+          .bind(id, userId, input.date, input.otherDescription, input.note, `mutation_${crypto.randomUUID()}`, timestamp, timestamp, claim.id),
+        ...input.selections.map((selection) => database.prepare("INSERT INTO allergen_exposure_selections (exposure_id, group_code, option_code) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM health_record_idempotency WHERE id = ? AND state = 'pending')").bind(id, selection.group, selection.code, claim.id)),
         database.prepare("UPDATE health_record_idempotency SET state = 'completed', response = ?, completed_at = ? WHERE id = ? AND state = 'pending'")
           .bind(JSON.stringify(value), timestamp, claim.id),
       ]);

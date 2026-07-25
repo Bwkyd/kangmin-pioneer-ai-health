@@ -35,18 +35,34 @@ export function identifier(prefix: string) {
   return `${prefix}_${crypto.randomUUID()}`;
 }
 
+export async function stableIdentifier(prefix: string, value: string) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(value));
+  const hex = [...new Uint8Array(digest)].map((item) => item.toString(16).padStart(2, "0")).join("");
+  return `${prefix}_${hex.slice(0, 40)}`;
+}
+
+export async function hasCurrentClinicalApproval(database: D1Database, contentId: string, version: number) {
+  const row = await database.prepare("SELECT content_id FROM clinical_approvals WHERE content_id = ? AND content_version = ?").bind(contentId, version).first<{ content_id: string }>();
+  return Boolean(row);
+}
+
 export async function audit(actor: string, action: string, entityType: string, entityId: string, details: unknown = {}) {
   const { DB } = await runtime();
   await DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
     .bind(identifier("audit"), actor, action, entityType, entityId, JSON.stringify(details), now()).run();
 }
 
-export async function executeIdempotent(actor: string, key: string | null, operation: () => Promise<Response>) {
+export async function executeIdempotent(actor: string, key: string | null, operation: (lease?: { marker: string }) => Promise<Response>) {
   if (!key) return operation();
   const { DB } = await runtime();
-  const existing = await DB.prepare("SELECT response FROM idempotency_keys WHERE key = ? AND actor = ?").bind(key, actor).first<{ response: string }>();
+  const staleBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  let existing = await DB.prepare("SELECT response, created_at FROM idempotency_keys WHERE key = ? AND actor = ?").bind(key, actor).first<{ response: string; created_at: string }>();
+  if (existing?.response.startsWith("__pending__:") && existing.created_at < staleBefore) {
+    await DB.prepare("DELETE FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ? AND created_at < ?").bind(key, actor, existing.response, staleBefore).run();
+    existing = await DB.prepare("SELECT response, created_at FROM idempotency_keys WHERE key = ? AND actor = ?").bind(key, actor).first<{ response: string; created_at: string }>();
+  }
   if (existing) {
-    if (existing.response === "__pending__") return jsonError("相同请求正在处理中", 409);
+    if (existing.response.startsWith("__pending__:")) return jsonError("相同请求正在处理中", 409);
     const stored = JSON.parse(existing.response) as { body?: unknown; status?: number } | unknown;
     if (stored && typeof stored === "object" && "body" in stored) {
       const replay = stored as { body: unknown; status?: number };
@@ -54,19 +70,21 @@ export async function executeIdempotent(actor: string, key: string | null, opera
     }
     return Response.json(stored);
   }
-  const claim = await DB.prepare("INSERT OR IGNORE INTO idempotency_keys (key, actor, response, created_at) VALUES (?, ?, '__pending__', ?)").bind(key, actor, now()).run();
+  const marker = `__pending__:${crypto.randomUUID()}`;
+  const claim = await DB.prepare("INSERT OR IGNORE INTO idempotency_keys (key, actor, response, created_at) VALUES (?, ?, ?, ?)").bind(key, actor, marker, now()).run();
   if (claim.meta.changes === 0) return jsonError("相同请求正在处理中", 409);
   try {
-    const response = await operation();
+    const response = await operation({ marker });
     if (response.ok) {
       const body = await response.clone().json();
-      await DB.prepare("UPDATE idempotency_keys SET response = ? WHERE key = ? AND actor = ?").bind(JSON.stringify({ body, status: response.status }), key, actor).run();
+      const completed = await DB.prepare("UPDATE idempotency_keys SET response = ? WHERE key = ? AND actor = ? AND response = ?").bind(JSON.stringify({ body, status: response.status }), key, actor, marker).run();
+      if (completed.meta.changes === 0) throw new Error("IDEMPOTENCY_LEASE_LOST");
     } else {
-      await DB.prepare("DELETE FROM idempotency_keys WHERE key = ? AND actor = ?").bind(key, actor).run();
+      await DB.prepare("DELETE FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ?").bind(key, actor, marker).run();
     }
     return response;
   } catch (error) {
-    await DB.prepare("DELETE FROM idempotency_keys WHERE key = ? AND actor = ?").bind(key, actor).run();
+    await DB.prepare("DELETE FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ?").bind(key, actor, marker).run();
     throw error;
   }
 }

@@ -206,7 +206,7 @@ const HIGH_RISK_PATTERNS: ReadonlyArray<{
   },
   {
     field: "severeNoseBleed",
-    patterns: [/鼻血.{0,6}止不住|大量鼻出血|严重鼻出血/u],
+    patterns: [/鼻血.{0,6}止不住|鼻出血.{0,6}(不止|止不住)|大量鼻出血|严重鼻出血/u],
   },
   {
     field: "unilateralFoulDischarge",
@@ -226,6 +226,15 @@ export function findHighRiskCandidateFields(text: string): SafetyField[] {
 
 function emptyCandidates(): ExtractionCandidates {
   return { safety: {}, severity: {}, syndrome: {} };
+}
+
+function publicAssessment(assessment: ReturnType<typeof evaluateAssessment>) {
+  const base = { rulePackageVersion: assessment.rulePackageVersion };
+  const disclaimer = "这是内部规则辅助结果，不是诊断或证型结论；正式康复建议需经临床审核。";
+  if (assessment.status === "classified") return { ...base, status: assessment.status, planStatus: assessment.planStatus, disclaimer };
+  if (assessment.status === "conflict" || assessment.status === "no_match") return { ...base, status: assessment.status, disclaimer };
+  if (assessment.status === "blocked") return { ...base, status: assessment.status, safetyStatus: "blocked" as const, disclaimer };
+  return { ...base, status: assessment.status, ...("stage" in assessment ? { stage: assessment.stage } : {}), ...("reason" in assessment ? { reason: assessment.reason } : {}), ...("nextQuestions" in assessment && assessment.nextQuestions ? { nextQuestions: assessment.nextQuestions } : {}) };
 }
 
 interface AgentApiDependencies {
@@ -297,7 +306,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
 
         return jsonResponse({
           ok: true,
-          data: { assessment: evaluateAssessment(input) },
+          data: { assessment: publicAssessment(evaluateAssessment(input)) },
         });
       } catch (error) {
         return errorResponse(error);
@@ -450,7 +459,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           return jsonResponse({
             ok: true,
             data: {
-              assessment,
+              assessment: publicAssessment(assessment),
               explanation: null,
               model: {
                 used: false as const,
@@ -463,7 +472,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
         return jsonResponse({
           ok: true,
           data: {
-            assessment,
+            assessment: publicAssessment(assessment),
             explanation: {
               summary:
                 "已完成内部规则匹配。结果仅供内部测试，不能替代医生诊断。当前尚未接入经审核知识库，暂无可提供的调理方案。",

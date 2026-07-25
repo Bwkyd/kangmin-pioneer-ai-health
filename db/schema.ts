@@ -24,6 +24,13 @@ export const contentItems = sqliteTable("content_items", {
   index("content_items_category_idx").on(table.category, table.updatedAt),
 ]);
 
+export const clinicalApprovals = sqliteTable("clinical_approvals", {
+  contentId: text("content_id").primaryKey().references(() => contentItems.id, { onDelete: "cascade" }),
+  contentVersion: integer("content_version").notNull(),
+  approver: text("approver").notNull(),
+  approvedAt: text("approved_at").notNull(),
+});
+
 export const mediaAssets = sqliteTable("media_assets", {
   id: text("id").primaryKey(),
   kind: text("kind", { enum: ["image", "video", "document"] }).notNull(),

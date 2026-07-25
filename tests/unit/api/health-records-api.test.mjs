@@ -93,6 +93,19 @@ test("健康档案接受显式 unknown，并拒绝客户端写入派生诱因", 
   assert.equal("commonTriggers" in saved.body.profile, false);
 });
 
+test("旧版常见诱因只作为待迁移数据保留，不冒充患者自述投影", async () => {
+  const repository = new InMemoryHealthRecordsRepository();
+  await repository.saveProfile("usr_test_owner", 0, {
+    basicInfo: { displayName: { status: "unknown" }, birthDate: { status: "unknown" }, sex: { status: "unknown" } },
+    allergyHistory: [],
+    commonTriggers: ["旧版历史诱因"],
+  });
+  const api = createHealthRecordsApi(repository, fixedHealthIdentity("usr_test_owner"));
+  const profile = await result(await api.getProfile(request("/api/v1/health-records/profile")));
+  assert.deepEqual(profile.body.exposureTriggerProjection, []);
+  assert.deepEqual(profile.body.profile.legacyCommonTriggers, ["旧版历史诱因"]);
+});
+
 test("症状记录按服务端身份和日期保存，更新时阻止旧版本覆盖", async () => {
   const repository = new InMemoryHealthRecordsRepository();
   const api = createHealthRecordsApi(repository, fixedHealthIdentity("usr_test_owner"));

@@ -28,6 +28,7 @@ export type HealthProfile = {
   allergyHistory: string;
   allergyHistoryEntries: AllergyHistoryEntry[];
   commonTriggers: TriggerProjection[];
+  legacyCommonTriggers?: string[];
   version: number;
   updatedAt: string;
 };
@@ -37,6 +38,7 @@ export type AllergenExposure = {
   date: string;
   factors: string[];
   otherDescription: string;
+  note: string | null;
   source: "patient";
   version: number;
   updatedAt: string;
@@ -213,7 +215,7 @@ export async function saveAllergenExposure(
   const data = await requestData(
     fetcher,
     current ? `/api/v1/health-records/exposures/${encodeURIComponent(current.id)}` : "/api/v1/health-records/exposures",
-    { method: current ? "PATCH" : "POST", headers, body: JSON.stringify(exposurePayload(draft)) },
+    { method: current ? "PATCH" : "POST", headers, body: JSON.stringify(exposurePayload(draft, current)) },
   );
   if (!isRecord(data) || !isApiExposure(data.record)) throw new HealthRecordsApiError("过敏原记录接口返回格式不正确", 502);
   return normalizeExposure(data.record);
@@ -296,12 +298,24 @@ async function requestData(fetcher: Fetcher, path: string, init: RequestInit): P
 
 function profilePayload(draft: HealthProfileDraft) {
   const knowledge = (value: string) => value.trim() ? { status: "known" as const, value: value.trim() } : { status: "unknown" as const };
-  const existingEntries = new Map((draft.allergyHistoryEntries ?? []).map((entry) => [entry.allergenName, entry]));
-  const allergyHistory = draft.allergyHistory.trim()
-    ? draft.allergyHistory.split(/[、,，\n]/u).map((item) => item.trim()).filter(Boolean).map((allergenName) => existingEntries.has(allergenName)
-      ? { ...existingEntries.get(allergenName)! }
-      : { id: null, allergenName, certainty: "unknown" as const, note: null })
+  const entries = draft.allergyHistoryEntries ?? [];
+  const renderedEntries = entries.map((entry) => entry.allergenName).join("、");
+  const names = draft.allergyHistory.trim()
+    ? draft.allergyHistory.split(/[、,，\n]/u).map((item) => item.trim()).filter(Boolean)
     : [];
+  const existingEntries = new Map<string, AllergyHistoryEntry[]>();
+  for (const entry of entries) {
+    const sameName = existingEntries.get(entry.allergenName) ?? [];
+    sameName.push(entry);
+    existingEntries.set(entry.allergenName, sameName);
+  }
+  const allergyHistory = draft.allergyHistory === renderedEntries
+    ? entries.map((entry) => ({ ...entry }))
+    : names.map((allergenName) => {
+      const matching = existingEntries.get(allergenName) ?? [];
+      const preserved = matching.shift();
+      return preserved ? { ...preserved } : { id: null, allergenName, certainty: "unknown" as const, note: null };
+    });
   return {
     basicInfo: {
       displayName: knowledge(draft.basicInfo.displayName),
@@ -312,12 +326,12 @@ function profilePayload(draft: HealthProfileDraft) {
   };
 }
 
-function exposurePayload(draft: AllergenExposureDraft) {
+function exposurePayload(draft: AllergenExposureDraft, current: AllergenExposure | null = null) {
   return {
     date: draft.date,
     selections: draft.factors.map((label) => optionByLabel.get(label)),
     otherDescription: draft.factors.includes(OTHER_ALLERGEN) ? draft.otherDescription.trim() : null,
-    note: "患者自述当天接触",
+    note: current?.note ?? "患者自述当天接触",
   };
 }
 
@@ -350,6 +364,9 @@ function normalizeProfile(profile: Record<string, unknown>, triggers: TriggerPro
       : typeof history === "string" ? history : "",
     allergyHistoryEntries: historyEntries,
     commonTriggers: triggers,
+    legacyCommonTriggers: Array.isArray(profile.legacyCommonTriggers)
+      ? profile.legacyCommonTriggers.filter((item): item is string => typeof item === "string" && item.trim().length > 0)
+      : [],
     version: Number(profile.version),
     updatedAt: String(profile.updatedAt),
   };
@@ -361,6 +378,7 @@ function normalizeExposure(value: Record<string, unknown>): AllergenExposure {
     id: String(value.id), date: String(value.date),
     factors: selections.map((item) => labelByCode.get(String(item.code)) ?? String(item.code)),
     otherDescription: typeof value.otherDescription === "string" ? value.otherDescription : "",
+    note: typeof value.note === "string" ? value.note : null,
     source: "patient", version: Number(value.version), updatedAt: String(value.updatedAt),
   };
 }
@@ -401,7 +419,7 @@ function isTrigger(value: unknown): value is TriggerProjection {
   return isRecord(value) && typeof value.code === "string" && typeof value.label === "string" && typeof value.group === "string" && typeof value.latestDate === "string" && typeof value.occurrenceCount === "number" && value.source === "patient_reported_exposure" && Array.isArray(value.sourceRecordIds);
 }
 function isApiExposure(value: unknown): value is Record<string, unknown> {
-  return isRecord(value) && typeof value.id === "string" && typeof value.date === "string" && Array.isArray(value.selections) && value.selections.every((item) => isRecord(item) && typeof item.group === "string" && typeof item.code === "string") && (value.otherDescription === null || typeof value.otherDescription === "string") && typeof value.version === "number" && typeof value.updatedAt === "string";
+  return isRecord(value) && typeof value.id === "string" && typeof value.date === "string" && Array.isArray(value.selections) && value.selections.every((item) => isRecord(item) && typeof item.group === "string" && typeof item.code === "string") && (value.otherDescription === null || typeof value.otherDescription === "string") && (value.note === undefined || value.note === null || typeof value.note === "string") && typeof value.version === "number" && typeof value.updatedAt === "string";
 }
 function isApiMedication(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && typeof value.id === "string" && typeof value.takenAt === "string" && typeof value.medicationName === "string" && isRecord(value.dosage) && (value.dosage.status === "unknown" || (value.dosage.status === "known" && typeof value.dosage.value === "string" && typeof value.dosage.unit === "string")) && isRecord(value.actualUse) && (value.actualUse.status === "unknown" || (value.actualUse.status === "known" && typeof value.actualUse.description === "string")) && typeof value.version === "number" && typeof value.updatedAt === "string";

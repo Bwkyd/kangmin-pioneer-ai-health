@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { approvedSyndromes, hasUnapprovedClinicalContent, parseMetadata, publishProblem } from "../../../lib/admin/validation.ts";
+import { approvedSyndromes, hasUnapprovedClinicalContent, parseMetadata, publishProblem, requiresClinicalApproval } from "../../../lib/admin/validation.ts";
 
 test("metadata only accepts approved fixed syndrome codes", () => {
   const result = parseMetadata({
@@ -25,16 +25,21 @@ test("knowledge requires source and completed index", () => {
   assert.equal(publishProblem("knowledge", { title: "来源", version: 2, mediaId: "media_1", metadata: "{\"indexedChunks\":2,\"indexedVersion\":2}" }), null);
 });
 
-test("plan publication stays blocked until the clinical approval workflow exists", () => {
+test("康复内容需要审核，但通过审核后不应被通用字段校验永久拦截", () => {
   const metadata = JSON.stringify({ risks: "有风险", contraindications: "有禁忌", syndromeCodes: ["LUNG_HEAT"] });
-  assert.match(publishProblem("plan", { title: "方案", metadata: "{}" }), /临床审核/);
-  assert.match(publishProblem("plan", { title: "方案", metadata }), /禁止发布/);
+  assert.equal(requiresClinicalApproval("plan", { title: "方案", metadata: "{}" }), true);
+  assert.equal(publishProblem("plan", { title: "方案", metadata }), null);
 });
 
 test("未经临床审核的康复操作不能借其它内容类型发布或索引", () => {
   const item = { title: "鼻部护理", body: "请进行鼻三线姜刮并按揉迎香", mediaId: "media_1", version: 1, metadata: "{}" };
   assert.equal(hasUnapprovedClinicalContent(item), true);
-  assert.match(publishProblem("article", item), /临床负责人审核/);
-  assert.match(publishProblem("video", item), /临床负责人审核/);
-  assert.match(publishProblem("knowledge", { ...item, metadata: JSON.stringify({ indexedChunks: 1, indexedVersion: 1 }) }), /临床负责人审核/);
+  assert.equal(requiresClinicalApproval("article", item), true);
+  assert.equal(requiresClinicalApproval("video", item), true);
+  assert.equal(requiresClinicalApproval("knowledge", { ...item, metadata: JSON.stringify({ indexedChunks: 1, indexedVersion: 1 }) }), true);
+});
+
+test("临床关键词覆盖摘要、来源和不可见分隔符", () => {
+  assert.equal(hasUnapprovedClinicalContent({ title: "安全标题", summary: "鼻三线姜\u200b刮", body: "", source: "" }), true);
+  assert.equal(hasUnapprovedClinicalContent({ title: "安全标题", summary: "普通鼻健康", body: "", source: "耳穴压豆资料" }), true);
 });

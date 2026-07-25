@@ -122,8 +122,11 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
   }
   async function action(id: string, actionName: string) {
     try {
-      if (type === "knowledge" && actionName === "index") await api("/api/admin/knowledge/retry", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
-      else await api("/api/admin/content", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, action: actionName, notify: actionName === "publish" && (type === "article" || type === "video") }) });
+      const item = items.find((candidate) => candidate.id === id);
+      if (!item) throw new Error("内容已不在当前列表，请刷新");
+      const headers = { "content-type": "application/json", "if-match": `"${item.version}"` };
+      if (type === "knowledge" && actionName === "index") await api("/api/admin/knowledge/retry", { method: "POST", headers, body: JSON.stringify({ id }) });
+      else await api("/api/admin/content", { method: "PATCH", headers, body: JSON.stringify({ id, action: actionName, notify: actionName === "publish" && (type === "article" || type === "video") }) });
       onMessage(actionName === "publish" ? "已发布并同步到用户端" : actionName === "index" ? "知识索引已完成" : "内容已下架"); await onReload();
     } catch (error) { onMessage(error instanceof Error ? error.message : "操作失败"); }
   }
