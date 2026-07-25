@@ -114,7 +114,7 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
     try {
       const created = await api("/api/admin/content", { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) });
       if (type === "plan") {
-        await api("/api/admin/steps", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: created.id, position: 1, title: form.get("stepTitle"), instruction: form.get("stepInstruction"), mediaId: form.get("stepMediaId") }) });
+        await api("/api/admin/steps", { method: "POST", headers: { "content-type": "application/json", "If-Match": String(created.version ?? 1) }, body: JSON.stringify({ planId: created.id, position: 1, title: form.get("stepTitle"), instruction: form.get("stepInstruction"), mediaId: form.get("stepMediaId") }) });
       }
       onMessage(`${labels[type]}\u5df2\u4fdd\u5b58\u4e3a\u8349\u7a3f`); setShowForm(false); await onReload();
     }

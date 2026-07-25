@@ -54,7 +54,7 @@ export async function POST(request: Request) {
         insert,
         auditStatement,
       ]);
-      return Response.json({ id, status: "draft" }, { status: 201 });
+      return Response.json({ id, status: "draft", version: 1 }, { status: 201 });
     });
   } catch (error) {
     return adminRouteError(error);

@@ -8,17 +8,39 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 05:50:02 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 06:12:42 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前代码候选：`UNCOMMITTED`（基于 `15150703f189d0877e4b386878f28dd8e416563a` 的第二轮修复，尚未冻结）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：第二轮业务代码、迁移和测试有未提交修改；前一候选 `1515070...` 的测试和审查结论不覆盖当前工作树。冻结前不得启动同 SHA 模型评审。
+- 当前代码候选：`UNCOMMITTED`（基于 `6dd3ab5bc77f6daeba6898a390013f94cc62eb8f` 的步骤写入临床门禁修复，尚未冻结）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：主任务于 2026-07-26 06:01:48 +0800 更新 3 个后台实现文件并新增 1 个测试文件；06:12 完成隔离 Worker 浏览器验收，旧 SHA 的测试和审查结论不覆盖当前工作树。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
-- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 05:02 主机网络只读核验返回 HTTP 200；未登录、未写入
-- 本地服务：`127.0.0.1:3000` 于 2026-07-26 05:02 主机网络只读核验返回 HTTP 200；最新隔离 D1 Worker 使用当前构建完成浏览器验收后已停止，不代表生产 D1 已验收
+- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 06:03 主机网络只读核验返回 HTTP 200；未登录、未写入
+- 本地服务：旧 `127.0.0.1:3000` vinext 进程仍为 HTTP 500，精确原因是未解析新引入的 `@/lib/agent/approved-plans`；本轮用当前构建启动隔离 Wrangler `127.0.0.1:39999`，隔离 D1 浏览器验收通过后已停止，二者不能混为生产结论
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 06:12 步骤写入 P0 修复与浏览器验收
+
+- completed：发现并修复 P0：后台追加调理方案步骤时，原实现可能在已发布/已临床审核方案上直接写入新操作，导致用户端读取到未审核步骤。现在已发布方案拒绝追加；草稿/下架/索引失败方案追加必须携带 `If-Match`，按版本更新、递增版本并清除旧版本临床审核，再写入步骤；步骤标题、说明、位置和视频素材均校验。
+- completed：管理端新建调理方案会把服务端返回的版本号带入步骤写入；新增单元策略回归，覆盖已发布拒绝、版本条件、审批删除和允许状态。
+- completed：授权主机当前完整 `npm test` 为 69/69 PASS，`npm run build` PASS，`npm run lint` 为 0 errors/1 个既有 `<img>` warning，`git diff --check` PASS。
+- completed：当前构建在隔离持久化 D1 Worker（端口 39999、synthetic 身份）完成浏览器验收：过敏原记录保存并回读“空气污染”；健康档案用药记录保存并回显使用时间、氯雷他定、10 mg、实际用量；无症状日期显示暂无真实症状且保存禁用；“学一学”科普文章/操作视频/调理方案分类可切换并显示空状态；浏览器 error/warn 为 `[]`，Worker 已停止。
+- completed：用户确认的一期边界已写入实现口径：verified-phone 服务端身份映射方案；花粉监测不在一期，花粉仅可作为患者自述暴露；#88–#99 是穴位/按摩/鼻三线姜刮等康复建议，不归入用药；用药记录独立保存时间、药名、剂量、单位和实际用量。
+- in_progress：提交并冻结本轮新的精确 SHA；随后对新 SHA 重新执行重复/冗余、并发/边界、回归/旧功能、临床/交付四视角审查。旧 SHA 的任何 verdict 均不覆盖本轮候选。
+- blocked：临床书面批准、生产 verified-phone resolver/生产 D1、客户浏览器 UAT、GitHub token/PR/CI、推送、合并、部署和 Issue 关闭仍是独立门禁；未取得相应真实证据或逐项授权前不绕过。
+
+## 2026-07-26 06:01 看门狗实时核验阶段
+
+- completed：已读取本文件并确认其为唯一进度真相源；已实时刷新 Git、GitHub Issue/PR、本地服务和客户后台证据。
+- completed：阶段入口核验时当前分支为 `codex/issue-72-103-health-integration`，精确 HEAD 为 `6dd3ab5bc77f6daeba6898a390013f94cc62eb8f`，工作树干净，`git diff --check` PASS。
+- completed：联网刷新后 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`；GitHub Issue 正文只读访问已恢复，35 个 open Issue（#69–#103）均无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。
+- completed：客户后台 `/admin` 主机网络只读探测为 HTTP 200；本地 `127.0.0.1:3000` 为 HTTP 500，响应精确错误为 `Cannot find module '@/lib/agent/approved-plans' imported from '.../app/api/v1/agent/explain/route.ts'`。监听进程是 2026-07-25 21:59:20 启动的 vinext 开发服务；本轮不重启、不修改代码。
+- in_progress：主任务在本轮核验期间于 06:01:48 更新 `app/admin/page.tsx`、`app/api/admin/content/route.ts`、`app/api/admin/steps/route.ts`，并新增 `tests/unit/admin/plan-steps-policy.test.mjs`；06:03 又启动隔离 Wrangler（端口 39999）执行当前工作。看门狗确认 owner 活跃，不接管实现或测试。
+- blocked：20 分钟活动保护条件成立。恢复条件是自最后一个实现文件写入起连续至少 20 分钟无更新、活动进程结束、修改归属明确并冻结新的精确候选 SHA；届时先重跑完整测试和本地服务验收，再进入只读审查。
+- blocked：虽然 GitHub Issue 正文访问已恢复，但所有 open Issue 仍无 `agent-ready`；四视角独立审查仍缺少获批准的数据外发授权或隔离审查机制，不能绕过或把旧 verdict 当当前结论。
+- blocked：临床书面批准、客户产品口径、真实患者数据、生产凭据、推送、PR/CI、合并、部署和 Issue 关闭继续保持独立门禁，本阶段不绕过。
+- 本轮动作：仅完成实时只读核验并写回证据；未修改业务代码或临床规则，未运行会与活动 owner 竞争的完整测试，未重启服务，未提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
 
 ## 2026-07-26 05:37 P0/P1 审查结果与第二轮修复
 
