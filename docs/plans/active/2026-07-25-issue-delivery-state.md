@@ -11,8 +11,8 @@
 - 核验时间：2026-07-26 06:44:05 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前代码候选：`UNCOMMITTED`（基于 `5619c1cf8eced6b31d9f969e62106a586da05f10` 的 P0/P1 真修尚未冻结）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：主任务本轮更新临床审核、内容公开契约、媒体权限、幂等恢复、迁移、后台审核入口、过敏原重试和对应测试；旧 SHA 的测试与审查结论不覆盖当前工作树。
+- 当前代码候选：`397cb885fa58b0070d41fdb052e7e771a7077c3c`（临床审核竞态与方案契约修复已提交并冻结）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：主任务本轮更新临床审核、内容公开契约、媒体权限、幂等恢复、迁移、后台审核入口、过敏原重试和对应测试；已提交，当前精确候选工作树干净。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 06:03 主机网络只读核验返回 HTTP 200；未登录、未写入
@@ -28,7 +28,7 @@
 - completed：症状创建的幂等重放会回读同日已存在记录；同日过敏原唯一索引迁移先清理旧重复记录并保留最新记录及其选择；过敏原读取错误增加重试入口。
 - completed：授权主机 `npm test` 为 74/74 PASS，`npm run build` PASS，`npm run lint` 为 0 errors/1 个既有 `<img>` warning，`git diff --check` PASS。
 - completed：隔离 D1 HTTP 验收确认空步骤审核/发布拒绝、步骤追加 v1→v2、旧版本审核 409、最新版本审核后发布、公开方案返回步骤/风险/禁忌、已发布更新 409、智能体返回已审核方案；最新浏览器验收确认后台临床审核入口、空步骤提示、过敏原保存、用药时间/药名/剂量/单位/实际用量、学一学方案详情均可用，浏览器 error/warn 为 `[]`。
-- in_progress：提交并冻结本轮代码；随后用新精确 SHA 重跑 sequential-thinking 元反思和四视角审查，P0/P1 必须继续清零才可进入 Kimi/DeepSeek。
+- in_progress：精确候选已冻结为 `397cb885fa58b0070d41fdb052e7e771a7077c3c`；随后用该 SHA 重跑 sequential-thinking 元反思和四视角审查，P0/P1 必须继续清零才可进入 Kimi/DeepSeek。
 - blocked：真实 verified-phone 回调/手机号供应商、生产 D1、Word/DOCX 正文解析与文章图片发布、诊一诊正式 UI 接入、客户浏览器 UAT、GitHub PR/CI、推送、合并、部署和 Issue 关闭仍缺少外部规格、凭据或真实批准；不以 synthetic 或本地内容冒充生产完成。
 
 ## 2026-07-26 06:12 步骤写入 P0 修复与浏览器验收
