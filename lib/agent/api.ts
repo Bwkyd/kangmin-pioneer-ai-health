@@ -192,13 +192,17 @@ const HIGH_RISK_PATTERNS: ReadonlyArray<{
   {
     field: "respiratoryEmergency",
     patterns: [
-      /呼吸困难|喘不过气|窒息|嘴唇.{0,4}发紫/u,
+      /呼吸困难|呼吸不畅|胸闷|胸痛|喘不过气|窒息|嘴唇.{0,4}发紫/u,
       /difficulty breathing|cannot breathe/iu,
     ],
   },
   {
     field: "persistentHighFever",
-    patterns: [/持续.{0,4}(高烧|高热|发热)|体温\s*(39|40)(?:\.\d)?/u],
+    patterns: [/持续.{0,4}(高烧|高热|发热)|高烧|高热|体温\s*(?:39|40)(?:\.\d)?/u],
+  },
+  {
+    field: "facialSwelling",
+    patterns: [/面部.{0,6}(肿|肿胀)|脸.{0,6}(肿|肿胀)/u],
   },
   {
     field: "severeNoseBleed",
@@ -210,7 +214,7 @@ const HIGH_RISK_PATTERNS: ReadonlyArray<{
   },
   {
     field: "severeNeurologicalSymptoms",
-    patterns: [/剧烈头痛|意识模糊|抽搐|颈项强直|视力.{0,6}(下降|丧失)/u],
+    patterns: [/明显头痛|剧烈头痛|意识模糊|抽搐|颈项强直|视力.{0,6}(下降|丧失)/u],
   },
 ];
 

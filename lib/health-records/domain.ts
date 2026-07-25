@@ -275,6 +275,7 @@ export function parseMedicationInput(value: unknown): MedicationInput | null {
   if (!isRecord(value) || !hasExactKeys(value, ["takenAt", "medicationName", "dosage", "actualUse"])) return null;
   const medicationName = cleanText(value.medicationName, 160);
   if (!medicationName || typeof value.takenAt !== "string" || !/^\d{4}-\d{2}-\d{2}T.*(?:Z|[+-]\d{2}:\d{2})$/.test(value.takenAt)) return null;
+  if (!validDate(value.takenAt.slice(0, 10))) return null;
   const takenAt = new Date(value.takenAt);
   if (Number.isNaN(takenAt.valueOf()) || !isRecord(value.dosage) || !isRecord(value.actualUse)) return null;
   let dosage: MedicationInput["dosage"];

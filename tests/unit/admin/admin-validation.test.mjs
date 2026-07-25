@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { approvedSyndromes, parseMetadata, publishProblem } from "../../../lib/admin/validation.ts";
+import { approvedSyndromes, hasUnapprovedClinicalContent, parseMetadata, publishProblem } from "../../../lib/admin/validation.ts";
 
 test("metadata only accepts approved fixed syndrome codes", () => {
   const result = parseMetadata({
@@ -29,4 +29,12 @@ test("plan publication stays blocked until the clinical approval workflow exists
   const metadata = JSON.stringify({ risks: "有风险", contraindications: "有禁忌", syndromeCodes: ["LUNG_HEAT"] });
   assert.match(publishProblem("plan", { title: "方案", metadata: "{}" }), /临床审核/);
   assert.match(publishProblem("plan", { title: "方案", metadata }), /禁止发布/);
+});
+
+test("未经临床审核的康复操作不能借其它内容类型发布或索引", () => {
+  const item = { title: "鼻部护理", body: "请进行鼻三线姜刮并按揉迎香", mediaId: "media_1", version: 1, metadata: "{}" };
+  assert.equal(hasUnapprovedClinicalContent(item), true);
+  assert.match(publishProblem("article", item), /临床负责人审核/);
+  assert.match(publishProblem("video", item), /临床负责人审核/);
+  assert.match(publishProblem("knowledge", { ...item, metadata: JSON.stringify({ indexedChunks: 1, indexedVersion: 1 }) }), /临床负责人审核/);
 });

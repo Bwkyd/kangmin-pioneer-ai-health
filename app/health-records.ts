@@ -199,12 +199,17 @@ export async function listAllergenExposures(fetcher: Fetcher = fetch): Promise<A
   return data.items.map(normalizeExposure);
 }
 
-export async function saveAllergenExposure(draft: AllergenExposureDraft, current: AllergenExposure | null, fetcher: Fetcher = fetch): Promise<AllergenExposure> {
+export async function saveAllergenExposure(
+  draft: AllergenExposureDraft,
+  current: AllergenExposure | null,
+  fetcher: Fetcher = fetch,
+  createIdempotencyKey = crypto.randomUUID(),
+): Promise<AllergenExposure> {
   const validation = validateExposureDraft(draft);
   if (validation) throw new HealthRecordsApiError(validation, 422);
   const headers: Record<string, string> = current
     ? { "if-match": `"${current.version}"` }
-    : { "idempotency-key": crypto.randomUUID() };
+    : { "idempotency-key": createIdempotencyKey };
   const data = await requestData(
     fetcher,
     current ? `/api/v1/health-records/exposures/${encodeURIComponent(current.id)}` : "/api/v1/health-records/exposures",
@@ -227,11 +232,16 @@ export async function listMedications(fetcher: Fetcher = fetch): Promise<Medicat
   return data.items.map(normalizeMedication);
 }
 
-export async function saveMedication(draft: MedicationDraft, current: MedicationRecord | null, fetcher: Fetcher = fetch): Promise<MedicationRecord> {
+export async function saveMedication(
+  draft: MedicationDraft,
+  current: MedicationRecord | null,
+  fetcher: Fetcher = fetch,
+  createIdempotencyKey = crypto.randomUUID(),
+): Promise<MedicationRecord> {
   const payload = medicationPayload(draft);
   const data = await requestData(fetcher, current ? `/api/v1/health-records/medications/${encodeURIComponent(current.id)}` : "/api/v1/health-records/medications", {
     method: current ? "PATCH" : "POST",
-    headers: current ? { "if-match": `"${current.version}"` } : { "idempotency-key": crypto.randomUUID() },
+    headers: current ? { "if-match": `"${current.version}"` } : { "idempotency-key": createIdempotencyKey },
     body: JSON.stringify(payload),
   });
   if (!isRecord(data) || !isApiMedication(data.record)) throw new HealthRecordsApiError("用药记录接口返回格式不正确", 502);
@@ -286,15 +296,19 @@ async function requestData(fetcher: Fetcher, path: string, init: RequestInit): P
 
 function profilePayload(draft: HealthProfileDraft) {
   const knowledge = (value: string) => value.trim() ? { status: "known" as const, value: value.trim() } : { status: "unknown" as const };
+  const existingEntries = new Map((draft.allergyHistoryEntries ?? []).map((entry) => [entry.allergenName, entry]));
+  const allergyHistory = draft.allergyHistory.trim()
+    ? draft.allergyHistory.split(/[、,，\n]/u).map((item) => item.trim()).filter(Boolean).map((allergenName) => existingEntries.has(allergenName)
+      ? { ...existingEntries.get(allergenName)! }
+      : { id: null, allergenName, certainty: "unknown" as const, note: null })
+    : [];
   return {
     basicInfo: {
       displayName: knowledge(draft.basicInfo.displayName),
       birthDate: knowledge(draft.basicInfo.birthDate),
       sex: draft.basicInfo.sex === "unspecified" ? { status: "unknown" as const } : { status: "known" as const, value: draft.basicInfo.sex },
     },
-    allergyHistory: draft.allergyHistoryEntries !== undefined
-      ? draft.allergyHistoryEntries.map((entry) => ({ ...entry }))
-      : draft.allergyHistory.trim() ? [{ id: null, allergenName: draft.allergyHistory.trim(), certainty: "unknown" as const, note: null }] : [],
+    allergyHistory,
   };
 }
 

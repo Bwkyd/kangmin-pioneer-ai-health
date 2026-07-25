@@ -3,6 +3,7 @@ export type TriState = "yes" | "no" | "unknown";
 export const SAFETY_QUESTION_KEYS = [
   "respiratoryEmergency",
   "persistentHighFever",
+  "facialSwelling",
   "severeNoseBleed",
   "unilateralFoulDischarge",
   "severeNeurologicalSymptoms",

@@ -13,6 +13,7 @@ import type {
 
 export interface HealthRecordsRepository {
   getProfile(userId: string): Promise<HealthProfile | null>;
+  getProfileSnapshot(userId: string): Promise<{ profile: HealthProfile | null; triggers: TriggerProjection[] }>;
   saveProfile(userId: string, expectedVersion: number, input: HealthProfileInput): Promise<HealthProfile>;
   listMedications(userId: string): Promise<MedicationRecord[]>;
   createMedication(

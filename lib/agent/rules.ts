@@ -7,6 +7,7 @@ export const RULE_PACKAGE_VERSION = "draft-local-v0";
 export const SAFETY_FIELDS = [
   "respiratoryEmergency",
   "persistentHighFever",
+  "facialSwelling",
   "severeNoseBleed",
   "unilateralFoulDischarge",
   "severeNeurologicalSymptoms",

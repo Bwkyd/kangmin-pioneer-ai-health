@@ -70,6 +70,7 @@ function completeInput(overrides = {}) {
     safety: {
       respiratoryEmergency: "no",
       persistentHighFever: "no",
+      facialSwelling: "no",
       severeNoseBleed: "no",
       unilateralFoulDischarge: "no",
       severeNeurologicalSymptoms: "no",
@@ -203,6 +204,7 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
         safety: {
           respiratoryEmergency: "yes",
           persistentHighFever: "no",
+          facialSwelling: "no",
           severeNoseBleed: "no",
           unilateralFoulDischarge: "no",
           severeNeurologicalSymptoms: "no",

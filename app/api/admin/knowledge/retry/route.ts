@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/admin/auth";
 import { textChunks, writeOptionalVectorIndex } from "@/lib/admin/knowledge-index";
 import { identifier, jsonError, now, runtime } from "@/lib/admin/store";
+import { clinicalApprovalRequiredMessage, hasUnapprovedClinicalContent } from "@/lib/admin/validation";
 
 export async function POST(request: Request) {
   try {
@@ -9,6 +10,7 @@ export async function POST(request: Request) {
     const values = await runtime();
     const item = await values.DB.prepare("SELECT id, title, source, body, version, metadata, media_id FROM content_items WHERE id = ? AND type = 'knowledge'").bind(id).first<{ id: string; title: string; source: string; body: string; version: number; metadata: string; media_id: string | null }>();
     if (!item) return jsonError("知识资料不存在", 404);
+    if (hasUnapprovedClinicalContent(item)) return jsonError(clinicalApprovalRequiredMessage, 422);
     await values.DB.prepare("UPDATE content_items SET status = 'indexing', updated_at = ? WHERE id = ?").bind(now(), id).run();
     try {
       const chunks = textChunks(item.body || item.title);

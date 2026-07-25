@@ -1,4 +1,5 @@
 import type { RuntimeEnv } from "./store";
+import { hasUnapprovedClinicalContent } from "./validation.ts";
 
 export type KnowledgeSource = {
   id: string;
@@ -24,6 +25,8 @@ type SearchRow = {
   chunk_text: string;
   title: string;
   source: string;
+  body?: string;
+  metadata?: string;
 };
 
 export function textChunks(text: string, size = 900) {
@@ -73,8 +76,9 @@ function citation(row: SearchRow): KnowledgeCitation {
 }
 
 async function publishedChunk(values: RuntimeEnv & { DB: D1Database }, id: string) {
-  return values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.title, c.source FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id WHERE k.id = ? AND c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version")
+  const row = await values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.title, c.source, c.body, c.metadata FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id WHERE k.id = ? AND c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version")
     .bind(id).first<SearchRow>();
+  return row && !hasUnapprovedClinicalContent(row) ? row : null;
 }
 
 async function vectorSearch(values: RuntimeEnv & { DB: D1Database }, query: string, limit: number) {
@@ -92,7 +96,7 @@ async function vectorSearch(values: RuntimeEnv & { DB: D1Database }, query: stri
 export async function searchPublishedKnowledge(values: RuntimeEnv & { DB: D1Database }, query: string, limit: number) {
   const vectorMatches = await vectorSearch(values, query, limit);
   if (vectorMatches?.length) return { mode: "vector" as const, items: vectorMatches };
-  const rows = await values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.title, c.source FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id WHERE c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version AND instr(lower(k.chunk_text), lower(?)) > 0 ORDER BY c.published_at DESC, k.position ASC LIMIT ?")
+  const rows = await values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.title, c.source, c.body, c.metadata FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id WHERE c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version AND instr(lower(k.chunk_text), lower(?)) > 0 ORDER BY c.published_at DESC, k.position ASC LIMIT ?")
     .bind(query, limit).all<SearchRow>();
-  return { mode: "d1" as const, items: rows.results.map(citation) };
+  return { mode: "d1" as const, items: rows.results.filter((row) => !hasUnapprovedClinicalContent(row)).map(citation) };
 }

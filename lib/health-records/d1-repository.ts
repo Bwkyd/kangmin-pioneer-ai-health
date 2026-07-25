@@ -65,6 +65,18 @@ type SelectionRow = {
   option_code: ExposureInput["selections"][number]["code"];
 };
 
+type ExposureWithSelectionRow = ExposureRow & {
+  group_code: ExposureInput["selections"][number]["group"] | null;
+  option_code: ExposureInput["selections"][number]["code"] | null;
+};
+
+type TriggerRow = SelectionRow & {
+  exposure_date: string;
+  other_description: string | null;
+};
+
+const IDEMPOTENCY_LEASE_MS = 5 * 60 * 1000;
+
 function now() {
   return new Date().toISOString();
 }
@@ -138,6 +150,19 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     return row ? mapProfile(row) : null;
   }
 
+  async getProfileSnapshot(userId: string) {
+    const database = await this.getDatabase();
+    const [profileResult, triggerResult] = await database.batch([
+      database.prepare("SELECT basic_info, allergy_history, common_triggers, version, created_at, updated_at FROM health_profiles WHERE user_id = ?").bind(userId),
+      database.prepare("SELECT e.id exposure_id, e.exposure_date, e.other_description, s.group_code, s.option_code FROM allergen_exposure_records e JOIN allergen_exposure_selections s ON s.exposure_id = e.id WHERE e.user_id = ? ORDER BY e.exposure_date DESC, e.id").bind(userId),
+    ]);
+    const profileRow = profileResult.results[0] as ProfileRow | undefined;
+    return {
+      profile: profileRow ? mapProfile(profileRow) : null,
+      triggers: this.projectTriggerRows(triggerResult.results as TriggerRow[]),
+    };
+  }
+
   async saveProfile(userId: string, expectedVersion: number, input: HealthProfileInput) {
     const database = await this.getDatabase();
     const timestamp = now();
@@ -150,8 +175,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
       const exists = await database.prepare("SELECT version FROM health_profiles WHERE user_id = ?").bind(userId).first<{ version: number }>();
       if (!exists) throw new HealthRecordError(404, "NOT_FOUND", "健康档案不存在");
       const updated = await database.prepare(
-        "UPDATE health_profiles SET basic_info = ?, allergy_history = ?, common_triggers = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND version = ?",
-      ).bind(JSON.stringify(input.basicInfo), JSON.stringify(input.allergyHistory), JSON.stringify(input.commonTriggers), timestamp, userId, expectedVersion).run();
+        "UPDATE health_profiles SET basic_info = ?, allergy_history = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND version = ?",
+      ).bind(JSON.stringify(input.basicInfo), JSON.stringify(input.allergyHistory), timestamp, userId, expectedVersion).run();
       if (updated.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "健康档案已被更新，请刷新后重试");
     }
     return (await this.getProfile(userId))!;
@@ -233,13 +258,16 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
   async listExposures(userId: string, date: string | null) {
     const database = await this.getDatabase();
     const query = date
-      ? database.prepare("SELECT id, exposure_date, other_description, note, version, created_at, updated_at FROM allergen_exposure_records WHERE user_id = ? AND exposure_date = ? ORDER BY created_at DESC LIMIT 200").bind(userId, date)
-      : database.prepare("SELECT id, exposure_date, other_description, note, version, created_at, updated_at FROM allergen_exposure_records WHERE user_id = ? ORDER BY exposure_date DESC, created_at DESC LIMIT 200").bind(userId);
-    const rows = await query.all<ExposureRow>();
-    if (rows.results.length === 0) return [];
-    const selections = await database.prepare("SELECT s.exposure_id, s.group_code, s.option_code FROM allergen_exposure_selections s JOIN allergen_exposure_records e ON e.id = s.exposure_id WHERE e.user_id = ?")
-      .bind(userId).all<SelectionRow>();
-    return rows.results.map((row) => mapExposure(row, selections.results));
+      ? database.prepare("SELECT e.id, e.exposure_date, e.other_description, e.note, e.version, e.created_at, e.updated_at, s.group_code, s.option_code FROM (SELECT id, exposure_date, other_description, note, version, created_at, updated_at FROM allergen_exposure_records WHERE user_id = ? AND exposure_date = ? ORDER BY created_at DESC LIMIT 200) e LEFT JOIN allergen_exposure_selections s ON s.exposure_id = e.id ORDER BY e.created_at DESC, s.option_code").bind(userId, date)
+      : database.prepare("SELECT e.id, e.exposure_date, e.other_description, e.note, e.version, e.created_at, e.updated_at, s.group_code, s.option_code FROM (SELECT id, exposure_date, other_description, note, version, created_at, updated_at FROM allergen_exposure_records WHERE user_id = ? ORDER BY exposure_date DESC, created_at DESC LIMIT 200) e LEFT JOIN allergen_exposure_selections s ON s.exposure_id = e.id ORDER BY e.exposure_date DESC, e.created_at DESC, s.option_code").bind(userId);
+    const rows = await query.all<ExposureWithSelectionRow>();
+    const grouped = new Map<string, { row: ExposureRow; selections: SelectionRow[] }>();
+    for (const row of rows.results) {
+      const current = grouped.get(row.id) ?? { row, selections: [] };
+      if (row.group_code && row.option_code) current.selections.push({ exposure_id: row.id, group_code: row.group_code, option_code: row.option_code });
+      grouped.set(row.id, current);
+    }
+    return [...grouped.values()].map(({ row, selections }) => mapExposure(row, selections));
   }
 
   async createExposure(userId: string, key: string, requestHash: string, input: ExposureInput) {
@@ -292,8 +320,12 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
   async listTriggerProjection(userId: string) {
     const rows = await (await this.getDatabase()).prepare("SELECT e.id exposure_id, e.exposure_date, e.other_description, s.group_code, s.option_code FROM allergen_exposure_records e JOIN allergen_exposure_selections s ON s.exposure_id = e.id WHERE e.user_id = ? ORDER BY e.exposure_date DESC, e.id")
       .bind(userId).all<SelectionRow & { exposure_id: string; exposure_date: string; other_description: string | null }>();
+    return this.projectTriggerRows(rows.results);
+  }
+
+  private projectTriggerRows(rows: TriggerRow[]) {
     const projected = new Map<string, TriggerProjection>();
-    for (const row of rows.results) {
+    for (const row of rows) {
       if (row.option_code === "none_identified") continue;
       const option = allergenOption(row.option_code);
       if (!option) continue;
@@ -323,16 +355,27 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
   }
 
   private async claimIdempotency<T>(database: D1Database, userId: string, scope: string, key: string, requestHash: string): Promise<{ id: string; replay?: T }> {
-    const existing = await database.prepare("SELECT id, request_hash, state, response FROM health_record_idempotency WHERE user_id = ? AND scope = ? AND key = ?")
-      .bind(userId, scope, key).first<{ id: string; request_hash: string; state: "pending" | "completed"; response: string | null }>();
+    const existing = await database.prepare("SELECT id, request_hash, state, response, created_at FROM health_record_idempotency WHERE user_id = ? AND scope = ? AND key = ?")
+      .bind(userId, scope, key).first<{ id: string; request_hash: string; state: "pending" | "completed"; response: string | null; created_at: string }>();
+    const staleBefore = new Date(Date.now() - IDEMPOTENCY_LEASE_MS).toISOString();
+    if (existing?.state === "pending" && existing.created_at < staleBefore) {
+      const recovered = await database.prepare("DELETE FROM health_record_idempotency WHERE id = ? AND state = 'pending' AND created_at < ?")
+        .bind(existing.id, staleBefore).run();
+      if (recovered.meta.changes > 0) return this.claimIdempotency(database, userId, scope, key, requestHash);
+    }
     if (existing) return this.resolveIdempotency<T>(existing, requestHash);
     const id = `idem_${crypto.randomUUID()}`;
     const claim = await database.prepare("INSERT OR IGNORE INTO health_record_idempotency (id, user_id, scope, key, request_hash, state, created_at) VALUES (?, ?, ?, ?, ?, 'pending', ?)")
       .bind(id, userId, scope, key, requestHash, now()).run();
     if (claim.meta.changes > 0) return { id };
-    const raced = await database.prepare("SELECT id, request_hash, state, response FROM health_record_idempotency WHERE user_id = ? AND scope = ? AND key = ?")
-      .bind(userId, scope, key).first<{ id: string; request_hash: string; state: "pending" | "completed"; response: string | null }>();
+    const raced = await database.prepare("SELECT id, request_hash, state, response, created_at FROM health_record_idempotency WHERE user_id = ? AND scope = ? AND key = ?")
+      .bind(userId, scope, key).first<{ id: string; request_hash: string; state: "pending" | "completed"; response: string | null; created_at: string }>();
     if (!raced) throw new HealthRecordError(409, "REQUEST_IN_PROGRESS", "相同请求正在处理中");
+    if (raced.state === "pending" && raced.created_at < staleBefore) {
+      const recovered = await database.prepare("DELETE FROM health_record_idempotency WHERE id = ? AND state = 'pending' AND created_at < ?")
+        .bind(raced.id, staleBefore).run();
+      if (recovered.meta.changes > 0) return this.claimIdempotency(database, userId, scope, key, requestHash);
+    }
     return this.resolveIdempotency<T>(raced, requestHash);
   }
 

@@ -64,7 +64,7 @@ const symptomOptions = [
 ];
 
 const durationOptions = ["最近 3 天出现", "反复半年，换季加重", "已经持续两年以上"];
-const warningOptions = ["以上情况都没有", "有高热或明显头痛", "呼吸不畅或胸闷"];
+const warningOptions = ["以上情况都没有", "有高热或明显头痛", "面部肿痛或鼻出血不止", "呼吸不畅或胸闷"];
 
 const knowledgeQuestions = [
   {
@@ -210,6 +210,7 @@ export default function Home() {
   const [medicationEditing, setMedicationEditing] = useState(false);
   const [medicationStatus, setMedicationStatus] = useState<"idle" | "saving" | "ready" | "error">("idle");
   const [medicationNotice, setMedicationNotice] = useState("");
+  const [medicationCreateKey, setMedicationCreateKey] = useState<string | null>(null);
   const [symptoms, setSymptoms] = useState<SymptomRecord[]>([]);
   const [symptomStatus, setSymptomStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
   const [symptomNotice, setSymptomNotice] = useState("");
@@ -222,6 +223,8 @@ export default function Home() {
   const [editingExposureId, setEditingExposureId] = useState<string | null>(null);
   const [exposureStatus, setExposureStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
   const [exposureNotice, setExposureNotice] = useState("");
+  const [exposureCreateKey, setExposureCreateKey] = useState<string | null>(null);
+  const [profileLoadError, setProfileLoadError] = useState(false);
   const chatEnd = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
   const [profileRequest] = useState(() => new RequestVersion());
@@ -328,11 +331,13 @@ export default function Home() {
         } : emptyHealthProfile);
         setExposures(items);
         setMedications(medicationItems);
+        setProfileLoadError(false);
         setProfileStatus("ready");
         setProfileNotice(profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
       })
       .catch((error: unknown) => {
         if (cancelled) return;
+        setProfileLoadError(true);
         setProfileStatus("error");
         setProfileNotice(error instanceof Error ? error.message : "健康档案暂时无法读取");
       });
@@ -458,6 +463,7 @@ export default function Home() {
 
   const editExposure = (record: AllergenExposure) => {
     exposureRequest.next();
+    setExposureCreateKey(null);
     setSelectedDate(record.date);
     setEditingExposureId(record.id);
     setExposureDraft({
@@ -473,6 +479,7 @@ export default function Home() {
     returnTab: "assessment" | "healthProfile" = "assessment",
   ) => {
     exposureRequest.next();
+    setExposureCreateKey(crypto.randomUUID());
     setSelectedDate(date);
     setAllergenReturnTab(returnTab);
     setEditingExposureId(null);
@@ -485,6 +492,7 @@ export default function Home() {
 
   const openHealthProfile = () => {
     profileRequest.next();
+    setProfileLoadError(false);
     setProfileReload((current) => current + 1);
     setProfileStatus("loading");
     setProfileNotice("正在读取健康档案…");
@@ -492,7 +500,12 @@ export default function Home() {
   };
 
   const openSymptomDate = (date: string) => {
+    const wasSaving = symptomStatus === "saving";
     symptomRequest.next();
+    if (wasSaving) {
+      setSymptomStatus("loading");
+      setAssessmentReload((current) => current + 1);
+    }
     setSelectedDate(date);
     setCalendarMonth(date.slice(0, 7));
     const existing = symptomsByDate.get(date);
@@ -503,6 +516,7 @@ export default function Home() {
 
   const selectExposureDate = (date: string) => {
     exposureRequest.next();
+    setExposureCreateKey(crypto.randomUUID());
     setSelectedDate(date);
     setEditingExposureId(null);
     setExposureDraft({ date, factors: [], otherDescription: "" });
@@ -568,6 +582,7 @@ export default function Home() {
 
   const beginMedication = (record: MedicationRecord | null = null) => {
     medicationRequest.next();
+    setMedicationCreateKey(record ? null : crypto.randomUUID());
     setEditingMedicationId(record?.id ?? null);
     setMedicationDraft(record ? {
       takenAt: localDateTimeValue(record.takenAt),
@@ -594,14 +609,17 @@ export default function Home() {
     const draft = medicationDraft;
     const editingId = editingMedicationId;
     const current = editingId ? medications.find((item) => item.id === editingId) ?? null : null;
+    const createKey = medicationCreateKey ?? crypto.randomUUID();
+    if (!editingId && !medicationCreateKey) setMedicationCreateKey(createKey);
     setMedicationStatus("saving");
     setMedicationNotice("正在保存用药记录…");
     try {
-      const saved = await saveMedication(draft, current);
+      const saved = await saveMedication(draft, current, fetch, createKey);
       if (!medicationRequest.isCurrent(requestVersion)) return;
       setMedications((items) => items.some((item) => item.id === saved.id) ? items.map((item) => item.id === saved.id ? saved : item) : [saved, ...items]);
       setMedicationEditing(false);
       setEditingMedicationId(null);
+      setMedicationCreateKey(null);
       setMedicationStatus("ready");
       setMedicationNotice("用药记录已由服务端确认保存");
     } catch (error) {
@@ -640,13 +658,16 @@ export default function Home() {
     const draft = exposureDraft;
     const editingId = editingExposureId;
     const currentRecord = editingId ? exposures.find((record) => record.id === editingId) ?? null : null;
+    const createKey = exposureCreateKey ?? crypto.randomUUID();
+    if (!editingId && !exposureCreateKey) setExposureCreateKey(createKey);
     setExposureStatus("saving");
     setExposureNotice("正在保存患者自述记录…");
     try {
-      const saved = await saveAllergenExposure(draft, currentRecord);
+      const saved = await saveAllergenExposure(draft, currentRecord, fetch, createKey);
       if (!exposureRequest.isCurrent(requestVersion)) return;
       setExposures((current) => upsertExposure(current, saved));
       setEditingExposureId(saved.id);
+      setExposureCreateKey(null);
       setExposureStatus("ready");
       setExposureNotice("过敏原患者自述已由服务端确认保存");
     } catch (error) {
@@ -677,9 +698,23 @@ export default function Home() {
     }
   };
 
+  const navigateTo = (next: Tab) => {
+    profileRequest.next();
+    symptomRequest.next();
+    medicationRequest.next();
+    exposureRequest.next();
+    setProfileStatus((current) => current === "saving" ? "idle" : current);
+    setSymptomStatus((current) => current === "saving" ? "idle" : current);
+    setMedicationStatus((current) => current === "saving" ? "idle" : current);
+    setExposureStatus((current) => current === "saving" ? "idle" : current);
+    setMedicationCreateKey(null);
+    setExposureCreateKey(null);
+    setTab(next);
+  };
+
   const goBack = () => {
-    if (tab === "healthProfile") { profileRequest.next(); setTab("profile"); }
-    else if (tab === "allergenRecord") { exposureRequest.next(); setTab(allergenReturnTab); }
+    if (tab === "healthProfile") { profileRequest.next(); setProfileStatus("idle"); setProfileNotice(""); setProfileLoadError(false); setTab("profile"); }
+    else if (tab === "allergenRecord") { exposureRequest.next(); setExposureStatus("idle"); setExposureNotice(""); setExposureCreateKey(null); setTab(allergenReturnTab); }
     else if (tab !== "home") setTab("home");
   };
 
@@ -700,6 +735,16 @@ export default function Home() {
     setAssessmentDone(false);
     setScores([...emptySymptomScores]);
     setEntryOpen(false);
+    setProfileStatus("idle");
+    setProfileNotice("");
+    setMedicationStatus("idle");
+    setMedicationNotice("");
+    setMedicationCreateKey(null);
+    setSymptomStatus("idle");
+    setSymptomNotice("");
+    setExposureStatus("idle");
+    setExposureNotice("");
+    setExposureCreateKey(null);
     setProfileEditing(false);
     setExposureNotice("");
     setTab("home");
@@ -948,11 +993,11 @@ export default function Home() {
                 </section>
 
                 <div className={`record-notice ${profileStatus === "error" ? "error" : ""}`} role="status">
-                  <strong>{profileStatus === "loading" || profileStatus === "saving" ? "处理中" : profileStatus === "error" ? "后端依赖待接入" : "档案状态"}</strong>
+                  <strong>{profileStatus === "loading" || profileStatus === "saving" ? "处理中" : profileLoadError ? "后端依赖待接入" : profileStatus === "error" ? "保存未完成" : "档案状态"}</strong>
                   <span>{profileNotice || "进入本页后从服务端读取健康档案"}</span>
                 </div>
 
-                {profileStatus === "error" ? (
+                {profileLoadError ? (
                   <section className="record-notice error" role="alert"><strong>健康档案暂时无法读取</strong><span>{profileNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></section>
                 ) : profileEditing ? (
                   <form className="profile-edit-form" onSubmit={submitProfile}>
@@ -964,13 +1009,14 @@ export default function Home() {
                     </section>
                     <section className="health-record-card">
                       <div className="record-card-title"><span>史</span><div><h3>过敏史</h3><small>既往检查或本人已知情况</small></div></div>
-                      <label>过敏史<textarea value={profileDraft.allergyHistory} onChange={(event) => setProfileDraft((current) => ({ ...current, allergyHistory: event.target.value, allergyHistoryEntries: undefined }))} placeholder="如无记录可留空，请勿自行下诊断" /></label>
+                      <label>过敏史<textarea value={profileDraft.allergyHistory} onChange={(event) => setProfileDraft((current) => ({ ...current, allergyHistory: event.target.value }))} placeholder="如无记录可留空，请勿自行下诊断" /></label>
                     </section>
                     <section className="health-record-card">
                       <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>用户主动维护的档案内容</small></div></div>
                       <p className="record-empty">常见诱因由已保存的患者过敏原暴露记录自动汇总；请通过“过敏原记录”新增或修改，健康档案保存请求不会直接改写该投影。</p>
                     </section>
-                    <div className="record-form-actions"><button type="button" onClick={() => { profileRequest.next(); setProfileEditing(false); }}>取消</button><button type="submit" disabled={profileStatus === "saving"}>{profileStatus === "saving" ? "保存中…" : "保存健康档案"}</button></div>
+                    {profileStatus === "error" && <p className="form-validation error-text" role="alert">{profileNotice}</p>}
+                    <div className="record-form-actions"><button type="button" onClick={() => { profileRequest.next(); setProfileEditing(false); setProfileStatus("ready"); setProfileNotice(""); }}>取消</button><button type="submit" disabled={profileStatus === "saving"}>{profileStatus === "saving" ? "保存中…" : "保存健康档案"}</button></div>
                   </form>
                 ) : (
                   <>
@@ -1012,7 +1058,7 @@ export default function Home() {
                           <label>实际用量情况<textarea value={medicationDraft.actualUseDescription} disabled={medicationDraft.actualUseUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, actualUseDescription: event.target.value }))} placeholder="例如：按医嘱服用一次，未记录具体用量" /></label>
                           <label className="checkbox-line"><input type="checkbox" checked={medicationDraft.actualUseUnknown} onChange={(event) => setMedicationDraft((current) => ({ ...current, actualUseUnknown: event.target.checked }))} />实际用量不详</label>
                           {medicationNotice && <p className={`form-validation ${medicationStatus === "error" ? "error-text" : ""}`} role="status">{medicationNotice}</p>}
-                          <div className="record-form-actions"><button type="button" onClick={() => { medicationRequest.next(); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
+                          <div className="record-form-actions"><button type="button" onClick={() => { medicationRequest.next(); setMedicationCreateKey(null); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
                         </form>
                       )}
                       {medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus === "saving"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
@@ -1157,11 +1203,11 @@ export default function Home() {
           </div>
 
           <nav className="bottom-nav" aria-label="主要功能">
-            <button className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
-            <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
-            <button className="nav-add" onClick={() => { setTab("assessment"); openSymptomDate(localDateValue()); }} aria-label="新增症状记录"><span>＋</span></button>
-            <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} onClick={() => setTab("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
-            <button className={tab === "profile" || tab === "healthProfile" ? "active" : ""} onClick={() => setTab("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
+            <button className={tab === "home" ? "active" : ""} onClick={() => navigateTo("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
+            <button className={tab === "chat" ? "active" : ""} onClick={() => navigateTo("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
+            <button className="nav-add" onClick={() => { navigateTo("assessment"); openSymptomDate(localDateValue()); }} aria-label="新增症状记录"><span>＋</span></button>
+            <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} onClick={() => navigateTo("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
+            <button className={tab === "profile" || tab === "healthProfile" ? "active" : ""} onClick={() => navigateTo("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
           </nav>
 
           {entryOpen && (

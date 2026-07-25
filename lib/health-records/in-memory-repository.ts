@@ -42,6 +42,10 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
     return value ? clone(value) : null;
   }
 
+  async getProfileSnapshot(userId: string) {
+    return { profile: await this.getProfile(userId), triggers: await this.listTriggerProjection(userId) };
+  }
+
   async saveProfile(userId: string, expectedVersion: number, input: HealthProfileInput) {
     const current = this.profiles.get(userId);
     if (!current && expectedVersion !== 0) throw new HealthRecordError(404, "NOT_FOUND", "健康档案不存在");

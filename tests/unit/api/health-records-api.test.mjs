@@ -50,6 +50,19 @@ test("用药记录显式保留 unknown、追加历史、幂等重放并阻止旧
   assert.equal(conflict.body.error.code, "VERSION_CONFLICT");
 });
 
+test("创建健康记录缺少幂等键时拒绝写入", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  const denied = await result(await api.createMedication(request("/", "POST", medication)));
+  assert.equal(denied.status, 400);
+  assert.equal(denied.body.error.code, "IDEMPOTENCY_KEY_REQUIRED");
+});
+
+test("用药记录拒绝不存在的日历日期，不自动归一化", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  const denied = await result(await api.createMedication(request("/", "POST", { ...medication, takenAt: "2026-02-29T08:30:00+08:00" }, { "idempotency-key": "invalid-date" })));
+  assert.equal(denied.status, 422);
+});
+
 test("暴露是诱因唯一事实源，编辑和删除会实时改变档案投影", async () => {
   const repository = new InMemoryHealthRecordsRepository();
   const api = createHealthRecordsApi(repository, fixedHealthIdentity("usr_test_owner"));
@@ -112,11 +125,11 @@ test("与 issue-72 前端契约一致：PUT 档案、allergen-exposures 字段�
   assert.equal("commonTriggers" in saved.body.profile, false);
   assert.equal(saved.body.profile.allergyHistory, "尘螨待确认");
   const exposureDraft = { date: "2026-07-26", factors: ["花粉", "动物/宠物毛"], otherDescription: "" };
-  const created = await result(await api.createExposure(request("/api/v1/health-records/allergen-exposures", "POST", exposureDraft)));
+  const created = await result(await api.createExposure(request("/api/v1/health-records/allergen-exposures", "POST", exposureDraft, { "idempotency-key": "contract-exposure" })));
   assert.equal(created.body.record.source, "patient");
   assert.equal(created.body.record.otherDescription, "");
   assert.ok(created.body.record.factors.includes("花粉"));
-  const replay = await result(await api.createExposure(request("/api/v1/health-records/allergen-exposures", "POST", exposureDraft)));
+  const replay = await result(await api.createExposure(request("/api/v1/health-records/allergen-exposures", "POST", exposureDraft, { "idempotency-key": "contract-exposure" })));
   assert.equal(replay.status, 200);
   assert.equal(replay.headers.get("idempotency-replayed"), "true");
   assert.equal(replay.body.record.id, created.body.record.id);
