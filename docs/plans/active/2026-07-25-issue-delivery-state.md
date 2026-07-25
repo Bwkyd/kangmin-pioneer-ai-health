@@ -11,8 +11,8 @@
 - 核验时间：2026-07-26 06:12:42 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前代码候选：`UNCOMMITTED`（基于 `6dd3ab5bc77f6daeba6898a390013f94cc62eb8f` 的步骤写入临床门禁修复，尚未冻结）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：主任务于 2026-07-26 06:01:48 +0800 更新 3 个后台实现文件并新增 1 个测试文件；06:12 完成隔离 Worker 浏览器验收，旧 SHA 的测试和审查结论不覆盖当前工作树。
+- 当前代码候选：`3202a50178428eb8d932bf95db5f59e809ff7df6`（步骤写入临床门禁修复已提交并冻结）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：主任务于 2026-07-26 06:01:48 +0800 更新 3 个后台实现文件并新增 1 个测试文件；06:12 浏览器验收后已提交，当前精确候选工作树干净。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 06:03 主机网络只读核验返回 HTTP 200；未登录、未写入
@@ -27,7 +27,7 @@
 - completed：授权主机当前完整 `npm test` 为 69/69 PASS，`npm run build` PASS，`npm run lint` 为 0 errors/1 个既有 `<img>` warning，`git diff --check` PASS。
 - completed：当前构建在隔离持久化 D1 Worker（端口 39999、synthetic 身份）完成浏览器验收：过敏原记录保存并回读“空气污染”；健康档案用药记录保存并回显使用时间、氯雷他定、10 mg、实际用量；无症状日期显示暂无真实症状且保存禁用；“学一学”科普文章/操作视频/调理方案分类可切换并显示空状态；浏览器 error/warn 为 `[]`，Worker 已停止。
 - completed：用户确认的一期边界已写入实现口径：verified-phone 服务端身份映射方案；花粉监测不在一期，花粉仅可作为患者自述暴露；#88–#99 是穴位/按摩/鼻三线姜刮等康复建议，不归入用药；用药记录独立保存时间、药名、剂量、单位和实际用量。
-- in_progress：提交并冻结本轮新的精确 SHA；随后对新 SHA 重新执行重复/冗余、并发/边界、回归/旧功能、临床/交付四视角审查。旧 SHA 的任何 verdict 均不覆盖本轮候选。
+- in_progress：已提交并冻结精确 SHA `3202a50178428eb8d932bf95db5f59e809ff7df6`；正在对该 SHA 重新执行重复/冗余、并发/边界、回归/旧功能、临床/交付四视角审查。旧 SHA 的任何 verdict 均不覆盖本轮候选。
 - blocked：临床书面批准、生产 verified-phone resolver/生产 D1、客户浏览器 UAT、GitHub token/PR/CI、推送、合并、部署和 Issue 关闭仍是独立门禁；未取得相应真实证据或逐项授权前不绕过。
 
 ## 2026-07-26 06:01 看门狗实时核验阶段
