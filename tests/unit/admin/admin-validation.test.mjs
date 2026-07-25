@@ -42,4 +42,6 @@ test("未经临床审核的康复操作不能借其它内容类型发布或索�
 test("临床关键词覆盖摘要、来源和不可见分隔符", () => {
   assert.equal(hasUnapprovedClinicalContent({ title: "安全标题", summary: "鼻三线姜\u200b刮", body: "", source: "" }), true);
   assert.equal(hasUnapprovedClinicalContent({ title: "安全标题", summary: "普通鼻健康", body: "", source: "耳穴压豆资料" }), true);
+  assert.equal(hasUnapprovedClinicalContent({ title: "安全标题", summary: "请吹大椎穴并揉按", body: "", source: "" }), true);
+  assert.equal(requiresClinicalApproval("article", { title: "普通科普", body: "普通鼻健康" }), true);
 });

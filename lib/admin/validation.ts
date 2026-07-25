@@ -3,7 +3,16 @@ import { SYNDROME_CODES, type SyndromeCode } from "../agent/syndromes.ts";
 
 export const contentTypes = new Set<ContentType>(["article", "video", "knowledge", "plan"]);
 export const approvedSyndromes = new Set<SyndromeCode>(SYNDROME_CODES);
-const UNAPPROVED_CLINICAL_CONTENT = /鼻三线姜刮|姜刮|刮痧|耳穴压豆|耳穴|艾灸|电吹风|穴位|风池|风门|肺俞|列缺|太渊|迎香|鼻通|上迎香|印堂|神庭|肩井|按揉|按摩|调理方案|康复方案/u;
+export const APPROVED_REHAB_METHODS = [
+  "nose_three_line_ginger_scrape",
+  "finger_pressure_yingxiang",
+  "acupoint_massage",
+  "ear_acupressure",
+  "moxa_or_blow_dazhui",
+] as const;
+export type ApprovedRehabMethod = (typeof APPROVED_REHAB_METHODS)[number];
+export const approvedRehabMethods = new Set<ApprovedRehabMethod>(APPROVED_REHAB_METHODS);
+const UNAPPROVED_CLINICAL_CONTENT = /鼻三线姜刮|姜刮|刮痧|耳穴压豆|耳穴|艾灸|电吹风|吹大椎|大椎|推拿|揉按|按摩|穴位|风池|风门|肺俞|列缺|太渊|迎香|鼻通|上迎香|印堂|神庭|肩井|调理方案|康复方案/u;
 
 type ClinicalContent = {
   title?: string;
@@ -21,13 +30,24 @@ export function cleanText(value: unknown, maximum = 20_000) {
 }
 
 export function parseMetadata(value: unknown) {
-  const metadata = value && typeof value === "object" ? value as Record<string, unknown> : {};
+  let metadata: Record<string, unknown> = {};
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) metadata = parsed as Record<string, unknown>;
+    } catch {
+      metadata = {};
+    }
+  } else if (value && typeof value === "object" && !Array.isArray(value)) {
+    metadata = value as Record<string, unknown>;
+  }
   return {
     risks: cleanText(metadata.risks, 4000),
     contraindications: cleanText(metadata.contraindications, 4000),
     syndromeCodes: Array.isArray(metadata.syndromeCodes)
       ? metadata.syndromeCodes.filter((code): code is SyndromeCode => typeof code === "string" && approvedSyndromes.has(code as SyndromeCode))
       : [],
+    methodCode: typeof metadata.methodCode === "string" && approvedRehabMethods.has(metadata.methodCode as ApprovedRehabMethod) ? metadata.methodCode as ApprovedRehabMethod : null,
   };
 }
 
@@ -44,7 +64,9 @@ export function hasUnapprovedClinicalContent(item: ClinicalContent) {
 export const clinicalApprovalRequiredMessage = "涉及康复操作或调理方案的内容必须经过临床审核（由临床负责人审核），当前禁止发布或索引";
 
 export function requiresClinicalApproval(type: ContentType, item: ClinicalContent) {
-  return type === "plan" || type === "video" || type === "knowledge" || hasUnapprovedClinicalContent(item);
+  // 用户端所有内容都是鼻健康/康复相关内容。关键词只能用于提示和回归
+  // 检查，不能作为安全边界；未知词、同义词或换写方式都必须默认进入临床审核。
+  return contentTypes.has(type) || hasUnapprovedClinicalContent(item);
 }
 
 export function publishProblem(type: ContentType, item: { title?: string; body?: string; version?: number; mediaId?: string | null; metadata?: string }) {

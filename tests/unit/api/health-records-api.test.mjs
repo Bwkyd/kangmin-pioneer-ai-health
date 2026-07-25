@@ -3,7 +3,7 @@ import test from "node:test";
 
 import { createHealthRecordsApi } from "../../../lib/health-records/api.ts";
 import { InMemoryHealthRecordsRepository } from "../../../lib/health-records/in-memory-repository.ts";
-import { createRuntimeHealthIdentityResolver, fixedHealthIdentity, unauthenticatedHealthIdentity } from "../../../lib/health-records/identity.ts";
+import { createRuntimeHealthIdentityResolver, createVerifiedPhoneSession, fixedHealthIdentity, unauthenticatedHealthIdentity, HEALTH_IDENTITY_COOKIE } from "../../../lib/health-records/identity.ts";
 
 function request(path, method = "GET", value, headers = {}) {
   return new Request(`http://localhost${path}`, { method, headers: { ...(value === undefined ? {} : { "content-type": "application/json" }), ...headers }, body: value === undefined ? undefined : JSON.stringify(value) });
@@ -29,6 +29,14 @@ test("合成身份仅在 local/integration 显式配置时启用", async () => {
   assert.equal(await production.resolve(request("/")), null);
   const integration = createRuntimeHealthIdentityResolver(async () => ({ APP_ENV: "integration", HEALTH_IDENTITY_MODE: "synthetic", HEALTH_SYNTHETIC_USER_ID: "usr_test_owner" }));
   assert.deepEqual(await integration.resolve(request("/")), { userId: "usr_test_owner", assurance: "synthetic" });
+});
+
+test("生产身份只接受服务端签名的已验证手机号会话，不接受客户端 userId", async () => {
+  const secret = "unit-test-health-session-secret";
+  const token = await createVerifiedPhoneSession("usr_test_owner", secret);
+  const resolver = createRuntimeHealthIdentityResolver(async () => ({ APP_ENV: "production", HEALTH_IDENTITY_MODE: "verified_phone", HEALTH_IDENTITY_SESSION_SECRET: secret }));
+  assert.deepEqual(await resolver.resolve(request("/", "GET", undefined, { cookie: `${HEALTH_IDENTITY_COOKIE}=${token}` })), { userId: "usr_test_owner", assurance: "verified_phone" });
+  assert.equal(await resolver.resolve(request("/", "GET", undefined, { cookie: `${HEALTH_IDENTITY_COOKIE}=${token.slice(0, -1)}x` })), null);
 });
 
 test("用药记录显式保留 unknown、追加历史、幂等重放并阻止旧版本覆盖", async () => {

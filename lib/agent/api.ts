@@ -21,6 +21,13 @@ import {
   agentLimiter,
   getRequestClientKey,
 } from "./rate-limit.ts";
+import {
+  evaluateRehabSafety,
+  isRehabMethod,
+  REHAB_SAFETY_FIELDS,
+  type RehabSafetyAnswers,
+  type RehabSafetyResult,
+} from "./rehab-safety.ts";
 
 const TRI_STATES = new Set<TriState>(["yes", "no", "unknown"]);
 const ASSESSMENT_BODY_LIMIT_BYTES = 8_192;
@@ -138,6 +145,39 @@ export function parseAssessmentInput(value: unknown): AssessmentInput | null {
   };
 }
 
+export function parseRehabSafetyInput(value: unknown): { method: Parameters<typeof evaluateRehabSafety>[0]; answers: RehabSafetyAnswers } | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["method", "answers"]) || !isRehabMethod(value.method)) return null;
+  const answers = parseAnswerGroup<RehabSafetyAnswers>(value.answers, REHAB_SAFETY_FIELDS);
+  return answers ? { method: value.method, answers } : null;
+}
+
+export type ApprovedPlan = {
+  id: string;
+  title: string;
+  summary: string;
+  method: Parameters<typeof evaluateRehabSafety>[0];
+  steps: Array<{ title: string; instruction: string }>;
+};
+
+type ExplainInput = {
+  assessment: AssessmentInput;
+  rehabSafety: { method: Parameters<typeof evaluateRehabSafety>[0]; answers: RehabSafetyAnswers } | null;
+};
+
+function parseExplainInput(value: unknown): ExplainInput | null {
+  if (!isRecord(value)) return null;
+  const assessment = parseAssessmentInput({
+    diagnosedAllergicRhinitis: value.diagnosedAllergicRhinitis,
+    safety: value.safety,
+    severity: value.severity,
+    syndrome: value.syndrome,
+  });
+  if (!assessment) return null;
+  if (!("rehabSafety" in value)) return { assessment, rehabSafety: null };
+  const rehabSafety = parseRehabSafetyInput(value.rehabSafety);
+  return rehabSafety ? { assessment, rehabSafety } : null;
+}
+
 async function readJsonBody(request: Request, maxBytes: number): Promise<unknown> {
   const contentLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
@@ -229,11 +269,11 @@ function emptyCandidates(): ExtractionCandidates {
 }
 
 function publicAssessment(assessment: ReturnType<typeof evaluateAssessment>) {
-  const base = { rulePackageVersion: assessment.rulePackageVersion };
   const disclaimer = "这是内部规则辅助结果，不是诊断或证型结论；正式康复建议需经临床审核。";
-  if (assessment.status === "classified") return { ...base, status: assessment.status, planStatus: assessment.planStatus, disclaimer };
-  if (assessment.status === "conflict" || assessment.status === "no_match") return { ...base, status: assessment.status, disclaimer };
-  if (assessment.status === "blocked") return { ...base, status: assessment.status, safetyStatus: "blocked" as const, disclaimer };
+  const base = { rulePackageVersion: assessment.rulePackageVersion, disclaimer };
+  if (assessment.status === "classified") return { ...base, status: assessment.status, planStatus: assessment.planStatus };
+  if (assessment.status === "conflict" || assessment.status === "no_match") return { ...base, status: assessment.status };
+  if (assessment.status === "blocked") return { ...base, status: assessment.status, safetyStatus: "blocked" as const };
   return { ...base, status: assessment.status, ...("stage" in assessment ? { stage: assessment.stage } : {}), ...("reason" in assessment ? { reason: assessment.reason } : {}), ...("nextQuestions" in assessment && assessment.nextQuestions ? { nextQuestions: assessment.nextQuestions } : {}) };
 }
 
@@ -242,6 +282,7 @@ interface AgentApiDependencies {
   apiKey?: string | null;
   fetchImpl?: typeof fetch;
   modelTimeoutMs?: number;
+  approvedPlanProvider?: (syndromeCode: string, method: Parameters<typeof evaluateRehabSafety>[0]) => Promise<ApprovedPlan | null>;
 }
 
 function resolveApiKey(dependencies: AgentApiDependencies): string | null {
@@ -445,8 +486,8 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
       try {
         enforceRequestLimit(request, "explain", limiter);
         const value = await readJsonBody(request, ASSESSMENT_BODY_LIMIT_BYTES);
-        const input = parseAssessmentInput(value);
-        if (!input) {
+        const parsed = parseExplainInput(value);
+        if (!parsed) {
           throw new RequestError(
             400,
             "INVALID_INPUT",
@@ -454,6 +495,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           );
         }
 
+        const input = parsed.assessment;
         const assessment = evaluateAssessment(input);
         if (assessment.status !== "classified") {
           return jsonResponse({
@@ -469,13 +511,56 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           });
         }
 
+        if (!parsed.rehabSafety) {
+          return jsonResponse({
+            ok: true,
+            data: {
+              assessment: publicAssessment(assessment),
+              explanation: null,
+              model: { used: false as const, degradedReason: "rehab_safety_required" as const },
+            },
+          });
+        }
+
+        const rehabSafety: RehabSafetyResult = evaluateRehabSafety(parsed.rehabSafety.method, parsed.rehabSafety.answers);
+        if (rehabSafety.status !== "clear") {
+          return jsonResponse({
+            ok: true,
+            data: {
+              assessment: publicAssessment(assessment),
+              rehabSafety,
+              explanation: null,
+              model: { used: false as const, degradedReason: rehabSafety.status === "blocked" ? "rehab_safety_blocked" as const : "rehab_safety_incomplete" as const },
+            },
+          });
+        }
+
+        const plan = dependencies.approvedPlanProvider
+          ? await dependencies.approvedPlanProvider(assessment.syndrome.syndromeCode, parsed.rehabSafety.method)
+          : null;
+        if (plan) {
+          return jsonResponse({
+            ok: true,
+            data: {
+              assessment: publicAssessment(assessment),
+              rehabSafety,
+              explanation: {
+                summary: `已根据当前规则和已审核内容匹配到康复建议：${plan.title}`,
+                plan,
+                disclaimer: "仅供健康管理参考，不能替代诊断和治疗；操作前请再次确认禁忌情况。",
+              },
+              model: { used: false as const, degradedReason: "approved_knowledge" as const },
+            },
+          });
+        }
+
         return jsonResponse({
           ok: true,
           data: {
             assessment: publicAssessment(assessment),
             explanation: {
               summary:
-                "已完成内部规则匹配。结果仅供内部测试，不能替代医生诊断。当前尚未接入经审核知识库，暂无可提供的调理方案。",
+                "已完成内部规则匹配和操作安全筛查，但当前没有匹配到已审核康复内容，暂不直接推荐操作。",
               disclaimer: "如症状持续、加重或出现危险信号，请及时线下就医。",
             },
             model: {
@@ -484,6 +569,18 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
             },
           },
         });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    },
+
+    async rehabSafety(request: Request): Promise<Response> {
+      try {
+        enforceRequestLimit(request, "rehab-safety", limiter);
+        const value = await readJsonBody(request, ASSESSMENT_BODY_LIMIT_BYTES);
+        const input = parseRehabSafetyInput(value);
+        if (!input) throw new RequestError(400, "INVALID_INPUT", "康复方法或安全筛查字段不完整或包含无效值");
+        return jsonResponse({ ok: true, data: { safety: evaluateRehabSafety(input.method, input.answers) } });
       } catch (error) {
         return errorResponse(error);
       }

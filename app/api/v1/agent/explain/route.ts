@@ -1,3 +1,6 @@
-import { agentApi } from "@/lib/agent/api";
+import { createAgentApi } from "@/lib/agent/api";
+import { findApprovedPlan } from "@/lib/agent/approved-plans";
 
-export const POST = agentApi.explain;
+const api = createAgentApi({ approvedPlanProvider: findApprovedPlan });
+
+export const POST = api.explain;

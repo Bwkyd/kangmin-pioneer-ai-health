@@ -197,12 +197,15 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     const timestamp = now();
     const value: MedicationRecord = { id, ...input, version: 1, createdAt: timestamp, updatedAt: timestamp };
     try {
-      await database.batch([
+      const results = await database.batch([
         database.prepare("INSERT INTO medication_records (id, user_id, taken_at, medication_name, dosage_status, dosage_value, dosage_unit, actual_use_status, actual_use_description, version, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM health_record_idempotency WHERE id = ? AND state = 'pending')")
           .bind(id, userId, input.takenAt, input.medicationName, input.dosage.status, input.dosage.status === "known" ? input.dosage.value : null, input.dosage.status === "known" ? input.dosage.unit : null, input.actualUse.status, input.actualUse.status === "known" ? input.actualUse.description : null, timestamp, timestamp, claim.id),
         database.prepare("UPDATE health_record_idempotency SET state = 'completed', response = ?, completed_at = ? WHERE id = ? AND state = 'pending'")
           .bind(JSON.stringify(value), timestamp, claim.id),
       ]);
+      if (results[0].meta.changes !== 1 || results[1].meta.changes !== 1) {
+        throw new HealthRecordError(409, "IDEMPOTENCY_LEASE_LOST", "保存请求已失效，请重试");
+      }
       return { value, replayed: false };
     } catch (error) {
       await this.releaseIdempotency(database, claim.id);
@@ -236,23 +239,38 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     return rows.results.map(mapSymptom);
   }
 
-  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput) {
+  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput, idempotencyKey?: string, requestHash?: string) {
     const database = await this.getDatabase();
     const timestamp = now();
     const id = `symptom_${crypto.randomUUID()}`;
     const totalScore = Object.values(input.scores).reduce((sum, item) => sum + item, 0);
-    if (expectedVersion === 0) {
-      const inserted = await database.prepare("INSERT OR IGNORE INTO symptom_records (id, user_id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
-        .bind(id, userId, date, input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, timestamp).run();
-      if (inserted.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已存在，请刷新后重试");
-    } else {
-      const updated = await database.prepare("UPDATE symptom_records SET sneezing = ?, rhinorrhea = ?, congestion = ?, itching = ?, total_score = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND symptom_date = ? AND version = ?")
-        .bind(input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, userId, date, expectedVersion).run();
-      if (updated.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
+    const claim = expectedVersion === 0 && idempotencyKey && requestHash
+      ? await this.claimIdempotency<SymptomRecord>(database, userId, "symptom", idempotencyKey, requestHash)
+      : null;
+    if (claim?.replay) return claim.replay;
+    try {
+      if (expectedVersion === 0) {
+        const inserted = await database.prepare("INSERT OR IGNORE INTO symptom_records (id, user_id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
+          .bind(id, userId, date, input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, timestamp).run();
+        if (inserted.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已存在，请刷新后重试");
+      } else {
+        const updated = await database.prepare("UPDATE symptom_records SET sneezing = ?, rhinorrhea = ?, congestion = ?, itching = ?, total_score = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND symptom_date = ? AND version = ?")
+          .bind(input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, userId, date, expectedVersion).run();
+        if (updated.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
+      }
+      const row = await database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ?").bind(userId, date).first<SymptomRow>();
+      if (!row) throw new HealthRecordError(500, "INTERNAL_ERROR", "症状记录保存后无法读取");
+      const value = mapSymptom(row);
+      if (claim) {
+        const completed = await database.prepare("UPDATE health_record_idempotency SET state = 'completed', response = ?, completed_at = ? WHERE id = ? AND state = 'pending'")
+          .bind(JSON.stringify(value), timestamp, claim.id).run();
+        if (completed.meta.changes !== 1) throw new HealthRecordError(409, "IDEMPOTENCY_LEASE_LOST", "保存请求已失效，请重试");
+      }
+      return value;
+    } catch (error) {
+      if (claim) await this.releaseIdempotency(database, claim.id);
+      throw error;
     }
-    const row = await database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ?").bind(userId, date).first<SymptomRow>();
-    if (!row) throw new HealthRecordError(500, "INTERNAL_ERROR", "症状记录保存后无法读取");
-    return mapSymptom(row);
   }
 
   async listExposures(userId: string, date: string | null) {
@@ -278,13 +296,17 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     const timestamp = now();
     const value: ExposureRecord = { id, ...input, version: 1, createdAt: timestamp, updatedAt: timestamp };
     try {
-      await database.batch([
+      const results = await database.batch([
         database.prepare("INSERT INTO allergen_exposure_records (id, user_id, exposure_date, other_description, note, mutation_id, version, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM health_record_idempotency WHERE id = ? AND state = 'pending')")
           .bind(id, userId, input.date, input.otherDescription, input.note, `mutation_${crypto.randomUUID()}`, timestamp, timestamp, claim.id),
         ...input.selections.map((selection) => database.prepare("INSERT INTO allergen_exposure_selections (exposure_id, group_code, option_code) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM health_record_idempotency WHERE id = ? AND state = 'pending')").bind(id, selection.group, selection.code, claim.id)),
         database.prepare("UPDATE health_record_idempotency SET state = 'completed', response = ?, completed_at = ? WHERE id = ? AND state = 'pending'")
           .bind(JSON.stringify(value), timestamp, claim.id),
       ]);
+      const selectionResults = results.slice(1, -1);
+      if (results[0].meta.changes !== 1 || selectionResults.some((result) => result.meta.changes !== 1) || results.at(-1)?.meta.changes !== 1) {
+        throw new HealthRecordError(409, "IDEMPOTENCY_LEASE_LOST", "保存请求已失效，请重试");
+      }
       return { value, replayed: false };
     } catch (error) {
       await this.releaseIdempotency(database, claim.id);

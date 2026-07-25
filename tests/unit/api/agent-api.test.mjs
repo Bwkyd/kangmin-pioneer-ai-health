@@ -4,12 +4,14 @@ import test from "node:test";
 import {
   createAgentApi,
   parseAssessmentInput,
+  parseRehabSafetyInput,
 } from "../../../lib/agent/api.ts";
 import { InMemoryAgentLimiter } from "../../../lib/agent/rate-limit.ts";
 import {
   SAFETY_FIELDS,
   SEVERITY_FIELDS,
 } from "../../../lib/agent/rules.ts";
+import { REHAB_SAFETY_FIELDS } from "../../../lib/agent/rehab-safety.ts";
 
 function allAnswers(fields, value = "no") {
   return Object.fromEntries(fields.map((field) => [field, value]));
@@ -78,6 +80,17 @@ test("AssessmentInput 严格校验完整字段、三态值和多余字段", () =
   assert.equal(parseAssessmentInput(incomplete), null);
 });
 
+test("康复建议先经过方法级安全筛查，unknown 不会被当作安全", async () => {
+  const input = { method: "nose_three_line_ginger_scrape", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") };
+  input.answers.bleedingRisk = "unknown";
+  assert.deepEqual(parseRehabSafetyInput(input)?.method, input.method);
+  const api = createAgentApi({ limiter: new InMemoryAgentLimiter(), apiKey: null });
+  const result = await responseBody(await api.rehabSafety(post("/api/v1/agent/rehab-safety", input)));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.safety.status, "need_more_information");
+  assert.deepEqual(result.body.data.safety.nextQuestions, ["bleedingRisk"]);
+});
+
 test("evaluate 由服务端重算规则，并使用统一成功和错误结构", async () => {
   const api = createAgentApi({
     limiter: new InMemoryAgentLimiter(),
@@ -110,6 +123,7 @@ test("evaluate 由服务端重算规则，并使用统一成功和错误结构",
           reason: "not_diagnosed_or_uncertain",
           nextQuestions: ["diagnosedAllergicRhinitis"],
           rulePackageVersion: "draft-local-v0",
+          disclaimer: "这是内部规则辅助结果，不是诊断或证型结论；正式康复建议需经临床审核。",
         },
       },
     },
@@ -368,11 +382,23 @@ test("explain 对高危、冲突和无命中不调用模型；已分类也不越
     classified.body.data.assessment.planStatus,
     "no_approved_plan",
   );
-  assert.match(
-    classified.body.data.explanation.summary,
-    /尚未接入经审核知识库/u,
-  );
+  assert.equal(classified.body.data.explanation, null);
   assert.deepEqual(classified.body.data.model, {
+    used: false,
+    degradedReason: "rehab_safety_required",
+  });
+
+  const screened = await responseBody(
+    await api.explain(post("/api/v1/agent/explain", {
+      ...completeInput(),
+      rehabSafety: { method: "finger_pressure_yingxiang", answers: allAnswers(REHAB_SAFETY_FIELDS) },
+    })),
+  );
+  assert.match(
+    screened.body.data.explanation.summary,
+    /没有匹配到已审核康复内容/u,
+  );
+  assert.deepEqual(screened.body.data.model, {
     used: false,
     degradedReason: "no_approved_knowledge",
   });

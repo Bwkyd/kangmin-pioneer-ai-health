@@ -147,7 +147,7 @@ export const allergenExposureRecords = sqliteTable("allergen_exposure_records", 
   version: integer("version").notNull().default(1),
   ...timestamps,
 }, (table) => [
-  index("allergen_exposure_records_user_date_idx").on(table.userId, table.exposureDate, table.id),
+  uniqueIndex("allergen_exposure_records_user_date_idx").on(table.userId, table.exposureDate),
 ]);
 
 export const allergenExposureSelections = sqliteTable("allergen_exposure_selections", {

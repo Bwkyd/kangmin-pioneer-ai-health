@@ -13,7 +13,46 @@ type IdentityEnv = {
   APP_ENV?: "local" | "integration" | "staging" | "production";
   HEALTH_IDENTITY_MODE?: string;
   HEALTH_SYNTHETIC_USER_ID?: string;
+  HEALTH_IDENTITY_SESSION_SECRET?: string;
 };
+
+export const HEALTH_IDENTITY_COOKIE = "kangmin_health_session";
+
+async function signSession(payload: string, secret: string) {
+  const key = await crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const signature = new Uint8Array(await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(payload)));
+  let binary = "";
+  signature.forEach((byte) => { binary += String.fromCharCode(byte); });
+  return btoa(binary);
+}
+
+export async function createVerifiedPhoneSession(userId: string, secret: string, expiresAt = Date.now() + 1000 * 60 * 60 * 24 * 30) {
+  if (!/^usr_[A-Za-z0-9_-]{3,96}$/.test(userId)) throw new Error("INVALID_INTERNAL_USER_ID");
+  const payload = btoa(JSON.stringify({ userId, expiresAt }));
+  return `${payload}.${await signSession(payload, secret)}`;
+}
+
+function readCookie(request: Request, name: string) {
+  return request.headers.get("cookie")?.split(";").map((part) => part.trim()).find((part) => part.startsWith(`${name}=`))?.slice(name.length + 1) ?? null;
+}
+
+async function readVerifiedPhoneSession(request: Request, secret: string) {
+  const raw = readCookie(request, HEALTH_IDENTITY_COOKIE);
+  if (!raw) return null;
+  const separator = raw.lastIndexOf(".");
+  if (separator <= 0) return null;
+  const payload = raw.slice(0, separator);
+  const expected = await signSession(payload, secret);
+  if (raw.slice(separator + 1) !== expected) return null;
+  try {
+    const parsed = JSON.parse(atob(payload)) as { userId?: unknown; expiresAt?: unknown };
+    return typeof parsed.userId === "string" && /^usr_[A-Za-z0-9_-]{3,96}$/.test(parsed.userId) && typeof parsed.expiresAt === "number" && parsed.expiresAt > Date.now()
+      ? parsed.userId
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 export function fixedHealthIdentity(userId: string): HealthIdentityResolver {
   return {
@@ -34,7 +73,7 @@ export function createRuntimeHealthIdentityResolver(
   },
 ): HealthIdentityResolver {
   return {
-    async resolve() {
+    async resolve(request) {
       const values = await readEnv();
       const syntheticAllowed = values.APP_ENV === "local" || values.APP_ENV === "integration";
       if (
@@ -46,8 +85,14 @@ export function createRuntimeHealthIdentityResolver(
         return { userId: values.HEALTH_SYNTHETIC_USER_ID, assurance: "synthetic" };
       }
 
-      // No phone provider exists in this repository yet. Production and staging
-      // therefore fail closed until a verified-phone resolver replaces this one.
+      if (values.HEALTH_IDENTITY_MODE === "verified_phone" && values.HEALTH_IDENTITY_SESSION_SECRET) {
+        const userId = await readVerifiedPhoneSession(request, values.HEALTH_IDENTITY_SESSION_SECRET);
+        if (userId) return { userId, assurance: "verified_phone" };
+      }
+
+      // The phone provider must verify the phone upstream and issue this server-
+      // signed session after mapping it to an internal userId. Raw phone numbers
+      // never enter health-record requests or database ownership columns.
       return null;
     },
   };

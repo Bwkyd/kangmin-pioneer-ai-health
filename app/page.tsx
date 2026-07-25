@@ -184,7 +184,7 @@ export default function Home() {
       id: 1,
       role: "ai",
       kind: "text",
-      text: "你好，我是小岐。这是内部交互演示，你可以体验描述症状和查看鼻健康内容；当前不会输出诊断、证型或个性化治疗方案。",
+      text: "你好，我是小岐。你可以描述症状、记录健康变化；我不会直接下诊断，康复建议会先做安全筛查，并且只使用已审核的内容。",
     },
   ]);
   const [step, setStep] = useState(0);
@@ -321,27 +321,41 @@ export default function Home() {
     if (tab !== "healthProfile") return;
     let cancelled = false;
     const requestVersion = profileRequest.next();
-    Promise.all([getHealthProfile(), listAllergenExposures(), listMedications()])
-      .then(([profile, items, medicationItems]) => {
-        if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
-        setHealthProfile(profile);
-        setProfileDraft(profile ? {
-          basicInfo: profile.basicInfo,
-          allergyHistory: profile.allergyHistory,
-          allergyHistoryEntries: profile.allergyHistoryEntries,
-        } : emptyHealthProfile);
-        setExposures(items);
-        setMedications(medicationItems);
-        setProfileLoadError(false);
-        setProfileStatus("ready");
-        setProfileNotice(profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
-      })
-      .catch((error: unknown) => {
-        if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
-        setProfileLoadError(true);
-        setProfileStatus("error");
-        setProfileNotice(error instanceof Error ? error.message : "健康档案暂时无法读取");
-      });
+    void (async () => {
+      const [profileResult, exposureResult, medicationResult] = await Promise.allSettled([getHealthProfile(), listAllergenExposures(), listMedications()]);
+      if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
+      const profile = profileResult.status === "fulfilled" ? profileResult.value : null;
+      const profileError = profileResult.status === "rejected";
+      setHealthProfile(profile);
+      setProfileDraft(profile ? {
+        basicInfo: profile.basicInfo,
+        allergyHistory: profile.allergyHistory,
+        allergyHistoryEntries: profile.allergyHistoryEntries,
+      } : emptyHealthProfile);
+      if (exposureResult.status === "fulfilled") {
+        setExposures(exposureResult.value);
+        setExposureStatus("ready");
+        setExposureNotice(exposureResult.value.length > 0 ? "已读取服务端患者自述记录" : "该账户暂无过敏原记录");
+      } else {
+        setExposures([]);
+        setExposureStatus("error");
+        setExposureNotice("过敏原历史暂时无法读取，已冻结保存和编辑操作");
+      }
+      if (medicationResult.status === "fulfilled") {
+        setMedications(medicationResult.value);
+        setMedicationStatus("ready");
+        setMedicationNotice(medicationResult.value.length > 0 ? "已读取服务端用药记录" : "暂无已保存的用药记录");
+      } else {
+        setMedications([]);
+        setMedicationStatus("error");
+        setMedicationNotice("用药历史暂时无法读取，已冻结编辑和删除操作");
+      }
+      setProfileLoadError(profileError);
+      setProfileStatus(profileError ? "error" : "ready");
+      setProfileNotice(profileError
+        ? "健康档案暂时无法读取，当前不会用旧数据覆盖服务端状态"
+        : profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
+    })();
     return () => { cancelled = true; };
   }, [tab, profileReload, profileRequest]);
 
@@ -390,8 +404,10 @@ export default function Home() {
       })
       .catch((error: unknown) => {
         if (cancelled || !exposureRequest.isCurrent(requestVersion)) return;
+        setExposures([]);
+        setEditingExposureId(null);
         setExposureStatus("error");
-        setExposureNotice(error instanceof Error ? error.message : "过敏原历史暂时无法读取");
+        setExposureNotice(`${error instanceof Error ? error.message : "过敏原历史暂时无法读取"}，已冻结保存和编辑操作`);
       });
     return () => { cancelled = true; };
   }, [tab, selectedDate, editingExposureId, exposureRequest]);
@@ -438,7 +454,7 @@ export default function Home() {
     }
     addExchange(
       answer,
-      "信息已收集完成。当前交互演示不会输出诊断、证型或个性化调理方案；如需判断，请咨询正规医疗机构。",
+      "信息已收集完成。康复建议还需要完成方法对应的安全筛查，并且只能使用已审核内容；当前不能直接把自由描述变成操作方案。",
       4,
       "演示流程 · 未接入正式临床规则与审核内容",
     );
@@ -461,7 +477,7 @@ export default function Home() {
     else
       addExchange(
         value,
-        "我已记录。这是内部交互演示，当前不会根据自由输入生成诊断或治疗建议。",
+        "我已记录。自由描述会先进入安全确认，不能直接生成诊断或未经审核的操作方案。",
         step,
         "内部演示 · 内容待审核",
       );
@@ -505,19 +521,27 @@ export default function Home() {
     setTab("healthProfile");
   };
 
-  const openSymptomDate = (date: string) => {
-    const wasSaving = symptomStatus === "saving";
-    symptomRequest.next();
-    if (wasSaving) {
-      setSymptomStatus("loading");
-      setAssessmentReload((current) => current + 1);
-    }
+  const openSymptomDate = async (date: string) => {
+    const requestVersion = symptomRequest.next();
     setSelectedDate(date);
     setCalendarMonth(date.slice(0, 7));
-    const existing = symptomsByDate.get(date);
-    setScores(existing ? [existing.scores.sneezing, existing.scores.rhinorrhea, existing.scores.congestion, existing.scores.itching] : [...emptySymptomScores]);
-    setSymptomNotice(existing ? "已读取该日期的服务端症状记录" : "填写后保存到服务端症状记录");
+    setScores([...emptySymptomScores]);
+    setSymptomStatus("loading");
+    setSymptomNotice("正在读取该日期的服务端症状记录…");
     setEntryOpen(true);
+    try {
+      const items = await listSymptoms(fetch, date);
+      if (!symptomRequest.isCurrent(requestVersion)) return;
+      setSymptoms((current) => [...current.filter((item) => item.date !== date), ...items]);
+      const existing = items[0] ?? null;
+      setScores(existing ? [existing.scores.sneezing, existing.scores.rhinorrhea, existing.scores.congestion, existing.scores.itching] : [...emptySymptomScores]);
+      setSymptomStatus("ready");
+      setSymptomNotice(existing ? "已读取该日期的服务端症状记录" : "该日期暂无真实症状记录，请完成评分后保存");
+    } catch (error) {
+      if (!symptomRequest.isCurrent(requestVersion)) return;
+      setSymptomStatus("error");
+      setSymptomNotice(error instanceof Error ? error.message : "该日期的症状记录暂时无法读取");
+    }
   };
 
   const selectExposureDate = (date: string) => {
@@ -615,6 +639,11 @@ export default function Home() {
     const draft = medicationDraft;
     const editingId = editingMedicationId;
     const current = editingId ? medications.find((item) => item.id === editingId) ?? null : null;
+    if (editingId && !current) {
+      setMedicationStatus("error");
+      setMedicationNotice("正在编辑的记录已不存在，请重新读取后再保存");
+      return;
+    }
     const createKey = medicationCreateKey ?? crypto.randomUUID();
     if (!editingId && !medicationCreateKey) setMedicationCreateKey(createKey);
     setMedicationStatus("saving");
@@ -664,6 +693,11 @@ export default function Home() {
     const draft = exposureDraft;
     const editingId = editingExposureId;
     const currentRecord = editingId ? exposures.find((record) => record.id === editingId) ?? null : null;
+    if (editingId && !currentRecord) {
+      setExposureStatus("error");
+      setExposureNotice("正在编辑的记录已不存在，请重新读取后再保存");
+      return;
+    }
     const createKey = exposureCreateKey ?? crypto.randomUUID();
     if (!editingId && !exposureCreateKey) setExposureCreateKey(createKey);
     setExposureStatus("saving");
@@ -718,6 +752,8 @@ export default function Home() {
     setTab(next);
   };
 
+  const openDiscover = () => window.location.assign("/discover");
+
   const goBack = () => {
     if (tab === "healthProfile") { profileRequest.next(); setProfileStatus("idle"); setProfileNotice(""); setProfileLoadError(false); setTab("profile"); }
     else if (tab === "allergenRecord") { exposureRequest.next(); setExposureStatus("idle"); setExposureNotice(""); setTab(allergenReturnTab); }
@@ -734,7 +770,7 @@ export default function Home() {
         id: Date.now(),
         role: "ai",
         kind: "text",
-        text: "你好，我是小岐。这是内部交互演示，你可以体验描述症状和查看鼻健康内容；当前不会输出诊断、证型或个性化治疗方案。",
+        text: "你好，我是小岐。你可以描述症状、记录健康变化；我不会直接下诊断，康复建议会先做安全筛查，并且只使用已审核的内容。",
       },
     ]);
     setStep(0);
@@ -801,7 +837,7 @@ export default function Home() {
                     <p>和小岐聊聊症状，体验问答与安全提示。</p>
                     <b>开始了解 <i>→</i></b>
                   </button>
-                  <button className="learn-module" onClick={() => setTab("articles")}>
+                  <button className="learn-module" onClick={openDiscover}>
                     <span className="module-icon">学</span>
                     <small>内容审核中</small>
                     <strong>学一学</strong>
@@ -840,7 +876,7 @@ export default function Home() {
                   <span>查看演示 ›</span>
                 </section>
 
-                <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={() => setTab("articles")}>全部 ›</button></div>
+                <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={openDiscover}>全部 ›</button></div>
                 <button className="article-feature" onClick={() => setArticleOpen(0)}>
                   <div className="article-art"><span /><i>4</i></div>
                   <div><small>日常防护 · 3 分钟</small><strong>换季鼻敏感，先做好这 4 件小事</strong><span>温差、卧室环境与外出防护</span></div>
@@ -1067,7 +1103,7 @@ export default function Home() {
                           <div className="record-form-actions"><button type="button" disabled={medicationStatus === "saving"} onClick={() => { medicationRequest.next(); setMedicationCreateKey(null); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
                         </form>
                       )}
-                      {medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus === "saving"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
+                      {medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)} disabled={medicationStatus !== "ready"}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus !== "ready"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
                     </section>
                   </>
                 )}
@@ -1114,7 +1150,7 @@ export default function Home() {
                   )}
                   <p className="form-boundary">所选内容只表示患者对当天暴露的回忆，不会生成病因、诊断或治疗建议。</p>
                   {exposureValidation && <p className="form-validation">{exposureValidation}</p>}
-                  <button className="save-exposure" type="submit" disabled={Boolean(exposureValidation) || exposureStatus === "saving"}>{exposureStatus === "saving" ? "保存中…" : editingExposureId ? "保存修改" : "保存记录"}</button>
+                  <button className="save-exposure" type="submit" disabled={Boolean(exposureValidation) || !["ready", "saving"].includes(exposureStatus) || exposureStatus === "saving"}>{exposureStatus === "saving" ? "保存中…" : editingExposureId ? "保存修改" : "保存记录"}</button>
                 </form>
 
                 <section className="exposure-history">
@@ -1124,7 +1160,7 @@ export default function Home() {
                       <time>{displayDate(record.date)}</time><span>患者自述</span>
                       <strong>{record.factors.join("、")}</strong>
                       {record.otherDescription && <p>{record.otherDescription}</p>}
-                      <div><button onClick={() => editExposure(record)}>编辑</button><button onClick={() => removeExposure(record)} disabled={exposureStatus === "saving"}>删除</button></div>
+                      <div><button onClick={() => editExposure(record)} disabled={exposureStatus !== "ready"}>编辑</button><button onClick={() => removeExposure(record)} disabled={exposureStatus !== "ready"}>删除</button></div>
                     </article>
                   )) : <p className="record-empty">暂无服务端返回的历史记录；本页不会使用假记录填充。</p>}
                 </section>
@@ -1177,7 +1213,7 @@ export default function Home() {
                     <div><strong>症状记录</strong><small>查看日历、趋势与 TNSS 评估</small></div>
                     <b>›</b>
                   </button>
-                  <button onClick={() => setTab("articles")}>
+                  <button onClick={openDiscover}>
                     <span className="profile-item-icon mint">科</span>
                     <div><strong>鼻健康科普</strong><small>查看待审核的演示内容</small></div>
                     <b>›</b>
@@ -1240,7 +1276,7 @@ export default function Home() {
                     <p>过敏原仅为患者自述，不自动判定医学因果。</p>
                   </div>
                   {symptomNotice && <p className={`assessment-disclaimer ${symptomStatus === "error" ? "error-text" : ""}`} role="status">{symptomNotice}</p>}
-                  <button className="submit-assessment" onClick={submitSymptom} disabled={symptomStatus === "saving" || !scoresComplete}>
+                  <button className="submit-assessment" onClick={submitSymptom} disabled={symptomStatus !== "ready" || !scoresComplete}>
                     {symptomStatus === "saving" ? "保存中…" : "保存症状记录"}
                   </button>
                 </div>

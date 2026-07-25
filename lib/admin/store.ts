@@ -6,6 +6,7 @@ export type RuntimeEnv = {
   MEDIA?: R2Bucket;
   VECTORIZE?: VectorizeIndex;
   EMBEDDINGS?: Fetcher;
+  CLINICAL_APPROVER_USERS?: string;
 };
 
 export async function runtime() {
@@ -41,6 +42,11 @@ export async function stableIdentifier(prefix: string, value: string) {
   return `${prefix}_${hex.slice(0, 40)}`;
 }
 
+export async function stableRequestHash(value: unknown) {
+  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(value)));
+  return [...new Uint8Array(digest)].map((item) => item.toString(16).padStart(2, "0")).join("");
+}
+
 export async function hasCurrentClinicalApproval(database: D1Database, contentId: string, version: number) {
   const row = await database.prepare("SELECT content_id FROM clinical_approvals WHERE content_id = ? AND content_version = ?").bind(contentId, version).first<{ content_id: string }>();
   return Boolean(row);
@@ -52,7 +58,7 @@ export async function audit(actor: string, action: string, entityType: string, e
     .bind(identifier("audit"), actor, action, entityType, entityId, JSON.stringify(details), now()).run();
 }
 
-export async function executeIdempotent(actor: string, key: string | null, operation: (lease?: { marker: string }) => Promise<Response>) {
+export async function executeIdempotent(actor: string, key: string | null, requestHash: string | null, operation: (lease?: { marker: string }) => Promise<Response>) {
   if (!key) return operation();
   const { DB } = await runtime();
   const staleBefore = new Date(Date.now() - 5 * 60 * 1000).toISOString();
@@ -66,6 +72,7 @@ export async function executeIdempotent(actor: string, key: string | null, opera
     const stored = JSON.parse(existing.response) as { body?: unknown; status?: number } | unknown;
     if (stored && typeof stored === "object" && "body" in stored) {
       const replay = stored as { body: unknown; status?: number };
+      if (requestHash && (!("requestHash" in stored) || stored.requestHash !== requestHash)) return jsonError("幂等键已用于不同请求，请使用新的幂等键", 409);
       return Response.json(replay.body, { status: replay.status ?? 200 });
     }
     return Response.json(stored);
@@ -77,7 +84,7 @@ export async function executeIdempotent(actor: string, key: string | null, opera
     const response = await operation({ marker });
     if (response.ok) {
       const body = await response.clone().json();
-      const completed = await DB.prepare("UPDATE idempotency_keys SET response = ? WHERE key = ? AND actor = ? AND response = ?").bind(JSON.stringify({ body, status: response.status }), key, actor, marker).run();
+      const completed = await DB.prepare("UPDATE idempotency_keys SET response = ? WHERE key = ? AND actor = ? AND response = ?").bind(JSON.stringify({ body, status: response.status, requestHash }), key, actor, marker).run();
       if (completed.meta.changes === 0) throw new Error("IDEMPOTENCY_LEASE_LOST");
     } else {
       await DB.prepare("DELETE FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ?").bind(key, actor, marker).run();

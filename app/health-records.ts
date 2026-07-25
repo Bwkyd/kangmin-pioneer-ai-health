@@ -257,8 +257,9 @@ export async function deleteMedication(record: MedicationRecord, fetcher: Fetche
   });
 }
 
-export async function listSymptoms(fetcher: Fetcher = fetch): Promise<SymptomRecord[]> {
-  const data = await requestData(fetcher, "/api/v1/health-records/symptoms", { method: "GET" });
+export async function listSymptoms(fetcher: Fetcher = fetch, date?: string): Promise<SymptomRecord[]> {
+  const path = date ? `/api/v1/health-records/symptoms?date=${encodeURIComponent(date)}` : "/api/v1/health-records/symptoms";
+  const data = await requestData(fetcher, path, { method: "GET" });
   if (!isRecord(data) || !Array.isArray(data.items) || !data.items.every(isApiSymptom)) throw new HealthRecordsApiError("症状记录接口返回格式不正确", 502);
   return data.items.map(normalizeSymptom);
 }
