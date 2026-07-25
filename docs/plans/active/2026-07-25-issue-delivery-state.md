@@ -8,11 +8,11 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 02:48:10 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 02:54:00 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前 HEAD：`775c39a58956271d6b7e8bacfdc2495aa27e079b`；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：上一轮候选已冻结且工作树干净；本轮发现并修复一个身份口径 P1（学一学消息入口不再发送无效 `x-user-id`），当前有 2 个已跟踪文件待提交。该修复后的完整测试已通过，下一候选 SHA 待生成
+- 当前代码候选：`27d9a32dce3c1b7358ee49bbeed9739fb1eb8ad2`；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：身份口径 P1 已提交；对抗审查又发现问助手评分初始化仍带 `[2,2,2,1]` 假数据，已修为全 0，当前 `app/page.tsx` 与状态文件有待提交修改。修复后的完整测试已通过，需生成下一候选 SHA
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 只读 HEAD 核验返回 HTTP 200；未登录、未写入
@@ -46,18 +46,25 @@
 - completed：修复日历月份写死、月份按钮无行为、零分症状误显示“轻度”后，重新运行 `npm test`；构建、渲染、既有规则、健康记录 API、迁移和 HTTP E2E 全部通过，51/51 PASS。
 - completed：`npm run lint` 通过，0 errors；仅有既有 `app/page.tsx:681` 的 `@next/next/no-img-element` warning。`git diff --check` 通过。
 - completed：前一轮独立 Worker 浏览器验收已确认健康档案、出生日期、过敏原保存/编辑/日期关联、用药历史、症状记录/趋势均从服务端回读；未出现“花粉监测”入口；当前 Worker 已停止，未把合成身份验收冒充生产登录验收。
-- in_progress：第一轮实现已稳定，当前分支仍为 `codex/issue-72-103-health-integration`，HEAD 仍是 `5692aed43ae4751831e1dd0dbe2100526478d3ab`，工作树未提交；准备按当前内容生成候选提交并冻结精确 SHA。
+- completed：第一轮实现已稳定，身份边界 P1 已修复，代码候选为 `27d9a32dce3c1b7358ee49bbeed9739fb1eb8ad2`；状态文件本次修正后不再引用已作废的 `775c39a` 作为当前候选。
 - blocked：生产手机号验证/服务端会话尚未接入；生产和 staging 仍应返回认证失败，不能部署为“可保存健康历史”。
 - blocked：#88–#99 是康复方案建议（穴位按摩、鼻三线姜刮、耳穴压豆、艾灸/吹风等），不是用药；临床书面批准和独立安全门禁未完成前，不进入 AI 正式方案、规则或用户端。
 - deferred：花粉监测、花粉数据源、地区与更新频率不进入一期；过敏原选项中的“花粉”仅是患者自述暴露选项，不等于监测功能。
 - pending：提交后对精确候选 SHA 执行重复/冗余、并发/边界、旧功能/临床门禁三类独立审查；再执行 Kimi/DeepSeek 同 SHA 审查。任何 P0/P1 都进入下一轮真修。
 - 本轮动作：未推送、未创建或合并 PR、未部署、未关闭 Issue、未清理 worktree/分支。
 
+## 2026-07-26 02:55 P1 假数据修复记录
+
+- completed：将问助手评分初始值、重置值和新日期记录默认值统一为 `[0, 0, 0, 0]`；只有用户主动保存的服务端症状记录才进入日历、列表和趋势。
+- completed：修复后重新运行 `npm test`，构建、渲染、既有规则、健康记录 API、迁移和 HTTP E2E 仍为 51/51 PASS。
+- accepted：审查中提到恢复“花粉监测”入口与当前用户确认冲突；花粉监测继续延期，花粉选项只保留为患者自述暴露选项。
+- pending：提交该 P1 修复后，前面针对 `27d9a32` 的审查结果全部作废，必须用新精确 SHA 重跑三类对抗审查和 Kimi/DeepSeek。
+
 ## 2026-07-26 02:48 身份边界修复记录
 
 - completed：`app/discover/page.tsx` 的站内消息读取和已读请求改为只使用服务端 HttpOnly cookie；移除客户端伪造 `x-user-id`，并在渲染回归测试中加入断言。
 - completed：修复后重新运行 `npm test`，构建、渲染、既有规则、健康记录 API、迁移和 HTTP E2E 仍为 51/51 PASS。
-- in_progress：当前修改待提交；提交后旧候选 `775c39a` 不再作为最终候选，三类对抗审查与双模型审查必须改审新 SHA。
+- completed：身份边界修复已提交为 `27d9a32dce3c1b7358ee49bbeed9739fb1eb8ad2`；旧候选 `775c39a` 已作废，三类对抗审查与双模型审查均必须审查包含该修复的精确候选。
 - 本轮动作：未推送、未创建或合并 PR、未部署、未关闭 Issue、未清理 worktree/分支。
 
 ## 已确认的身份与范围决策

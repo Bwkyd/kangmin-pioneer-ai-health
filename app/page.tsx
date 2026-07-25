@@ -97,6 +97,7 @@ const articles = [
 ];
 
 const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
+const emptySymptomScores = [0, 0, 0, 0];
 
 function displayDate(value: string): string {
   const [year, month, day] = value.split("-");
@@ -176,7 +177,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [videoOpen, setVideoOpen] = useState(false);
   const [articleOpen, setArticleOpen] = useState<number | null>(null);
-  const [scores, setScores] = useState([2, 2, 2, 1]);
+  const [scores, setScores] = useState([...emptySymptomScores]);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<"calendar" | "list">("calendar");
@@ -469,7 +470,7 @@ export default function Home() {
     setSelectedDate(date);
     setCalendarMonth(date.slice(0, 7));
     const existing = symptomsByDate.get(date);
-    setScores(existing ? [existing.scores.sneezing, existing.scores.rhinorrhea, existing.scores.congestion, existing.scores.itching] : [0, 0, 0, 0]);
+    setScores(existing ? [existing.scores.sneezing, existing.scores.rhinorrhea, existing.scores.congestion, existing.scores.itching] : [...emptySymptomScores]);
     setSymptomNotice(existing ? "已读取该日期的服务端症状记录" : "填写后保存到服务端症状记录");
     setEntryOpen(true);
   };
@@ -634,7 +635,7 @@ export default function Home() {
     ]);
     setStep(0);
     setAssessmentDone(false);
-    setScores([2, 2, 2, 1]);
+    setScores([...emptySymptomScores]);
     setEntryOpen(false);
     setProfileEditing(false);
     setExposureNotice("");
