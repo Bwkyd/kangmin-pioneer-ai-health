@@ -171,7 +171,7 @@ export type AssessmentResult =
       status: "classified";
       severity: SeverityCode;
       syndrome: Extract<SyndromeResult, { status: "classified" }>;
-      planStatus: "no_approved_plan";
+      planStatus: "no_approved_plan" | "approved_plan";
       rulePackageVersion: string;
     };
 

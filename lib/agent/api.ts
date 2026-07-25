@@ -156,6 +156,8 @@ export type ApprovedPlan = {
   title: string;
   summary: string;
   method: Parameters<typeof evaluateRehabSafety>[0];
+  risks: string;
+  contraindications: string;
   steps: Array<{ title: string; instruction: string }>;
 };
 
@@ -542,7 +544,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           return jsonResponse({
             ok: true,
             data: {
-              assessment: publicAssessment(assessment),
+              assessment: { ...publicAssessment(assessment), planStatus: "approved_plan" as const },
               rehabSafety,
               explanation: {
                 summary: `已根据当前规则和已审核内容匹配到康复建议：${plan.title}`,

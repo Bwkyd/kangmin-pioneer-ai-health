@@ -104,9 +104,10 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
       .map(withoutOwner);
   }
 
-  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput) {
+  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput, idempotencyKey?: string) {
     const key = `${userId}\u0000${date}`;
     const current = this.symptoms.get(key);
+    if (current && expectedVersion === 0 && idempotencyKey) return clone(withoutOwner(current));
     if (!current && expectedVersion !== 0) throw new HealthRecordError(404, "NOT_FOUND", "症状记录不存在");
     if ((current?.version ?? 0) !== expectedVersion) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
     const now = timestamp();

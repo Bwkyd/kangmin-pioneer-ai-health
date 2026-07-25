@@ -223,6 +223,7 @@ export default function Home() {
   const [editingExposureId, setEditingExposureId] = useState<string | null>(null);
   const [exposureStatus, setExposureStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
   const [exposureNotice, setExposureNotice] = useState("");
+  const [exposureReload, setExposureReload] = useState(0);
   const [exposureCreateKey, setExposureCreateKey] = useState<string | null>(null);
   const [profileLoadError, setProfileLoadError] = useState(false);
   const chatEnd = useRef<HTMLDivElement>(null);
@@ -410,7 +411,7 @@ export default function Home() {
         setExposureNotice(`${error instanceof Error ? error.message : "过敏原历史暂时无法读取"}，已冻结保存和编辑操作`);
       });
     return () => { cancelled = true; };
-  }, [tab, selectedDate, editingExposureId, exposureRequest]);
+  }, [tab, selectedDate, editingExposureId, exposureReload, exposureRequest]);
 
   const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
     setMessages((current) => [
@@ -1129,6 +1130,7 @@ export default function Home() {
                 <div className={`record-notice ${exposureStatus === "error" ? "error" : ""}`} role="status">
                   <strong>{exposureStatus === "loading" || exposureStatus === "saving" ? "处理中" : exposureStatus === "error" ? "保存边界" : "记录状态"}</strong>
                   <span>{exposureNotice || "真实历史与保存结果均由服务端返回"}</span>
+                  {exposureStatus === "error" && <button type="button" onClick={() => { exposureRequest.next(); setExposureStatus("loading"); setExposureNotice("正在重新读取过敏原历史…"); setExposureReload((current) => current + 1); }}>重试</button>}
                 </div>
 
                 <form className="allergen-form" onSubmit={submitExposure}>

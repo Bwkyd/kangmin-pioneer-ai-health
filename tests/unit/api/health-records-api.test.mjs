@@ -127,6 +127,16 @@ test("症状记录按服务端身份和日期保存，更新时阻止旧版本�
   assert.equal(conflict.body.error.code, "VERSION_CONFLICT");
 });
 
+test("症状创建重放幂等键时返回当天已有记录，不把成功写入误报为冲突", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  const first = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }, { "idempotency-key": "symptom-replay" }), symptom.date));
+  const replay = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }, { "idempotency-key": "symptom-replay" }), symptom.date));
+  assert.equal(first.status, 200);
+  assert.equal(replay.status, 200);
+  assert.equal(replay.body.record.id, first.body.record.id);
+  assert.equal(replay.body.record.totalScore, first.body.record.totalScore);
+});
+
 test("已有记录缺少 If-Match 时拒绝静默覆盖", async () => {
   const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
   const profile = { basicInfo: { displayName: "用户", birthDate: "1990-01-01", sex: "female" }, allergyHistory: "" };

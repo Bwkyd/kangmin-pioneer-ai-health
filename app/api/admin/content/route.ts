@@ -2,7 +2,7 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { adminRouteError, executeIdempotent, hasCurrentClinicalApproval, identifier, jsonError, now, runtime, stableIdentifier, stableRequestHash, type ContentStatus, type ContentType } from "@/lib/admin/store";
 import { cleanText, contentTypes, clinicalApprovalRequiredMessage, parseMetadata, publishProblem, requiresClinicalApproval } from "@/lib/admin/validation";
 
-type ContentRow = { id: string; type: ContentType; title: string; category: string; summary: string; body: string; source: string; status: ContentStatus; version: number; media_id: string | null; metadata: string; published_at: string | null; created_at: string; updated_at: string };
+type ContentRow = { id: string; type: ContentType; title: string; category: string; summary: string; body: string; source: string; status: ContentStatus; version: number; media_id: string | null; metadata: string; published_at: string | null; created_at: string; updated_at: string; clinical_approval_version?: number | null; clinical_approver?: string | null; clinical_approved_at?: string | null };
 
 function expectedVersion(request: Request) {
   const match = request.headers.get("if-match")?.match(/^"?(\d+)"?$/);
@@ -10,7 +10,15 @@ function expectedVersion(request: Request) {
 }
 
 function serialize(row: ContentRow) {
-  return { ...row, mediaId: row.media_id, metadata: JSON.parse(row.metadata), publishedAt: row.published_at, createdAt: row.created_at, updatedAt: row.updated_at };
+  return {
+    ...row,
+    mediaId: row.media_id,
+    metadata: JSON.parse(row.metadata),
+    publishedAt: row.published_at,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    clinicalApproval: row.clinical_approval_version == null ? null : { contentVersion: row.clinical_approval_version, approver: row.clinical_approver, approvedAt: row.clinical_approved_at },
+  };
 }
 
 export async function GET(request: Request) {
@@ -20,8 +28,8 @@ export async function GET(request: Request) {
     if (type && !contentTypes.has(type)) return jsonError("无效内容类型");
     const { DB } = await runtime();
     const query = type
-      ? DB.prepare("SELECT * FROM content_items WHERE type = ? ORDER BY updated_at DESC").bind(type)
-      : DB.prepare("SELECT * FROM content_items ORDER BY updated_at DESC");
+      ? DB.prepare("SELECT c.*, a.content_version clinical_approval_version, a.approver clinical_approver, a.approved_at clinical_approved_at FROM content_items c LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE c.type = ? ORDER BY c.updated_at DESC").bind(type)
+      : DB.prepare("SELECT c.*, a.content_version clinical_approval_version, a.approver clinical_approver, a.approved_at clinical_approved_at FROM content_items c LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version ORDER BY c.updated_at DESC");
     const rows = await query.all<ContentRow>();
     return Response.json({ items: rows.results.map(serialize) });
   } catch (error) {
@@ -77,6 +85,7 @@ export async function PATCH(request: Request) {
       const stepStats = item.type === "plan"
         ? await DB.prepare("SELECT COUNT(*) count, SUM(CASE WHEN title = '' OR instruction = '' THEN 1 ELSE 0 END) invalid, SUM(CASE WHEN media_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM media_assets asset WHERE asset.id = plan_steps.media_id AND asset.kind = 'video' AND asset.status = 'ready') THEN 1 ELSE 0 END) invalid_media FROM plan_steps WHERE plan_id = ?").bind(id).first<{ count: number; invalid: number; invalid_media: number }>()
         : null;
+      if (item.type === "plan" && Number(stepStats?.count ?? 0) < 1) return jsonError("调理方案至少需要一个有效步骤", 422);
       if (stepStats?.invalid) return jsonError("调理步骤标题和说明不能为空", 422);
       if (stepStats?.invalid_media) return jsonError("调理步骤只能关联可用的视频素材", 422);
       const problem = publishProblem(item.type, { ...item, mediaId: item.media_id });
@@ -120,6 +129,7 @@ export async function PATCH(request: Request) {
       return Response.json({ id, status: "offline" });
     }
     if (action === "update") {
+      if (item.status === "published") return jsonError("已发布内容不能直接修改，请先下架并重新审核", 409);
       const metadata = parseMetadata(body.metadata);
       const timestamp = now();
       const results = await DB.batch([
