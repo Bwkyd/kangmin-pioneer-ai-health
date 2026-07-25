@@ -47,17 +47,44 @@ test("keeps every original demo section without presenting simulated medical fac
   const page = await readFile(new URL("../app/page.tsx", import.meta.url), "utf8");
   const css = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 
-  assert.match(page, /type Tab = "home" \| "chat" \| "assessment" \| "articles" \| "profile"/);
+  assert.match(page, /\| "home"/);
+  assert.match(page, /\| "profile"/);
+  assert.match(page, /\| "healthProfile"/);
+  assert.match(page, /\| "allergenRecord"/);
   assert.match(page, /setTab\("chat"\)/);
   assert.match(page, /诊一诊/);
   assert.match(page, /学一学/);
   assert.match(page, /过敏日历/);
   assert.match(page, /鼻健康科普/);
   assert.match(page, /tab === "profile"/);
+  assert.match(page, /tab === "healthProfile"/);
+  assert.match(page, /tab === "allergenRecord"/);
+  assert.match(page, /基础信息/);
+  assert.match(page, /过敏史/);
+  assert.match(page, /常见诱因/);
+  assert.match(page, /用药记录/);
+  assert.match(page, /患者自述/);
+  assert.match(page, /不会自动判定为症状病因/);
   assert.match(page, /当前不会输出诊断、证型或个性化治疗方案/);
   assert.match(page, /内部演示内容 · 待医学审核/);
   assert.match(page, /暂无真实健康记录/);
   assert.doesNotMatch(page, /知识库已连接|症状正在缓解|肺气虚寒倾向|个性化外治建议/);
   assert.match(css, /grid-template-columns:\s*repeat\(5, 1fr\)/);
   assert.match(css, /\.profile-view/);
+  assert.match(css, /\.health-profile-view/);
+  assert.match(css, /\.allergen-record-view/);
+});
+
+test("uses the server-owned health-record contract without a client user id", async () => {
+  const adapter = await readFile(new URL("../app/health-records.ts", import.meta.url), "utf8");
+
+  assert.match(adapter, /commonTriggers: TriggerProjection\[\]/);
+  assert.match(adapter, /"\/api\/v1\/health-records\/profile"/);
+  assert.match(adapter, /"\/api\/v1\/health-records\/exposures"/);
+  assert.match(adapter, /method: "PATCH"/);
+  assert.match(adapter, /"if-match"/);
+  assert.match(adapter, /"idempotency-key"/);
+  assert.match(adapter, /credentials: "same-origin"/);
+  assert.doesNotMatch(adapter, /["']x-user-id["']/i);
+  assert.doesNotMatch(adapter, /花粉监测/);
 });

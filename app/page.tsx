@@ -1,8 +1,33 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import {
+  AllergenExposure,
+  AllergenExposureDraft,
+  allergenGroups,
+  deleteAllergenExposure,
+  emptyHealthProfile,
+  getHealthProfile,
+  HealthProfile,
+  HealthProfileDraft,
+  listAllergenExposures,
+  localDateValue,
+  OTHER_ALLERGEN,
+  saveAllergenExposure,
+  saveHealthProfile,
+  toggleAllergen,
+  upsertExposure,
+  validateExposureDraft,
+} from "./health-records";
 
-type Tab = "home" | "chat" | "assessment" | "articles" | "profile";
+type Tab =
+  | "home"
+  | "chat"
+  | "assessment"
+  | "articles"
+  | "profile"
+  | "healthProfile"
+  | "allergenRecord";
 type Message =
   | { id: number; role: "ai" | "user"; kind: "text"; text: string }
   | { id: number; role: "ai"; kind: "thinking" }
@@ -63,6 +88,12 @@ const articles = [
 ];
 
 const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
+const symptomDates: Record<string, string> = {
+  "2026-07-14": "轻度",
+  "2026-07-15": "轻度",
+  "2026-07-17": "中度",
+  "2026-07-19": "轻度",
+};
 const calendarDays = [
   { day: 29, muted: true }, { day: 30, muted: true }, { day: 1 }, { day: 2 }, { day: 3 }, { day: 4 }, { day: 5 },
   { day: 6 }, { day: 7 }, { day: 8 }, { day: 9 }, { day: 10 }, { day: 11 }, { day: 12 },
@@ -70,6 +101,17 @@ const calendarDays = [
   { day: 20, today: true }, { day: 21 }, { day: 22 }, { day: 23 }, { day: 24 }, { day: 25 }, { day: 26 },
   { day: 27 }, { day: 28 }, { day: 29 }, { day: 30 }, { day: 31 }, { day: 1, muted: true }, { day: 2, muted: true },
 ];
+
+function calendarDateValue(day: number, index: number): string {
+  const month = index < 2 ? "06" : index > 32 ? "08" : "07";
+  return `2026-${month}-${String(day).padStart(2, "0")}`;
+}
+
+function displayDate(value: string): string {
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) return value;
+  return `${year}年${Number(month)}月${Number(day)}日`;
+}
 
 export default function Home() {
   const [tab, setTab] = useState<Tab>("home");
@@ -89,10 +131,27 @@ export default function Home() {
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<"calendar" | "list">("calendar");
+  const [selectedDate, setSelectedDate] = useState(localDateValue);
+  const [allergenReturnTab, setAllergenReturnTab] = useState<"assessment" | "healthProfile">("assessment");
+  const [healthProfile, setHealthProfile] = useState<HealthProfile | null>(null);
+  const [profileDraft, setProfileDraft] = useState<HealthProfileDraft>(emptyHealthProfile);
+  const [profileEditing, setProfileEditing] = useState(false);
+  const [profileStatus, setProfileStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
+  const [profileNotice, setProfileNotice] = useState("");
+  const [exposures, setExposures] = useState<AllergenExposure[]>([]);
+  const [exposureDraft, setExposureDraft] = useState<AllergenExposureDraft>({
+    date: localDateValue(),
+    factors: [],
+    otherDescription: "",
+  });
+  const [editingExposureId, setEditingExposureId] = useState<string | null>(null);
+  const [exposureStatus, setExposureStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
+  const [exposureNotice, setExposureNotice] = useState("");
   const chatEnd = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
 
   const totalScore = scores.reduce((sum, score) => sum + score, 0);
+  const exposureValidation = validateExposureDraft(exposureDraft);
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -160,6 +219,57 @@ export default function Home() {
       context.fillText(String(day), x, height - 8);
     });
   }, [tab, assessmentDone, totalScore]);
+
+  useEffect(() => {
+    if (tab !== "healthProfile") return;
+    let cancelled = false;
+    Promise.all([getHealthProfile(), listAllergenExposures()])
+      .then(([profile, items]) => {
+        if (cancelled) return;
+        setHealthProfile(profile);
+        setProfileDraft(profile ? {
+          basicInfo: profile.basicInfo,
+          allergyHistory: profile.allergyHistory,
+        } : emptyHealthProfile);
+        setExposures(items);
+        setProfileStatus("ready");
+        setProfileNotice(profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setProfileStatus("error");
+        setProfileNotice(error instanceof Error ? error.message : "健康档案暂时无法读取");
+      });
+    return () => { cancelled = true; };
+  }, [tab]);
+
+  useEffect(() => {
+    if (tab !== "allergenRecord") return;
+    let cancelled = false;
+    listAllergenExposures()
+      .then((items) => {
+        if (cancelled) return;
+        setExposures(items);
+        setExposureStatus("ready");
+        setExposureNotice(items.length > 0 ? "已读取服务端患者自述记录" : "该账户暂无过敏原记录");
+        const sameDay = items.find((item) => item.date === selectedDate);
+        if (sameDay) {
+          setEditingExposureId(sameDay.id);
+          setExposureDraft({
+            date: sameDay.date,
+            factors: sameDay.factors,
+            otherDescription: sameDay.otherDescription,
+          });
+          setExposureNotice("已回显该日期的患者自述记录，可继续编辑");
+        }
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setExposureStatus("error");
+        setExposureNotice(error instanceof Error ? error.message : "过敏原历史暂时无法读取");
+      });
+    return () => { cancelled = true; };
+  }, [tab, selectedDate]);
 
   const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
     setMessages((current) => [
@@ -232,6 +342,119 @@ export default function Home() {
       );
   };
 
+  const editExposure = (record: AllergenExposure) => {
+    setSelectedDate(record.date);
+    setEditingExposureId(record.id);
+    setExposureDraft({
+      date: record.date,
+      factors: record.factors,
+      otherDescription: record.otherDescription,
+    });
+    setExposureNotice("正在编辑这条患者自述记录，保存后才会更新服务端");
+  };
+
+  const startAllergenRecord = (
+    date: string,
+    returnTab: "assessment" | "healthProfile" = "assessment",
+  ) => {
+    setSelectedDate(date);
+    setAllergenReturnTab(returnTab);
+    setEditingExposureId(null);
+    setExposureDraft({ date, factors: [], otherDescription: "" });
+    setExposureStatus("loading");
+    setExposureNotice("正在读取过敏原历史…");
+    setEntryOpen(false);
+    setTab("allergenRecord");
+  };
+
+  const openHealthProfile = () => {
+    setProfileStatus("loading");
+    setProfileNotice("正在读取健康档案…");
+    setTab("healthProfile");
+  };
+
+  const openSymptomDate = (date: string) => {
+    setSelectedDate(date);
+    setEntryOpen(true);
+  };
+
+  const selectExposureDate = (date: string) => {
+    setSelectedDate(date);
+    setEditingExposureId(null);
+    setExposureDraft({ date, factors: [], otherDescription: "" });
+    setExposureStatus("loading");
+    setExposureNotice("正在读取该日期的患者自述记录…");
+  };
+
+  const submitProfile = async (event: FormEvent) => {
+    event.preventDefault();
+    setProfileStatus("saving");
+    setProfileNotice("正在保存到服务端健康档案…");
+    try {
+      const saved = await saveHealthProfile(profileDraft, healthProfile?.version ?? 0);
+      setHealthProfile(saved);
+      setProfileDraft({
+        basicInfo: saved.basicInfo,
+        allergyHistory: saved.allergyHistory,
+      });
+      setProfileEditing(false);
+      setProfileStatus("ready");
+      setProfileNotice("健康档案已由服务端确认保存");
+    } catch (error) {
+      setProfileStatus("error");
+      setProfileNotice(error instanceof Error ? error.message : "健康档案保存失败，填写内容仍保留在本页");
+    }
+  };
+
+  const submitExposure = async (event: FormEvent) => {
+    event.preventDefault();
+    const validation = validateExposureDraft(exposureDraft);
+    if (validation) {
+      setExposureStatus("error");
+      setExposureNotice(validation);
+      return;
+    }
+    setExposureStatus("saving");
+    setExposureNotice("正在保存患者自述记录…");
+    try {
+      const currentRecord = editingExposureId
+        ? exposures.find((record) => record.id === editingExposureId) ?? null
+        : null;
+      const saved = await saveAllergenExposure(exposureDraft, currentRecord);
+      setExposures((current) => upsertExposure(current, saved));
+      setEditingExposureId(saved.id);
+      setExposureStatus("ready");
+      setExposureNotice("过敏原患者自述已由服务端确认保存");
+    } catch (error) {
+      setExposureStatus("error");
+      setExposureNotice(error instanceof Error ? error.message : "保存失败，当前选择仍保留在本页");
+    }
+  };
+
+  const removeExposure = async (record: AllergenExposure) => {
+    setExposureStatus("saving");
+    setExposureNotice("正在删除服务端记录…");
+    try {
+      await deleteAllergenExposure(record);
+      setExposures((current) => current.filter((item) => item.id !== record.id));
+      if (editingExposureId === record.id) {
+        setEditingExposureId(null);
+        setExposureDraft({ date: record.date, factors: [], otherDescription: "" });
+      }
+      setExposureStatus("ready");
+      setExposureNotice("记录已由服务端确认删除");
+    } catch (error) {
+      setExposureStatus("error");
+      setExposureNotice(error instanceof Error ? error.message : "删除失败，原记录未变更");
+    }
+  };
+
+  const goBack = () => {
+    if (tab === "healthProfile") setTab("profile");
+    else if (tab === "allergenRecord") setTab(allergenReturnTab);
+    else if (tab !== "home") setTab("home");
+  };
+
   const resetDemo = () => {
     setMessages([
       {
@@ -245,6 +468,8 @@ export default function Home() {
     setAssessmentDone(false);
     setScores([2, 2, 2, 1]);
     setEntryOpen(false);
+    setProfileEditing(false);
+    setExposureNotice("");
     setTab("home");
   };
 
@@ -258,6 +483,10 @@ export default function Home() {
         ? "小岐知识助手"
         : tab === "assessment"
           ? "过敏日历"
+          : tab === "healthProfile"
+            ? "健康档案"
+            : tab === "allergenRecord"
+              ? "过敏原记录"
           : tab === "articles"
             ? "鼻健康科普"
             : "我的";
@@ -267,7 +496,7 @@ export default function Home() {
       <section className="phone-wrap" aria-label="抗敏先锋小程序">
         <div className="phone">
           <header className="phone-header real-header">
-            <button className="icon-button" onClick={() => tab !== "home" && setTab("home")} aria-label="返回">‹</button>
+            <button className="icon-button" onClick={goBack} aria-label="返回">‹</button>
             <div className="real-title">
               <strong>{headerTitle}</strong>
               {tab === "chat" && <span>内部交互演示</span>}
@@ -436,7 +665,7 @@ export default function Home() {
                           <button
                             key={`${item.day}-${index}`}
                             className={`${item.muted ? "muted" : ""} ${item.level ?? ""} ${item.today ? "today" : ""}`}
-                            onClick={() => !item.muted && setEntryOpen(true)}
+                            onClick={() => !item.muted && openSymptomDate(calendarDateValue(item.day, index))}
                             aria-label={`${item.day}日${item.level === "mild" ? "轻度" : item.level === "moderate" ? "中度" : ""}`}
                           >
                             {item.day}
@@ -447,11 +676,21 @@ export default function Home() {
                     </>
                   ) : (
                     <div className="calendar-list">
-                      <div><time>7月19日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 0</strong></div>
-                      <div><time>7月17日</time><span className="moderate">中度</span><strong>喷嚏 2 · 流涕 2 · 鼻塞 2 · 鼻痒 1</strong></div>
-                      <div><time>7月15日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 1</strong></div>
+                      <button onClick={() => openSymptomDate("2026-07-19")}><time>7月19日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 0</strong><b>关联过敏原 ›</b></button>
+                      <button onClick={() => openSymptomDate("2026-07-17")}><time>7月17日</time><span className="moderate">中度</span><strong>喷嚏 2 · 流涕 2 · 鼻塞 2 · 鼻痒 1</strong><b>关联过敏原 ›</b></button>
+                      <button onClick={() => openSymptomDate("2026-07-15")}><time>7月15日</time><span className="mild">轻度</span><strong>喷嚏 1 · 流涕 1 · 鼻塞 1 · 鼻痒 1</strong><b>关联过敏原 ›</b></button>
                     </div>
                   )}
+                </section>
+
+                <section className="date-link-card" aria-label="症状与过敏原日期关联">
+                  <div>
+                    <small>按同一天关联患者自述</small>
+                    <strong>{displayDate(selectedDate)}</strong>
+                    <p>{symptomDates[selectedDate] ? `该日期有${symptomDates[selectedDate]}症状演示记录` : "该日期暂无真实症状记录"}</p>
+                  </div>
+                  <button onClick={() => startAllergenRecord(selectedDate)}>记录当天过敏原</button>
+                  <p>这里只关联记录日期，不会把接触因素自动判定为症状病因。</p>
                 </section>
 
                 <article className="trend-card">
@@ -460,7 +699,132 @@ export default function Home() {
                   <div className="chart-legend"><span><i />过敏严重程度</span><small>仅用于展示界面，不代表个人数据</small></div>
                 </article>
 
-                <button className="calendar-add-inline" onClick={() => setEntryOpen(true)}>＋ 记录今天的症状</button>
+                <button className="calendar-add-inline" onClick={() => openSymptomDate(localDateValue())}>＋ 记录今天的症状</button>
+              </div>
+            )}
+
+            {tab === "healthProfile" && (
+              <div className="health-profile-view">
+                <section className="record-page-intro">
+                  <small>独立健康档案</small>
+                  <h2>我的健康档案</h2>
+                  <p>这里只展示和保存用户主动填写的记录，不推断诊断、病因或治疗方案。</p>
+                </section>
+
+                <div className={`record-notice ${profileStatus === "error" ? "error" : ""}`} role="status">
+                  <strong>{profileStatus === "loading" || profileStatus === "saving" ? "处理中" : profileStatus === "error" ? "后端依赖待接入" : "档案状态"}</strong>
+                  <span>{profileNotice || "进入本页后从服务端读取健康档案"}</span>
+                </div>
+
+                {profileEditing ? (
+                  <form className="profile-edit-form" onSubmit={submitProfile}>
+                    <section className="health-record-card">
+                      <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>由用户本人填写</small></div></div>
+                      <label>姓名或称呼<input value={profileDraft.basicInfo.displayName} onChange={(event) => setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, displayName: event.target.value } }))} placeholder="待填写" /></label>
+                      <label>出生日期<input type="date" value={profileDraft.basicInfo.birthDate} onChange={(event) => setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, birthDate: event.target.value } }))} /></label>
+                      <label>性别<select value={profileDraft.basicInfo.sex} onChange={(event) => setProfileDraft((current) => ({ ...current, basicInfo: { ...current.basicInfo, sex: event.target.value as HealthProfileDraft["basicInfo"]["sex"] } }))}><option value="unspecified">暂不填写</option><option value="female">女</option><option value="male">男</option></select></label>
+                    </section>
+                    <section className="health-record-card">
+                      <div className="record-card-title"><span>史</span><div><h3>过敏史</h3><small>既往检查或本人已知情况</small></div></div>
+                      <label>过敏史<textarea value={profileDraft.allergyHistory} onChange={(event) => setProfileDraft((current) => ({ ...current, allergyHistory: event.target.value }))} placeholder="如无记录可留空，请勿自行下诊断" /></label>
+                    </section>
+                    <section className="health-record-card">
+                      <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>用户主动维护的档案内容</small></div></div>
+                      <p className="record-empty">常见诱因由已保存的患者过敏原暴露记录自动汇总；请通过“过敏原记录”新增或修改，健康档案保存请求不会直接改写该投影。</p>
+                    </section>
+                    <div className="record-form-actions"><button type="button" onClick={() => setProfileEditing(false)}>取消</button><button type="submit" disabled={profileStatus === "saving"}>{profileStatus === "saving" ? "保存中…" : "保存健康档案"}</button></div>
+                  </form>
+                ) : (
+                  <>
+                    <section className="health-record-card">
+                      <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>姓名、出生日期与性别</small></div><button onClick={() => setProfileEditing(true)}>编辑</button></div>
+                      <div className="record-values">
+                        <p><span>姓名或称呼</span><strong>{healthProfile?.basicInfo.displayName || "待填写"}</strong></p>
+                        <p><span>出生日期</span><strong>{healthProfile?.basicInfo.birthDate || "待填写"}</strong></p>
+                        <p><span>性别</span><strong>{healthProfile?.basicInfo.sex === "female" ? "女" : healthProfile?.basicInfo.sex === "male" ? "男" : "待填写"}</strong></p>
+                      </div>
+                    </section>
+                    <section className="health-record-card">
+                      <div className="record-card-title"><span>史</span><div><h3>过敏史</h3><small>用户记录，不替代医疗诊断</small></div><button onClick={() => setProfileEditing(true)}>编辑</button></div>
+                      <p className="record-empty">{healthProfile?.allergyHistory || "暂无已保存的过敏史"}</p>
+                    </section>
+                    <section className="health-record-card trigger-card">
+                      <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>区分档案内容与患者每日自述</small></div><button onClick={() => startAllergenRecord(localDateValue(), "healthProfile")}>新增记录</button></div>
+                      {healthProfile?.commonTriggers.length ? <div className="record-tags">{healthProfile.commonTriggers.map((item) => <span key={item.code}>{item.label}<small>患者自述 · 最近 {displayDate(item.latestDate)}</small></span>)}</div> : <p className="record-empty">暂无已持久化暴露记录生成的常见诱因</p>}
+                      <div className="patient-records">
+                        <strong>患者自述暴露记录</strong>
+                        <p>按日期同步展示，仅供回顾，不代表已确定病因。</p>
+                        {exposures.length > 0 ? exposures.map((record) => (
+                          <button key={record.id} onClick={() => { editExposure(record); setAllergenReturnTab("healthProfile"); setExposureStatus("loading"); setTab("allergenRecord"); }}>
+                            <span>{displayDate(record.date)} · 患者记录</span>
+                            <strong>{record.factors.join("、")}{record.otherDescription ? `：${record.otherDescription}` : ""}</strong>
+                            <b>查看原记录 ›</b>
+                          </button>
+                        )) : <small>暂无可追溯的患者自述记录</small>}
+                      </div>
+                    </section>
+                    <button className="medication-entry" onClick={() => { setProfileStatus("error"); setProfileNotice("用药记录为独立后端依赖；接口完成前本页不会伪造保存状态"); }}>
+                      <span>药</span><div><strong>用药记录</strong><small>记录正在使用或曾使用的药物</small></div><b>进入 ›</b>
+                    </button>
+                  </>
+                )}
+
+                <p className="profile-disclaimer">健康档案与过敏原暴露均为用户记录，不能替代医生诊断；结果请以正规医疗机构意见为准。</p>
+              </div>
+            )}
+
+            {tab === "allergenRecord" && (
+              <div className="allergen-record-view">
+                <section className="record-page-intro allergen-intro">
+                  <small>关联当天症状</small>
+                  <h2>记录接触过的因素</h2>
+                  <p>请选择当天回忆到的暴露。这是患者自述，不会自动判定为症状病因。</p>
+                </section>
+
+                <section className="linked-date-card" aria-label="关联日期">
+                  <label>记录日期<input type="date" value={exposureDraft.date} onChange={(event) => selectExposureDate(event.target.value)} /></label>
+                  <div><span>关联症状日期</span><strong>{displayDate(exposureDraft.date)}</strong><small>{symptomDates[exposureDraft.date] ? `${symptomDates[exposureDraft.date]}症状演示记录` : "暂无真实症状记录"}</small></div>
+                  <button onClick={() => { setSelectedDate(exposureDraft.date); setEntryOpen(true); setTab("assessment"); }}>查看当天症状</button>
+                </section>
+
+                <div className={`record-notice ${exposureStatus === "error" ? "error" : ""}`} role="status">
+                  <strong>{exposureStatus === "loading" || exposureStatus === "saving" ? "处理中" : exposureStatus === "error" ? "保存边界" : "记录状态"}</strong>
+                  <span>{exposureNotice || "真实历史与保存结果均由服务端返回"}</span>
+                </div>
+
+                <form className="allergen-form" onSubmit={submitExposure}>
+                  {allergenGroups.map((group) => (
+                    <fieldset key={group.name}>
+                      <legend>{group.name}</legend>
+                      <div className="allergen-options">
+                        {group.options.map((option) => (
+                          <label className={exposureDraft.factors.includes(option) ? "selected" : ""} key={option}>
+                            <input type="checkbox" checked={exposureDraft.factors.includes(option)} onChange={() => setExposureDraft((current) => ({ ...current, factors: toggleAllergen(current.factors, option) }))} />
+                            <span>{option}</span><i aria-hidden="true">✓</i>
+                          </label>
+                        ))}
+                      </div>
+                    </fieldset>
+                  ))}
+                  {exposureDraft.factors.includes(OTHER_ALLERGEN) && (
+                    <label className="other-description">其它描述<textarea value={exposureDraft.otherDescription} onChange={(event) => setExposureDraft((current) => ({ ...current, otherDescription: event.target.value }))} placeholder="请简要描述当天接触的其它因素" /></label>
+                  )}
+                  <p className="form-boundary">所选内容只表示患者对当天暴露的回忆，不会生成病因、诊断或治疗建议。</p>
+                  {exposureValidation && <p className="form-validation">{exposureValidation}</p>}
+                  <button className="save-exposure" type="submit" disabled={Boolean(exposureValidation) || exposureStatus === "saving"}>{exposureStatus === "saving" ? "保存中…" : editingExposureId ? "保存修改" : "保存记录"}</button>
+                </form>
+
+                <section className="exposure-history">
+                  <div><small>服务端记录</small><h3>历史记录</h3></div>
+                  {exposures.length > 0 ? exposures.map((record) => (
+                    <article key={record.id}>
+                      <time>{displayDate(record.date)}</time><span>患者自述</span>
+                      <strong>{record.factors.join("、")}</strong>
+                      {record.otherDescription && <p>{record.otherDescription}</p>}
+                      <div><button onClick={() => editExposure(record)}>编辑</button><button onClick={() => removeExposure(record)} disabled={exposureStatus === "saving"}>删除</button></div>
+                    </article>
+                  )) : <p className="record-empty">暂无服务端返回的历史记录；本页不会使用假记录填充。</p>}
+                </section>
               </div>
             )}
 
@@ -500,7 +864,7 @@ export default function Home() {
 
                 <section className="profile-section">
                   <h3>我的健康</h3>
-                  <button onClick={() => setTab("assessment")}>
+                  <button onClick={openHealthProfile}>
                     <span className="profile-item-icon blue">档</span>
                     <div><strong>健康档案</strong><small>基础信息、过敏史与常见诱因</small></div>
                     <b>›</b>
@@ -544,16 +908,16 @@ export default function Home() {
           <nav className="bottom-nav" aria-label="主要功能">
             <button className={tab === "home" ? "active" : ""} onClick={() => setTab("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
             <button className={tab === "chat" ? "active" : ""} onClick={() => setTab("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
-            <button className="nav-add" onClick={() => { setTab("assessment"); setEntryOpen(true); }} aria-label="新增症状记录"><span>＋</span></button>
-            <button className={tab === "assessment" ? "active" : ""} onClick={() => setTab("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
-            <button className={tab === "profile" ? "active" : ""} onClick={() => setTab("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
+            <button className="nav-add" onClick={() => { setTab("assessment"); openSymptomDate(localDateValue()); }} aria-label="新增症状记录"><span>＋</span></button>
+            <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} onClick={() => setTab("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
+            <button className={tab === "profile" || tab === "healthProfile" ? "active" : ""} onClick={() => setTab("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
           </nav>
 
           {entryOpen && (
-            <div className="entry-sheet-backdrop" role="dialog" aria-modal="true" aria-label="填写今日症状量表">
+            <div className="entry-sheet-backdrop" role="dialog" aria-modal="true" aria-label="填写所选日期症状量表">
               <div className="entry-sheet">
                 <div className="sheet-handle" />
-                <div className="sheet-title"><div><small>演示记录</small><h2>记录今天的症状</h2><p>仅用于界面演示，不会保存真实健康数据</p></div><button onClick={() => setEntryOpen(false)}>×</button></div>
+                <div className="sheet-title"><div><small>症状记录 · {displayDate(selectedDate)}</small><h2>记录当天的症状</h2><p>仅用于界面演示，不会保存真实健康数据</p></div><button onClick={() => setEntryOpen(false)}>×</button></div>
                 <div className="scale-card">
                   {scaleItems.map((item, itemIndex) => (
                     <div className="scale-row" key={item}>
@@ -567,6 +931,11 @@ export default function Home() {
                   ))}
                   <div className="sheet-score"><span>TNSS 总分</span><strong>{totalScore}<i>/12</i></strong><b>{totalScore <= 4 ? "轻度" : totalScore <= 8 ? "中度" : "重度"}</b></div>
                   <p className="assessment-disclaimer">量表结果仅供参考，最终方案请以门诊诊断为准。</p>
+                  <div className="sheet-allergen-link">
+                    <div><strong>当天过敏原暴露</strong><small>与本次症状使用同一记录日期</small></div>
+                    <button type="button" onClick={() => startAllergenRecord(selectedDate)}>去记录</button>
+                    <p>过敏原仅为患者自述，不自动判定医学因果。</p>
+                  </div>
                   <button className="submit-assessment" onClick={() => { setAssessmentDone(true); setEntryOpen(false); }}>
                     保存演示记录
                   </button>
