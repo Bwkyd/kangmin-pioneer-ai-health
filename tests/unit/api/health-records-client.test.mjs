@@ -5,7 +5,9 @@ import {
   HealthRecordsApiError,
   NONE_IDENTIFIED,
   OTHER_ALLERGEN,
+  allergenGroups,
   getHealthProfile,
+  hasCompleteSymptomScores,
   saveAllergenExposure,
   saveHealthProfile,
   saveMedication,
@@ -13,6 +15,21 @@ import {
   toggleAllergen,
   validateExposureDraft,
 } from "../../../app/health-records.ts";
+import { ALLERGEN_GROUPS } from "../../../lib/health-records/domain.ts";
+
+test("过敏原客户端选项与服务端目录保持完整一致", () => {
+  assert.deepEqual(
+    allergenGroups,
+    ALLERGEN_GROUPS.map((group) => ({ name: group.label, options: group.options.map((option) => option.label) })),
+  );
+});
+
+test("新症状记录保持 unknown，四项均明确选择后才允许保存", () => {
+  assert.equal(hasCompleteSymptomScores([null, null, null, null]), false);
+  assert.equal(hasCompleteSymptomScores([0, 0, 0, null]), false);
+  assert.equal(hasCompleteSymptomScores([0, 0, 0, 0]), true);
+  assert.equal(hasCompleteSymptomScores([0, 1, 2, 3]), true);
+});
 
 test("过敏原多选保留其它描述，并让未识别因素保持互斥", () => {
   assert.deepEqual(toggleAllergen(["花粉"], "尘螨"), ["花粉", "尘螨"]);
@@ -98,8 +115,10 @@ test("用药客户端提交时间、名称、剂量和实际用量，不发送�
   assert.equal(saved.medicationName, "氯雷他定");
   assert.equal(request.path, "/api/v1/health-records/medications");
   assert.equal(request.init.headers["x-user-id"], undefined);
-  assert.deepEqual(JSON.parse(request.init.body).dosage, { status: "known", value: "10", unit: "mg" });
-  assert.deepEqual(JSON.parse(request.init.body).actualUse, { status: "known", description: "按医嘱服用一次" });
+  const body = JSON.parse(request.init.body);
+  assert.match(body.takenAt, /^2026-07-26T\d{2}:30:00\.000Z$/);
+  assert.deepEqual(body.dosage, { status: "known", value: "10", unit: "mg" });
+  assert.deepEqual(body.actualUse, { status: "known", description: "按医嘱服用一次" });
 });
 
 test("症状客户端提交四项评分，并用 If-Match 更新同一日期", async () => {

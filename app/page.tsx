@@ -9,7 +9,9 @@ import {
   deleteAllergenExposure,
   emptyHealthProfile,
   emptyMedication,
+  emptySymptomScores,
   getHealthProfile,
+  hasCompleteSymptomScores,
   HealthProfile,
   HealthProfileDraft,
   listMedications,
@@ -97,7 +99,6 @@ const articles = [
 ];
 
 const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
-const emptySymptomScores = [0, 0, 0, 0];
 
 function displayDate(value: string): string {
   const [year, month, day] = value.split("-");
@@ -177,7 +178,7 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [videoOpen, setVideoOpen] = useState(false);
   const [articleOpen, setArticleOpen] = useState<number | null>(null);
-  const [scores, setScores] = useState([...emptySymptomScores]);
+  const [scores, setScores] = useState<Array<number | null>>([...emptySymptomScores]);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
   const [calendarMode, setCalendarMode] = useState<"calendar" | "list">("calendar");
@@ -210,7 +211,8 @@ export default function Home() {
   const chatEnd = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
 
-  const totalScore = scores.reduce((sum, score) => sum + score, 0);
+  const scoresComplete = hasCompleteSymptomScores(scores);
+  const totalScore = scores.reduce<number>((sum, score) => sum + (score ?? 0), 0);
   const exposureValidation = validateExposureDraft(exposureDraft);
   const symptomsByDate = new Map(symptoms.map((record) => [record.date, record]));
   const medicationValidation = !medicationDraft.takenAt
@@ -288,8 +290,8 @@ export default function Home() {
     context.font = '9px "PingFang SC", sans-serif';
     context.fillStyle = "#87968f";
     context.textAlign = "center";
-    [1, 10, 20, 31].forEach((day) => {
-      const x = pad.left + ((day - 1) / 30) * chartW;
+    [1, 10, 20, monthDays].forEach((day) => {
+      const x = pad.left + ((day - 1) / Math.max(1, monthDays - 1)) * chartW;
       context.fillText(String(day), x, height - 8);
     });
   }, [tab, assessmentDone, totalScore, symptoms, calendarMonth]);
@@ -504,6 +506,11 @@ export default function Home() {
   };
 
   const submitSymptom = async () => {
+    if (!hasCompleteSymptomScores(scores)) {
+      setSymptomStatus("error");
+      setSymptomNotice("请先完成喷嚏、流涕、鼻塞和鼻痒四项评分");
+      return;
+    }
     setSymptomStatus("saving");
     setSymptomNotice("正在保存症状记录…");
     try {
@@ -709,9 +716,9 @@ export default function Home() {
                 </aside>
 
                 <section className="today-grid">
-                  <button onClick={() => setTab("assessment")}>
+                  <button onClick={() => startAllergenRecord(localDateValue())}>
                     <span className="feature-icon chart-icon">↘</span>
-                    <small>今日待完成</small><strong>症状评估</strong><i>约 1 分钟</i>
+                    <small>今日待完成</small><strong>过敏原记录</strong><i>记录今天</i>
                   </button>
                   <button onClick={() => askKnowledge(0)}>
                     <span className="feature-icon book-icon">知</span>
@@ -850,7 +857,7 @@ export default function Home() {
                     </>
                   ) : (
                     <div className="calendar-list">
-                      {symptoms.length > 0 ? symptoms.map((record) => <button key={record.id} onClick={() => openSymptomDate(record.date)}><time>{displayDate(record.date)}</time><span className={symptomLevel(record.totalScore)}>{symptomLabel(record.totalScore)}</span><strong>喷嚏 {record.scores.sneezing} · 流涕 {record.scores.rhinorrhea} · 鼻塞 {record.scores.congestion} · 鼻痒 {record.scores.itching}</strong><b>关联过敏原 ›</b></button>) : <p className="record-empty">暂无真实症状记录；选择日期后保存，才会出现在这里。</p>}
+                      {symptoms.length > 0 ? symptoms.map((record) => <button key={record.id} onClick={() => openSymptomDate(record.date)}><time>{displayDate(record.date)}</time><span className={symptomLevel(record.totalScore)}>{symptomLabel(record.totalScore)}</span><strong>喷嚏 {record.scores.sneezing} · 流涕 {record.scores.rhinorrhea} · 鼻塞 {record.scores.congestion} · 鼻痒 {record.scores.itching}</strong><b>查看症状记录 ›</b></button>) : <p className="record-empty">暂无真实症状记录；选择日期后保存，才会出现在这里。</p>}
                     </div>
                   )}
                 </section>
@@ -1106,7 +1113,7 @@ export default function Home() {
                 <div className="scale-card">
                   {scaleItems.map((item, itemIndex) => (
                     <div className="scale-row" key={item}>
-                      <div><strong>{item}</strong><span>{["无", "轻微", "明显", "严重"][scores[itemIndex]]}</span></div>
+                      <div><strong>{item}</strong><span>{scores[itemIndex] === null ? "未选择" : ["无", "轻微", "明显", "严重"][scores[itemIndex]!]}</span></div>
                       <div className="score-options">
                         {[0, 1, 2, 3].map((score) => (
                           <button className={scores[itemIndex] === score ? "selected" : ""} key={score} onClick={() => setScores((current) => current.map((value, index) => index === itemIndex ? score : value))}>{score}</button>
@@ -1114,7 +1121,7 @@ export default function Home() {
                       </div>
                     </div>
                   ))}
-                  <div className="sheet-score"><span>TNSS 总分</span><strong>{totalScore}<i>/12</i></strong><b>{symptomLabel(totalScore)}</b></div>
+                  <div className="sheet-score"><span>TNSS 总分</span><strong>{scoresComplete ? totalScore : "--"}<i>/12</i></strong><b>{scoresComplete ? symptomLabel(totalScore) : "请完成评分"}</b></div>
                   <p className="assessment-disclaimer">量表结果仅供参考，最终方案请以门诊诊断为准。</p>
                   <div className="sheet-allergen-link">
                     <div><strong>当天过敏原暴露</strong><small>与本次症状使用同一记录日期</small></div>
@@ -1122,7 +1129,7 @@ export default function Home() {
                     <p>过敏原仅为患者自述，不自动判定医学因果。</p>
                   </div>
                   {symptomNotice && <p className={`assessment-disclaimer ${symptomStatus === "error" ? "error-text" : ""}`} role="status">{symptomNotice}</p>}
-                  <button className="submit-assessment" onClick={submitSymptom} disabled={symptomStatus === "saving"}>
+                  <button className="submit-assessment" onClick={submitSymptom} disabled={symptomStatus === "saving" || !scoresComplete}>
                     {symptomStatus === "saving" ? "保存中…" : "保存症状记录"}
                   </button>
                 </div>

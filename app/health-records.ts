@@ -1,3 +1,5 @@
+import { ALLERGEN_GROUPS } from "../lib/health-records/domain.ts";
+
 export type BasicHealthInfo = {
   displayName: string;
   birthDate: string;
@@ -65,6 +67,7 @@ export type SymptomRecord = {
 };
 
 export type SymptomDraft = Pick<SymptomRecord, "date" | "scores">;
+export type SymptomScoreDraft = [number | null, number | null, number | null, number | null];
 
 export type AllergenGroup = {
   name: string;
@@ -74,13 +77,11 @@ export type AllergenGroup = {
 export const OTHER_ALLERGEN = "其它（请简要描述）";
 export const NONE_IDENTIFIED = "未识别到明确因素";
 
-const optionContract = [
-  { group: "environment", name: "环境暴露", options: [["pollen", "花粉"], ["dust_mite", "尘螨"], ["mold", "霉菌"], ["dust", "灰尘"], ["smoke", "烟雾"]] },
-  { group: "contact", name: "接触性物质", options: [["pet_dander", "宠物皮屑或动物毛"], ["fragrance", "香水或香味产品"], ["cleaning_products", "清洁用品"]] },
-  { group: "diet_lifestyle", name: "饮食与作息", options: [["alcohol", "饮酒"], ["spicy_food", "辛辣食物"], ["sleep_deprivation", "睡眠不足"]] },
-  { group: "activity", name: "活动相关", options: [["exercise", "运动"], ["cold_air", "冷空气"]] },
-  { group: "other", name: "其他", options: [["other", OTHER_ALLERGEN], ["none_identified", NONE_IDENTIFIED]] },
-] as const;
+const optionContract = ALLERGEN_GROUPS.map((group) => ({
+  group: group.code,
+  name: group.label,
+  options: group.options.map((option) => [option.code, option.label] as const),
+}));
 
 export const allergenGroups: AllergenGroup[] = optionContract.map((group) => ({
   name: group.name,
@@ -108,6 +109,12 @@ export const emptyMedication: MedicationDraft = {
   actualUseDescription: "",
   actualUseUnknown: false,
 };
+
+export const emptySymptomScores: SymptomScoreDraft = [null, null, null, null];
+
+export function hasCompleteSymptomScores(scores: readonly (number | null)[]): scores is [number, number, number, number] {
+  return scores.length === 4 && scores.every((score) => Number.isInteger(score) && score !== null && score >= 0 && score <= 3);
+}
 
 type Fetcher = typeof fetch;
 
