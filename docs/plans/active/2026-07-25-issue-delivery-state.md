@@ -631,3 +631,23 @@
 - PASS：第 2 轮实现与回归验证通过。这里的 PASS 只代表 #100/#83 本地实现和可复核测试/浏览器证据通过，不替代 PR、CI、指定模型评审、客户 UAT、生产发布或 Issue 关闭门禁。
 - in_progress：创建 Draft PR 后，对精确候选 SHA 做 P0/P1/P2 客观评审；每个评审轮次都记录 verdict、依据和真实修复提交。
 - blocked：无本地实现阻塞；若 GitHub 写入或指定评审工具认证失败，只记录精确错误和恢复条件，继续执行不依赖该凭据的安全步骤。
+
+## 2026-07-26 17:59 第1轮三方评审结论与第3轮真修入口
+
+- completed：PR #107 的 `quality` CI 已对 `fe37d70ad691896f9e0a393b7b7e4921f791ee1c` 返回 SUCCESS；PR 仍为 Draft、OPEN，未合并、未部署、未关闭 Issue。
+- completed：Kimi K3 与 DeepSeek v4 pro 对同一 SHA 明确 `REVIEW_RESULT: PASS`，均为 P0=0、P1=0；Kimi 记录了视频/PDF 共用上传门限、非图片 413 文案、孤儿素材和缺少自动浏览器 E2E 等 P2 观察，暂不扩大本轮范围。
+- completed：Codex CLI 5.6sol 对同一 SHA 明确 `REVIEW_RESULT: FAIL`，发现 1 个 P0、5 个 P1。经当前源码调用链复核，跨栏目复用编辑状态造成文章正文/图片可被覆盖清空、已发布文章图片未在用户端渲染、服务端仅信任 MIME、以及缺少可运行 #100/#83 E2E 均纳入下一轮；其对 `serverActions.bodySizeLimit` 直接控制 Route Handler 的判断需用实测/运行时证据复核，不盲改。
+- FAIL：第1轮评审门未通过，原因是上述 P0/P1 未清零；不把 Kimi/DeepSeek 的 PASS 当作三方一致通过。
+- in_progress：第3轮真修：隔离 `ContentManager` 栏目状态并补服务端类型一致性校验；让已发布文章在用户端显示已审核媒体；服务端校验 JPEG/PNG/WebP 文件签名；新增可运行的 HTTP/浏览器可复核 E2E 覆盖两 Issue 的关键链路。
+- pending：新候选必须重新运行 build/lint/npm test、真实 E2E、CI，并让三路模型只审新的精确 SHA；每一轮继续按 P0/P1/P2 给明确 PASS/FAIL。
+- blocked：无实现阻塞；旧 PR SHA 不再作为通过依据，生产、客户真实数据/凭据、合并、部署、关闭 Issue 仍保持独立门禁。
+
+## 2026-07-26 18:15 第3轮真修与回归结论
+
+- completed：修复第1轮三方评审发现的 P0/P1：栏目切换状态隔离与服务端内容类型防串写、跨重试稳定幂等键、图片文件签名校验、已发布文章列表/详情媒体展示，并新增可运行的 Issue #100/#83 HTTP E2E。
+- completed：当前代码的 `npm run build` PASS；`npm run lint` 0 errors（4 个既有/新增 `<img>` 优化 warning）；完整 `npm test` 108/108 PASS；HTTP E2E 真实启动 Vinext 服务并覆盖登录、媒体鉴权、上传拒绝/成功、草稿、重放、跨类型更新、审核、发布和公开媒体读取。
+- completed：本地浏览器重新验证 #100 两个导航入口均到达正确页面，控制台 `error/warn` 日志为空；仅使用合成身份、合成 D1/R2 和公开素材，未访问生产。
+- PASS：第3轮实现与回归门通过；第1轮评审的 P0/P1 已有真实代码和测试修复，下一步冻结新 SHA 后重跑 CI 与三方模型评审。
+- in_progress：提交并推送新候选更新 PR #107，等待 `quality` CI；随后让 Codex CLI 5.6sol、Kimi K3、DeepSeek v4 pro 仅审同一新 SHA。
+- pending：若新评审仍有 P0/P1，按根因进入下一轮真修；若三方均为 P0/P1=0，记录最终 PASS 并保留 P2 范围边界。
+- blocked：无本地实现阻塞；生产、客户真实数据/凭据、合并、部署、关闭 Issue、清理 worktree/分支仍未经授权。

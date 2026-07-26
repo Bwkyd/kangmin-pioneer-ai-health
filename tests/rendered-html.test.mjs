@@ -98,6 +98,9 @@ test("uses the server-owned health-record contract without a client user id", as
   assert.doesNotMatch(adapter, /["']x-user-id["']/i);
   assert.doesNotMatch(discover, /["']x-user-id["']/i);
   assert.doesNotMatch(adapter, /花粉监测/);
+  assert.match(discover, /tab === "article" && item\.mediaId/);
+  assert.match(discover, /discover-card-image/);
+  assert.match(discover, /discover-detail-image/);
   assert.match(discover, /视频分类导航/u);
   assert.match(discover, /VIDEO_TOPIC_LABELS/u);
   assert.match(discover, /VIDEO_TOPIC_TYPES/u);

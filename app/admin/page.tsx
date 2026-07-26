@@ -28,7 +28,7 @@ async function api(path: string, init?: RequestInit) {
     try {
       payload = JSON.parse(raw) as Record<string, unknown>;
     } catch {
-      if (!response.ok) throw new Error(response.status === 413 ? "上传文件超过服务限制，请选择更小的图片" : `请求失败（${response.status}）`);
+      if (!response.ok) throw new Error(response.status === 413 ? "上传文件超过服务限制，请选择更小的文件" : `请求失败（${response.status}）`);
       throw new Error("服务响应格式无效");
     }
   }
@@ -87,7 +87,7 @@ export default function AdminPage() {
         <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1></div><Link href="/discover" target="_blank">查看用户端 ↗</Link></header>
         {message && <div className="admin-toast" role="status"><span>{message}</span><button onClick={() => setMessage("")}>×</button></div>}
         {section === "overview" && <Overview dashboard={dashboard} items={items} />}
-        {(["article", "video", "knowledge", "plan"] as Section[]).includes(section) && <ContentManager type={section} items={items.filter((item) => item.type === section)} media={media} busy={busy} onBusy={setBusy} onMessage={setMessage} onReload={load} />}
+        {(["article", "video", "knowledge", "plan"] as Section[]).includes(section) && <ContentManager key={section} type={section} items={items.filter((item) => item.type === section)} media={media} busy={busy} onBusy={setBusy} onMessage={setMessage} onReload={load} />}
         {section === "media" && <MediaManager media={media} onMessage={setMessage} onReload={load} />}
         {section === "audit" && <AuditTable items={auditItems} />}
       </section>
@@ -121,6 +121,7 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
   const [articleImageName, setArticleImageName] = useState("");
   const [articleImagePreview, setArticleImagePreview] = useState<string | null>(null);
   const [articleImageBusy, setArticleImageBusy] = useState(false);
+  const [createIdempotencyKey, setCreateIdempotencyKey] = useState<string | null>(null);
   const labels: Record<string, string> = { article: "科普文章", video: "视频", knowledge: "知识资料", plan: "调理方案" };
 
   function setArticleImage(item: Item | null) {
@@ -169,18 +170,20 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
         await api("/api/admin/content", { method: "PATCH", headers: { "content-type": "application/json", "If-Match": `\"${editingItem.version}\"` }, body: JSON.stringify({ ...payload, id: editingItem.id, action: "update" }) });
         onMessage(`${labels[type]}已保存为新草稿版本`);
       } else {
-        const created = await api("/api/admin/content", { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) });
+        const idempotencyKey = createIdempotencyKey ?? crypto.randomUUID();
+        if (!createIdempotencyKey) setCreateIdempotencyKey(idempotencyKey);
+        const created = await api("/api/admin/content", { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(payload) });
         if (type === "plan") {
           await api("/api/admin/steps", { method: "POST", headers: { "content-type": "application/json", "If-Match": String(created.version ?? 1) }, body: JSON.stringify({ planId: created.id, position: 1, title: form.get("stepTitle"), instruction: form.get("stepInstruction"), mediaId: form.get("stepMediaId") }) });
         }
         onMessage(`${labels[type]}已保存为草稿`);
       }
-      setShowForm(false); setEditingItem(null); await onReload();
+      setShowForm(false); setEditingItem(null); setCreateIdempotencyKey(null); await onReload();
     }
     catch (error) { onMessage(error instanceof Error ? error.message : "保存失败"); } finally { onBusy(false); }
   }
-  function openCreate() { setArticleImage(null); setEditingItem(null); setShowForm(true); }
-  function openEdit(item: Item) { setArticleImage(item); setEditingItem(item); setShowForm(true); }
+  function openCreate() { setArticleImage(null); setCreateIdempotencyKey(crypto.randomUUID()); setEditingItem(null); setShowForm(true); }
+  function openEdit(item: Item) { setArticleImage(item); setCreateIdempotencyKey(null); setEditingItem(item); setShowForm(true); }
   async function action(id: string, actionName: string) {
     onBusy(true);
     try {
@@ -209,7 +212,7 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
         <label>来源或依据<input name="source" defaultValue={editingItem?.source ?? ""} /></label>
         {type !== "article" && <label>关联素材<select name="mediaId" defaultValue={editingItem?.mediaId ?? ""}><option value="">暂不关联</option>{media.filter((asset) => type !== "video" || asset.kind === "video").map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
         {type === "plan" && <><label>康复方法<select name="methodCode" required defaultValue={editingItem?.metadata.methodCode ?? ""}><option value="">请选择受控方法</option><option value="nose_three_line_ginger_scrape">鼻三线姜刮（不等同于普通刮痧）</option><option value="finger_pressure_yingxiang">指腹擦迎香</option><option value="acupoint_massage">穴位按摩</option><option value="ear_acupressure">耳穴压豆</option><option value="moxa_or_blow_dazhui">艾灸/电吹风吹大椎、风池</option></select></label><div className="form-grid"><label>风险提示<textarea name="risks" rows={3} required defaultValue={editingItem?.metadata.risks ?? ""} /></label><label>禁忌事项<textarea name="contraindications" rows={3} required defaultValue={editingItem?.metadata.contraindications ?? ""} /></label></div><fieldset><legend>适用证型</legend>{SYNDROME_OPTIONS.map(({ code, label }) => <label key={code}><input type="checkbox" name="syndromeCodes" value={code} defaultChecked={editingItem?.metadata.syndromeCodes?.includes(code) ?? false} />{label}</label>)}</fieldset>{!editingItem && <><div className="form-grid"><label>首个步骤标题<input name="stepTitle" required /></label><label>步骤视频<select name="stepMediaId"><option value="">无</option>{media.filter((asset) => asset.kind === "video").map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label></div><label>首个步骤说明<textarea name="stepInstruction" rows={3} required /></label></>}</>}
-        <div className="form-actions"><button type="button" onClick={() => { setShowForm(false); setEditingItem(null); }} disabled={busy || articleImageBusy}>取消</button><button className="primary" disabled={busy || articleImageBusy}>{editingItem ? "保存修改" : "保存草稿"}</button></div>
+        <div className="form-actions"><button type="button" onClick={() => { setShowForm(false); setEditingItem(null); setCreateIdempotencyKey(null); }} disabled={busy || articleImageBusy}>取消</button><button className="primary" disabled={busy || articleImageBusy}>{editingItem ? "保存修改" : "保存草稿"}</button></div>
       </form>}
       <ContentTable items={items} onAction={action} onEdit={openEdit} secondaryAction={type === "knowledge" ? "index" : undefined} busy={busy} />
     </section>

@@ -80,6 +80,7 @@ export async function PATCH(request: Request) {
     const { DB } = await runtime();
     const item = await DB.prepare("SELECT * FROM content_items WHERE id = ?").bind(id).first<ContentRow>();
     if (!item) return jsonError("内容不存在", 404);
+    if (action === "update" && body.type !== item.type) return jsonError("内容类型不匹配，请重新打开后再编辑", 409);
     const version = expectedVersion(request);
     if (version === null) return jsonError("请通过 If-Match 提交当前内容版本", 428);
     if (version !== item.version) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
