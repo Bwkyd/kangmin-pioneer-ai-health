@@ -14,6 +14,21 @@ test("文章编辑器上传并保存受控图片关联，失败时保留正文",
   assert.match(page, /ContentManager key=\{section\}/u);
 });
 
+test("文章编辑器提供 Word/PDF 预览确认门禁，确认前不能保存导入内容", async () => {
+  const page = await readFile(new URL("../../../app/admin/page.tsx", import.meta.url), "utf8");
+  const route = await readFile(new URL("../../../app/api/admin/article-import/route.ts", import.meta.url), "utf8");
+  assert.match(page, /导入 Word \/ PDF/u);
+  assert.match(page, /预览不会直接发布/u);
+  assert.match(page, /确认预览并填入正文/u);
+  assert.match(page, /请先预览并确认导入内容，才能保存文章草稿/u);
+  assert.match(page, /accept="\.doc,\.docx,\.pdf/u);
+  assert.match(page, /扫描 PDF 不自动 OCR/u);
+  assert.match(page, /articleImportPreview && !articleImportConfirmed/u);
+  assert.match(route, /requireAdmin/);
+  assert.match(route, /parseArticleImport/);
+  assert.match(route, /DocumentImportError/);
+});
+
 test("文章上传运行时允许覆盖接口声明的 10 MiB 图片上限", async () => {
   const config = await readFile(new URL("../../../next.config.ts", import.meta.url), "utf8");
   assert.match(config, /bodySizeLimit: "12mb"/u);

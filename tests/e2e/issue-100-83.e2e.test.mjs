@@ -5,6 +5,7 @@ import net from "node:net";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
+import { strToU8, zipSync } from "fflate";
 
 const TEST_DIR = path.dirname(fileURLToPath(import.meta.url));
 const PROJECT_DIR = path.resolve(TEST_DIR, "../..");
@@ -122,6 +123,21 @@ test("Issue #100/#83 HTTP 端到端跑通入口、管理员媒体、草稿保护
     const cookie = cookieFrom(login.response);
     assert.match(cookie, /kangmin_admin_session=/u);
 
+    const articleDocx = zipSync({
+      "word/document.xml": strToU8("<w:document xmlns:w=\"x\"><w:body><w:p><w:r><w:t>Issue 82 imported title</w:t></w:r></w:p><w:p><w:r><w:t>Issue 82 imported body for preview and user readback.</w:t></w:r></w:p></w:body></w:document>"),
+    });
+    const articleImportForm = new FormData();
+    articleImportForm.append("file", new Blob([articleDocx], { type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document" }), "issue-82.docx");
+    const importedPreview = await request(baseUrl, "/api/admin/article-import", { method: "POST", body: articleImportForm }, cookie);
+    assert.equal(importedPreview.response.status, 200);
+    assert.equal(importedPreview.body.format, "docx");
+    assert.match(importedPreview.body.text, /Issue 82 imported body/u);
+
+    const unsupportedImport = new FormData();
+    unsupportedImport.append("file", new Blob(["not a document"], { type: "text/plain" }), "issue-82.txt");
+    const unsupportedImportResponse = await request(baseUrl, "/api/admin/article-import", { method: "POST", body: unsupportedImport }, cookie);
+    assert.equal(unsupportedImportResponse.response.status, 415);
+
     const fakeImage = new FormData();
     fakeImage.append("file", new Blob(["not a png"], { type: "image/png" }), "fake.png");
     const fakeUpload = await request(baseUrl, "/api/admin/uploads", { method: "POST", body: fakeImage }, cookie);
@@ -145,11 +161,11 @@ test("Issue #100/#83 HTTP 端到端跑通入口、管理员媒体、草稿保护
     const idempotencyKey = `issue-83-${crypto.randomUUID()}`;
     const articlePayload = {
       type: "article",
-      title: "Issue 83 E2E article",
+      title: importedPreview.body.title,
       category: "鼻部护理",
       summary: "Issue 83 E2E summary",
-      body: "Issue 83 E2E body must survive every save boundary.",
-      source: "synthetic local E2E",
+      body: importedPreview.body.text,
+      source: importedPreview.body.source,
       mediaId,
       metadata: {},
     };
@@ -196,6 +212,9 @@ test("Issue #100/#83 HTTP 端到端跑通入口、管理员媒体、草稿保护
     const publicArticle = await request(baseUrl, "/api/content?type=article");
     assert.equal(publicArticle.response.status, 200);
     assert.equal(publicArticle.body.items.find((item) => item.id === created.body.id).mediaId, mediaId);
+    const publicArticleDetail = await request(baseUrl, `/api/content?type=article&id=${encodeURIComponent(created.body.id)}`);
+    assert.equal(publicArticleDetail.response.status, 200);
+    assert.equal(publicArticleDetail.body.item.body, importedPreview.body.text);
   } finally {
     await stopServer(child);
     await unlink(devVarsPath).catch(() => {});
