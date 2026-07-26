@@ -8,7 +8,7 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 11:12:10 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 11:14:12 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
 - 当前业务代码候选：`347af77d28b3b5ad332b1007f7eeabe194360727`（`Close content dependency and vector generation races`）；`cbed37b` 已被本轮 P1 修复提交取代。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
@@ -22,6 +22,7 @@
 ## 2026-07-26 11:07 当前 SHA 行为验证与收尾状态（当前唯一执行状态）
 
 - completed：状态提交链的差异只包含本状态文件；业务候选仍精确为 `347af77d28b3b5ad332b1007f7eeabe194360727`，没有把旧 SHA 测试套到新业务代码。状态提交的当前 HEAD 由 Git 实时核验，不通过状态文件自引用其提交哈希。
+- completed：2026-07-26 11:14 在当前业务树上重新执行 `npm run lint`、`npm run build` 和授权环境 `npm test`；结果为 lint 0 errors/1 个既有 warning、build PASS、94/94 PASS。测试后服务已停止，端口无监听，工作树保持干净。
 - completed：精确业务树 `347af77d28b3b5ad332b1007f7eeabe194360727`（HEAD 仅多状态记录提交）重新通过 `npm run lint`、`npm run build` 和授权环境 `npm test`；结果分别为 0 errors/1 个既有 `<img>` warning、build PASS、94/94 PASS。普通沙箱的 HTTP E2E `listen EPERM` 不计入业务失败。
 - completed：当前 SHA 浏览器用户视角验证通过：发热显示“先暂停操作”；肺经蕴热型选择艾灸/电吹风被服务端拦截；修改高风险答案立即清空旧评估结果；未认证路径不返回正式方案。
 - completed：仅使用 `APP_ENV=local` 的合成身份完成两个账号隔离验收：账号 A 保存并回读空气污染患者自述、用药时间/氯雷他定/10 mg/实际用量和当天症状 4 分；切换账号 B 后健康档案、过敏原、用药和当天症状均为空。浏览器错误/警告日志为空。
