@@ -70,6 +70,10 @@ test("keeps every original demo section without presenting simulated medical fac
   assert.match(page, /内部演示内容 · 待医学审核/);
   assert.match(page, /暂无真实健康记录/);
   assert.match(page, /<strong>过敏原记录<\/strong><i>记录今天<\/i>/);
+  assert.match(page, /aria-label="今日待完成：打开过敏原记录"/u);
+  assert.match(page, /aria-label="打开症状评估日历"/u);
+  assert.match(page, /data-navigation-purpose="allergen-record"/u);
+  assert.match(page, /data-navigation-purpose="symptom-calendar"/u);
   assert.match(page, /openDiscover\("video"\)/u);
   assert.match(page, /disabled=\{symptomStatus !== "ready" \|\| !scoresComplete\}/);
   assert.match(page, /scoresComplete \? symptomLabel\(totalScore\) : "请完成评分"/);
