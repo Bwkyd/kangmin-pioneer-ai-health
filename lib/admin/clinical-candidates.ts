@@ -28,6 +28,12 @@ export const CLINICAL_CANDIDATE_DEFINITIONS: readonly ClinicalCandidateDefinitio
     requiredMethodCode: "nose_three_line_ginger_scrape",
   },
   {
+    code: "gua_sha_safety_gate",
+    label: "普通刮痧安全门禁（#94–#96）",
+    issue: 94,
+    requiredMethodCode: "gua_sha",
+  },
+  {
     code: "shared_finger_pressure_yingxiang",
     label: "五种证型共同方案：指腹擦迎香（速通）",
     issue: 88,

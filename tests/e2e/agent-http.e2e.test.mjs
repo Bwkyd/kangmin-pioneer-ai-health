@@ -107,6 +107,21 @@ function allRehabAnswers() {
   };
 }
 
+function allGuaShaAnswers() {
+  return {
+    feverOrInfection: "no",
+    acuteColdRhinitis: "no",
+    acuteAllergicFlare: "no",
+    lungHeatPattern: "no",
+    skinDamageOrInflammation: "no",
+    skinAllergyAtSite: "no",
+    bleedingRisk: "no",
+    anticoagulantUse: "no",
+    severeChronicDisease: "no",
+    specialPhysicalState: "no",
+  };
+}
+
 async function postJson(baseUrl, pathname, body) {
   const response = await fetch(`${baseUrl}${pathname}`, {
     method: "POST",
@@ -187,6 +202,38 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
       used: false,
       degradedReason: "identity_required",
     });
+
+    const guaShaUnknown = allGuaShaAnswers();
+    guaShaUnknown.feverOrInfection = "unknown";
+    const guaShaIncomplete = await postJson(
+      baseUrl,
+      "/api/v1/agent/rehab-safety",
+      { method: "gua_sha", answers: guaShaUnknown },
+    );
+    assert.equal(guaShaIncomplete.response.status, 200);
+    assert.equal(guaShaIncomplete.body.data.safety.status, "need_more_information");
+    assert.deepEqual(guaShaIncomplete.body.data.safety.nextQuestions, ["feverOrInfection"]);
+
+    guaShaUnknown.feverOrInfection = "yes";
+    const guaShaBlocked = await postJson(
+      baseUrl,
+      "/api/v1/agent/rehab-safety",
+      { method: "gua_sha", answers: guaShaUnknown },
+    );
+    assert.equal(guaShaBlocked.response.status, 200);
+    assert.equal(guaShaBlocked.body.data.safety.status, "blocked");
+    assert.deepEqual(guaShaBlocked.body.data.safety.blockedBy, ["feverOrInfection"]);
+    assert.equal(guaShaBlocked.body.data.safety.rulePackageVersion, "gua-sha-safety-v1");
+
+    const guaShaLungHeat = await postJson(
+      baseUrl,
+      "/api/v1/agent/explain",
+      { ...completeInput(), rehabSafety: { method: "gua_sha", answers: allGuaShaAnswers() } },
+    );
+    assert.equal(guaShaLungHeat.response.status, 200);
+    assert.equal(guaShaLungHeat.body.data.rehabSafety.status, "blocked");
+    assert.deepEqual(guaShaLungHeat.body.data.rehabSafety.blockedBy, ["lungHeatPattern"]);
+    assert.equal(guaShaLungHeat.body.data.explanation, null);
 
     const conflict = await postJson(
       baseUrl,

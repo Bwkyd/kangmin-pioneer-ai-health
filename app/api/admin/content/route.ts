@@ -121,7 +121,7 @@ export async function PATCH(request: Request) {
         await recordPublishBlocked(DB, session.username, item, candidateContentProblem);
         return jsonError(candidateContentProblem, 422);
       }
-      const problem = publishProblem(item.type, { ...item, mediaId: item.media_id, stepsText: stepStats?.step_text ?? "" });
+      const problem = publishProblem(item.type, { ...item, mediaId: item.media_id, clinicalCandidateKind: item.clinical_candidate_kind, stepsText: stepStats?.step_text ?? "" });
       if (problem) {
         await recordPublishBlocked(DB, session.username, item, problem);
         return jsonError(problem, 422);

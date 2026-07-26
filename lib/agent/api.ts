@@ -24,8 +24,15 @@ import {
 import {
   evaluateRehabSafety,
   isRehabMethod,
+  GUA_SHA_SAFETY_FIELDS,
+  GUA_SHA_RULE_PACKAGE_VERSION,
+  GUA_SHA_RULE_SOURCE,
   REHAB_SAFETY_FIELDS,
   REHAB_SAFETY_DISCLAIMER,
+  REHAB_RULE_PACKAGE_VERSION,
+  REHAB_RULE_SOURCE,
+  type GuaShaSafetyAnswers,
+  type RehabSafetyInput,
   type RehabSafetyAnswers,
   type RehabSafetyResult,
 } from "./rehab-safety.ts";
@@ -147,8 +154,12 @@ export function parseAssessmentInput(value: unknown): AssessmentInput | null {
   };
 }
 
-export function parseRehabSafetyInput(value: unknown): { method: Parameters<typeof evaluateRehabSafety>[0]; answers: RehabSafetyAnswers } | null {
+export function parseRehabSafetyInput(value: unknown): RehabSafetyInput | null {
   if (!isRecord(value) || !hasExactKeys(value, ["method", "answers"]) || !isRehabMethod(value.method)) return null;
+  if (value.method === "gua_sha") {
+    const answers = parseAnswerGroup<GuaShaSafetyAnswers>(value.answers, GUA_SHA_SAFETY_FIELDS);
+    return answers ? { method: value.method, answers } : null;
+  }
   const answers = parseAnswerGroup<RehabSafetyAnswers>(value.answers, REHAB_SAFETY_FIELDS);
   return answers ? { method: value.method, answers } : null;
 }
@@ -169,7 +180,7 @@ export type ApprovedPlan = {
 
 type ExplainInput = {
   assessment: AssessmentInput;
-  rehabSafety: { method: Parameters<typeof evaluateRehabSafety>[0]; answers: RehabSafetyAnswers } | null;
+  rehabSafety: RehabSafetyInput | null;
 };
 
 function parseExplainInput(value: unknown): ExplainInput | null {
@@ -534,13 +545,15 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           });
         }
 
-        const forcedLungHeatBlock = assessment.syndrome.syndromeCode === "LUNG_HEAT" && isThermalRehabMethod(parsed.rehabSafety.method);
+        const forcedLungHeatBlock = assessment.syndrome.syndromeCode === "LUNG_HEAT" && (parsed.rehabSafety.method === "gua_sha" || isThermalRehabMethod(parsed.rehabSafety.method));
         const rehabSafety: RehabSafetyResult = forcedLungHeatBlock
           ? {
               status: "blocked" as const,
               method: parsed.rehabSafety.method,
               blockedBy: ["lungHeatPattern"],
-              rulePackageVersion: "rehab-safety-v1",
+              blockedReasons: ["鼻涕黄稠、口干怕热或已知肺经蕴热"],
+              rulePackageVersion: parsed.rehabSafety.method === "gua_sha" ? GUA_SHA_RULE_PACKAGE_VERSION : REHAB_RULE_PACKAGE_VERSION,
+              ruleSource: parsed.rehabSafety.method === "gua_sha" ? GUA_SHA_RULE_SOURCE : REHAB_RULE_SOURCE,
               disclaimer: REHAB_SAFETY_DISCLAIMER,
             }
           : evaluateRehabSafety(parsed.rehabSafety.method, parsed.rehabSafety.answers);

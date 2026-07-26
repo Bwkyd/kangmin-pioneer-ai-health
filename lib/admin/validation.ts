@@ -108,7 +108,7 @@ export function requiresClinicalApproval(type: ContentType, item: ClinicalConten
   return contentTypes.has(type) || hasUnapprovedClinicalContent(item);
 }
 
-export function publishProblem(type: ContentType, item: { title?: string; category?: string; summary?: string; body?: string; source?: string; stepsText?: string; version?: number; mediaId?: string | null; metadata?: string }) {
+export function publishProblem(type: ContentType, item: { title?: string; category?: string; summary?: string; body?: string; source?: string; stepsText?: string; version?: number; mediaId?: string | null; metadata?: string; clinicalCandidateKind?: string | null }) {
   if (!item.title?.trim()) return "请先填写标题";
   if (type === "article" && !item.body?.trim()) return "文章正文不能为空";
   if (type === "video" && !item.mediaId) return "视频发布前必须上传视频文件";
@@ -140,7 +140,7 @@ export function publishProblem(type: ContentType, item: { title?: string; catego
     if (metadata.methodCode === "gua_sha") {
       if (!methodLabel || !item.title?.includes(methodLabel)) return "刮痧方案标题必须使用统一方法名称";
       if (/鼻三线姜刮|姜刮/u.test(text)) return "刮痧与鼻三线姜刮是不同的方法类型，请修正后再发布";
-      return "刮痧的独立安全门禁尚未完成，当前不可发布";
+      if (item.clinicalCandidateKind !== "gua_sha_safety_gate") return "普通刮痧方案必须绑定 #94–#96 刮痧安全门禁候选，临床确认前不可发布";
     }
     if (metadata.methodCode !== "nose_three_line_ginger_scrape" && /姜刮/u.test(text)) return "正文中的鼻三线姜刮与受控方法不一致，请修正后再发布";
   }

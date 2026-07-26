@@ -11,7 +11,7 @@ import {
   SAFETY_FIELDS,
   SEVERITY_FIELDS,
 } from "../../../lib/agent/rules.ts";
-import { REHAB_SAFETY_FIELDS } from "../../../lib/agent/rehab-safety.ts";
+import { GUA_SHA_SAFETY_FIELDS, REHAB_SAFETY_FIELDS } from "../../../lib/agent/rehab-safety.ts";
 
 function allAnswers(fields, value = "no") {
   return Object.fromEntries(fields.map((field) => [field, value]));
@@ -91,8 +91,25 @@ test("康复建议先经过方法级安全筛查，unknown 不会被当作安全
   assert.deepEqual(result.body.data.safety.nextQuestions, ["bleedingRisk"]);
 });
 
-test("普通刮痧尚未接入本轮姜刮安全筛查，不会默认复用", () => {
+test("普通刮痧只接受独立安全字段，不会复用姜刮筛查", () => {
+  assert.equal(parseRehabSafetyInput({ method: "gua_sha", answers: allAnswers(GUA_SHA_SAFETY_FIELDS) })?.method, "gua_sha");
   assert.equal(parseRehabSafetyInput({ method: "gua_sha", answers: allAnswers(REHAB_SAFETY_FIELDS) }), null);
+});
+
+test("普通刮痧 API 对 unknown 和发热感染执行 fail-closed 门禁", async () => {
+  const answers = allAnswers(GUA_SHA_SAFETY_FIELDS);
+  answers.feverOrInfection = "unknown";
+  const api = createAgentApi({ limiter: new InMemoryAgentLimiter(), apiKey: null });
+  const incomplete = await responseBody(await api.rehabSafety(post("/api/v1/agent/rehab-safety", { method: "gua_sha", answers })));
+  assert.equal(incomplete.status, 200);
+  assert.equal(incomplete.body.data.safety.status, "need_more_information");
+  assert.deepEqual(incomplete.body.data.safety.nextQuestions, ["feverOrInfection"]);
+
+  answers.feverOrInfection = "yes";
+  const blocked = await responseBody(await api.rehabSafety(post("/api/v1/agent/rehab-safety", { method: "gua_sha", answers })));
+  assert.equal(blocked.body.data.safety.status, "blocked");
+  assert.deepEqual(blocked.body.data.safety.blockedBy, ["feverOrInfection"]);
+  assert.equal(blocked.body.data.safety.rulePackageVersion, "gua-sha-safety-v1");
 });
 
 test("evaluate 由服务端重算规则，并使用统一成功和错误结构", async () => {
@@ -437,6 +454,25 @@ test("服务端强制阻断肺经蕴热型的艾灸和吹风方案，不信任�
     assert.equal(rawResult.headers.get("cache-control"), "private, no-store");
     assert.equal(rawResult.headers.get("vary"), "Cookie");
   }
+});
+
+test("服务端强制阻断肺经蕴热型的普通刮痧，不信任客户端把肺热填成没有", async () => {
+  const api = createAgentApi({
+    limiter: new InMemoryAgentLimiter(),
+    approvedPlanProvider: async () => { throw new Error("blocked request must not read plan"); },
+  });
+  const rawResult = await api.explain(post("/api/v1/agent/explain", {
+    ...completeInput({
+      syndrome: { thirst: "yes", fatigue: "no", limbsNotWarm: "no", fearWind: "no", coldIntolerance: "no" },
+    }),
+    rehabSafety: { method: "gua_sha", answers: allAnswers(GUA_SHA_SAFETY_FIELDS, "no") },
+  }));
+  const result = await responseBody(rawResult);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.rehabSafety.status, "blocked");
+  assert.deepEqual(result.body.data.rehabSafety.blockedBy, ["lungHeatPattern"]);
+  assert.equal(result.body.data.rehabSafety.rulePackageVersion, "gua-sha-safety-v1");
+  assert.equal(result.body.data.explanation, null);
 });
 
 test("未完成服务端身份确认时只返回筛查，不返回正式审核方案", async () => {

@@ -68,8 +68,11 @@ test("临床候选穴位只接受与方法绑定的受控结构，并保留顺�
 });
 
 test("普通刮痧是独立的方法类型，不能借用姜刮名称", () => {
-  assert.equal(publishProblem("video", { title: "普通刮痧护理视频", mediaId: "video_1", metadata: JSON.stringify({ methodCode: "gua_sha" }) }), "刮痧的独立安全门禁尚未完成，当前不可发布");
+  assert.equal(publishProblem("video", { title: "刮痧护理视频", mediaId: "video_1", metadata: JSON.stringify({ methodCode: "gua_sha" }) }), "普通刮痧方案必须绑定 #94–#96 刮痧安全门禁候选，临床确认前不可发布");
+  assert.equal(publishProblem("video", { title: "刮痧护理视频", mediaId: "video_1", clinicalCandidateKind: "gua_sha_safety_gate", metadata: JSON.stringify({ methodCode: "gua_sha" }) }), null);
   assert.equal(publishProblem("video", { title: "鼻三线姜刮护理视频", mediaId: "video_1", metadata: JSON.stringify({ methodCode: "gua_sha" }) }), "刮痧方案标题必须使用统一方法名称");
+  assert.match(clinicalCandidateContentProblem("gua_sha_safety_gate", JSON.stringify({ methodCode: "nose_three_line_ginger_scrape" }), "video") ?? "", /必须选择受控方法/u);
+  assert.equal(clinicalCandidateContentProblem("gua_sha_safety_gate", JSON.stringify({ methodCode: "gua_sha" }), "video"), null);
 });
 
 test("康复内容需要审核，但通过审核后不应被通用字段校验永久拦截", () => {

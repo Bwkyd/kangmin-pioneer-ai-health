@@ -128,7 +128,7 @@ type AgentAssessmentDraft = {
 
 type AgentResult = {
   assessment?: { status?: string; planStatus?: string; disclaimer?: string; nextQuestions?: string[]; matchedRuleIds?: string[]; reason?: string; stage?: string };
-  rehabSafety?: { status?: string; nextQuestions?: string[]; blockedBy?: string[]; disclaimer?: string };
+  rehabSafety?: { status?: string; nextQuestions?: string[]; blockedBy?: string[]; blockedReasons?: string[]; rulePackageVersion?: string; ruleSource?: string; disclaimer?: string };
   explanation?: {
     summary?: string;
     disclaimer?: string;
@@ -180,8 +180,20 @@ const agentRehabFields = [
   ["mediumAllergy", "对姜、油、乳液等操作介质过敏"],
   ["lungHeatPattern", "鼻涕黄稠、口干怕热，或已知肺经蕴热"],
 ] as const;
+const guaShaRehabFields = [
+  ["feverOrInfection", "有发热、感染或明显头痛"],
+  ["acuteColdRhinitis", "感冒引起的急性鼻炎，或正在发热"],
+  ["acuteAllergicFlare", "过敏性鼻炎正处于严重急性发作"],
+  ["lungHeatPattern", "鼻涕黄稠、口干怕热，或已知肺经蕴热"],
+  ["skinDamageOrInflammation", "刮痧部位有破损、感染、炎症、湿疹或疱疹"],
+  ["skinAllergyAtSite", "刮痧部位有过敏或皮疹"],
+  ["bleedingRisk", "有血小板减少、血友病或严重贫血等出血风险"],
+  ["anticoagulantUse", "正在使用阿司匹林、华法林等抗凝药"],
+  ["severeChronicDisease", "有严重心脑血管、肝肾等慢性疾病"],
+  ["specialPhysicalState", "过饱、过饿、过渴、过劳、醉酒、孕期或经期"],
+] as const;
+const allAgentRehabFields = [...agentRehabFields, ...guaShaRehabFields] as const;
 const rehabMethodOptions = REHAB_METHOD_DEFINITIONS
-  .filter(({ code }) => code !== "gua_sha")
   .map(({ code, label, note }) => [code, note ? `${label}（${note}）` : label] as const);
 
 const agentFieldLabels: Record<string, string> = Object.fromEntries([
@@ -189,6 +201,7 @@ const agentFieldLabels: Record<string, string> = Object.fromEntries([
   ...agentSeverityFields,
   ...agentSyndromeFields,
   ...agentRehabFields,
+  ...guaShaRehabFields,
   ["diagnosedAllergicRhinitis", "是否已经被医生或检查确认过敏性鼻炎"],
 ].map(([key, label]) => [key, label])) as Record<string, string>;
 
@@ -204,7 +217,7 @@ function createAgentDraft(): AgentAssessmentDraft {
     severity: unknowns(agentSeverityFields),
     syndrome: unknowns(agentSyndromeFields),
     rehabMethod: "finger_pressure_yingxiang",
-    rehabSafety: unknowns(agentRehabFields),
+    rehabSafety: unknowns(allAgentRehabFields),
   };
 }
 
@@ -271,8 +284,8 @@ function AgentAssessmentPanel({
             {rehabMethodOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
           </select>
         </label>
-        <p className="agent-method-note">鼻三线姜刮不等同于普通刮痧；如果信息不完整，智能体不会直接给出操作建议。</p>
-        {renderFields("rehabSafety", agentRehabFields)}
+        <p className="agent-method-note">{draft.rehabMethod === "gua_sha" ? "普通刮痧使用独立安全门禁：先筛查发热/感染、鼻炎发作、热性状态、身体与皮肤问题及出血风险；任一项不确定都不会给出刮痧步骤。" : "鼻三线姜刮不等同于普通刮痧；如果信息不完整，智能体不会直接给出操作建议。"}</p>
+        {renderFields("rehabSafety", draft.rehabMethod === "gua_sha" ? guaShaRehabFields : agentRehabFields)}
       </details>
       {notice && <p className={`agent-notice ${status === "error" ? "error-text" : ""}`} role="status">{notice}</p>}
       <button className="agent-submit" type="button" disabled={status === "submitting"} onClick={onSubmit}>{status === "submitting" ? "正在安全评估…" : "获取安全建议"}</button>
@@ -285,7 +298,9 @@ function AgentAssessmentPanel({
           {result.assessment?.status === "need_more_information" && <p>还需要确认：{result.assessment.nextQuestions?.map(agentQuestionLabel).join("、") || "请补充未确认的信息"}。</p>}
           {result.rehabSafety?.status === "blocked" && <p className="error-text">当前情况不适合直接进行这项操作，请先咨询专业人员。</p>}
           {result.rehabSafety?.status === "blocked" && result.rehabSafety.blockedBy && <p className="error-text">需要避开的情况：{result.rehabSafety.blockedBy.map(agentQuestionLabel).join("、")}。</p>}
+          {result.rehabSafety?.status === "blocked" && result.rehabSafety.blockedReasons && <p className="error-text">拦截原因：{result.rehabSafety.blockedReasons.join("；")}。</p>}
           {result.rehabSafety?.status === "need_more_information" && <p>还有安全信息未确认：{result.rehabSafety.nextQuestions?.map(agentQuestionLabel).join("、") || "请补充后再试"}。</p>}
+          {result.rehabSafety && result.rehabSafety.status !== "clear" && result.rehabSafety.ruleSource && <small>规则来源：{result.rehabSafety.ruleSource}；规则版本：{result.rehabSafety.rulePackageVersion}</small>}
           {!result.explanation?.plan && result.assessment?.status === "classified" && result.rehabSafety?.status === "clear" && <p>筛查已完成，但当前账户没有可返回的已审核方案；智能体不会直接推荐未经审核的操作。</p>}
           {result.explanation?.plan && (
             <div className="agent-plan-detail">
@@ -667,7 +682,9 @@ export default function Home() {
     setAgentStatus("submitting");
     setAgentNotice("正在提交服务端规则和操作安全筛查…");
     setAgentResult(null);
-    const { rehabMethod, rehabSafety, ...assessment } = draft;
+    const { rehabMethod, rehabSafety: draftRehabSafety, ...assessment } = draft;
+    const rehabFields = rehabMethod === "gua_sha" ? guaShaRehabFields : agentRehabFields;
+    const rehabSafety = Object.fromEntries(rehabFields.map(([field]) => [field, draftRehabSafety[field]]));
     try {
       const response = await fetch("/api/v1/agent/explain", {
         method: "POST",
