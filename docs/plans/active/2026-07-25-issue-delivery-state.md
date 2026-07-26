@@ -8,16 +8,26 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 12:05:10 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 12:31:31 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 最近一次已验证业务候选：`98f47c6d768e31bdc7106ce68beb98b78af8ef4d`（`Add video topic navigation`）；当前 HEAD 为状态记录提交 `8fec614fddc90ea525149d93e062621e973f51f1`，但其后工作树已有新的未提交实现，因此当前没有可供复审或发布的冻结候选。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`。
-- 工作树：实时发现 `app/admin/page.tsx`、`app/api/admin/content/route.ts`、`app/api/media/[id]/route.ts` 三个已跟踪实现文件修改，并新增 `lib/admin/content-update.ts`、`tests/unit/admin/content-update-policy.test.mjs`；核验期间后一个测试文件于 12:03:48 新出现，确认 owner 仍在持续实现。12:04:39 又出现 327 字节未跟踪 `.dev.vars`；仅核验路径、时间、权限和大小元数据，未读取、写入或删除。最后一次已提交候选的测试结论不能套用到当前工作树。
+- 最近一次已验证业务候选和当前 HEAD 均为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；该 SHA 已冻结，工作树当前干净。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- 工作树：实现、定向测试和状态文件已提交；临时 `.dev.vars` 已删除，未跟踪敏感配置不存在。当前候选之后没有新的业务代码修改。
 - GitHub Issue/PR：2026-07-26 12:03 主机网络实时回读成功，仍有 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。实时刷新后 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 12:03 主机网络只读核验返回 HTTP 200；未登录、未写入。
-- 本地服务：`127.0.0.1:3000` 于 2026-07-26 12:03 无监听、HTTP 000。基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
+- 本地服务：`127.0.0.1:3000` 于 2026-07-26 12:31 无监听。此前本轮本地服务已停止；基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 12:31 精确 SHA 收敛与同 SHA 验证
+
+- completed：精确候选 `6a7f7975fa65393a9f19b93f0d215017b0abd870` 已提交并冻结；内容编辑 UI、服务端部分更新字段保留、媒体关联状态/类型校验、缺失媒体 404 和行为测试已纳入该 SHA。工作树干净，3000 无监听，临时 `.dev.vars` 已删除。
+- completed：该 SHA 上 `npm run lint` 通过（0 errors、1 个既有 `<img>` warning），`npm run build` 通过，完整 `npm test` 通过 100/100（含完整 HTTP E2E）；`git diff --check` 通过。
+- completed：该 SHA 上隔离 D1/SQLite 定向测试 28/28 通过；另从真实 0000→0009 顺序执行迁移，在 0007 前插入同日重复患者自述，确认只保留最新记录、保留选择项、写入完整 `merge_duplicate_exposure` 审计，0008 `write_token` 和 0009 幂等联合主键均成功建立。
+- completed：该 SHA 浏览器用户视角通过：后台草稿创建后编辑升为 v2 且正文/来源等未提交字段保留；不存在媒体返回 404；合成账号保存并回读患者自述过敏原、用药时间/名称/剂量/实际用量和症状 4 分；切换第二 synthetic 账号后上述数据均为空；发热显示“先暂停操作”；肺经蕴热+艾灸/吹风被服务端阻断；无服务端身份时只返回筛查、不返回正式方案。验收合成数据已清理。
+- PASS：本轮精确 SHA 的代码门禁、隔离迁移/并发定向验证和浏览器用户旅程均通过；未发现新的本地 P0/P1。
+- blocked：四个独立对抗审查分身在 240 秒内均无最终 verdict，随后关闭；不能视为审查 PASS。Kimi/DeepSeek 仍无合法代码外发授权。生产 verified-phone、生产 D1/Vectorize、临床书面批准、客户 UAT、GitHub 有效凭据/PR/CI、推送、合并、部署和关闭 Issue仍未具备。
+- pending：如要进入发布流程，必须先获得明确逐项授权、有效 GitHub 凭据、临床/客户批准和生产验收；在此之前不推送、不合并、不部署、不关闭 Issue、不清理分支或 worktree。
 
 ## 2026-07-26 12:09 实时状态（当前唯一执行状态）
 
