@@ -519,6 +519,8 @@ export default function Home() {
     if (tab !== "healthProfile") return;
     let cancelled = false;
     const requestVersion = profileRequest.next();
+    const exposureRequestVersion = exposureRequest.next();
+    const medicationRequestVersion = medicationRequest.next();
     void (async () => {
       const [profileResult, exposureResult, medicationResult] = await Promise.allSettled([getHealthProfile(), listAllergenExposures(), listMedications()]);
       if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
@@ -530,23 +532,27 @@ export default function Home() {
         allergyHistory: profile.allergyHistory,
         allergyHistoryEntries: profile.allergyHistoryEntries,
       } : emptyHealthProfile);
-      if (exposureResult.status === "fulfilled") {
-        setExposures(exposureResult.value);
-        setExposureStatus("ready");
-        setExposureNotice(exposureResult.value.length > 0 ? "已读取服务端患者自述记录" : "该账户暂无过敏原记录");
-      } else {
-        setExposures([]);
-        setExposureStatus("error");
-        setExposureNotice("过敏原历史暂时无法读取，已冻结保存和编辑操作");
+      if (exposureRequest.isCurrent(exposureRequestVersion)) {
+        if (exposureResult.status === "fulfilled") {
+          setExposures(exposureResult.value);
+          setExposureStatus("ready");
+          setExposureNotice(exposureResult.value.length > 0 ? "已读取服务端患者自述记录" : "该账户暂无过敏原记录");
+        } else {
+          setExposures([]);
+          setExposureStatus("error");
+          setExposureNotice("过敏原历史暂时无法读取，已冻结保存和编辑操作");
+        }
       }
-      if (medicationResult.status === "fulfilled") {
-        setMedications(medicationResult.value);
-        setMedicationStatus("ready");
-        setMedicationNotice(medicationResult.value.length > 0 ? "已读取服务端用药记录" : "暂无已保存的用药记录");
-      } else {
-        setMedications([]);
-        setMedicationStatus("error");
-        setMedicationNotice("用药历史暂时无法读取，已冻结编辑和删除操作");
+      if (medicationRequest.isCurrent(medicationRequestVersion)) {
+        if (medicationResult.status === "fulfilled") {
+          setMedications(medicationResult.value);
+          setMedicationStatus("ready");
+          setMedicationNotice(medicationResult.value.length > 0 ? "已读取服务端用药记录" : "暂无已保存的用药记录");
+        } else {
+          setMedications([]);
+          setMedicationStatus("error");
+          setMedicationNotice("用药历史暂时无法读取，已冻结编辑和删除操作");
+        }
       }
       setProfileLoadError(profileError);
       setProfileStatus(profileError ? "error" : "ready");
@@ -555,7 +561,7 @@ export default function Home() {
         : profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
     })();
     return () => { cancelled = true; };
-  }, [tab, profileReload, profileRequest]);
+  }, [tab, profileReload, profileRequest, exposureRequest, medicationRequest]);
 
   useEffect(() => {
     if (tab !== "assessment" || entryOpen) return;
@@ -1001,6 +1007,7 @@ export default function Home() {
     if (next === "assessment") {
       setSymptoms([]);
       setSymptomStatus("loading");
+      if (tab === "assessment") setAssessmentReload((current) => current + 1);
     }
     if (next === "allergenRecord") {
       setExposures([]);
@@ -1151,7 +1158,7 @@ export default function Home() {
                 </section>
 
                 <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={openDiscover}>全部 ›</button></div>
-                <button className="article-feature" onClick={openDiscover}>
+                <button className="article-feature" onClick={() => setArticleOpen(0)}>
                   <div className="article-art"><span /><i>4</i></div>
                   <div><small>日常防护 · 3 分钟</small><strong>换季鼻敏感，先做好这 4 件小事</strong><span>温差、卧室环境与外出防护</span></div>
                 </button>
@@ -1359,23 +1366,25 @@ export default function Home() {
                       <p className="record-empty">{healthProfile?.allergyHistory || "暂无已保存的过敏史"}</p>
                     </section>
                     <section className="health-record-card trigger-card">
-                      <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>区分档案内容与患者每日自述</small></div><button onClick={() => startAllergenRecord(localDateValue(), "healthProfile")}>新增记录</button></div>
+                      <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>区分档案内容与患者每日自述</small></div><button disabled={exposureStatus !== "ready"} onClick={() => startAllergenRecord(localDateValue(), "healthProfile")}>新增记录</button></div>
                       {healthProfile?.legacyCommonTriggers?.length ? <p className="record-notice"><strong>历史诱因待迁移</strong><span>{healthProfile.legacyCommonTriggers.join("、")} 是旧版档案字段，暂不作为患者自述或当前投影；请重新填写过敏原记录确认。</span></p> : null}
-                      {healthProfile?.commonTriggers.length ? <div className="record-tags">{healthProfile.commonTriggers.map((item) => <span key={item.code}>{item.label}<small>患者自述 · 最近 {displayDate(item.latestDate)}</small></span>)}</div> : <p className="record-empty">暂无已持久化暴露记录生成的常见诱因</p>}
-                      <div className="patient-records">
-                        <strong>患者自述暴露记录</strong>
-                        <p>按日期同步展示，仅供回顾，不代表已确定病因。</p>
-                        {exposures.length > 0 ? exposures.map((record) => (
-                          <button key={record.id} onClick={() => { editExposure(record); setAllergenReturnTab("healthProfile"); setExposureStatus("loading"); setTab("allergenRecord"); }}>
-                            <span>{displayDate(record.date)} · 患者记录</span>
-                            <strong>{record.factors.join("、")}{record.otherDescription ? `：${record.otherDescription}` : ""}</strong>
-                            <b>查看原记录 ›</b>
-                          </button>
-                        )) : <small>暂无可追溯的患者自述记录</small>}
-                      </div>
+                      {exposureStatus === "error" ? <div className="record-notice error" role="alert"><strong>过敏原历史暂时无法读取</strong><span>{exposureNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div> : exposureStatus === "loading" ? <p className="record-empty">正在读取患者自述暴露记录…</p> : <>
+                        {healthProfile?.commonTriggers.length ? <div className="record-tags">{healthProfile.commonTriggers.map((item) => <span key={item.code}>{item.label}<small>患者自述 · 最近 {displayDate(item.latestDate)}</small></span>)}</div> : <p className="record-empty">暂无已持久化暴露记录生成的常见诱因</p>}
+                        <div className="patient-records">
+                          <strong>患者自述暴露记录</strong>
+                          <p>按日期同步展示，仅供回顾，不代表已确定病因。</p>
+                          {exposures.length > 0 ? exposures.map((record) => (
+                            <button key={record.id} onClick={() => { editExposure(record); setAllergenReturnTab("healthProfile"); setExposureStatus("loading"); setTab("allergenRecord"); }}>
+                              <span>{displayDate(record.date)} · 患者记录</span>
+                              <strong>{record.factors.join("、")}{record.otherDescription ? `：${record.otherDescription}` : ""}</strong>
+                              <b>查看原记录 ›</b>
+                            </button>
+                          )) : <small>暂无可追溯的患者自述记录</small>}
+                        </div>
+                      </>}
                     </section>
                     <section className="health-record-card medication-card">
-                      <div className="record-card-title"><span>药</span><div><h3>用药记录</h3><small>记录时间、药物名称、剂量和实际用量</small></div><button type="button" onClick={() => beginMedication()}>新增记录</button></div>
+                      <div className="record-card-title"><span>药</span><div><h3>用药记录</h3><small>记录时间、药物名称、剂量和实际用量</small></div><button type="button" disabled={medicationStatus !== "ready"} onClick={() => beginMedication()}>新增记录</button></div>
                       {medicationStatus === "error" && <div className="record-notice error" role="alert"><strong>用药历史暂时无法读取</strong><span>{medicationNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div>}
                       {medicationEditing && (
                         <form className="medication-form" onSubmit={submitMedication}>

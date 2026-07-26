@@ -104,10 +104,18 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
       .map(withoutOwner);
   }
 
-  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput, idempotencyKey?: string) {
+  async saveSymptom(userId: string, date: string, expectedVersion: number, input: SymptomRecordInput, idempotencyKey?: string, requestHash?: string) {
     const key = `${userId}\u0000${date}`;
     const current = this.symptoms.get(key);
-    if (current && expectedVersion === 0 && idempotencyKey) return clone(withoutOwner(current));
+    const idempotencyMapKey = idempotencyKey && requestHash ? `${userId}\u0000symptom:${date}\u0000${idempotencyKey}` : null;
+    if (idempotencyMapKey) {
+      const replay = this.idempotency.get(idempotencyMapKey);
+      if (replay) {
+        if (replay.requestHash !== requestHash) throw new HealthRecordError(409, "IDEMPOTENCY_KEY_REUSED", "幂等键已用于不同请求");
+        return clone(replay.response as SymptomRecord);
+      }
+    }
+    if (current && expectedVersion === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已存在，请使用 If-Match 更新现有记录");
     if (!current && expectedVersion !== 0) throw new HealthRecordError(404, "NOT_FOUND", "症状记录不存在");
     if ((current?.version ?? 0) !== expectedVersion) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
     const now = timestamp();
@@ -121,6 +129,7 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
       updatedAt: now,
     };
     this.symptoms.set(key, { ...value, userId });
+    if (idempotencyMapKey) this.idempotency.set(idempotencyMapKey, { requestHash: requestHash!, response: clone(value) });
     return clone(value);
   }
 
@@ -133,6 +142,9 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
 
   async createExposure(userId: string, key: string, requestHash: string, input: ExposureInput) {
     return this.createIdempotent(userId, "exposure", key, requestHash, () => {
+      if ([...this.exposures.values()].some((item) => item.userId === userId && item.date === input.date)) {
+        throw new HealthRecordError(409, "DATE_CONFLICT", "同一天已有过敏原患者自述记录，请编辑原记录或更换日期");
+      }
       const now = timestamp();
       const value: ExposureRecord = {
         id: `exposure_${crypto.randomUUID()}`,
@@ -149,6 +161,9 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
   async updateExposure(userId: string, id: string, expectedVersion: number, input: ExposureInput) {
     const current = this.owned(this.exposures, userId, id, "过敏原暴露记录");
     if (current.version !== expectedVersion) throw new HealthRecordError(409, "VERSION_CONFLICT", "过敏原暴露记录已被更新，请刷新后重试");
+    if ([...this.exposures.values()].some((item) => item.userId === userId && item.id !== id && item.date === input.date)) {
+      throw new HealthRecordError(409, "DATE_CONFLICT", "同一天已有过敏原患者自述记录，请编辑原记录或更换日期");
+    }
     const value: ExposureRecord = { ...clone(input), id, version: current.version + 1, createdAt: current.createdAt, updatedAt: timestamp() };
     this.exposures.set(id, { ...value, userId });
     return clone(value);

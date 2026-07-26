@@ -137,6 +137,44 @@ test("症状创建重放幂等键时返回当天已有记录，不把成功写�
   assert.equal(replay.body.record.totalScore, first.body.record.totalScore);
 });
 
+test("症状已有日期使用新幂等键时返回冲突，不静默丢弃新评分", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }, { "idempotency-key": "symptom-first" }), symptom.date);
+  const conflict = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: { sneezing: 3, rhinorrhea: 3, congestion: 3, itching: 3 } }, { "idempotency-key": "symptom-new" }), symptom.date));
+  assert.equal(conflict.status, 409);
+  assert.equal(conflict.body.error.code, "VERSION_CONFLICT");
+  const current = await result(await api.listSymptoms(request("/api/v1/health-records/symptoms?date=2026-07-26")));
+  assert.equal(current.body.items[0].totalScore, 4);
+});
+
+test("健康档案保存响应使用本次保存的版本，不读取并发写入者的快照", async () => {
+  const savedProfile = {
+    basicInfo: { displayName: { status: "known", value: "本次保存" }, birthDate: { status: "unknown" }, sex: { status: "unknown" } },
+    allergyHistory: [], commonTriggers: [], version: 2, createdAt: "2026-07-26T08:00:00.000Z", updatedAt: "2026-07-26T08:02:00.000Z",
+  };
+  const concurrentProfile = { ...savedProfile, basicInfo: { ...savedProfile.basicInfo, displayName: { status: "known", value: "并发写入者" } }, version: 3 };
+  const repository = {
+    getProfile: async () => savedProfile,
+    saveProfile: async () => savedProfile,
+    listTriggerProjection: async () => [],
+    getProfileSnapshot: async () => ({ profile: concurrentProfile, triggers: [] }),
+  };
+  const api = createHealthRecordsApi(repository, fixedHealthIdentity("usr_test_owner"));
+  const response = await result(await api.saveProfile(request("/api/v1/health-records/profile", "PUT", { basicInfo: { displayName: "本次保存", birthDate: "", sex: "unspecified" }, allergyHistory: "" }, { "if-match": '"1"' })));
+  assert.equal(response.status, 200);
+  assert.equal(response.body.profile.basicInfo.displayName, "本次保存");
+  assert.equal(response.body.profile.version, 2);
+});
+
+test("同一用户同一天只允许一条过敏原患者自述记录", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  const first = await result(await api.createExposure(request("/api/v1/health-records/exposures", "POST", exposure, { "idempotency-key": "exposure-day-1" })));
+  assert.equal(first.status, 201);
+  const conflict = await result(await api.createExposure(request("/api/v1/health-records/exposures", "POST", { ...exposure, selections: [{ group: "environment", code: "pollen" }] }, { "idempotency-key": "exposure-day-2" })));
+  assert.equal(conflict.status, 409);
+  assert.equal(conflict.body.error.code, "DATE_CONFLICT");
+});
+
 test("已有记录缺少 If-Match 时拒绝静默覆盖", async () => {
   const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
   const profile = { basicInfo: { displayName: "用户", birthDate: "1990-01-01", sex: "female" }, allergyHistory: "" };

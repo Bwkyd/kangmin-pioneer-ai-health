@@ -10,3 +10,11 @@ test("内容版本变更使用一次性写入令牌，防止旧步骤请求插�
   assert.match(steps, /write_token = \?/);
   assert.match(steps, /AND write_token = \?/);
 });
+
+test("知识索引使用可回收租约，旧请求不能继续覆盖新索引", async () => {
+  const route = await readFile(new URL("../../../app/api/admin/knowledge/retry/route.ts", import.meta.url), "utf8");
+  assert.match(route, /INDEX_LEASE_MS/);
+  assert.match(route, /status = 'indexing' AND updated_at < \?/);
+  assert.match(route, /status = 'indexing' AND write_token = \?/);
+  assert.match(route, /仍在索引处理中/);
+});

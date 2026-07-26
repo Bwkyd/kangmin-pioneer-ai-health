@@ -77,6 +77,16 @@ type TriggerRow = SelectionRow & {
 
 const IDEMPOTENCY_LEASE_MS = 5 * 60 * 1000;
 
+function exposureDateConflict() {
+  return new HealthRecordError(409, "DATE_CONFLICT", "同一天已有过敏原患者自述记录，请编辑原记录或更换日期");
+}
+
+function isExposureDateConflict(error: unknown) {
+  const message = error instanceof Error ? error.message : String(error);
+  return message.includes("allergen_exposure_records_user_date_idx")
+    || /UNIQUE constraint failed: allergen_exposure_records\.user_id, allergen_exposure_records\.exposure_date/u.test(message);
+}
+
 function now() {
   return new Date().toISOString();
 }
@@ -269,13 +279,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
       if (expectedVersion === 0) {
         const existing = await database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ?").bind(userId, date).first<SymptomRow>();
         if (existing) {
-          const value = mapSymptom(existing);
-          if (claim) {
-            const completed = await database.prepare("UPDATE health_record_idempotency SET state = 'completed', response = ?, completed_at = ? WHERE id = ? AND state = 'pending'")
-              .bind(JSON.stringify(value), timestamp, claim.id).run();
-            if (completed.meta.changes !== 1) throw new HealthRecordError(409, "IDEMPOTENCY_LEASE_LOST", "保存请求已失效，请重试");
-          }
-          return value;
+          if (claim) await this.releaseIdempotency(database, claim.id);
+          throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已存在，请使用 If-Match 更新现有记录");
         }
         const inserted = await database.prepare("INSERT OR IGNORE INTO symptom_records (id, user_id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)")
           .bind(id, userId, date, input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, timestamp).run();
@@ -325,6 +330,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     const timestamp = now();
     const value: ExposureRecord = { id, ...input, version: 1, createdAt: timestamp, updatedAt: timestamp };
     try {
+      const existing = await database.prepare("SELECT id FROM allergen_exposure_records WHERE user_id = ? AND exposure_date = ?").bind(userId, input.date).first<{ id: string }>();
+      if (existing) throw exposureDateConflict();
       const results = await database.batch([
         database.prepare("INSERT INTO allergen_exposure_records (id, user_id, exposure_date, other_description, note, mutation_id, version, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, 1, ?, ? WHERE EXISTS (SELECT 1 FROM health_record_idempotency WHERE id = ? AND state = 'pending')")
           .bind(id, userId, input.date, input.otherDescription, input.note, `mutation_${crypto.randomUUID()}`, timestamp, timestamp, claim.id),
@@ -339,6 +346,7 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
       return { value, replayed: false };
     } catch (error) {
       await this.releaseIdempotency(database, claim.id);
+      if (isExposureDateConflict(error)) throw exposureDateConflict();
       throw error;
     }
   }
@@ -346,6 +354,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
   async updateExposure(userId: string, id: string, expectedVersion: number, input: ExposureInput) {
     const database = await this.getDatabase();
     const current = await this.exposure(database, userId, id);
+    const duplicate = await database.prepare("SELECT id FROM allergen_exposure_records WHERE user_id = ? AND exposure_date = ? AND id <> ?").bind(userId, input.date, id).first<{ id: string }>();
+    if (duplicate) throw exposureDateConflict();
     const timestamp = now();
     const mutationId = `mutation_${crypto.randomUUID()}`;
     const statements = [
@@ -356,7 +366,13 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
       ...input.selections.map((selection) => database.prepare("INSERT INTO allergen_exposure_selections (exposure_id, group_code, option_code) SELECT ?, ?, ? WHERE EXISTS (SELECT 1 FROM allergen_exposure_records WHERE id = ? AND user_id = ? AND mutation_id = ?)")
         .bind(id, selection.group, selection.code, id, userId, mutationId)),
     ];
-    const results = await database.batch(statements);
+    let results: Array<{ meta: { changes: number } }>;
+    try {
+      results = await database.batch(statements);
+    } catch (error) {
+      if (isExposureDateConflict(error)) throw exposureDateConflict();
+      throw error;
+    }
     if (results[0].meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "过敏原暴露记录已被更新，请刷新后重试");
     return { id, ...input, version: expectedVersion + 1, createdAt: current.created_at, updatedAt: timestamp };
   }

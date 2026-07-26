@@ -8,6 +8,8 @@ function expectedVersion(request: Request) {
   return match ? Number(match[1]) : null;
 }
 
+const INDEX_LEASE_MS = 5 * 60 * 1000;
+
 export async function POST(request: Request) {
   try {
     const session = await requireAdmin();
@@ -15,13 +17,15 @@ export async function POST(request: Request) {
     const values = await runtime();
     const version = expectedVersion(request);
     if (version === null) return jsonError("请通过 If-Match 提交当前知识资料版本", 428);
-    const item = await values.DB.prepare("SELECT id, title, source, body, version, metadata, media_id FROM content_items WHERE id = ? AND type = 'knowledge'").bind(id).first<{ id: string; title: string; source: string; body: string; version: number; metadata: string; media_id: string | null }>();
+    const item = await values.DB.prepare("SELECT id, title, source, body, version, metadata, media_id, status, updated_at FROM content_items WHERE id = ? AND type = 'knowledge'").bind(id).first<{ id: string; title: string; source: string; body: string; version: number; metadata: string; media_id: string | null; status: string; updated_at: string }>();
     if (!item) return jsonError("知识资料不存在", 404);
     if (version !== item.version) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
     if (requiresClinicalApproval("knowledge", item) && !(await hasCurrentClinicalApproval(values.DB, item.id, item.version))) return jsonError(clinicalApprovalRequiredMessage, 422);
     const writeToken = crypto.randomUUID();
-    const started = await values.DB.prepare("UPDATE content_items SET status = 'indexing', write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'index_failed')").bind(writeToken, now(), id, item.version).run();
-    if (started.meta.changes === 0) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
+    const timestamp = now();
+    const staleBefore = new Date(Date.now() - INDEX_LEASE_MS).toISOString();
+    const started = await values.DB.prepare("UPDATE content_items SET status = 'indexing', write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND (status IN ('draft', 'index_failed') OR (status = 'indexing' AND updated_at < ?))").bind(writeToken, timestamp, id, item.version, staleBefore).run();
+    if (started.meta.changes === 0) return jsonError(item.status === "indexing" ? "该知识资料仍在索引处理中，请稍后重试" : "内容已被其他管理员更新，请刷新后重试", 409);
     try {
       const chunks = textChunks(item.body || item.title);
       if (chunks.length === 0) throw new Error("KNOWLEDGE_TEXT_EMPTY");

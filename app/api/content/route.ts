@@ -11,6 +11,7 @@ type ContentRow = {
   source: string;
   metadata: string;
   mediaId: string | null;
+  version: number;
   publishedAt: string;
   clinicalApprovalId?: string;
 };
@@ -44,12 +45,12 @@ export async function GET(request: Request) {
     if (!contentTypes.has(type)) return jsonError("无效内容类型");
     const database = (await runtime()).DB;
     if (id) {
-      const item = await database.prepare("SELECT c.id, c.type, c.title, c.category, c.summary, c.body, c.source, c.metadata, c.media_id mediaId, c.published_at publishedAt, a.content_id clinicalApprovalId FROM content_items c LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE c.id = ? AND c.type = ? AND c.status = 'published'").bind(id, type).first<ContentRow>();
+      const item = await database.prepare("SELECT c.id, c.type, c.title, c.category, c.summary, c.body, c.source, c.metadata, c.media_id mediaId, c.version version, c.published_at publishedAt, a.content_id clinicalApprovalId FROM content_items c LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE c.id = ? AND c.type = ? AND c.status = 'published'").bind(id, type).first<ContentRow>();
       if (!item || (requiresClinicalApproval(item.type, item) && !item.clinicalApprovalId)) return jsonError("内容不存在或已下架", 404);
       const publicItem = await publicContentItem(database, item, true);
       return publicItem ? Response.json({ item: publicItem }) : jsonError("内容正在更新，请稍后重试", 409);
     }
-    const rows = await database.prepare("SELECT c.id, c.type, c.title, c.category, c.summary, c.body, c.source, c.metadata, c.media_id mediaId, c.published_at publishedAt, a.content_id clinicalApprovalId FROM content_items c LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE c.type = ? AND c.status = 'published' ORDER BY c.published_at DESC").bind(type).all<ContentRow>();
+    const rows = await database.prepare("SELECT c.id, c.type, c.title, c.category, c.summary, c.body, c.source, c.metadata, c.media_id mediaId, c.version version, c.published_at publishedAt, a.content_id clinicalApprovalId FROM content_items c LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE c.type = ? AND c.status = 'published' ORDER BY c.published_at DESC").bind(type).all<ContentRow>();
     const items = (await Promise.all(rows.results.filter((item) => !requiresClinicalApproval(item.type, item) || item.clinicalApprovalId).map((item) => publicContentItem(database, item)))).filter((item): item is Record<string, unknown> => item !== null);
     return Response.json({ items });
   } catch { return jsonError("内容服务暂不可用", 503); }

@@ -8,6 +8,7 @@ test("用户端和智能体必须带出已审核方案的步骤与风险边界",
   assert.match(publicRoute, /plan_steps/);
   assert.match(publicRoute, /risks/);
   assert.match(publicRoute, /contraindications/);
+  assert.match(publicRoute, /c\.version version/);
   assert.match(agentProvider, /risks/);
   assert.match(agentProvider, /contraindications/);
   assert.match(agentProvider, /steps\.length === 0/);
