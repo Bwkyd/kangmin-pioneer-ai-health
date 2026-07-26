@@ -11,6 +11,7 @@ import "./admin.css";
 type Section = "overview" | "article" | "video" | "knowledge" | "plan" | "media" | "audit";
 type Item = { id: string; type: string; title: string; category: string; summary: string; body: string; source: string; status: string; version: number; mediaId?: string | null; clinicalCandidateKind?: string | null; clinicalChangeDiff?: string; clinicalReviewStatus?: "pending_review" | "approved" | "rejected"; metadata: { risks?: string; contraindications?: string; syndromeCodes?: string[]; methodCode?: string | null; methodLabel?: string | null; routes?: Array<{ code: string; label: string; points: string[] }>; pointGroups?: Array<{ code: string; label: string; methodCode: string; points: string[]; relation?: string }>; syndromePlanMappings?: Array<{ syndromeCode: string; status: "mapped" | "no_plan" | "missing"; planId?: string; planVersion?: number }>; videoTopicType?: VideoTopicType | null }; clinicalApproval?: { contentVersion: number; approver?: string | null; approvedAt?: string | null } | null; clinicalReview?: { status: "pending_review" | "approved" | "rejected"; candidateKind?: string | null; changeDiff?: string; reviewer?: string | null; reviewedAt?: string | null } | null; updatedAt: string };
 type Media = { id: string; filename: string; kind: string; byteSize: number; status: string };
+type ArticleImportPreview = { filename: string; format: "doc" | "docx" | "pdf"; title: string; source: string; text: string; characterCount: number };
 
 const navigation: Array<{ key: Section; label: string; icon: string }> = [
   { key: "overview", label: "工作台", icon: "◈" },
@@ -123,6 +124,10 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
   const [articleImageName, setArticleImageName] = useState("");
   const [articleImagePreview, setArticleImagePreview] = useState<string | null>(null);
   const [articleImageBusy, setArticleImageBusy] = useState(false);
+  const [articleImportPreview, setArticleImportPreview] = useState<ArticleImportPreview | null>(null);
+  const [articleImportConfirmed, setArticleImportConfirmed] = useState(false);
+  const [articleImportBusy, setArticleImportBusy] = useState(false);
+  const [articleImportRevision, setArticleImportRevision] = useState(0);
   const [createIdempotencyKey, setCreateIdempotencyKey] = useState<string | null>(null);
   const [candidateKind, setCandidateKind] = useState("");
   const labels: Record<string, string> = { article: "科普文章", video: "视频", knowledge: "知识资料", plan: "调理方案" };
@@ -133,6 +138,40 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
     setArticleImageId(imageId);
     setArticleImageName(image?.filename ?? (imageId ? "已关联图片" : ""));
     setArticleImagePreview(imageId ? `/api/admin/uploads/${encodeURIComponent(imageId)}` : null);
+  }
+
+  function clearArticleImport() {
+    setArticleImportPreview(null);
+    setArticleImportConfirmed(false);
+    setArticleImportRevision((value) => value + 1);
+  }
+
+  async function importArticle(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.currentTarget.files?.[0];
+    event.currentTarget.value = "";
+    if (!file || type !== "article") return;
+    setArticleImportBusy(true);
+    try {
+      const form = new FormData();
+      form.set("file", file);
+      const preview = await api("/api/admin/article-import", { method: "POST", body: form }) as unknown as ArticleImportPreview;
+      if (!preview || typeof preview.text !== "string" || !preview.text.trim()) throw new Error("导入预览为空，不能进入文章草稿");
+      setArticleImportPreview(preview);
+      setArticleImportConfirmed(false);
+      setArticleImportRevision((value) => value + 1);
+      onMessage("已生成导入预览，请核对内容并确认后再保存草稿");
+    } catch (error) {
+      onMessage(error instanceof Error ? error.message : "文章导入失败");
+    } finally {
+      setArticleImportBusy(false);
+    }
+  }
+
+  function confirmArticleImport() {
+    if (!articleImportPreview) return;
+    setArticleImportConfirmed(true);
+    setArticleImportRevision((value) => value + 1);
+    onMessage("已确认导入预览，正文已填入文章草稿；仍需临床审核后才能发布");
   }
 
   async function uploadArticleImage(event: ChangeEvent<HTMLInputElement>) {
@@ -166,6 +205,11 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); onBusy(true);
+    if (type === "article" && articleImportPreview && !articleImportConfirmed) {
+      onMessage("请先预览并确认导入内容，才能保存文章草稿");
+      onBusy(false);
+      return;
+    }
     const form = new FormData(event.currentTarget);
     const payload = { type, title: form.get("title"), category: form.get("category"), summary: form.get("summary"), body: form.get("body"), source: form.get("source"), candidateKind: form.get("candidateKind"), changeDiff: form.get("changeDiff"), mediaId: type === "article" ? articleImageId : form.get("mediaId"), metadata: { risks: form.get("risks"), contraindications: form.get("contraindications"), syndromeCodes: form.getAll("syndromeCodes"), methodCode: form.get("methodCode"), routeCodes: form.getAll("routeCodes"), pointGroupCodes: form.getAll("pointGroupCodes"), syndromePlanMappings: form.get("syndromePlanMappings"), topicType: form.get("videoTopicType") } };
     try {
@@ -181,12 +225,12 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
         }
         onMessage(`${labels[type]}已保存为草稿`);
       }
-      setShowForm(false); setEditingItem(null); setCreateIdempotencyKey(null); await onReload();
+      setShowForm(false); setEditingItem(null); setCreateIdempotencyKey(null); clearArticleImport(); await onReload();
     }
     catch (error) { onMessage(error instanceof Error ? error.message : "保存失败"); } finally { onBusy(false); }
   }
-  function openCreate() { setArticleImage(null); setCreateIdempotencyKey(crypto.randomUUID()); setCandidateKind(""); setEditingItem(null); setShowForm(true); }
-  function openEdit(item: Item) { setArticleImage(item); setCreateIdempotencyKey(null); setCandidateKind(item.clinicalCandidateKind ?? item.clinicalReview?.candidateKind ?? ""); setEditingItem(item); setShowForm(true); }
+  function openCreate() { setArticleImage(null); clearArticleImport(); setCreateIdempotencyKey(crypto.randomUUID()); setCandidateKind(""); setEditingItem(null); setShowForm(true); }
+  function openEdit(item: Item) { setArticleImage(item); clearArticleImport(); setCreateIdempotencyKey(null); setCandidateKind(item.clinicalCandidateKind ?? item.clinicalReview?.candidateKind ?? ""); setEditingItem(item); setShowForm(true); }
   async function action(id: string, actionName: string) {
     onBusy(true);
     try {
@@ -202,23 +246,28 @@ function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload 
   return (
     <section className="manager-card">
       <div className="manager-heading"><div><h2>{labels[type]}管理</h2><p>草稿不会对外展示，发布后才进入用户端；正式健康内容必须经临床审核。</p></div><button className="primary" onClick={showForm ? () => { setShowForm(false); setEditingItem(null); } : openCreate} disabled={busy}>+ 新建{labels[type]}</button></div>
-      {showForm && <form key={editingItem?.id ?? "new"} className="content-form" onSubmit={save}>
-        <div className="form-grid"><label>标题<input name="title" required maxLength={160} defaultValue={editingItem?.title ?? ""} /></label><label>分类<input name="category" defaultValue={editingItem?.category ?? ""} placeholder={type === "video" ? "例如：鼻塞、流清涕或肺气虚寒型" : "例如：日常护理"} /></label></div>
+      {showForm && <form key={`${editingItem?.id ?? "new"}-${articleImportRevision}`} className="content-form" onSubmit={save}>
+        <div className="form-grid"><label>标题<input name="title" required maxLength={160} defaultValue={articleImportConfirmed && articleImportPreview ? articleImportPreview.title : editingItem?.title ?? ""} /></label><label>分类<input name="category" defaultValue={editingItem?.category ?? ""} placeholder={type === "video" ? "例如：鼻塞、流清涕或肺气虚寒型" : "例如：日常护理"} /></label></div>
         {type === "video" && <label>分类维度<select name="videoTopicType" defaultValue={editingItem?.metadata.videoTopicType ?? ""}><option value="">请选择分类维度</option>{(Object.entries(VIDEO_TOPIC_LABELS) as Array<[VideoTopicType, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
         <label>摘要<textarea name="summary" rows={2} defaultValue={editingItem?.summary ?? ""} /></label>
-        {type !== "video" && <label>{type === "knowledge" ? "可检索文本" : "正文"}<textarea name="body" rows={6} required={type === "article" || type === "knowledge"} defaultValue={editingItem?.body ?? ""} /></label>}
+        {type === "article" && <section className="article-import-field" aria-label="导入 Word 或 PDF 文章">
+          <div className="article-import-heading"><div><strong>导入 Word / PDF</strong><small>支持 .doc、.docx、.pdf，单文件最大 30 MB；扫描 PDF 不自动 OCR。</small></div>{articleImportBusy && <span role="status">转换预览中…</span>}</div>
+          <label className="article-import-control">选择文章文件<input type="file" accept=".doc,.docx,.pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/pdf" onChange={importArticle} disabled={busy || articleImportBusy} /></label>
+          {articleImportPreview && <div className="article-import-preview"><div className="article-import-preview-heading"><div><strong>{articleImportPreview.filename}</strong><small>{articleImportPreview.format.toUpperCase()} · {articleImportPreview.characterCount} 字 · 预览不会直接发布</small></div>{articleImportConfirmed ? <span className="article-import-confirmed">已确认预览</span> : <button type="button" className="primary" onClick={confirmArticleImport} disabled={busy || articleImportBusy}>确认预览并填入正文</button>}</div><pre>{articleImportPreview.text}</pre><button type="button" onClick={clearArticleImport} disabled={busy || articleImportBusy}>取消本次导入</button></div>}
+        </section>}
+        {type !== "video" && <label>{type === "knowledge" ? "可检索文本" : "正文"}<textarea name="body" rows={6} required={type === "article" || type === "knowledge"} defaultValue={articleImportConfirmed && articleImportPreview ? articleImportPreview.text : editingItem?.body ?? ""} /></label>}
         {type === "article" && <section className="article-image-field" aria-label="文章图片">
           <div className="article-image-heading"><div><strong>文章图片</strong><small>可作为封面或正文配图；上传失败时不会清空正文或已有图片。</small></div>{articleImageBusy && <span role="status">上传中…</span>}</div>
           {articleImagePreview ? <div className="article-image-preview"><img src={articleImagePreview} alt={articleImageName || "文章图片预览"} /><div><strong>{articleImageName || "已关联图片"}</strong><small>保存文章后保留当前关联</small><button type="button" onClick={() => { setArticleImageId(null); setArticleImageName(""); setArticleImagePreview(null); }} disabled={busy || articleImageBusy}>移除图片</button></div></div> : <p className="article-image-empty">尚未关联图片；可以先保存无图草稿。</p>}
           <label className="image-upload-control">选择图片<input type="file" accept="image/jpeg,image/png,image/webp" onChange={uploadArticleImage} disabled={busy || articleImageBusy} /></label>
         </section>}
-        <label>来源或依据<input name="source" defaultValue={editingItem?.source ?? ""} /></label>
+        <label>来源或依据<input name="source" defaultValue={articleImportConfirmed && articleImportPreview ? articleImportPreview.source : editingItem?.source ?? ""} /></label>
         <div className="form-grid"><label>临床候选类别<select name="candidateKind" value={candidateKind} onChange={(event) => setCandidateKind(event.currentTarget.value)}><option value="">基础内容（不单独标记候选）</option>{CLINICAL_CANDIDATE_DEFINITIONS.map(({ code, label }) => <option key={code} value={code}>{label}</option>)}</select></label><label>本版本变更差异<textarea name="changeDiff" rows={2} defaultValue={editingItem?.clinicalChangeDiff ?? editingItem?.clinicalReview?.changeDiff ?? ""} placeholder="候选内容需说明相对上一版本的新增、删除或调整" /></label></div>
         <p className="form-help">临床候选会独立进入待审核状态；选择候选类别后，必须填写来源和本版本变更差异，审核前不会进入用户端、提示词或知识检索。</p>
         {type === "plan" && candidateKind === "base_syndrome_mapping" && <label>五种证型基础方案映射（JSON）<textarea name="syndromePlanMappings" rows={8} required defaultValue={editingItem?.metadata.syndromePlanMappings ? JSON.stringify(editingItem.metadata.syndromePlanMappings, null, 2) : ""} placeholder={'[{"syndromeCode":"LUNG_QI_COLD","status":"missing"},{"syndromeCode":"SPLEEN_QI_DEF","status":"missing"},{"syndromeCode":"KIDNEY_YANG_DEF","status":"missing"},{"syndromeCode":"LUNG_HEAT","status":"missing"},{"syndromeCode":"MIXED_COLD_HEAT","status":"missing"}]'} /><span className="form-help">每个证型必须单独记录 mapped、no_plan 或 missing；mapped 还要填写 planId 和 planVersion。不要用默认值替代客户资料。</span></label>}
         {type !== "article" && <label>关联素材<select name="mediaId" defaultValue={editingItem?.mediaId ?? ""}><option value="">暂不关联</option>{media.filter((asset) => type !== "video" || asset.kind === "video").map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
         {(type === "video" || type === "plan") && <><label>康复方法<select name="methodCode" required={type === "plan"} defaultValue={editingItem?.metadata.methodCode ?? ""}><option value="">{type === "plan" ? "请选择受控方法" : "非操作类视频可不选择"}</option>{REHAB_METHOD_DEFINITIONS.map(({ code, label, note }) => <option key={code} value={code}>{note ? `${label}（${note}）` : label}</option>)}</select></label><fieldset><legend>路线/穴位结构（鼻三线姜刮候选）</legend><p className="form-help">只保留结构化路线；未完成临床审核前不能发布到用户端。</p>{NOSE_THREE_LINE_GINGER_ROUTES.map((route) => <label key={route.code}><input type="checkbox" name="routeCodes" value={route.code} defaultChecked={editingItem?.metadata.routes?.some((item) => item.code === route.code) ?? false} />{route.label}（{route.points.join("、")}）</label>)}</fieldset><fieldset><legend>穴位结构（临床候选）</legend><p className="form-help">仅保存客户已明确列出的穴位和顺序；服务端会校验方法类型，未审核前不进入用户端。</p>{REHAB_POINT_GROUP_DEFINITIONS.map((group) => <label key={group.code}><input type="checkbox" name="pointGroupCodes" value={group.code} defaultChecked={editingItem?.metadata.pointGroups?.some((item) => item.code === group.code) ?? false} />{group.label}{group.relation ? `（${group.relation}）` : ""}</label>)}</fieldset>{type === "plan" && <><div className="form-grid"><label>风险提示<textarea name="risks" rows={3} required defaultValue={editingItem?.metadata.risks ?? ""} /></label><label>禁忌事项<textarea name="contraindications" rows={3} required defaultValue={editingItem?.metadata.contraindications ?? ""} /></label></div><fieldset><legend>适用证型</legend>{SYNDROME_OPTIONS.map(({ code, label }) => <label key={code}><input type="checkbox" name="syndromeCodes" value={code} defaultChecked={editingItem?.metadata.syndromeCodes?.includes(code) ?? false} />{label}</label>)}</fieldset>{!editingItem && <><div className="form-grid"><label>首个步骤标题<input name="stepTitle" required /></label><label>步骤视频<select name="stepMediaId"><option value="">无</option>{media.filter((asset) => asset.kind === "video").map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label></div><label>首个步骤说明<textarea name="stepInstruction" rows={3} required /></label></>}</>}</>}
-        <div className="form-actions"><button type="button" onClick={() => { setShowForm(false); setEditingItem(null); setCreateIdempotencyKey(null); }} disabled={busy || articleImageBusy}>取消</button><button className="primary" disabled={busy || articleImageBusy}>{editingItem ? "保存修改" : "保存草稿"}</button></div>
+        <div className="form-actions"><button type="button" onClick={() => { setShowForm(false); setEditingItem(null); setCreateIdempotencyKey(null); clearArticleImport(); }} disabled={busy || articleImageBusy || articleImportBusy}>取消</button><button className="primary" disabled={busy || articleImageBusy || articleImportBusy}>{editingItem ? "保存修改" : "保存草稿"}</button></div>
       </form>}
       <ContentTable items={items} onAction={action} onEdit={openEdit} secondaryAction={type === "knowledge" ? "index" : undefined} busy={busy} />
     </section>
