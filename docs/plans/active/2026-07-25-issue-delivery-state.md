@@ -569,7 +569,7 @@
 ## 2026-07-26 15:43 最终推送、合并与 Issue 收尾
 
 - completed：用户明确授权后，集成分支 `codex/issue-72-103-health-integration` 已推送，创建并完成 PR #104（`https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/104`）；`quality` CI 为 SUCCESS，PR 已从 Draft 标记为 ready 并 squash merge。
-- completed：合并提交为 `f7118536c0a8ac90f16d0696eb84b2d5f6972c87`；本地验证 `origin/main` 与候选业务树完全一致，树哈希均为 `3effc7408a039be67222a3b635ade0bc6c07e455`，没有把旧 SHA 的测试结果套到新树。
+- completed：业务 PR 合并提交为 `f7118536c0a8ac90f16d0696eb84b2d5f6972c87`；随后状态文档 PR #105 合并提交为 `3566aaead5ee2508edeced743e5a24636cbe611a`，当前 `origin/main` tree 为 `b7a09b3e444ce6e764fd8091437af5932c80fbae`。部署运行时代码相对业务 tree `3effc7408a039be67222a3b635ade0bc6c07e455` 无差异，后续仅增加状态文档，不把旧 SHA 的测试结果套到新业务代码。
 - completed：PR 的 `Fixes` 规则已自动关闭 #72–#81、#84–#87、#102–#103，共 16 个 Issue；已通过 GitHub 只读回读确认状态为 CLOSED。
 - completed：部署服务器仍运行已验收版本 `/srv/kangmin-pioneer/releases/1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d-verified-20260726`；服务 active、8080 监听，内外部 `/` 与 `/admin` 返回 200，部署业务树与合并后的 `main` 一致，因此无需重复重启。
 - completed：最终候选的 `npm run lint`、`npm run build`、授权环境 `npm test` 均通过；完整测试为 100/100，匿名身份、健康档案隔离、正式方案门禁、肺经蕴热艾灸/吹风阻断和浏览器用户视角验证均已记录。
