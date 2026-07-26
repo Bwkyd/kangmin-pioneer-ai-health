@@ -8,12 +8,12 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 15:24:36 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 15:43:55 +0800，Asia/Shanghai；最终合并/Issue 状态于 15:40 后再次只读回读
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
-- 当前集成分支：`codex/issue-72-103-health-integration`
-- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；最终业务验证锚点为 `03a345ffe73d1588ae00cd29f82912082d79d46c`，当前 HEAD 为仅同步状态记录的 `1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d`。排除本状态文件后，业务树相对候选无差异。实时 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
-- 工作树：当前唯一未提交修改是本状态文件，其中包含前序部署阻塞记录和本轮看门狗证据；临时 `.dev.vars` 不存在，候选之后没有新的业务代码修改，`git diff --check` PASS。
-- GitHub Issue/PR：2026-07-26 15:03 实时回读仍显示 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。`gh auth status` 当前显示 Bwkyd 认证有效且有 `repo`、`workflow` scope，但远端没有当前集成分支；凭据恢复不自动解除推送、PR 或 CI 授权门禁。
+- 集成分支：`codex/issue-72-103-health-integration` 已推送并通过 PR #104 合并；最终 `origin/main` 合并提交为 `f7118536c0a8ac90f16d0696eb84b2d5f6972c87`。当前分支为只记录本收尾状态的 `codex/issue-delivery-closeout`。
+- 最近一次已验证业务候选为 `1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d`；PR #104 合并后的 `origin/main` 与部署业务树相同，树哈希为 `3effc7408a039be67222a3b635ade0bc6c07e455`。状态记录分支的后续差异只允许包含本文件。
+- 工作树：本节写入前干净；本次只修改本状态文件，不修改业务代码、不修改临床规则。
+- GitHub Issue/PR：PR #104 已为 ready、`quality` CI 成功并已 squash merge；#72–#81、#84–#87、#102–#103 共 16 个 Issue 已自动关闭。当前仍开放的 19 个 Issue 为 #69–#71、#82–#83、#88–#101，分别属于历史总览、未确认的一期后台导入/图片范围、临床批准待确认或产品/数据源待确认，不纳入本轮关闭。
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 已从服务本机和外部域名核验返回 HTTP 200；本轮未登录后台、未写入业务内容。
 - 本地服务：`127.0.0.1:3000` 于 2026-07-26 15:03 无监听，HTTP 探测为 000。基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
 - 测试服务器：`/srv/kangmin-pioneer/current` 已原子切换至 `/srv/kangmin-pioneer/releases/1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d-verified-20260726`，`kangmin-pioneer.service` 为 active，8080 正常监听。
@@ -565,6 +565,17 @@
 ## 看门狗执行边界
 
 看门狗只读取本文件并执行下一个未完成且没有外部决策阻塞的安全步骤；遇到临床批准、产品口径、凭据、真实数据或部署授权阻塞时，只记录精确阻塞并跳过到下一个可验证步骤。它不得绕过门禁，不得直接关闭 Issue、合并 PR、推送 main、部署生产或修改临床规则。
+
+## 2026-07-26 15:43 最终推送、合并与 Issue 收尾
+
+- completed：用户明确授权后，集成分支 `codex/issue-72-103-health-integration` 已推送，创建并完成 PR #104（`https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/104`）；`quality` CI 为 SUCCESS，PR 已从 Draft 标记为 ready 并 squash merge。
+- completed：合并提交为 `f7118536c0a8ac90f16d0696eb84b2d5f6972c87`；本地验证 `origin/main` 与候选业务树完全一致，树哈希均为 `3effc7408a039be67222a3b635ade0bc6c07e455`，没有把旧 SHA 的测试结果套到新树。
+- completed：PR 的 `Fixes` 规则已自动关闭 #72–#81、#84–#87、#102–#103，共 16 个 Issue；已通过 GitHub 只读回读确认状态为 CLOSED。
+- completed：部署服务器仍运行已验收版本 `/srv/kangmin-pioneer/releases/1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d-verified-20260726`；服务 active、8080 监听，内外部 `/` 与 `/admin` 返回 200，部署业务树与合并后的 `main` 一致，因此无需重复重启。
+- completed：最终候选的 `npm run lint`、`npm run build`、授权环境 `npm test` 均通过；完整测试为 100/100，匿名身份、健康档案隔离、正式方案门禁、肺经蕴热艾灸/吹风阻断和浏览器用户视角验证均已记录。
+- PASS：本轮已授权且纳入范围的代码交付、推送、CI、合并、服务器部署和 16 个 Issue 关闭均完成。
+- BLOCKED：剩余开放 Issue #88–#99 仍需客户/临床书面批准，#82–#83 未纳入已确认一期范围，#100–#101 仍是产品/数据源待确认，#69–#71 仅为历史总览；这些不应冒充已完成而关闭。Kimi/DeepSeek 未在无合法代码外发授权时调用。
+- pending：如需继续处理剩余开放项，必须先补齐对应临床/产品确认，再按独立 Issue 重新验收；本轮不扩大范围、不删除分支或 worktree。
 
 ## 下一步
 
