@@ -1,17 +1,13 @@
 import type { ContentType } from "./store";
+import { clinicalCandidateDefinition, isClinicalCandidateKind, normalizeSyndromePlanMappings } from "./clinical-candidates.ts";
 import { SYNDROME_CODES, type SyndromeCode } from "../agent/syndromes.ts";
+import { getRehabMethodDefinition, isRehabMethodCode, normalizeRehabPointGroups, normalizeRehabRoutes, REHAB_METHOD_CODES, type RehabMethodCode } from "../agent/rehab-methods.ts";
 import { parseVideoTopicType } from "../content/video-topics.ts";
 
 export const contentTypes = new Set<ContentType>(["article", "video", "knowledge", "plan"]);
 export const approvedSyndromes = new Set<SyndromeCode>(SYNDROME_CODES);
-export const APPROVED_REHAB_METHODS = [
-  "nose_three_line_ginger_scrape",
-  "finger_pressure_yingxiang",
-  "acupoint_massage",
-  "ear_acupressure",
-  "moxa_or_blow_dazhui",
-] as const;
-export type ApprovedRehabMethod = (typeof APPROVED_REHAB_METHODS)[number];
+export const APPROVED_REHAB_METHODS = REHAB_METHOD_CODES;
+export type ApprovedRehabMethod = RehabMethodCode;
 export const approvedRehabMethods = new Set<ApprovedRehabMethod>(APPROVED_REHAB_METHODS);
 const UNAPPROVED_CLINICAL_CONTENT = /鼻三线姜刮|姜刮|刮痧|耳穴压豆|耳穴|艾灸|电吹风|吹大椎|大椎|推拿|揉按|按摩|穴位|风池|风门|肺俞|列缺|太渊|迎香|鼻通|上迎香|印堂|神庭|肩井|调理方案|康复方案/u;
 
@@ -29,6 +25,19 @@ type ClinicalContent = {
 
 export function cleanText(value: unknown, maximum = 20_000) {
   return typeof value === "string" ? value.trim().slice(0, maximum) : "";
+}
+
+export function clinicalCandidateProblem(candidateKind: unknown, changeDiff: unknown, source: unknown) {
+  const kind = cleanText(candidateKind, 80);
+  const diff = cleanText(changeDiff, 4000);
+  if (!kind) {
+    if (diff) return "填写变更差异前必须先选择临床候选类别";
+    return null;
+  }
+  if (!isClinicalCandidateKind(kind)) return "临床候选类别无效，请从受控选项中选择";
+  if (!cleanText(source, 1000)) return "临床候选必须填写来源或依据";
+  if (!diff) return "临床候选必须填写本版本相对上一版本的变更差异";
+  return null;
 }
 
 export function parseMetadata(value: unknown, contentType?: ContentType) {
@@ -49,9 +58,36 @@ export function parseMetadata(value: unknown, contentType?: ContentType) {
     syndromeCodes: Array.isArray(metadata.syndromeCodes)
       ? metadata.syndromeCodes.filter((code): code is SyndromeCode => typeof code === "string" && approvedSyndromes.has(code as SyndromeCode))
       : [],
-    methodCode: typeof metadata.methodCode === "string" && approvedRehabMethods.has(metadata.methodCode as ApprovedRehabMethod) ? metadata.methodCode as ApprovedRehabMethod : null,
+    methodCode: isRehabMethodCode(metadata.methodCode) ? metadata.methodCode : null,
+    methodLabel: isRehabMethodCode(metadata.methodCode) ? getRehabMethodDefinition(metadata.methodCode)?.label ?? null : null,
+    routes: normalizeRehabRoutes(Array.isArray(metadata.routes) ? metadata.routes : { routeCodes: metadata.routeCodes }),
+    pointGroups: normalizeRehabPointGroups(Array.isArray(metadata.pointGroups) ? metadata.pointGroups : { pointGroupCodes: metadata.pointGroupCodes }, metadata.methodCode),
+    syndromePlanMappings: normalizeSyndromePlanMappings(metadata.syndromePlanMappings),
     videoTopicType: contentType === "video" ? parseVideoTopicType(metadata.topicType) : null,
   };
+}
+
+export function clinicalCandidateContentProblem(candidateKind: unknown, metadataValue: unknown, contentType?: ContentType) {
+  const definition = clinicalCandidateDefinition(candidateKind);
+  if (!definition) return null;
+  const metadata = parseMetadata(metadataValue, contentType);
+  if (definition.code === "base_syndrome_mapping") {
+    const expected = definition.syndromeCodes ?? [];
+    const actual = metadata.syndromePlanMappings;
+    if (actual.length !== expected.length || expected.some((code) => !actual.some((mapping) => mapping.syndromeCode === code))) return "五种证型基础方案映射必须逐项保存 mapped、no_plan 或 missing 状态";
+    if (actual.some((mapping) => mapping.status === "mapped" && (!mapping.planId || !mapping.planVersion || mapping.planVersion < 1))) return "已映射证型必须同时保存基础方案 ID 和版本";
+  }
+  if (definition.requiredMethodCode && metadata.methodCode !== definition.requiredMethodCode) return `${definition.label}必须选择受控方法“${getRehabMethodDefinition(definition.requiredMethodCode)?.label ?? definition.requiredMethodCode}”`;
+  if (definition.requiredPointGroupCode && !metadata.pointGroups.some((group) => group.code === definition.requiredPointGroupCode)) return `${definition.label}必须保存受控穴位结构`;
+  if (contentType === "plan" && definition.enforceSyndromeCodes && definition.syndromeCodes && (metadata.syndromeCodes.length !== definition.syndromeCodes.length || definition.syndromeCodes.some((code) => !metadata.syndromeCodes.includes(code as SyndromeCode)))) return `${definition.label}必须绑定Issue要求的适用证型映射`;
+  return null;
+}
+
+export function clinicalCandidateApprovalProblem(candidateKind: unknown, metadataValue: unknown, contentType?: ContentType) {
+  if (clinicalCandidateDefinition(candidateKind)?.code !== "base_syndrome_mapping") return null;
+  const metadata = parseMetadata(metadataValue, contentType);
+  if (metadata.syndromePlanMappings.some((mapping) => mapping.status === "missing")) return "五种证型基础方案映射仍有资料缺失，不能完成临床审核";
+  return null;
 }
 
 export function hasUnapprovedClinicalContent(item: ClinicalContent) {
@@ -82,15 +118,31 @@ export function publishProblem(type: ContentType, item: { title?: string; catego
     const raw = item.metadata ? JSON.parse(item.metadata) as { indexedChunks?: number; indexedVersion?: number } : {};
     if (!raw.indexedChunks || raw.indexedVersion !== item.version) return "知识资料必须先完成当前版本索引";
   }
-  if (type === "plan") {
+  if (type === "plan" || type === "video") {
     const metadata = parseMetadata(item.metadata, type);
     const text = [item.title, item.summary, item.body, item.source, item.stepsText].filter((value): value is string => typeof value === "string").join("\n");
-    if (metadata.methodCode === "nose_three_line_ginger_scrape" && /普通刮痧|传统刮痧/u.test(text) && !/不等同于普通刮痧|不是普通刮痧/u.test(text)) {
-      return "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布";
+    const methodLabel = metadata.methodLabel;
+    if (metadata.routes.length > 0 && metadata.methodCode !== "nose_three_line_ginger_scrape") return "路线/穴位结构只能绑定鼻三线姜刮方法";
+    if (metadata.pointGroups.length > 0 && !metadata.methodCode) return "穴位结构必须绑定受控方法";
+    if (metadata.pointGroups.some((group) => group.methodCode !== metadata.methodCode)) return "穴位结构与方法类型不一致";
+    if (metadata.methodCode === "nose_three_line_ginger_scrape") {
+      if (metadata.routes.length === 0) return "鼻三线姜刮方案必须保存至少一条路线/穴位结构";
+      const title = item.title ?? "";
+      const content = [item.summary, item.body, item.source, item.stepsText].filter((value): value is string => typeof value === "string").join("\n");
+      const titleHasOtherMethod = /普通刮痧|传统刮痧/u.test(title);
+      const contentWithoutClarifier = content
+        .replace(/(?:鼻三线姜刮|姜刮)[\s，,：:、]*(?:不等同于|不是|不同于)[\s，,：:、]*(?:普通|传统)?刮痧/gu, "")
+        .replace(/(?:普通|传统)?刮痧[\s，,：:、]*(?:不等同于|不是|不同于)[\s，,：:、]*(?:鼻三线)?姜刮/gu, "");
+      if (titleHasOtherMethod || /普通刮痧|传统刮痧/u.test(contentWithoutClarifier)) return "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布";
+      if (!methodLabel || !item.title?.includes(methodLabel)) return "鼻三线姜刮方案标题必须使用统一方法名称";
+      if (/姜刮/u.test(content.replace(/鼻三线姜刮/gu, ""))) return "正文中的姜刮必须使用统一名称“鼻三线姜刮”";
     }
-    if (metadata.methodCode !== "nose_three_line_ginger_scrape" && /鼻三线姜刮/u.test(text)) {
-      return "正文中的鼻三线姜刮与受控方法不一致，请修正后再发布";
+    if (metadata.methodCode === "gua_sha") {
+      if (!methodLabel || !item.title?.includes(methodLabel)) return "刮痧方案标题必须使用统一方法名称";
+      if (/鼻三线姜刮|姜刮/u.test(text)) return "刮痧与鼻三线姜刮是不同的方法类型，请修正后再发布";
+      return "刮痧的独立安全门禁尚未完成，当前不可发布";
     }
+    if (metadata.methodCode !== "nose_three_line_ginger_scrape" && /姜刮/u.test(text)) return "正文中的鼻三线姜刮与受控方法不一致，请修正后再发布";
   }
   return null;
 }

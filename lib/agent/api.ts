@@ -29,6 +29,7 @@ import {
   type RehabSafetyAnswers,
   type RehabSafetyResult,
 } from "./rehab-safety.ts";
+import { isThermalRehabMethod, type RehabPointGroup, type RehabRoute } from "./rehab-methods.ts";
 
 const TRI_STATES = new Set<TriState>(["yes", "no", "unknown"]);
 const ASSESSMENT_BODY_LIMIT_BYTES = 8_192;
@@ -158,6 +159,9 @@ export type ApprovedPlan = {
   title: string;
   summary: string;
   method: Parameters<typeof evaluateRehabSafety>[0];
+  methodLabel: string;
+  routes: RehabRoute[];
+  pointGroups: RehabPointGroup[];
   risks: string;
   contraindications: string;
   steps: Array<{ title: string; instruction: string }>;
@@ -530,7 +534,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           });
         }
 
-        const forcedLungHeatBlock = assessment.syndrome.syndromeCode === "LUNG_HEAT" && parsed.rehabSafety.method === "moxa_or_blow_dazhui";
+        const forcedLungHeatBlock = assessment.syndrome.syndromeCode === "LUNG_HEAT" && isThermalRehabMethod(parsed.rehabSafety.method);
         const rehabSafety: RehabSafetyResult = forcedLungHeatBlock
           ? {
               status: "blocked" as const,

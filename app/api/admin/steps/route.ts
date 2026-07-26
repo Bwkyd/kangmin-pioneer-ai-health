@@ -43,7 +43,7 @@ export async function POST(request: Request) {
     const writeToken = crypto.randomUUID();
     const nextVersion = plan.version + 1;
     const results = await values.DB.batch([
-      values.DB.prepare("UPDATE content_items SET status = 'draft', published_at = NULL, version = version + 1, write_token = ?, updated_at = ? WHERE id = ? AND type = 'plan' AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
+      values.DB.prepare("UPDATE content_items SET status = 'draft', clinical_review_status = 'pending_review', clinical_reviewer = NULL, clinical_reviewed_at = NULL, published_at = NULL, version = version + 1, write_token = ?, updated_at = ? WHERE id = ? AND type = 'plan' AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
         .bind(writeToken, timestamp, planId, plan.version),
       values.DB.prepare("DELETE FROM clinical_approvals WHERE content_id = ? AND content_version = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)")
         .bind(planId, plan.version, planId, nextVersion, writeToken),

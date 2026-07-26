@@ -62,6 +62,7 @@ test("向量检索在清理旧代际前也会去重并补足 topK", async () => 
     source: "来源",
     body: "正文",
     metadata: "{}",
+    clinicalReviewStatus: "approved",
     clinicalApprovalId: "knowledge_1",
   };
   const result = await searchPublishedKnowledge({

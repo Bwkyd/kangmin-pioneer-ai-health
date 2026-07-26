@@ -31,7 +31,7 @@ test("真实 SQLite 行为：调理方案不能发布缺失或未审核的视频
     const dependencyQuery = `SELECT COUNT(*) FROM plan_steps step WHERE step.plan_id = 'plan-1' AND ${invalidPlanStepMediaSql};`;
     assert.equal(await runSqlite(database, dependencyQuery), "1");
 
-    await runSqlite(database, "INSERT INTO content_items (id, type, title, media_id, status, version, metadata, created_at, updated_at) VALUES ('video-1', 'video', '视频', 'media-1', 'draft', 1, '{}', '2026-07-26T00:00:00Z', '2026-07-26T00:00:00Z'); INSERT INTO clinical_approvals (content_id, content_version, approver, approved_at) VALUES ('video-1', 1, 'clinician', '2026-07-26T00:00:00Z');");
+    await runSqlite(database, "INSERT INTO content_items (id, type, title, media_id, status, version, metadata, clinical_review_status, clinical_reviewer, clinical_reviewed_at, created_at, updated_at) VALUES ('video-1', 'video', '视频', 'media-1', 'draft', 1, '{}', 'approved', 'clinician', '2026-07-26T00:00:00Z', '2026-07-26T00:00:00Z', '2026-07-26T00:00:00Z'); INSERT INTO clinical_approvals (content_id, content_version, approver, approved_at) VALUES ('video-1', 1, 'clinician', '2026-07-26T00:00:00Z');");
     assert.equal(await runSqlite(database, dependencyQuery), "1");
 
     await runSqlite(database, "UPDATE content_items SET status = 'published', published_at = '2026-07-26T00:00:01Z' WHERE id = 'video-1';");

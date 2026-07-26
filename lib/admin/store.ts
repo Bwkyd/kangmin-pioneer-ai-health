@@ -19,10 +19,27 @@ export async function runtime() {
 
 const schemaReady = new WeakMap<object, Promise<unknown>>();
 
+async function initializeAdminSchema(database: D1Database) {
+  await database.batch(adminSchemaStatements.map((statement) => database.prepare(statement)));
+  const columns = await database.prepare("PRAGMA table_info(content_items)").all<{ name: string }>();
+  const existing = new Set(columns.results.map((column) => column.name));
+  const compatibilityColumns = [
+    ["clinical_candidate_kind", "TEXT"],
+    ["clinical_change_diff", "TEXT DEFAULT '' NOT NULL"],
+    ["clinical_review_status", "TEXT DEFAULT 'pending_review' NOT NULL"],
+    ["clinical_reviewer", "TEXT"],
+    ["clinical_reviewed_at", "TEXT"],
+  ] as const;
+  const missing = compatibilityColumns.filter(([name]) => !existing.has(name));
+  if (missing.length === 0) return;
+  await database.batch(missing.map(([name, definition]) => database.prepare(`ALTER TABLE content_items ADD COLUMN ${name} ${definition}`)));
+  await database.prepare("UPDATE content_items SET clinical_review_status = 'approved', clinical_reviewer = (SELECT approver FROM clinical_approvals WHERE clinical_approvals.content_id = content_items.id AND clinical_approvals.content_version = content_items.version), clinical_reviewed_at = (SELECT approved_at FROM clinical_approvals WHERE clinical_approvals.content_id = content_items.id AND clinical_approvals.content_version = content_items.version) WHERE EXISTS (SELECT 1 FROM clinical_approvals WHERE clinical_approvals.content_id = content_items.id AND clinical_approvals.content_version = content_items.version)").run();
+}
+
 function ensureAdminSchema(database: D1Database) {
   const cached = schemaReady.get(database);
   if (cached) return cached;
-  const initialization = database.batch(adminSchemaStatements.map((statement) => database.prepare(statement)));
+  const initialization = initializeAdminSchema(database);
   schemaReady.set(database, initialization);
   initialization.catch(() => schemaReady.delete(database));
   return initialization;

@@ -91,6 +91,10 @@ test("康复建议先经过方法级安全筛查，unknown 不会被当作安全
   assert.deepEqual(result.body.data.safety.nextQuestions, ["bleedingRisk"]);
 });
 
+test("普通刮痧尚未接入本轮姜刮安全筛查，不会默认复用", () => {
+  assert.equal(parseRehabSafetyInput({ method: "gua_sha", answers: allAnswers(REHAB_SAFETY_FIELDS) }), null);
+});
+
 test("evaluate 由服务端重算规则，并使用统一成功和错误结构", async () => {
   const api = createAgentApi({
     limiter: new InMemoryAgentLimiter(),
@@ -413,24 +417,26 @@ test("explain 对高危、冲突和无命中不调用模型；已分类也不越
   assert.equal(fetchCalls, 0);
 });
 
-test("服务端强制阻断肺经蕴热型的艾灸或吹风方案，不信任客户端把肺热填成没有", async () => {
-  const api = createAgentApi({
-    limiter: new InMemoryAgentLimiter(),
-    approvedPlanProvider: async () => { throw new Error("blocked request must not read plan"); },
-  });
-  const rawResult = await api.explain(post("/api/v1/agent/explain", {
-    ...completeInput({
-      syndrome: { thirst: "yes", fatigue: "no", limbsNotWarm: "no", fearWind: "no", coldIntolerance: "no" },
-    }),
-    rehabSafety: { method: "moxa_or_blow_dazhui", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") },
-  }));
-  const result = await responseBody(rawResult);
-  assert.equal(result.status, 200);
-  assert.equal(result.body.data.rehabSafety.status, "blocked");
-  assert.deepEqual(result.body.data.rehabSafety.blockedBy, ["lungHeatPattern"]);
-  assert.equal(result.body.data.explanation, null);
-  assert.equal(rawResult.headers.get("cache-control"), "private, no-store");
-  assert.equal(rawResult.headers.get("vary"), "Cookie");
+test("服务端强制阻断肺经蕴热型的艾灸和吹风方案，不信任客户端把肺热填成没有", async () => {
+  for (const method of ["moxa_dazhui_fengchi", "electric_blow_dazhui_fengchi"]) {
+    const api = createAgentApi({
+      limiter: new InMemoryAgentLimiter(),
+      approvedPlanProvider: async () => { throw new Error("blocked request must not read plan"); },
+    });
+    const rawResult = await api.explain(post("/api/v1/agent/explain", {
+      ...completeInput({
+        syndrome: { thirst: "yes", fatigue: "no", limbsNotWarm: "no", fearWind: "no", coldIntolerance: "no" },
+      }),
+      rehabSafety: { method, answers: allAnswers(REHAB_SAFETY_FIELDS, "no") },
+    }));
+    const result = await responseBody(rawResult);
+    assert.equal(result.status, 200);
+    assert.equal(result.body.data.rehabSafety.status, "blocked");
+    assert.deepEqual(result.body.data.rehabSafety.blockedBy, ["lungHeatPattern"]);
+    assert.equal(result.body.data.explanation, null);
+    assert.equal(rawResult.headers.get("cache-control"), "private, no-store");
+    assert.equal(rawResult.headers.get("vary"), "Cookie");
+  }
 });
 
 test("未完成服务端身份确认时只返回筛查，不返回正式审核方案", async () => {
@@ -442,6 +448,7 @@ test("未完成服务端身份确认时只返回筛查，不返回正式审核�
       title: "不应返回",
       summary: "不应返回",
       method: "finger_pressure_yingxiang",
+      pointGroups: [],
       risks: "",
       contraindications: "",
       steps: [{ title: "不应返回", instruction: "不应返回" }],

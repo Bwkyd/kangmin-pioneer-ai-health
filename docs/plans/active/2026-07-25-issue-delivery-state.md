@@ -661,3 +661,12 @@
 - completed：最终 verdict 已回写状态文件并推送 PR；最终远端 head、`quality` CI、工作树和临时凭据清理均已回读确认。
 - pending：如需补齐 P2 的替换/移除浏览器 E2E，另开受控测试增强任务；不作为本轮通过门禁条件。
 - blocked：生产、客户真实数据/凭据、合并、部署、关闭 Issue、清理 worktree/分支仍未经授权。
+
+## 2026-07-26 21:15 第4轮临床候选治理实现
+
+- completed：本轮分支为 `codex/issue-88-99-clinical-governance`，范围固定为 #88–#93、#97–#99；新增临床候选类别、来源/变更差异/审核版本字段、公开端/RAG/Agent fail-closed 门禁和 `publish_blocked` 审计。
+- completed：#88–#93 的方法与结构化候选已分开保存：鼻三线姜刮路线、指腹擦迎香、耳穴压豆四穴顺序、肺气虚寒五穴关系，以及艾灸与电吹风两个独立方法；#92 明确区分 `mapped`、`no_plan`、`missing`，缺失映射不能完成临床审核。
+- completed：为旧 D1 表增加启动时缺列兼容和当前审核回填；普通刮痧仍保持独立且未接入本轮姜刮安全筛查，不把其他方法的安全结论自动复制给刮痧。
+- completed：`npm run build` PASS；`npm run lint` 0 errors、4 个既有 `<img>` 优化 warning；串行完整 `npm test` 116/116 PASS，包含 #100/#83 和 #98/#99 HTTP E2E。
+- in_progress：候选代码尚未提交；需冻结 SHA 后创建 PR、等待 `quality` CI，再核验是否具备合并/部署条件。
+- BLOCKED：正式临床内容仍未取得客户/临床负责人书面确认，#88–#93、#97–#99 的 Issue 不能因工程门禁通过而关闭；#94–#96 普通刮痧专属安全规则仍是后续独立轮次，#101 继续延期。

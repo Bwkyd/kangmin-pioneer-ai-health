@@ -23,10 +23,10 @@ export async function POST(request: Request) {
     const values = await runtime();
     const version = expectedVersion(request);
     if (version === null) return jsonError("请通过 If-Match 提交当前知识资料版本", 428);
-    const item = await values.DB.prepare("SELECT id, title, source, body, version, metadata, media_id, status, updated_at FROM content_items WHERE id = ? AND type = 'knowledge'").bind(id).first<{ id: string; title: string; source: string; body: string; version: number; metadata: string; media_id: string | null; status: string; updated_at: string }>();
+    const item = await values.DB.prepare("SELECT id, title, source, body, version, metadata, media_id, status, clinical_review_status clinicalReviewStatus, updated_at FROM content_items WHERE id = ? AND type = 'knowledge'").bind(id).first<{ id: string; title: string; source: string; body: string; version: number; metadata: string; media_id: string | null; status: string; clinicalReviewStatus: string; updated_at: string }>();
     if (!item) return jsonError("知识资料不存在", 404);
     if (version !== item.version) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
-    if (requiresClinicalApproval("knowledge", item) && !(await hasCurrentClinicalApproval(values.DB, item.id, item.version))) return jsonError(clinicalApprovalRequiredMessage, 422);
+    if (requiresClinicalApproval("knowledge", item) && (item.clinicalReviewStatus !== "approved" || !(await hasCurrentClinicalApproval(values.DB, item.id, item.version)))) return jsonError(clinicalApprovalRequiredMessage, 422);
     const writeToken = crypto.randomUUID();
     const timestamp = now();
     const staleBefore = new Date(Date.now() - INDEX_LEASE_MS).toISOString();
