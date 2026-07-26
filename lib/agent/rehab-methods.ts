@@ -7,7 +7,7 @@ export const REHAB_METHOD_DEFINITIONS = [
   {
     code: "gua_sha",
     label: "刮痧",
-    note: "刮痧与鼻三线姜刮是不同的方法类型",
+    note: "独立安全门禁（#94–#96），临床确认前不可发布",
   },
   {
     code: "finger_pressure_yingxiang",
