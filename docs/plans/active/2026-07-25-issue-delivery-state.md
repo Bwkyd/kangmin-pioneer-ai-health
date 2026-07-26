@@ -8,11 +8,11 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 11:10:21 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 11:12:10 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
 - 当前业务代码候选：`347af77d28b3b5ad332b1007f7eeabe194360727`（`Close content dependency and vector generation races`）；`cbed37b` 已被本轮 P1 修复提交取代。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：HEAD 为仅记录状态的 `6ce3ca0e1d8932ed712a979aabd20cda8ac59f98`；业务代码候选仍为 `347af77`，已跟踪业务路径无未提交修改，`git diff --check` PASS。本轮为浏览器合成身份验收临时创建并随后删除 `.dev.vars`；当前该文件已不存在，除状态文件外无未提交修改。
+- 工作树：状态提交只包含本状态文件；不可变业务代码候选仍为 `347af77d28b3b5ad332b1007f7eeabe194360727`，已跟踪业务路径无未提交修改，`git diff --check` PASS。本轮为浏览器合成身份验收临时创建并随后删除 `.dev.vars`；当前该文件已不存在，除状态文件外无未提交修改。当前状态提交的精确 HEAD 以 Git 实时核验为准，不在自身文件中硬编码会随提交变化的状态 SHA。
 - GitHub Issue/PR：2026-07-26 11:10 实时 Issue 回读成功，仍有 #69–#103 共 35 个 open Issue；PR 实时回读因 `api.github.com` 连接错误失败，不能沿用旧的 PR 清单。实时 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 11:03 主机网络只读核验返回 HTTP 200；未登录、未写入。
 - 本地服务：本轮曾在 `127.0.0.1:3000` 启动候选代码完成浏览器验收，当前已停止；端口目前无监听。基础可达不等于浏览器 UAT、真实登录或生产通过。
@@ -21,7 +21,7 @@
 
 ## 2026-07-26 11:07 当前 SHA 行为验证与收尾状态（当前唯一执行状态）
 
-- completed：状态提交后的真实 HEAD 已核对为 `6ce3ca0e1d8932ed712a979aabd20cda8ac59f98`；`6ce3ca0` 相对 `738dceb` 只包含本状态文件，业务候选仍精确为 `347af77d28b3b5ad332b1007f7eeabe194360727`，没有把旧 SHA 测试套到新业务代码。
+- completed：状态提交链的差异只包含本状态文件；业务候选仍精确为 `347af77d28b3b5ad332b1007f7eeabe194360727`，没有把旧 SHA 测试套到新业务代码。状态提交的当前 HEAD 由 Git 实时核验，不通过状态文件自引用其提交哈希。
 - completed：精确业务树 `347af77d28b3b5ad332b1007f7eeabe194360727`（HEAD 仅多状态记录提交）重新通过 `npm run lint`、`npm run build` 和授权环境 `npm test`；结果分别为 0 errors/1 个既有 `<img>` warning、build PASS、94/94 PASS。普通沙箱的 HTTP E2E `listen EPERM` 不计入业务失败。
 - completed：当前 SHA 浏览器用户视角验证通过：发热显示“先暂停操作”；肺经蕴热型选择艾灸/电吹风被服务端拦截；修改高风险答案立即清空旧评估结果；未认证路径不返回正式方案。
 - completed：仅使用 `APP_ENV=local` 的合成身份完成两个账号隔离验收：账号 A 保存并回读空气污染患者自述、用药时间/氯雷他定/10 mg/实际用量和当天症状 4 分；切换账号 B 后健康档案、过敏原、用药和当天症状均为空。浏览器错误/警告日志为空。
