@@ -8,16 +8,28 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 11:14:12 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 11:43:39 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前业务代码候选：`347af77d28b3b5ad332b1007f7eeabe194360727`（`Close content dependency and vector generation races`）；`cbed37b` 已被本轮 P1 修复提交取代。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：状态提交只包含本状态文件；不可变业务代码候选仍为 `347af77d28b3b5ad332b1007f7eeabe194360727`，已跟踪业务路径无未提交修改，`git diff --check` PASS。本轮为浏览器合成身份验收临时创建并随后删除 `.dev.vars`；当前该文件已不存在，除状态文件外无未提交修改。当前状态提交的精确 HEAD 以 Git 实时核验为准，不在自身文件中硬编码会随提交变化的状态 SHA。
+- 当前业务代码候选：`98f47c6d768e31bdc7106ce68beb98b78af8ef4d`（`Add video topic navigation`）；它包含上一候选 `347af77d...` 之后本轮 #74/#78/#79 的用户端视频分类和入口修复。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：业务修复提交后已跟踪路径无未提交修改，`git diff --check` PASS。本轮浏览器验收临时写入的两条合成 D1 视频数据已删除；临时服务已停止、端口无监听。当前状态提交的精确 HEAD 以 Git 实时核验为准，不在自身文件中硬编码会随提交变化的状态 SHA。
 - GitHub Issue/PR：2026-07-26 11:10 实时 Issue 回读成功，仍有 #69–#103 共 35 个 open Issue；PR 实时回读因 `api.github.com` 连接错误失败，不能沿用旧的 PR 清单。实时 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 11:03 主机网络只读核验返回 HTTP 200；未登录、未写入。
 - 本地服务：本轮曾在 `127.0.0.1:3000` 启动候选代码完成浏览器验收，当前已停止；端口目前无监听。基础可达不等于浏览器 UAT、真实登录或生产通过。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 11:43 #74/#78/#79 视频入口与分类导航修复（当前业务候选）
+
+- completed：首页“学一学”入口现在明确进入 `/discover?type=video`，直接打开鼻健康视频大全；“鼻健康科普”等文章入口仍进入默认文章页，避免入口语义混淆。
+- completed：视频后台新增受控分类维度 `symptom`、`syndrome`、`general`，具体分类继续使用管理员保存的 `category`；服务端不根据标题或关键词猜测证型/症状，缺失或未知维度只归入通用内容。
+- completed：用户端视频页增加“全部视频 / 按症状 / 按证型 / 通用内容”和具体主题导航；分类切换只筛选当前已发布列表，视频卡片可打开详情，旧的文章、调理方案、站内消息标签继续保留。
+- completed：公共内容接口仅对已发布且有当前临床审核的视频暴露受控 `topicType`；视频发布选择分类维度后必须填写具体分类，临床审核和发布门禁未被绕过。
+- completed：新增分类筛选行为测试、受控元数据测试和渲染契约；最终精确 SHA `98f47c6d768e31bdc7106ce68beb98b78af8ef4d` 上 `npm run lint`（0 errors、1 个既有 `<img>` warning）、`npm run build`、`npm test`（99/99，包含 HTTP E2E）均通过。
+- completed：本地浏览器合成 D1 验收验证症状/证型两条视频的分类筛选、具体主题筛选、详情打开和首页入口；浏览器 error/warn 为 `[]`。合成数据已清理，未写入生产或客户系统。
+- PASS：本轮 #74/#78/#79 的工程行为修复和同 SHA 本地回归通过。
+- BLOCKED：总体交付仍不能标记 PASS。四个精确 SHA 只读对抗评审在 180 秒内未返回 verdict；Kimi/DeepSeek 无合法代码外发授权；临床正式批准、生产 verified-phone/session secret、生产 D1/Vectorize、客户浏览器 UAT、PR/CI、推送、合并、部署和关闭 Issue 仍缺失。
+- pending：获得合法审查授权后重跑四视角复审；获得 GitHub 凭据、临床/客户/生产批准后再按门禁申请 Draft PR、发布和逐条 Issue 验收。当前不推送、不合并、不部署、不关闭 Issue。
 
 ## 2026-07-26 11:07 当前 SHA 行为验证与收尾状态（当前唯一执行状态）
 
