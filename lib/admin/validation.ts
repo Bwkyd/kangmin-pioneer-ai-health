@@ -23,6 +23,7 @@ type ClinicalContent = {
   metadata?: string;
   filename?: string;
   chunkText?: string;
+  stepsText?: string;
 };
 
 export function cleanText(value: unknown, maximum = 20_000) {
@@ -69,7 +70,7 @@ export function requiresClinicalApproval(type: ContentType, item: ClinicalConten
   return contentTypes.has(type) || hasUnapprovedClinicalContent(item);
 }
 
-export function publishProblem(type: ContentType, item: { title?: string; body?: string; version?: number; mediaId?: string | null; metadata?: string }) {
+export function publishProblem(type: ContentType, item: { title?: string; summary?: string; body?: string; source?: string; stepsText?: string; version?: number; mediaId?: string | null; metadata?: string }) {
   if (!item.title?.trim()) return "请先填写标题";
   if (type === "article" && !item.body?.trim()) return "文章正文不能为空";
   if (type === "video" && !item.mediaId) return "视频发布前必须上传视频文件";
@@ -80,7 +81,7 @@ export function publishProblem(type: ContentType, item: { title?: string; body?:
   }
   if (type === "plan") {
     const metadata = parseMetadata(item.metadata);
-    const text = [item.title, item.body].filter((value): value is string => typeof value === "string").join("\n");
+    const text = [item.title, item.summary, item.body, item.source, item.stepsText].filter((value): value is string => typeof value === "string").join("\n");
     if (metadata.methodCode === "nose_three_line_ginger_scrape" && /普通刮痧|传统刮痧/u.test(text) && !/不等同于普通刮痧|不是普通刮痧/u.test(text)) {
       return "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布";
     }

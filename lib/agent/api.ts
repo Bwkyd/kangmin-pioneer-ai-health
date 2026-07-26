@@ -154,6 +154,7 @@ export function parseRehabSafetyInput(value: unknown): { method: Parameters<type
 
 export type ApprovedPlan = {
   id: string;
+  contentVersion: number;
   title: string;
   summary: string;
   method: Parameters<typeof evaluateRehabSafety>[0];
@@ -200,7 +201,9 @@ async function readJsonBody(request: Request, maxBytes: number): Promise<unknown
 }
 
 function jsonResponse<T>(body: ApiResult<T>, status = 200, headers?: HeadersInit) {
-  return Response.json(body, { status, headers });
+  const responseHeaders = new Headers({ "cache-control": "private, no-store", vary: "Cookie" });
+  new Headers(headers).forEach((value, key) => responseHeaders.set(key, value));
+  return Response.json(body, { status, headers: responseHeaders });
 }
 
 function errorResponse(error: unknown): Response {

@@ -29,6 +29,8 @@ test("鼻三线姜刮不能被正文偷偷改成普通刮痧", () => {
   const metadata = JSON.stringify({ methodCode: "nose_three_line_ginger_scrape", syndromeCodes: ["LUNG_QI_COLD"], risks: "风险", contraindications: "禁忌" });
   assert.equal(publishProblem("plan", { title: "普通刮痧方案", body: "沿鼻部进行普通刮痧", metadata }), "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布");
   assert.equal(publishProblem("plan", { title: "鼻三线姜刮", body: "鼻三线姜刮，不等同于普通刮痧", metadata }), null);
+  assert.equal(publishProblem("plan", { title: "鼻三线姜刮", body: "安全说明", stepsText: "步骤：普通刮痧", metadata }), "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布");
+  assert.equal(publishProblem("plan", { title: "穴位按摩", summary: "鼻三线姜刮", body: "安全说明", metadata: JSON.stringify({ methodCode: "acupoint_massage" }) }), "正文中的鼻三线姜刮与受控方法不一致，请修正后再发布");
 });
 
 test("康复内容需要审核，但通过审核后不应被通用字段校验永久拦截", () => {

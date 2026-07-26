@@ -72,7 +72,7 @@ export async function writeOptionalVectorIndex(
   await values.VECTORIZE.upsert(vectors.map((vector, index) => ({
     id: writeToken ? `${source.id}:${source.version}:${writeToken}:${index}` : `${source.id}:${index}`,
     values: vector,
-    metadata: { sourceId: source.id, sourceVersion: source.version, chunk: index, chunkId: `${source.id}:${index}` },
+    metadata: { sourceId: source.id, sourceVersion: source.version, chunk: index, chunkId: writeToken ? `${source.id}:${source.version}:${index}` : `${source.id}:${index}` },
   })));
   return "d1+vector" as const;
 }

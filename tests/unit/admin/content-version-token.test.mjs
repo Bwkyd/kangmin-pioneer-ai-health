@@ -7,6 +7,8 @@ test("内容版本变更使用一次性写入令牌，防止旧步骤请求插�
   const steps = await readFile(new URL("../../../app/api/admin/steps/route.ts", import.meta.url), "utf8");
   assert.match(route, /write_token = \?/);
   assert.match(route, /status IN \('draft', 'offline', 'index_failed'\)/);
+  assert.match(route, /video\.status <> 'published'/);
+  assert.match(route, /GROUP_CONCAT/);
   assert.match(steps, /write_token = \?/);
   assert.match(steps, /AND write_token = \?/);
 });

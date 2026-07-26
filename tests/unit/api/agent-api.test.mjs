@@ -418,16 +418,19 @@ test("服务端强制阻断肺经蕴热型的艾灸或吹风方案，不信任�
     limiter: new InMemoryAgentLimiter(),
     approvedPlanProvider: async () => { throw new Error("blocked request must not read plan"); },
   });
-  const result = await responseBody(await api.explain(post("/api/v1/agent/explain", {
+  const rawResult = await api.explain(post("/api/v1/agent/explain", {
     ...completeInput({
       syndrome: { thirst: "yes", fatigue: "no", limbsNotWarm: "no", fearWind: "no", coldIntolerance: "no" },
     }),
     rehabSafety: { method: "moxa_or_blow_dazhui", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") },
-  })));
+  }));
+  const result = await responseBody(rawResult);
   assert.equal(result.status, 200);
   assert.equal(result.body.data.rehabSafety.status, "blocked");
   assert.deepEqual(result.body.data.rehabSafety.blockedBy, ["lungHeatPattern"]);
   assert.equal(result.body.data.explanation, null);
+  assert.equal(rawResult.headers.get("cache-control"), "private, no-store");
+  assert.equal(rawResult.headers.get("vary"), "Cookie");
 });
 
 test("未完成服务端身份确认时只返回筛查，不返回正式审核方案", async () => {

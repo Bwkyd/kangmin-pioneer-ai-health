@@ -83,12 +83,12 @@ export async function PATCH(request: Request) {
     if (version !== item.version) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
     if (action === "publish") {
       const stepStats = item.type === "plan"
-        ? await DB.prepare("SELECT COUNT(*) count, SUM(CASE WHEN title = '' OR instruction = '' THEN 1 ELSE 0 END) invalid, SUM(CASE WHEN media_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM media_assets asset WHERE asset.id = plan_steps.media_id AND asset.kind = 'video' AND asset.status = 'ready') THEN 1 ELSE 0 END) invalid_media FROM plan_steps WHERE plan_id = ?").bind(id).first<{ count: number; invalid: number; invalid_media: number }>()
+        ? await DB.prepare("SELECT COUNT(*) count, SUM(CASE WHEN title = '' OR instruction = '' THEN 1 ELSE 0 END) invalid, SUM(CASE WHEN media_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM media_assets asset WHERE asset.id = plan_steps.media_id AND asset.kind = 'video' AND asset.status = 'ready') THEN 1 ELSE 0 END) invalid_media, GROUP_CONCAT(COALESCE(title, '') || char(10) || COALESCE(instruction, ''), char(10)) step_text FROM plan_steps WHERE plan_id = ?").bind(id).first<{ count: number; invalid: number; invalid_media: number; step_text: string | null }>()
         : null;
       if (item.type === "plan" && Number(stepStats?.count ?? 0) < 1) return jsonError("调理方案至少需要一个有效步骤", 422);
       if (stepStats?.invalid) return jsonError("调理步骤标题和说明不能为空", 422);
       if (stepStats?.invalid_media) return jsonError("调理步骤只能关联可用的视频素材", 422);
-      const problem = publishProblem(item.type, { ...item, mediaId: item.media_id });
+      const problem = publishProblem(item.type, { ...item, mediaId: item.media_id, stepsText: stepStats?.step_text ?? "" });
       if (problem) return jsonError(problem, 422);
       if (requiresClinicalApproval(item.type, item) && !(await hasCurrentClinicalApproval(DB, item.id, item.version))) {
         return jsonError(clinicalApprovalRequiredMessage, 422);
@@ -102,9 +102,10 @@ export async function PATCH(request: Request) {
       const timestamp = now();
       const writeToken = crypto.randomUUID();
       const needsApproval = requiresClinicalApproval(item.type, item);
+      const publishDependencyGuard = "AND (? <> 'plan' OR NOT EXISTS (SELECT 1 FROM plan_steps step JOIN content_items video ON video.type = 'video' AND video.media_id = step.media_id WHERE step.plan_id = ? AND step.media_id IS NOT NULL AND video.status <> 'published'))";
       const publishUpdate = needsApproval
-        ? DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') AND EXISTS (SELECT 1 FROM clinical_approvals WHERE content_id = ? AND content_version = ?)").bind(timestamp, writeToken, timestamp, id, item.version, id, item.version)
-        : DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')").bind(timestamp, writeToken, timestamp, id, item.version);
+        ? DB.prepare(`UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') ${publishDependencyGuard} AND EXISTS (SELECT 1 FROM clinical_approvals WHERE content_id = ? AND content_version = ?)`).bind(timestamp, writeToken, timestamp, id, item.version, item.type, id, id, item.version)
+        : DB.prepare(`UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') ${publishDependencyGuard}`).bind(timestamp, writeToken, timestamp, id, item.version, item.type, id);
       const statements = [publishUpdate];
       if (body.notify === true && (item.type === "article" || item.type === "video")) {
         statements.push(DB.prepare("INSERT INTO notifications (id, content_id, title, body, published_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'published' AND version = ? AND published_at = ? AND write_token = ?) ON CONFLICT(content_id) DO UPDATE SET title = excluded.title, body = excluded.body, published_at = excluded.published_at").bind(identifier("notice"), id, item.title, item.summary || "有新内容已发布", timestamp, id, item.version, timestamp, writeToken));

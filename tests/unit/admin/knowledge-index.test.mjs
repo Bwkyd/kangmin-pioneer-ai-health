@@ -24,5 +24,5 @@ test("索引租约使用独立向量代际，旧 worker 不删除或覆盖新代
   assert.equal(mode, "d1+vector");
   assert.equal(calls.some((call) => call.type === "delete"), false);
   assert.match(calls.find((call) => call.type === "upsert").vectors[0].id, /new-generation/u);
-  assert.equal(calls.find((call) => call.type === "upsert").vectors[0].metadata.chunkId, "knowledge_1:0");
+  assert.equal(calls.find((call) => call.type === "upsert").vectors[0].metadata.chunkId, "knowledge_1:3:0");
 });
