@@ -8,16 +8,36 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 11:47:18 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 12:05:10 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前业务代码候选：`98f47c6d768e31bdc7106ce68beb98b78af8ef4d`（`Add video topic navigation`）；它包含上一候选 `347af77d...` 之后本轮 #74/#78/#79 的用户端视频分类和入口修复。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：业务修复提交后已跟踪路径无未提交修改，`git diff --check` PASS。本轮浏览器验收临时写入的两条合成 D1 视频数据已删除；临时服务已停止、端口无监听。当前状态提交的精确 HEAD 以 Git 实时核验为准，不在自身文件中硬编码会随提交变化的状态 SHA。
-- GitHub Issue/PR：2026-07-26 11:10 实时 Issue 回读成功，仍有 #69–#103 共 35 个 open Issue；PR 实时回读因 `api.github.com` 连接错误失败，不能沿用旧的 PR 清单。实时 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
-- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 11:03 主机网络只读核验返回 HTTP 200；未登录、未写入。
-- 本地服务：本轮曾在 `127.0.0.1:3000` 启动候选代码完成浏览器验收，当前已停止；端口目前无监听。基础可达不等于浏览器 UAT、真实登录或生产通过。
+- 最近一次已验证业务候选：`98f47c6d768e31bdc7106ce68beb98b78af8ef4d`（`Add video topic navigation`）；当前 HEAD 为状态记录提交 `8fec614fddc90ea525149d93e062621e973f51f1`，但其后工作树已有新的未提交实现，因此当前没有可供复审或发布的冻结候选。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- 工作树：实时发现 `app/admin/page.tsx`、`app/api/admin/content/route.ts`、`app/api/media/[id]/route.ts` 三个已跟踪实现文件修改，并新增 `lib/admin/content-update.ts`、`tests/unit/admin/content-update-policy.test.mjs`；核验期间后一个测试文件于 12:03:48 新出现，确认 owner 仍在持续实现。12:04:39 又出现 327 字节未跟踪 `.dev.vars`；仅核验路径、时间、权限和大小元数据，未读取、写入或删除。最后一次已提交候选的测试结论不能套用到当前工作树。
+- GitHub Issue/PR：2026-07-26 12:03 主机网络实时回读成功，仍有 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。实时刷新后 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 12:03 主机网络只读核验返回 HTTP 200；未登录、未写入。
+- 本地服务：`127.0.0.1:3000` 于 2026-07-26 12:03 无监听、HTTP 000。基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 12:09 实时状态（当前唯一执行状态）
+
+- completed：实时核验分支为 `codex/issue-72-103-health-integration`，HEAD 为 `8fec614fddc90ea525149d93e062621e973f51f1`；实时 `origin/main` 为 `3397b07ece7e70d8777c7885992087dffbd95dcd`，当前 HEAD 尚未进入 `origin/main`。
+- in_progress：最后一次已验证业务候选仍为 `98f47c6d768e31bdc7106ce68beb98b78af8ef4d`；其后工作树新增后台内容编辑、更新字段保留、媒体 404 与媒体类型校验实现，以及对应行为测试，尚未提交，因此当前没有新的冻结候选 SHA。
+- in_progress：本地 `127.0.0.1:3000` 当前由 PID `66730` 监听；这是本地开发服务，不代表生产部署或客户验收通过。
+- completed：当前未提交实现已完成 `npm run lint`（0 errors、1 个既有 `<img>` warning）、`npm run build`、定向内容更新策略测试 1/1 和 `git diff --check`；完整 `npm test` 尚未在这组最新未提交代码上以授权环境重新跑完。此前普通沙箱完整测试的唯一失败是 HTTP E2E 监听 `127.0.0.1` 的 `EPERM`，不能作为当前代码 PASS。
+- blocked：GitHub 实时 Issue 只读仍显示 #69–#103 共 35 个 open Issue；GitHub PR/API 当前无法读取，`gh auth status` 显示 Bwkyd token invalid。当前工作树还存在未跟踪的本地 `.dev.vars`，不得提交或外泄，收尾前需删除并重新核对工作树。
+- blocked：四视角独立复审没有返回最终 verdict；Kimi/DeepSeek 没有合法代码外发授权；生产 verified-phone、生产 D1/Vectorize、临床书面批准、客户浏览器 UAT、PR/CI 和发布授权仍缺失。
+- pending：先完成当前后台修复的浏览器行为验证、删除临时本地配置、提交并冻结新的精确 SHA，再在同一 SHA 串行跑完整门禁和复审。未获得明确授权和全部门禁证据前，不推送、不合并、不部署、不关闭 Issue、不清理分支或 worktree。
+
+## 2026-07-26 12:04 看门狗实时核验与活动保护退出（当前唯一执行状态）
+
+- completed：先读取自动化记忆和本文件，再实时核验 Git、GitHub Issue/PR、本地服务与客户后台；主机网络刷新成功，`origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。当前分支为 `codex/issue-72-103-health-integration`，HEAD 为 `8fec614fddc90ea525149d93e062621e973f51f1`。
+- completed：GitHub 实时回读仍有 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仅无关的 Dependabot #66。客户后台 `/admin` 主机网络只读探测为 HTTP 200；本地 3000 无监听。
+- in_progress：`98f47c6d768e31bdc7106ce68beb98b78af8ef4d` 之后主任务继续修改后台内容、媒体访问与管理页面：3 个已跟踪文件共 49 行新增、14 行删除，并新增内容更新策略与对应测试。核验过程中 `tests/unit/admin/content-update-policy.test.mjs` 于 12:03:48 新出现；12:04:39 又出现 327 字节未跟踪 `.dev.vars`，工作树与本地配置仍在活动状态。本轮未读取该敏感配置内容。
+- blocked：20 分钟活动保护条件成立。当前未提交实现尚未冻结，不能把 `98f47c6d...` 的 99/99、浏览器验收或任何旧 SHA 结论当作当前工作树证据；本轮不接管实现、不运行完整测试、浏览器验收或独立复审。恢复条件是自 12:04:39 起连续至少 20 分钟无文件/服务漂移、`.dev.vars` 归属明确、活动进程结束并冻结新的精确候选 SHA。
+- blocked：所有 open Issue 仍无 `agent-ready`；四视角独立复审缺精确候选最终 verdict，Kimi/DeepSeek 缺合法代码外发授权。临床书面批准、客户产品口径、真实患者数据、生产 verified-phone/session secret、生产 D1/Vectorize、客户浏览器 UAT、推送、PR/CI、合并、部署、关闭 Issue 和清理 worktree/分支继续保持独立门禁。
+- pending：保护窗口结束后先只读确认 HEAD、工作树、迁移序列、服务与最新写入时间；若候选稳定，再串行运行同 SHA 完整门禁、隔离浏览器验收和获批准的独立复审。任何旧 SHA、超时或缺 verdict 都不是 PASS。
+- 本轮动作：仅完成实时只读核验并写回证据；未读取秘密，未修改业务代码或临床规则，未运行测试，未启动/停止服务，未提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
 
 ## 2026-07-26 11:43 #74/#78/#79 视频入口与分类导航修复（当前业务候选）
 

@@ -1,6 +1,7 @@
 import { requireAdmin } from "@/lib/admin/auth";
 import { adminRouteError, executeIdempotent, hasCurrentClinicalApproval, identifier, jsonError, now, runtime, stableIdentifier, stableRequestHash, type ContentStatus, type ContentType } from "@/lib/admin/store";
 import { invalidPlanStepMediaSql, planVideoDependencyError } from "@/lib/admin/content-dependencies";
+import { resolveContentUpdateFields } from "@/lib/admin/content-update";
 import { cleanText, contentTypes, clinicalApprovalRequiredMessage, parseMetadata, publishProblem, requiresClinicalApproval } from "@/lib/admin/validation";
 
 type ContentRow = { id: string; type: ContentType; title: string; category: string; summary: string; body: string; source: string; status: ContentStatus; version: number; media_id: string | null; metadata: string; published_at: string | null; created_at: string; updated_at: string; clinical_approval_version?: number | null; clinical_approver?: string | null; clinical_approved_at?: string | null };
@@ -143,20 +144,30 @@ export async function PATCH(request: Request) {
     }
     if (action === "update") {
       if (item.status === "published") return jsonError("已发布内容不能直接修改，请先下架并重新审核", 409);
-      const metadata = parseMetadata(body.metadata, item.type);
+      const hasOwn = (key: string) => Object.prototype.hasOwnProperty.call(body, key);
+      const metadata = hasOwn("metadata")
+        ? parseMetadata(body.metadata, item.type)
+        : parseMetadata(item.metadata, item.type);
       const previousKnowledgeMetadata = item.type === "knowledge"
         ? JSON.parse(item.metadata || "{}") as { indexedChunks?: number; indexedVersion?: number; indexedWriteToken?: string; failedWriteToken?: string | null }
         : {};
       const nextMetadata = item.type === "knowledge"
         ? { ...metadata, indexedChunks: previousKnowledgeMetadata.indexedChunks, indexedVersion: previousKnowledgeMetadata.indexedVersion, indexedWriteToken: previousKnowledgeMetadata.indexedWriteToken, failedWriteToken: previousKnowledgeMetadata.failedWriteToken }
         : metadata;
+      const nextFields = resolveContentUpdateFields(item, body, nextMetadata);
+      if (nextFields.mediaId) {
+        const asset = await DB.prepare("SELECT status, kind FROM media_assets WHERE id = ?").bind(nextFields.mediaId).first<{ status: string; kind: string }>();
+        const expectedKind = item.type === "video" ? "video" : item.type === "knowledge" ? "document" : item.type === "article" ? "image" : null;
+        if (!asset || asset.status !== "ready") return jsonError("关联文件不可用", 422);
+        if (expectedKind && asset.kind !== expectedKind) return jsonError(`${item.type === "video" ? "视频" : item.type === "knowledge" ? "知识资料" : "文章"}只能关联${expectedKind === "video" ? "视频" : expectedKind === "document" ? "文档" : "图片"}素材`, 422);
+      }
       const timestamp = now();
       const writeToken = crypto.randomUUID();
       const results = await DB.batch([
         DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', published_at = NULL, write_token = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
-          .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(nextMetadata), writeToken, timestamp, id, item.version),
+          .bind(nextFields.title, nextFields.category, nextFields.summary, nextFields.body, nextFields.source, nextFields.mediaId, nextFields.metadata, writeToken, timestamp, id, item.version),
         DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(id, id, item.version + 1, writeToken),
-        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'update', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, timestamp, id, item.version + 1, writeToken),
+        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'update', ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, JSON.stringify({ fromVersion: item.version, toVersion: item.version + 1 }), timestamp, id, item.version + 1, writeToken),
       ]);
       if (results[0].meta.changes === 0) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
       return Response.json({ id, status: "draft" });
