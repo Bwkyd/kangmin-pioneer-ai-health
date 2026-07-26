@@ -109,7 +109,16 @@ export async function requireHealthIdentity(
       "不得通过 x-user-id 指定健康数据所属用户",
     );
   }
-  const identity = await resolver.resolve(request);
+  let identity: HealthIdentity | null;
+  try {
+    identity = await resolver.resolve(request);
+  } catch {
+    throw new HealthRecordError(
+      401,
+      "AUTHENTICATION_REQUIRED",
+      "保存或查看健康历史前需要完成服务端身份认证",
+    );
+  }
   if (!identity) {
     throw new HealthRecordError(
       401,

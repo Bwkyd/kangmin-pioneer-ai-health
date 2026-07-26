@@ -137,6 +137,15 @@ test("症状创建重放幂等键时返回当天已有记录，不把成功写�
   assert.equal(replay.body.record.totalScore, first.body.record.totalScore);
 });
 
+test("症状创建缺少显式幂等键时，重复提交同一日期和内容可重放成功结果", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  const first = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-27", "PUT", { scores: symptom.scores }), "2026-07-27"));
+  const replay = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-27", "PUT", { scores: symptom.scores }), "2026-07-27"));
+  assert.equal(first.status, 200);
+  assert.equal(replay.status, 200);
+  assert.equal(replay.body.record.id, first.body.record.id);
+});
+
 test("症状已有日期使用新幂等键时返回冲突，不静默丢弃新评分", async () => {
   const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
   await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }, { "idempotency-key": "symptom-first" }), symptom.date);
@@ -155,7 +164,7 @@ test("健康档案保存响应使用本次保存的版本，不读取并发写�
   const concurrentProfile = { ...savedProfile, basicInfo: { ...savedProfile.basicInfo, displayName: { status: "known", value: "并发写入者" } }, version: 3 };
   const repository = {
     getProfile: async () => savedProfile,
-    saveProfile: async () => savedProfile,
+    saveProfile: async () => ({ profile: savedProfile, triggers: [] }),
     listTriggerProjection: async () => [],
     getProfileSnapshot: async () => ({ profile: concurrentProfile, triggers: [] }),
   };
@@ -164,6 +173,26 @@ test("健康档案保存响应使用本次保存的版本，不读取并发写�
   assert.equal(response.status, 200);
   assert.equal(response.body.profile.basicInfo.displayName, "本次保存");
   assert.equal(response.body.profile.version, 2);
+});
+
+test("健康记录私有响应禁止缓存，并拒绝两套过敏史/暴露字段同时提交", async () => {
+  const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
+  const profile = await result(await api.saveProfile(request("/api/v1/health-records/profile", "PATCH", {
+    basicInfo: { displayName: "用户", birthDate: "", sex: "unspecified" },
+    allergyHistory: "尘螨",
+    allergyHistoryEntries: [{ allergenName: "花粉", certainty: "unknown", note: null }],
+  })));
+  assert.equal(profile.status, 422);
+  assert.equal(profile.body.error.code, "INVALID_INPUT");
+  const exposure = await result(await api.createExposure(request("/api/v1/health-records/exposures", "POST", {
+    date: "2026-07-27",
+    factors: ["花粉"],
+    selections: [{ group: "environment", code: "pollen" }],
+  }, { "idempotency-key": "ambiguous-exposure" })));
+  assert.equal(exposure.status, 422);
+  const list = await result(await api.listSymptoms(request("/api/v1/health-records/symptoms")));
+  assert.equal(list.headers.get("cache-control"), "private, no-store");
+  assert.equal(list.headers.get("vary"), "Cookie");
 });
 
 test("同一用户同一天只允许一条过敏原患者自述记录", async () => {
@@ -175,13 +204,14 @@ test("同一用户同一天只允许一条过敏原患者自述记录", async ()
   assert.equal(conflict.body.error.code, "DATE_CONFLICT");
 });
 
-test("已有记录缺少 If-Match 时拒绝静默覆盖", async () => {
+test("更新记录仍需 If-Match，症状创建重试可安全重放", async () => {
   const api = createHealthRecordsApi(new InMemoryHealthRecordsRepository(), fixedHealthIdentity("usr_test_owner"));
   const profile = { basicInfo: { displayName: "用户", birthDate: "1990-01-01", sex: "female" }, allergyHistory: "" };
   assert.equal((await result(await api.saveProfile(request("/", "PATCH", profile)))).status, 200);
   assert.equal((await result(await api.saveProfile(request("/", "PATCH", profile)))).body.error.code, "PRECONDITION_REQUIRED");
   await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }), symptom.date);
-  assert.equal((await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }), symptom.date))).body.error.code, "PRECONDITION_REQUIRED");
+  const symptomReplay = await result(await api.saveSymptom(request("/api/v1/health-records/symptoms/2026-07-26", "PUT", { scores: symptom.scores }), symptom.date));
+  assert.equal(symptomReplay.status, 200);
   const created = await result(await api.createExposure(request("/", "POST", exposure, { "idempotency-key": "if-match-exposure" })));
   assert.equal((await result(await api.updateExposure(request("/", "PATCH", exposure), created.body.record.id))).body.error.code, "PRECONDITION_REQUIRED");
   assert.equal((await result(await api.deleteExposure(request("/", "DELETE"), created.body.record.id))).body.error.code, "PRECONDITION_REQUIRED");

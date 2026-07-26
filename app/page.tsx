@@ -1000,6 +1000,7 @@ export default function Home() {
     symptomRequest.next();
     medicationRequest.next();
     exposureRequest.next();
+    setEntryOpen(false);
     setProfileStatus((current) => current === "saving" ? "idle" : current);
     setSymptomStatus((current) => current === "saving" ? "idle" : current);
     setMedicationStatus((current) => current === "saving" ? "idle" : current);
@@ -1028,6 +1029,7 @@ export default function Home() {
   const openDiscover = () => window.location.assign("/discover");
 
   const goBack = () => {
+    setEntryOpen(false);
     if (tab === "healthProfile") { profileRequest.next(); setProfileStatus("idle"); setProfileNotice(""); setProfileLoadError(false); setTab("profile"); }
     else if (tab === "allergenRecord") { exposureRequest.next(); setExposureStatus("idle"); setExposureNotice(""); setTab(allergenReturnTab); }
     else if (tab !== "home") setTab("home");
@@ -1326,13 +1328,11 @@ export default function Home() {
                 </section>
 
                 <div className={`record-notice ${profileStatus === "error" ? "error" : ""}`} role="status">
-                  <strong>{profileStatus === "loading" || profileStatus === "saving" ? "处理中" : profileLoadError ? "后端依赖待接入" : profileStatus === "error" ? "保存未完成" : "档案状态"}</strong>
+                  <strong>{profileStatus === "loading" || profileStatus === "saving" ? "处理中" : profileLoadError ? "档案暂时无法读取" : profileStatus === "error" ? "保存未完成" : "档案状态"}</strong>
                   <span>{profileNotice || "进入本页后从服务端读取健康档案"}</span>
                 </div>
 
-                {profileLoadError ? (
-                  <section className="record-notice error" role="alert"><strong>健康档案暂时无法读取</strong><span>{profileNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></section>
-                ) : profileEditing ? (
+                {profileEditing ? (
                   <form className="profile-edit-form" onSubmit={submitProfile}>
                     <section className="health-record-card">
                       <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>由用户本人填写</small></div></div>
@@ -1354,7 +1354,7 @@ export default function Home() {
                 ) : (
                   <>
                     <section className="health-record-card">
-                      <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>姓名、出生日期与性别</small></div><button onClick={() => setProfileEditing(true)}>编辑</button></div>
+                      <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>姓名、出生日期与性别</small></div><button disabled={profileLoadError} onClick={() => setProfileEditing(true)}>编辑</button></div>
                       <div className="record-values">
                         <p><span>姓名或称呼</span><strong>{healthProfile?.basicInfo.displayName || "待填写"}</strong></p>
                         <p><span>出生日期</span><strong>{healthProfile?.basicInfo.birthDate || "待填写"}</strong></p>
@@ -1362,14 +1362,14 @@ export default function Home() {
                       </div>
                     </section>
                     <section className="health-record-card">
-                      <div className="record-card-title"><span>史</span><div><h3>过敏史</h3><small>用户记录，不替代医疗诊断</small></div><button onClick={() => setProfileEditing(true)}>编辑</button></div>
-                      <p className="record-empty">{healthProfile?.allergyHistory || "暂无已保存的过敏史"}</p>
+                      <div className="record-card-title"><span>史</span><div><h3>过敏史</h3><small>用户记录，不替代医疗诊断</small></div><button disabled={profileLoadError} onClick={() => setProfileEditing(true)}>编辑</button></div>
+                      <p className="record-empty">{profileLoadError ? "健康档案暂时无法读取" : healthProfile?.allergyHistory || "暂无已保存的过敏史"}</p>
                     </section>
                     <section className="health-record-card trigger-card">
                       <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>区分档案内容与患者每日自述</small></div><button disabled={exposureStatus !== "ready"} onClick={() => startAllergenRecord(localDateValue(), "healthProfile")}>新增记录</button></div>
-                      {healthProfile?.legacyCommonTriggers?.length ? <p className="record-notice"><strong>历史诱因待迁移</strong><span>{healthProfile.legacyCommonTriggers.join("、")} 是旧版档案字段，暂不作为患者自述或当前投影；请重新填写过敏原记录确认。</span></p> : null}
+                      {profileLoadError ? <p className="record-notice error"><strong>档案汇总暂时无法读取</strong><span>健康档案接口失败，但下面仍展示已独立读取的患者自述暴露记录。</span><button type="button" onClick={openHealthProfile}>重试</button></p> : healthProfile?.legacyCommonTriggers?.length ? <p className="record-notice"><strong>历史诱因待迁移</strong><span>{healthProfile.legacyCommonTriggers.join("、")} 是旧版档案字段，暂不作为患者自述或当前投影；请重新填写过敏原记录确认。</span></p> : null}
                       {exposureStatus === "error" ? <div className="record-notice error" role="alert"><strong>过敏原历史暂时无法读取</strong><span>{exposureNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div> : exposureStatus === "loading" ? <p className="record-empty">正在读取患者自述暴露记录…</p> : <>
-                        {healthProfile?.commonTriggers.length ? <div className="record-tags">{healthProfile.commonTriggers.map((item) => <span key={item.code}>{item.label}<small>患者自述 · 最近 {displayDate(item.latestDate)}</small></span>)}</div> : <p className="record-empty">暂无已持久化暴露记录生成的常见诱因</p>}
+                        {profileLoadError ? <p className="record-empty">档案汇总暂时不可用；可查看下方已读取的患者自述记录。</p> : healthProfile?.commonTriggers.length ? <div className="record-tags">{healthProfile.commonTriggers.map((item) => <span key={item.code}>{item.label}<small>患者自述 · 最近 {displayDate(item.latestDate)}</small></span>)}</div> : <p className="record-empty">暂无已持久化暴露记录生成的常见诱因</p>}
                         <div className="patient-records">
                           <strong>患者自述暴露记录</strong>
                           <p>按日期同步展示，仅供回顾，不代表已确定病因。</p>

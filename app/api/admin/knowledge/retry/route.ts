@@ -8,6 +8,12 @@ function expectedVersion(request: Request) {
   return match ? Number(match[1]) : null;
 }
 
+async function assertIndexLease(database: D1Database, id: string, version: number, writeToken: string) {
+  const row = await database.prepare("SELECT id FROM content_items WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?")
+    .bind(id, version, writeToken).first<{ id: string }>();
+  if (!row) throw new Error("KNOWLEDGE_INDEX_LEASE_LOST");
+}
+
 const INDEX_LEASE_MS = 5 * 60 * 1000;
 
 export async function POST(request: Request) {
@@ -30,11 +36,12 @@ export async function POST(request: Request) {
       const chunks = textChunks(item.body || item.title);
       if (chunks.length === 0) throw new Error("KNOWLEDGE_TEXT_EMPTY");
       const previous = JSON.parse(item.metadata || "{}") as { indexedChunks?: number };
-      const mode = await writeOptionalVectorIndex(values, item, chunks, Number(previous.indexedChunks ?? 0));
+      const mode = await writeOptionalVectorIndex(values, item, chunks, Number(previous.indexedChunks ?? 0), writeToken, () => assertIndexLease(values.DB, item.id, item.version, writeToken));
       const timestamp = now();
       const metadata = JSON.stringify({ ...previous, indexedChunks: chunks.length, indexedVersion: item.version, indexMode: mode, indexError: null });
-      const statements: D1PreparedStatement[] = [values.DB.prepare("DELETE FROM knowledge_chunks WHERE knowledge_id = ? AND source_version = ?").bind(item.id, item.version)];
-      chunks.forEach((chunk, position) => statements.push(values.DB.prepare("INSERT INTO knowledge_chunks (id, knowledge_id, source_version, position, chunk_text, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(`${item.id}:${position}`, item.id, item.version, position, chunk, timestamp)));
+      const lease = "EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?)";
+      const statements: D1PreparedStatement[] = [values.DB.prepare(`DELETE FROM knowledge_chunks WHERE knowledge_id = ? AND source_version = ? AND ${lease}`).bind(item.id, item.version, id, item.version, writeToken)];
+      chunks.forEach((chunk, position) => statements.push(values.DB.prepare(`INSERT INTO knowledge_chunks (id, knowledge_id, source_version, position, chunk_text, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE ${lease}`).bind(`${item.id}:${position}`, item.id, item.version, position, chunk, timestamp, id, item.version, writeToken)));
       statements.push(
         values.DB.prepare("UPDATE content_items SET status = 'draft', metadata = ?, updated_at = ? WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?").bind(metadata, timestamp, id, item.version, writeToken),
         values.DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'index', 'knowledge', ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(identifier("audit"), session.username, item.id, JSON.stringify({ chunks: chunks.length, version: item.version, mode }), timestamp, id, item.version, writeToken),

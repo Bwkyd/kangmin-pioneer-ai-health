@@ -11,5 +11,5 @@ export const adminSchemaStatements = [
   "CREATE INDEX IF NOT EXISTS knowledge_chunks_source_version_idx ON knowledge_chunks (knowledge_id, source_version)",
   "CREATE TABLE IF NOT EXISTS audit_logs (id TEXT PRIMARY KEY NOT NULL, actor TEXT NOT NULL, action TEXT NOT NULL, entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, details TEXT DEFAULT '{}' NOT NULL, created_at TEXT NOT NULL)",
   "CREATE INDEX IF NOT EXISTS audit_logs_entity_idx ON audit_logs (entity_type, entity_id, created_at)",
-  "CREATE TABLE IF NOT EXISTS idempotency_keys (key TEXT PRIMARY KEY NOT NULL, actor TEXT NOT NULL, response TEXT NOT NULL, created_at TEXT NOT NULL)",
+  "CREATE TABLE IF NOT EXISTS idempotency_keys (key TEXT NOT NULL, actor TEXT NOT NULL, response TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (key, actor))",
 ] as const;

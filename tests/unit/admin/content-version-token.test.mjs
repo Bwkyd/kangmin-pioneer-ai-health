@@ -17,4 +17,6 @@ test("知识索引使用可回收租约，旧请求不能继续覆盖新索引",
   assert.match(route, /status = 'indexing' AND updated_at < \?/);
   assert.match(route, /status = 'indexing' AND write_token = \?/);
   assert.match(route, /仍在索引处理中/);
+  assert.match(route, /status = 'indexing' AND write_token = \?/);
+  assert.match(route, /EXISTS \(SELECT 1 FROM content_items/);
 });

@@ -158,6 +158,14 @@ test("evaluate 由服务端重算规则，并使用统一成功和错误结构",
   });
 });
 
+test("提取文本中的发烧/发热先进入安全确认，不会在模型降级时判为 clear", async () => {
+  const api = createAgentApi({ limiter: new InMemoryAgentLimiter(), apiKey: null });
+  const result = await responseBody(await api.extract(post("/api/v1/agent/extract", { text: "我现在正在发烧\u200b" })));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.safetyGate.status, "confirmation_required");
+  assert.ok(result.body.data.safetyGate.candidateFields.includes("persistentHighFever"));
+});
+
 test("extract 先执行高危关键词门禁，命中时不调用模型", async () => {
   let fetchCalls = 0;
   const api = createAgentApi({

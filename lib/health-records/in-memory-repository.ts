@@ -58,7 +58,7 @@ export class InMemoryHealthRecordsRepository implements HealthRecordsRepository 
       updatedAt: now,
     };
     this.profiles.set(userId, value);
-    return clone(value);
+    return { profile: clone(value), triggers: await this.listTriggerProjection(userId) };
   }
 
   async listMedications(userId: string) {

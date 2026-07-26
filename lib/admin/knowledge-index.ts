@@ -54,16 +54,25 @@ async function embed(gateway: Fetcher, texts: string[]) {
   return payload.vectors;
 }
 
-export async function writeOptionalVectorIndex(values: RuntimeEnv, source: KnowledgeSource, chunks: string[], previousChunks: number) {
+export async function writeOptionalVectorIndex(
+  values: RuntimeEnv,
+  source: KnowledgeSource,
+  chunks: string[],
+  previousChunks: number,
+  writeToken?: string,
+  assertLease?: () => Promise<void>,
+) {
   if (!values.VECTORIZE || !values.EMBEDDINGS) return "d1" as const;
   const vectors = await embed(values.EMBEDDINGS, chunks);
-  if (previousChunks > 0) {
+  await assertLease?.();
+  if (previousChunks > 0 && !writeToken) {
     await values.VECTORIZE.deleteByIds(Array.from({ length: previousChunks }, (_, index) => `${source.id}:${index}`));
   }
+  await assertLease?.();
   await values.VECTORIZE.upsert(vectors.map((vector, index) => ({
-    id: `${source.id}:${index}`,
+    id: writeToken ? `${source.id}:${source.version}:${writeToken}:${index}` : `${source.id}:${index}`,
     values: vector,
-    metadata: { sourceId: source.id, sourceVersion: source.version, chunk: index },
+    metadata: { sourceId: source.id, sourceVersion: source.version, chunk: index, chunkId: `${source.id}:${index}` },
   })));
   return "d1+vector" as const;
 }
@@ -90,7 +99,11 @@ async function vectorSearch(values: RuntimeEnv & { DB: D1Database }, query: stri
   try {
     const [vector] = await embed(values.EMBEDDINGS, [query]);
     const result = await values.VECTORIZE.query(vector, { topK: limit, returnMetadata: "all" });
-    const rows = await Promise.all(result.matches.map((match) => publishedChunk(values, match.id)));
+    const rows = await Promise.all(result.matches.map((match) => {
+      const metadata = match.metadata as Record<string, unknown> | undefined;
+      const chunkId = typeof metadata?.chunkId === "string" ? metadata.chunkId : match.id;
+      return publishedChunk(values, chunkId);
+    }));
     return rows.filter((row): row is SearchRow => Boolean(row)).map(citation);
   } catch {
     return null;

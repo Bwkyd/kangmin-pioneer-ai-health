@@ -241,7 +241,7 @@ const HIGH_RISK_PATTERNS: ReadonlyArray<{
   },
   {
     field: "persistentHighFever",
-    patterns: [/持续.{0,4}(高烧|高热|发热)|高烧|高热|体温\s*(?:39|40)(?:\.\d)?/u],
+    patterns: [/发烧|发热|高烧|高热|持续.{0,4}(?:发烧|发热)|体温\s*(?:39|40)(?:\.\d)?/u],
   },
   {
     field: "facialSwelling",
@@ -262,8 +262,9 @@ const HIGH_RISK_PATTERNS: ReadonlyArray<{
 ];
 
 export function findHighRiskCandidateFields(text: string): SafetyField[] {
+  const normalized = text.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/gu, "");
   return HIGH_RISK_PATTERNS.filter(({ patterns }) =>
-    patterns.some((pattern) => pattern.test(text)),
+    patterns.some((pattern) => pattern.test(normalized)),
   ).map(({ field }) => field);
 }
 

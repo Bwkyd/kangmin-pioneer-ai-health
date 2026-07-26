@@ -92,11 +92,11 @@ export const auditLogs = sqliteTable("audit_logs", {
 }, (table) => [index("audit_logs_entity_idx").on(table.entityType, table.entityId, table.createdAt)]);
 
 export const idempotencyKeys = sqliteTable("idempotency_keys", {
-  key: text("key").primaryKey(),
+  key: text("key").notNull(),
   actor: text("actor").notNull(),
   response: text("response").notNull(),
   createdAt: text("created_at").notNull(),
-});
+}, (table) => [primaryKey({ columns: [table.key, table.actor] })]);
 
 export const healthProfiles = sqliteTable("health_profiles", {
   userId: text("user_id").primaryKey(),
