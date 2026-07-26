@@ -8,16 +8,25 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 12:31:31 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 13:02:54 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；当前分支仅在该业务候选之后追加状态记录提交，工作树当前干净。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；本阶段入口 HEAD 为 `3701121aa8c79783b378fbd1801b5b11e4d9a39c`，该业务候选之后只追加了本状态文件记录，工作树核验入口干净。2026-07-26 13:02 主机网络刷新后的 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
 - 工作树：实现、定向测试和状态文件已提交；临时 `.dev.vars` 已删除，未跟踪敏感配置不存在。当前候选之后没有新的业务代码修改。
-- GitHub Issue/PR：2026-07-26 12:03 主机网络实时回读成功，仍有 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。实时刷新后 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
-- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 12:03 主机网络只读核验返回 HTTP 200；未登录、未写入。
-- 本地服务：`127.0.0.1:3000` 于 2026-07-26 12:31 无监听。此前本轮本地服务已停止；基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
+- GitHub Issue/PR：2026-07-26 13:02 主机网络实时回读成功，仍有 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。`gh auth status` 继续显示 Bwkyd token invalid，只读公开查询成功不代表具备写入或 PR/CI 权限。
+- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 13:02 主机网络只读核验返回 HTTP 200；未登录、未写入。
+- 本地服务：`127.0.0.1:3000` 于 2026-07-26 13:02 无监听，HTTP 探测为 000。基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 13:03 看门狗实时核验与阻塞续记
+
+- completed：先读取自动化记忆和本文件，再实时核验 Git、GitHub Issue/PR、本地服务及客户后台；当前分支为 `codex/issue-72-103-health-integration`，HEAD `3701121aa8c79783b378fbd1801b5b11e4d9a39c`，核验入口工作树干净，`git diff --check` PASS。
+- completed：主机网络刷新确认 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`；当前分支领先 44 个提交。相对已验证业务候选 `6a7f7975fa65393a9f19b93f0d215017b0abd870`，后续差异只涉及本状态文件，排除该文件后业务树无差异；`.dev.vars` 不存在。
+- completed：GitHub 实时公开只读查询仍为 #69–#103 共 35 个 open Issue，所有标签只有 `task`、均无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。客户后台 `/admin` 只读探测为 HTTP 200；本地 3000 无监听。
+- blocked：`gh auth status` 继续确认 Bwkyd token invalid；公开只读查询不能授权推送、创建 Draft PR、触发或认可 CI。四视角独立审查仍没有最终 verdict，且没有新增合法隔离审查机制或代码外发授权；Kimi/DeepSeek 不启动。
+- blocked：临床书面批准、客户产品口径、真实患者数据、生产 verified-phone/session secret、生产 D1/Vectorize、客户浏览器 UAT、有效 GitHub 写凭据、推送、PR/CI、合并、部署和 Issue 关闭均未出现。当前没有未完成且不受外部决策阻塞的实现或验证步骤。
+- pending：恢复条件是出现 `agent-ready` 和对应 Issue 验收授权，或取得合法隔离审查机制、有效 GitHub 写凭据及临床/生产/客户逐项批准；恢复后先重新核验精确 SHA，再执行同 SHA 独立审查、Draft PR/CI、真实 UAT 和发布门禁。本轮不修改业务代码或临床规则，不运行重复测试，不提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
 
 ## 2026-07-26 12:41 阻塞审计
 
