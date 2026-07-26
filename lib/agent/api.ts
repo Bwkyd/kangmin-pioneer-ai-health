@@ -21,6 +21,14 @@ import {
   agentLimiter,
   getRequestClientKey,
 } from "./rate-limit.ts";
+import {
+  evaluateRehabSafety,
+  isRehabMethod,
+  REHAB_SAFETY_FIELDS,
+  REHAB_SAFETY_DISCLAIMER,
+  type RehabSafetyAnswers,
+  type RehabSafetyResult,
+} from "./rehab-safety.ts";
 
 const TRI_STATES = new Set<TriState>(["yes", "no", "unknown"]);
 const ASSESSMENT_BODY_LIMIT_BYTES = 8_192;
@@ -138,6 +146,42 @@ export function parseAssessmentInput(value: unknown): AssessmentInput | null {
   };
 }
 
+export function parseRehabSafetyInput(value: unknown): { method: Parameters<typeof evaluateRehabSafety>[0]; answers: RehabSafetyAnswers } | null {
+  if (!isRecord(value) || !hasExactKeys(value, ["method", "answers"]) || !isRehabMethod(value.method)) return null;
+  const answers = parseAnswerGroup<RehabSafetyAnswers>(value.answers, REHAB_SAFETY_FIELDS);
+  return answers ? { method: value.method, answers } : null;
+}
+
+export type ApprovedPlan = {
+  id: string;
+  contentVersion: number;
+  title: string;
+  summary: string;
+  method: Parameters<typeof evaluateRehabSafety>[0];
+  risks: string;
+  contraindications: string;
+  steps: Array<{ title: string; instruction: string }>;
+};
+
+type ExplainInput = {
+  assessment: AssessmentInput;
+  rehabSafety: { method: Parameters<typeof evaluateRehabSafety>[0]; answers: RehabSafetyAnswers } | null;
+};
+
+function parseExplainInput(value: unknown): ExplainInput | null {
+  if (!isRecord(value)) return null;
+  const assessment = parseAssessmentInput({
+    diagnosedAllergicRhinitis: value.diagnosedAllergicRhinitis,
+    safety: value.safety,
+    severity: value.severity,
+    syndrome: value.syndrome,
+  });
+  if (!assessment) return null;
+  if (!("rehabSafety" in value)) return { assessment, rehabSafety: null };
+  const rehabSafety = parseRehabSafetyInput(value.rehabSafety);
+  return rehabSafety ? { assessment, rehabSafety } : null;
+}
+
 async function readJsonBody(request: Request, maxBytes: number): Promise<unknown> {
   const contentLength = Number(request.headers.get("content-length"));
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
@@ -157,7 +201,9 @@ async function readJsonBody(request: Request, maxBytes: number): Promise<unknown
 }
 
 function jsonResponse<T>(body: ApiResult<T>, status = 200, headers?: HeadersInit) {
-  return Response.json(body, { status, headers });
+  const responseHeaders = new Headers({ "cache-control": "private, no-store", vary: "Cookie" });
+  new Headers(headers).forEach((value, key) => responseHeaders.set(key, value));
+  return Response.json(body, { status, headers: responseHeaders });
 }
 
 function errorResponse(error: unknown): Response {
@@ -192,17 +238,21 @@ const HIGH_RISK_PATTERNS: ReadonlyArray<{
   {
     field: "respiratoryEmergency",
     patterns: [
-      /呼吸困难|喘不过气|窒息|嘴唇.{0,4}发紫/u,
+      /呼吸困难|呼吸不畅|胸闷|胸痛|喘不过气|窒息|嘴唇.{0,4}发紫/u,
       /difficulty breathing|cannot breathe/iu,
     ],
   },
   {
     field: "persistentHighFever",
-    patterns: [/持续.{0,4}(高烧|高热|发热)|体温\s*(39|40)(?:\.\d)?/u],
+    patterns: [/发烧|发热|高烧|高热|持续.{0,4}(?:发烧|发热)|体温\s*(?:39|40)(?:\.\d)?/u],
+  },
+  {
+    field: "facialSwelling",
+    patterns: [/面部.{0,6}(肿|肿胀)|脸.{0,6}(肿|肿胀)/u],
   },
   {
     field: "severeNoseBleed",
-    patterns: [/鼻血.{0,6}止不住|大量鼻出血|严重鼻出血/u],
+    patterns: [/鼻血.{0,6}止不住|鼻出血.{0,6}(不止|止不住)|大量鼻出血|严重鼻出血/u],
   },
   {
     field: "unilateralFoulDischarge",
@@ -210,13 +260,14 @@ const HIGH_RISK_PATTERNS: ReadonlyArray<{
   },
   {
     field: "severeNeurologicalSymptoms",
-    patterns: [/剧烈头痛|意识模糊|抽搐|颈项强直|视力.{0,6}(下降|丧失)/u],
+    patterns: [/明显头痛|剧烈头痛|意识模糊|抽搐|颈项强直|视力.{0,6}(下降|丧失)/u],
   },
 ];
 
 export function findHighRiskCandidateFields(text: string): SafetyField[] {
+  const normalized = text.normalize("NFKC").replace(/[\u200B-\u200D\uFEFF]/gu, "");
   return HIGH_RISK_PATTERNS.filter(({ patterns }) =>
-    patterns.some((pattern) => pattern.test(text)),
+    patterns.some((pattern) => pattern.test(normalized)),
   ).map(({ field }) => field);
 }
 
@@ -224,11 +275,22 @@ function emptyCandidates(): ExtractionCandidates {
   return { safety: {}, severity: {}, syndrome: {} };
 }
 
+function publicAssessment(assessment: ReturnType<typeof evaluateAssessment>) {
+  const disclaimer = "这是内部规则辅助结果，不是诊断或证型结论；正式康复建议需经临床审核。";
+  const base = { rulePackageVersion: assessment.rulePackageVersion, disclaimer };
+  if (assessment.status === "classified") return { ...base, status: assessment.status, planStatus: assessment.planStatus };
+  if (assessment.status === "conflict" || assessment.status === "no_match") return { ...base, status: assessment.status };
+  if (assessment.status === "blocked") return { ...base, status: assessment.status, safetyStatus: "blocked" as const, matchedRuleIds: assessment.safety.matchedRuleIds };
+  return { ...base, status: assessment.status, ...("stage" in assessment ? { stage: assessment.stage } : {}), ...("reason" in assessment ? { reason: assessment.reason } : {}), ...("nextQuestions" in assessment && assessment.nextQuestions ? { nextQuestions: assessment.nextQuestions } : {}) };
+}
+
 interface AgentApiDependencies {
   limiter?: InMemoryAgentLimiter;
   apiKey?: string | null;
   fetchImpl?: typeof fetch;
   modelTimeoutMs?: number;
+  approvedPlanProvider?: (syndromeCode: string, method: Parameters<typeof evaluateRehabSafety>[0]) => Promise<ApprovedPlan | null>;
+  approvedPlanAccess?: (request: Request) => Promise<boolean>;
 }
 
 function resolveApiKey(dependencies: AgentApiDependencies): string | null {
@@ -293,7 +355,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
 
         return jsonResponse({
           ok: true,
-          data: { assessment: evaluateAssessment(input) },
+          data: { assessment: publicAssessment(evaluateAssessment(input)) },
         });
       } catch (error) {
         return errorResponse(error);
@@ -432,8 +494,8 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
       try {
         enforceRequestLimit(request, "explain", limiter);
         const value = await readJsonBody(request, ASSESSMENT_BODY_LIMIT_BYTES);
-        const input = parseAssessmentInput(value);
-        if (!input) {
+        const parsed = parseExplainInput(value);
+        if (!parsed) {
           throw new RequestError(
             400,
             "INVALID_INPUT",
@@ -441,12 +503,13 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           );
         }
 
+        const input = parsed.assessment;
         const assessment = evaluateAssessment(input);
         if (assessment.status !== "classified") {
           return jsonResponse({
             ok: true,
             data: {
-              assessment,
+              assessment: publicAssessment(assessment),
               explanation: null,
               model: {
                 used: false as const,
@@ -456,21 +519,86 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           });
         }
 
+        if (!parsed.rehabSafety) {
+          return jsonResponse({
+            ok: true,
+            data: {
+              assessment: publicAssessment(assessment),
+              explanation: null,
+              model: { used: false as const, degradedReason: "rehab_safety_required" as const },
+            },
+          });
+        }
+
+        const forcedLungHeatBlock = assessment.syndrome.syndromeCode === "LUNG_HEAT" && parsed.rehabSafety.method === "moxa_or_blow_dazhui";
+        const rehabSafety: RehabSafetyResult = forcedLungHeatBlock
+          ? {
+              status: "blocked" as const,
+              method: parsed.rehabSafety.method,
+              blockedBy: ["lungHeatPattern"],
+              rulePackageVersion: "rehab-safety-v1",
+              disclaimer: REHAB_SAFETY_DISCLAIMER,
+            }
+          : evaluateRehabSafety(parsed.rehabSafety.method, parsed.rehabSafety.answers);
+        if (rehabSafety.status !== "clear") {
+          return jsonResponse({
+            ok: true,
+            data: {
+              assessment: publicAssessment(assessment),
+              rehabSafety,
+              explanation: null,
+              model: { used: false as const, degradedReason: rehabSafety.status === "blocked" ? "rehab_safety_blocked" as const : "rehab_safety_incomplete" as const },
+            },
+          });
+        }
+
+        const approvedPlanAllowed = dependencies.approvedPlanAccess ? await dependencies.approvedPlanAccess(request) : true;
+        const plan = approvedPlanAllowed && dependencies.approvedPlanProvider
+          ? await dependencies.approvedPlanProvider(assessment.syndrome.syndromeCode, parsed.rehabSafety.method)
+          : null;
+        if (plan) {
+          return jsonResponse({
+            ok: true,
+            data: {
+              assessment: { ...publicAssessment(assessment), planStatus: "approved_plan" as const },
+              rehabSafety,
+              explanation: {
+                summary: `已根据当前规则和已审核内容匹配到康复建议：${plan.title}`,
+                plan,
+                disclaimer: "仅供健康管理参考，不能替代诊断和治疗；操作前请再次确认禁忌情况。",
+              },
+              model: { used: false as const, degradedReason: "approved_knowledge" as const },
+            },
+          });
+        }
+
         return jsonResponse({
           ok: true,
           data: {
-            assessment,
+            assessment: publicAssessment(assessment),
             explanation: {
               summary:
-                "已完成内部规则匹配。结果仅供内部测试，不能替代医生诊断。当前尚未接入经审核知识库，暂无可提供的调理方案。",
+                "已完成内部规则匹配和操作安全筛查，但当前没有匹配到已审核康复内容，暂不直接推荐操作。",
               disclaimer: "如症状持续、加重或出现危险信号，请及时线下就医。",
             },
             model: {
               used: false as const,
-              degradedReason: "no_approved_knowledge" as const,
+              degradedReason: approvedPlanAllowed ? "no_approved_knowledge" as const : "identity_required" as const,
             },
           },
         });
+      } catch (error) {
+        return errorResponse(error);
+      }
+    },
+
+    async rehabSafety(request: Request): Promise<Response> {
+      try {
+        enforceRequestLimit(request, "rehab-safety", limiter);
+        const value = await readJsonBody(request, ASSESSMENT_BODY_LIMIT_BYTES);
+        const input = parseRehabSafetyInput(value);
+        if (!input) throw new RequestError(400, "INVALID_INPUT", "康复方法或安全筛查字段不完整或包含无效值");
+        return jsonResponse({ ok: true, data: { safety: evaluateRehabSafety(input.method, input.answers) } });
       } catch (error) {
         return errorResponse(error);
       }

@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { FormEvent, useEffect, useState } from "react";
 import { SYNDROME_OPTIONS } from "@/lib/agent/syndromes";
+import { VIDEO_TOPIC_LABELS, type VideoTopicType } from "@/lib/content/video-topics";
 import "./admin.css";
 
 type Section = "overview" | "article" | "video" | "knowledge" | "plan" | "media" | "audit";
-type Item = { id: string; type: string; title: string; category: string; summary: string; body: string; source: string; status: string; version: number; mediaId?: string | null; metadata: { risks?: string; contraindications?: string; syndromeCodes?: string[] }; updatedAt: string };
+type Item = { id: string; type: string; title: string; category: string; summary: string; body: string; source: string; status: string; version: number; mediaId?: string | null; metadata: { risks?: string; contraindications?: string; syndromeCodes?: string[]; methodCode?: string | null; videoTopicType?: VideoTopicType | null }; clinicalApproval?: { contentVersion: number; approver?: string | null; approvedAt?: string | null } | null; updatedAt: string };
 type Media = { id: string; filename: string; kind: string; byteSize: number; status: string };
 
 const navigation: Array<{ key: Section; label: string; icon: string }> = [
@@ -71,7 +72,7 @@ export default function AdminPage() {
       <aside className="admin-sidebar">
         <div className="admin-brand"><span>抗</span><div><strong>抗敏先锋</strong><small>鼻健康内容中心</small></div></div>
         <nav aria-label="管理后台导航">{navigation.map((item) => <button key={item.key} className={section === item.key ? "active" : ""} onClick={() => setSection(item.key)}><i>{item.icon}</i>{item.label}</button>)}</nav>
-        <div className="admin-account"><span>A</span><div><strong>管理员</strong><small>内容可直接发布</small></div><button aria-label="退出登录" onClick={async () => { await api("/api/admin/auth/logout", { method: "POST" }); setAuthenticated(false); }}>退出</button></div>
+        <div className="admin-account"><span>A</span><div><strong>管理员</strong><small>内容需临床审核后发布</small></div><button aria-label="退出登录" onClick={async () => { await api("/api/admin/auth/logout", { method: "POST" }); setAuthenticated(false); }}>退出</button></div>
       </aside>
       <section className="admin-main">
         <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1></div><Link href="/discover" target="_blank">查看用户端 ↗</Link></header>
@@ -101,38 +102,67 @@ function Overview({ dashboard, items }: { dashboard: Record<string, unknown>; it
   const published = items.filter((item) => item.status === "published").length;
   const drafts = items.filter((item) => item.status === "draft").length;
   const failed = items.filter((item) => item.status === "index_failed").length;
-  return <div className="admin-overview"><section className="welcome-card"><div><small>今日内容工作台</small><h2>内容清晰，健康指导更安心</h2><p>统一管理已审核的科普、知识来源与调理操作，发布后立即同步到用户端。</p></div><span>鼻<br />健康</span></section><section className="stat-grid"><article><i className="green">↑</i><small>已发布内容</small><strong>{published}</strong><p>用户端可见</p></article><article><i className="amber">稿</i><small>待完善草稿</small><strong>{drafts}</strong><p>不会对外展示</p></article><article><i className="red">异</i><small>索引异常</small><strong>{failed}</strong><p>需检查资源后重试</p></article><article><i className="blue">站</i><small>站内消息</small><strong>{String((dashboard.messages as { count?: number } | undefined)?.count ?? 0)}</strong><p>已向用户公告</p></article></section><section className="recent-card"><div className="card-heading"><div><h2>最近更新</h2><p>最后编辑的内容与当前状态</p></div></div><ContentTable items={items.slice(0, 6)} onAction={undefined} /></section></div>;
+  return <div className="admin-overview"><section className="welcome-card"><div><small>今日内容工作台</small><h2>内容清晰，健康指导更安心</h2><p>统一管理已审核的科普、知识来源与调理操作，发布后立即同步到用户端。</p></div><span>鼻<br />健康</span></section><section className="stat-grid"><article><i className="green">↑</i><small>已发布内容</small><strong>{published}</strong><p>用户端可见</p></article><article><i className="amber">稿</i><small>待完善草稿</small><strong>{drafts}</strong><p>不会对外展示</p></article><article><i className="red">异</i><small>索引异常</small><strong>{failed}</strong><p>需检查资源后重试</p></article><article><i className="blue">站</i><small>站内消息</small><strong>{String((dashboard.messages as { count?: number } | undefined)?.count ?? 0)}</strong><p>已向用户公告</p></article></section><section className="recent-card"><div className="card-heading"><div><h2>最近更新</h2><p>最后编辑的内容与当前状态</p></div></div><ContentTable items={items.slice(0, 6)} onAction={undefined} busy={false} /></section></div>;
 }
 
 function ContentManager({ type, items, media, busy, onBusy, onMessage, onReload }: { type: Section; items: Item[]; media: Media[]; busy: boolean; onBusy(value: boolean): void; onMessage(value: string): void; onReload(): Promise<void> }) {
   const [showForm, setShowForm] = useState(false);
+  const [editingItem, setEditingItem] = useState<Item | null>(null);
   const labels: Record<string, string> = { article: "科普文章", video: "视频", knowledge: "知识资料", plan: "调理方案" };
-  async function create(event: FormEvent<HTMLFormElement>) {
+  async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); onBusy(true);
     const form = new FormData(event.currentTarget);
-    const payload = { type, title: form.get("title"), category: form.get("category"), summary: form.get("summary"), body: form.get("body"), source: form.get("source"), mediaId: form.get("mediaId"), metadata: { risks: form.get("risks"), contraindications: form.get("contraindications"), syndromeCodes: form.getAll("syndromeCodes") } };
+    const payload = { type, title: form.get("title"), category: form.get("category"), summary: form.get("summary"), body: form.get("body"), source: form.get("source"), mediaId: type === "article" ? undefined : form.get("mediaId"), metadata: { risks: form.get("risks"), contraindications: form.get("contraindications"), syndromeCodes: form.getAll("syndromeCodes"), methodCode: form.get("methodCode"), topicType: form.get("videoTopicType") } };
     try {
-      const created = await api("/api/admin/content", { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) });
-      if (type === "plan") {
-        await api("/api/admin/steps", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ planId: created.id, position: 1, title: form.get("stepTitle"), instruction: form.get("stepInstruction"), mediaId: form.get("stepMediaId") }) });
+      if (editingItem) {
+        await api("/api/admin/content", { method: "PATCH", headers: { "content-type": "application/json", "If-Match": `\"${editingItem.version}\"` }, body: JSON.stringify({ ...payload, id: editingItem.id, action: "update" }) });
+        onMessage(`${labels[type]}已保存为新草稿版本`);
+      } else {
+        const created = await api("/api/admin/content", { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": crypto.randomUUID() }, body: JSON.stringify(payload) });
+        if (type === "plan") {
+          await api("/api/admin/steps", { method: "POST", headers: { "content-type": "application/json", "If-Match": String(created.version ?? 1) }, body: JSON.stringify({ planId: created.id, position: 1, title: form.get("stepTitle"), instruction: form.get("stepInstruction"), mediaId: form.get("stepMediaId") }) });
+        }
+        onMessage(`${labels[type]}已保存为草稿`);
       }
-      onMessage(`${labels[type]}\u5df2\u4fdd\u5b58\u4e3a\u8349\u7a3f`); setShowForm(false); await onReload();
+      setShowForm(false); setEditingItem(null); await onReload();
     }
     catch (error) { onMessage(error instanceof Error ? error.message : "保存失败"); } finally { onBusy(false); }
   }
+  function openCreate() { setEditingItem(null); setShowForm(true); }
+  function openEdit(item: Item) { setEditingItem(item); setShowForm(true); }
   async function action(id: string, actionName: string) {
+    onBusy(true);
     try {
-      if (type === "knowledge" && actionName === "index") await api("/api/admin/knowledge/retry", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ id }) });
-      else await api("/api/admin/content", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ id, action: actionName, notify: actionName === "publish" && (type === "article" || type === "video") }) });
-      onMessage(actionName === "publish" ? "已发布并同步到用户端" : actionName === "index" ? "知识索引已完成" : "内容已下架"); await onReload();
-    } catch (error) { onMessage(error instanceof Error ? error.message : "操作失败"); }
+      const item = items.find((candidate) => candidate.id === id);
+      if (!item) throw new Error("内容已不在当前列表，请刷新");
+      const headers = { "content-type": "application/json", "if-match": `"${item.version}"` };
+      if (actionName === "approve") await api("/api/admin/clinical-approvals", { method: "POST", headers, body: JSON.stringify({ contentId: id }) });
+      else if (type === "knowledge" && actionName === "index") await api("/api/admin/knowledge/retry", { method: "POST", headers, body: JSON.stringify({ id }) });
+      else await api("/api/admin/content", { method: "PATCH", headers, body: JSON.stringify({ id, action: actionName, notify: actionName === "publish" && (type === "article" || type === "video") }) });
+      onMessage(actionName === "approve" ? "已完成当前版本临床审核" : actionName === "publish" ? "已发布并同步到用户端" : actionName === "index" ? "知识索引已完成" : "内容已下架"); await onReload();
+    } catch (error) { onMessage(error instanceof Error ? error.message : "操作失败"); } finally { onBusy(false); }
   }
-    return <section className="manager-card"><div className="manager-heading"><div><h2>{labels[type]}管理</h2><p>草稿不会对外展示，发布后才进入用户端。</p></div><button className="primary" onClick={() => setShowForm(!showForm)}>+ 新建{labels[type]}</button></div>{showForm && <form className="content-form" onSubmit={create}><div className="form-grid"><label>标题<input name="title" required maxLength={160} /></label><label>分类<input name="category" placeholder="例如：日常护理" /></label></div><label>摘要<textarea name="summary" rows={2} /></label>{type !== "video" && <label>{type === "knowledge" ? "可检索文本" : "正文"}<textarea name="body" rows={6} required /></label>}<label>来源或依据<input name="source" /></label>{type !== "article" && <label>关联素材<select name="mediaId"><option value="">暂不关联</option>{media.map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}{type === "plan" && <><div className="form-grid"><label>风险提示<textarea name="risks" rows={3} required /></label><label>禁忌事项<textarea name="contraindications" rows={3} required /></label></div><fieldset><legend>适用证型</legend>{SYNDROME_OPTIONS.map(({ code, label }) => <label key={code}><input type="checkbox" name="syndromeCodes" value={code} />{label}</label>)}</fieldset><div className="form-grid"><label>首个步骤标题<input name="stepTitle" required /></label><label>步骤视频<select name="stepMediaId"><option value="">无</option>{media.filter((asset) => asset.kind === "video").map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label></div><label>首个步骤说明<textarea name="stepInstruction" rows={3} required /></label></>}<div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}<ContentTable items={items} onAction={action} secondaryAction={type === "knowledge" ? "index" : undefined} /></section>;
+  return (
+    <section className="manager-card">
+      <div className="manager-heading"><div><h2>{labels[type]}管理</h2><p>草稿不会对外展示，发布后才进入用户端；正式健康内容必须经临床审核。</p></div><button className="primary" onClick={showForm ? () => { setShowForm(false); setEditingItem(null); } : openCreate} disabled={busy}>+ 新建{labels[type]}</button></div>
+      {showForm && <form key={editingItem?.id ?? "new"} className="content-form" onSubmit={save}>
+        <div className="form-grid"><label>标题<input name="title" required maxLength={160} defaultValue={editingItem?.title ?? ""} /></label><label>分类<input name="category" defaultValue={editingItem?.category ?? ""} placeholder={type === "video" ? "例如：鼻塞、流清涕或肺气虚寒型" : "例如：日常护理"} /></label></div>
+        {type === "video" && <label>分类维度<select name="videoTopicType" defaultValue={editingItem?.metadata.videoTopicType ?? ""}><option value="">请选择分类维度</option>{(Object.entries(VIDEO_TOPIC_LABELS) as Array<[VideoTopicType, string]>).map(([value, label]) => <option key={value} value={value}>{label}</option>)}</select></label>}
+        <label>摘要<textarea name="summary" rows={2} defaultValue={editingItem?.summary ?? ""} /></label>
+        {type !== "video" && <label>{type === "knowledge" ? "可检索文本" : "正文"}<textarea name="body" rows={6} required={type === "article" || type === "knowledge"} defaultValue={editingItem?.body ?? ""} /></label>}
+        <label>来源或依据<input name="source" defaultValue={editingItem?.source ?? ""} /></label>
+        {type !== "article" && <label>关联素材<select name="mediaId" defaultValue={editingItem?.mediaId ?? ""}><option value="">暂不关联</option>{media.filter((asset) => type !== "video" || asset.kind === "video").map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label>}
+        {type === "plan" && <><label>康复方法<select name="methodCode" required defaultValue={editingItem?.metadata.methodCode ?? ""}><option value="">请选择受控方法</option><option value="nose_three_line_ginger_scrape">鼻三线姜刮（不等同于普通刮痧）</option><option value="finger_pressure_yingxiang">指腹擦迎香</option><option value="acupoint_massage">穴位按摩</option><option value="ear_acupressure">耳穴压豆</option><option value="moxa_or_blow_dazhui">艾灸/电吹风吹大椎、风池</option></select></label><div className="form-grid"><label>风险提示<textarea name="risks" rows={3} required defaultValue={editingItem?.metadata.risks ?? ""} /></label><label>禁忌事项<textarea name="contraindications" rows={3} required defaultValue={editingItem?.metadata.contraindications ?? ""} /></label></div><fieldset><legend>适用证型</legend>{SYNDROME_OPTIONS.map(({ code, label }) => <label key={code}><input type="checkbox" name="syndromeCodes" value={code} defaultChecked={editingItem?.metadata.syndromeCodes?.includes(code) ?? false} />{label}</label>)}</fieldset>{!editingItem && <><div className="form-grid"><label>首个步骤标题<input name="stepTitle" required /></label><label>步骤视频<select name="stepMediaId"><option value="">无</option>{media.filter((asset) => asset.kind === "video").map((asset) => <option key={asset.id} value={asset.id}>{asset.filename}</option>)}</select></label></div><label>首个步骤说明<textarea name="stepInstruction" rows={3} required /></label></>}</>}
+        <div className="form-actions"><button type="button" onClick={() => { setShowForm(false); setEditingItem(null); }} disabled={busy}>取消</button><button className="primary" disabled={busy}>{editingItem ? "保存修改" : "保存草稿"}</button></div>
+      </form>}
+      <ContentTable items={items} onAction={action} onEdit={openEdit} secondaryAction={type === "knowledge" ? "index" : undefined} busy={busy} />
+    </section>
+  );
 }
 
-function ContentTable({ items, onAction, secondaryAction }: { items: Item[]; onAction?: (id: string, action: string) => void; secondaryAction?: string }) {
+function ContentTable({ items, onAction, onEdit, secondaryAction, busy }: { items: Item[]; onAction?: (id: string, action: string) => void; onEdit?: (item: Item) => void; secondaryAction?: string; busy: boolean }) {
   if (items.length === 0) return <div className="empty-state"><span>◌</span><strong>还没有内容</strong><p>新建后将在这里统一管理。</p></div>;
-  return <div className="table-wrap"><table><thead><tr><th>内容</th><th>分类</th><th>状态</th><th>版本</th><th>更新时间</th>{onAction && <th>操作</th>}</tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || item.source || "暂无摘要"}</small></td><td>{item.category}</td><td><span className={`status ${item.status}`}>{({ draft: "草稿", published: "已发布", offline: "已下架", indexing: "索引中", index_failed: "索引失败" } as Record<string, string>)[item.status] || item.status}</span></td><td>v{item.version}</td><td>{new Date(item.updatedAt).toLocaleString("zh-CN")}</td>{onAction && <td><div className="row-actions">{secondaryAction && item.status !== "published" && <button onClick={() => onAction(item.id, secondaryAction)}>建立索引</button>}{item.status !== "published" && <button onClick={() => onAction(item.id, "publish")}>发布</button>}{item.status === "published" && <button onClick={() => onAction(item.id, "offline")}>下架</button>}</div></td>}</tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>内容</th><th>分类</th><th>状态</th><th>版本</th><th>更新时间</th>{(onAction || onEdit) && <th>操作</th>}</tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || item.source || "暂无摘要"}</small></td><td>{item.category}</td><td><span className={`status ${item.status}`}>{({ draft: "草稿", published: "已发布", offline: "已下架", indexing: "索引中", index_failed: "索引失败" } as Record<string, string>)[item.status] || item.status}</span>{item.clinicalApproval && <small>已审核 v{item.clinicalApproval.contentVersion}</small>}</td><td>v{item.version}</td><td>{new Date(item.updatedAt).toLocaleString("zh-CN")}</td>{(onAction || onEdit) && <td><div className="row-actions">{onEdit && ["draft", "offline", "index_failed"].includes(item.status) && <button type="button" disabled={busy} onClick={() => onEdit(item)}>编辑</button>}{secondaryAction && ["draft", "index_failed", "indexing"].includes(item.status) && onAction && <button type="button" disabled={busy} onClick={() => onAction(item.id, secondaryAction)}>{item.status === "indexing" ? "重试索引" : "建立索引"}</button>}{onAction && item.status !== "published" && item.status !== "indexing" && !item.clinicalApproval && <button type="button" disabled={busy} onClick={() => onAction(item.id, "approve")}>临床审核</button>}{onAction && item.status !== "published" && item.status !== "indexing" && <button type="button" disabled={busy} onClick={() => onAction(item.id, "publish")}>发布</button>}{onAction && item.status === "published" && <button type="button" disabled={busy} onClick={() => onAction(item.id, "offline")}>下架</button>}</div></td>}</tr>)}</tbody></table></div>;
 }
 
 function MediaManager({ media, onMessage, onReload }: { media: Media[]; onMessage(value: string): void; onReload(): Promise<void> }) {

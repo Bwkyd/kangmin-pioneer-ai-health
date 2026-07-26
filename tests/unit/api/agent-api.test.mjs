@@ -4,12 +4,14 @@ import test from "node:test";
 import {
   createAgentApi,
   parseAssessmentInput,
+  parseRehabSafetyInput,
 } from "../../../lib/agent/api.ts";
 import { InMemoryAgentLimiter } from "../../../lib/agent/rate-limit.ts";
 import {
   SAFETY_FIELDS,
   SEVERITY_FIELDS,
 } from "../../../lib/agent/rules.ts";
+import { REHAB_SAFETY_FIELDS } from "../../../lib/agent/rehab-safety.ts";
 
 function allAnswers(fields, value = "no") {
   return Object.fromEntries(fields.map((field) => [field, value]));
@@ -78,6 +80,17 @@ test("AssessmentInput 严格校验完整字段、三态值和多余字段", () =
   assert.equal(parseAssessmentInput(incomplete), null);
 });
 
+test("康复建议先经过方法级安全筛查，unknown 不会被当作安全", async () => {
+  const input = { method: "nose_three_line_ginger_scrape", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") };
+  input.answers.bleedingRisk = "unknown";
+  assert.deepEqual(parseRehabSafetyInput(input)?.method, input.method);
+  const api = createAgentApi({ limiter: new InMemoryAgentLimiter(), apiKey: null });
+  const result = await responseBody(await api.rehabSafety(post("/api/v1/agent/rehab-safety", input)));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.safety.status, "need_more_information");
+  assert.deepEqual(result.body.data.safety.nextQuestions, ["bleedingRisk"]);
+});
+
 test("evaluate 由服务端重算规则，并使用统一成功和错误结构", async () => {
   const api = createAgentApi({
     limiter: new InMemoryAgentLimiter(),
@@ -110,6 +123,7 @@ test("evaluate 由服务端重算规则，并使用统一成功和错误结构",
           reason: "not_diagnosed_or_uncertain",
           nextQuestions: ["diagnosedAllergicRhinitis"],
           rulePackageVersion: "draft-local-v0",
+          disclaimer: "这是内部规则辅助结果，不是诊断或证型结论；正式康复建议需经临床审核。",
         },
       },
     },
@@ -144,6 +158,14 @@ test("evaluate 由服务端重算规则，并使用统一成功和错误结构",
   });
 });
 
+test("提取文本中的发烧/发热先进入安全确认，不会在模型降级时判为 clear", async () => {
+  const api = createAgentApi({ limiter: new InMemoryAgentLimiter(), apiKey: null });
+  const result = await responseBody(await api.extract(post("/api/v1/agent/extract", { text: "我现在正在发烧\u200b" })));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.safetyGate.status, "confirmation_required");
+  assert.ok(result.body.data.safetyGate.candidateFields.includes("persistentHighFever"));
+});
+
 test("extract 先执行高危关键词门禁，命中时不调用模型", async () => {
   let fetchCalls = 0;
   const api = createAgentApi({
@@ -176,6 +198,19 @@ test("extract 先执行高危关键词门禁，命中时不调用模型", async 
   });
   assert.equal(result.body.data.model.used, false);
   assert.equal(fetchCalls, 0);
+});
+
+test("extract 覆盖界面高危提示中的发热、头痛、面部肿胀和胸闷表达", async () => {
+  const api = createAgentApi({ apiKey: "test-only", fetchImpl: async () => { throw new Error("must not call model"); } });
+  const result = await responseBody(await api.extract(post("/api/v1/agent/extract", { text: "我高热、明显头痛、面部肿痛、胸闷，鼻出血不止" })));
+  assert.deepEqual(result.body.data.safetyGate.candidateFields, [
+    "respiratoryEmergency",
+    "persistentHighFever",
+    "facialSwelling",
+    "severeNoseBleed",
+    "severeNeurologicalSymptoms",
+  ]);
+  assert.equal(result.body.data.model.used, false);
 });
 
 test("extract 未配置模型时返回固定可确认降级，不猜测健康字段", async () => {
@@ -355,15 +390,70 @@ test("explain 对高危、冲突和无命中不调用模型；已分类也不越
     classified.body.data.assessment.planStatus,
     "no_approved_plan",
   );
-  assert.match(
-    classified.body.data.explanation.summary,
-    /尚未接入经审核知识库/u,
-  );
+  assert.equal(classified.body.data.explanation, null);
   assert.deepEqual(classified.body.data.model, {
+    used: false,
+    degradedReason: "rehab_safety_required",
+  });
+
+  const screened = await responseBody(
+    await api.explain(post("/api/v1/agent/explain", {
+      ...completeInput(),
+      rehabSafety: { method: "finger_pressure_yingxiang", answers: allAnswers(REHAB_SAFETY_FIELDS) },
+    })),
+  );
+  assert.match(
+    screened.body.data.explanation.summary,
+    /没有匹配到已审核康复内容/u,
+  );
+  assert.deepEqual(screened.body.data.model, {
     used: false,
     degradedReason: "no_approved_knowledge",
   });
   assert.equal(fetchCalls, 0);
+});
+
+test("服务端强制阻断肺经蕴热型的艾灸或吹风方案，不信任客户端把肺热填成没有", async () => {
+  const api = createAgentApi({
+    limiter: new InMemoryAgentLimiter(),
+    approvedPlanProvider: async () => { throw new Error("blocked request must not read plan"); },
+  });
+  const rawResult = await api.explain(post("/api/v1/agent/explain", {
+    ...completeInput({
+      syndrome: { thirst: "yes", fatigue: "no", limbsNotWarm: "no", fearWind: "no", coldIntolerance: "no" },
+    }),
+    rehabSafety: { method: "moxa_or_blow_dazhui", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") },
+  }));
+  const result = await responseBody(rawResult);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.rehabSafety.status, "blocked");
+  assert.deepEqual(result.body.data.rehabSafety.blockedBy, ["lungHeatPattern"]);
+  assert.equal(result.body.data.explanation, null);
+  assert.equal(rawResult.headers.get("cache-control"), "private, no-store");
+  assert.equal(rawResult.headers.get("vary"), "Cookie");
+});
+
+test("未完成服务端身份确认时只返回筛查，不返回正式审核方案", async () => {
+  const api = createAgentApi({
+    limiter: new InMemoryAgentLimiter(),
+    approvedPlanAccess: async () => false,
+    approvedPlanProvider: async () => ({
+      id: "plan_test",
+      title: "不应返回",
+      summary: "不应返回",
+      method: "finger_pressure_yingxiang",
+      risks: "",
+      contraindications: "",
+      steps: [{ title: "不应返回", instruction: "不应返回" }],
+    }),
+  });
+  const result = await responseBody(await api.explain(post("/api/v1/agent/explain", {
+    ...completeInput(),
+    rehabSafety: { method: "finger_pressure_yingxiang", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") },
+  })));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.explanation.plan, undefined);
+  assert.equal(result.body.data.model.degradedReason, "identity_required");
 });
 
 test("请求长度和每分钟限流返回稳定错误及 Retry-After", async () => {

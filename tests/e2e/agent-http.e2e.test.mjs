@@ -70,6 +70,7 @@ function completeInput(overrides = {}) {
     safety: {
       respiratoryEmergency: "no",
       persistentHighFever: "no",
+      facialSwelling: "no",
       severeNoseBleed: "no",
       unilateralFoulDischarge: "no",
       severeNeurologicalSymptoms: "no",
@@ -88,6 +89,21 @@ function completeInput(overrides = {}) {
       coldIntolerance: "no",
     },
     ...overrides,
+  };
+}
+
+function allRehabAnswers() {
+  return {
+    acuteColdRhinitis: "no",
+    feverOrInfection: "no",
+    acuteAllergicFlare: "no",
+    skinDamageOrInflammation: "no",
+    bleedingRisk: "no",
+    anticoagulantUse: "no",
+    severeChronicDisease: "no",
+    specialPhysicalState: "no",
+    mediumAllergy: "no",
+    lungHeatPattern: "no",
   };
 }
 
@@ -153,22 +169,23 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
       reason: "not_diagnosed_or_uncertain",
       nextQuestions: ["diagnosedAllergicRhinitis"],
       rulePackageVersion: "draft-local-v0",
+      disclaimer: "这是内部规则辅助结果，不是诊断或证型结论；正式康复建议需经临床审核。",
     });
 
     const explanation = await postJson(
       baseUrl,
       "/api/v1/agent/explain",
-      completeInput(),
+      { ...completeInput(), rehabSafety: { method: "finger_pressure_yingxiang", answers: allRehabAnswers() } },
     );
     assert.equal(explanation.response.status, 200);
     assert.equal(explanation.body.data.assessment.status, "classified");
     assert.match(
       explanation.body.data.explanation.summary,
-      /尚未接入经审核知识库/u,
+      /没有匹配到已审核康复内容/u,
     );
     assert.deepEqual(explanation.body.data.model, {
       used: false,
-      degradedReason: "no_approved_knowledge",
+      degradedReason: "identity_required",
     });
 
     const conflict = await postJson(
@@ -191,10 +208,8 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
       }),
     );
     assert.equal(conflict.body.data.assessment.status, "conflict");
-    assert.deepEqual(
-      conflict.body.data.assessment.syndrome.matchedRuleIds,
-      ["T1", "T5"],
-    );
+    assert.equal("syndrome" in conflict.body.data.assessment, false);
+    assert.match(conflict.body.data.assessment.disclaimer, /不是诊断或证型结论/u);
 
     const blocked = await postJson(
       baseUrl,
@@ -203,6 +218,7 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
         safety: {
           respiratoryEmergency: "yes",
           persistentHighFever: "no",
+          facialSwelling: "no",
           severeNoseBleed: "no",
           unilateralFoulDischarge: "no",
           severeNeurologicalSymptoms: "no",

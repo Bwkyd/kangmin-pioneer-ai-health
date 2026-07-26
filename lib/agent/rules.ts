@@ -7,6 +7,7 @@ export const RULE_PACKAGE_VERSION = "draft-local-v0";
 export const SAFETY_FIELDS = [
   "respiratoryEmergency",
   "persistentHighFever",
+  "facialSwelling",
   "severeNoseBleed",
   "unilateralFoulDischarge",
   "severeNeurologicalSymptoms",
@@ -170,7 +171,7 @@ export type AssessmentResult =
       status: "classified";
       severity: SeverityCode;
       syndrome: Extract<SyndromeResult, { status: "classified" }>;
-      planStatus: "no_approved_plan";
+      planStatus: "no_approved_plan" | "approved_plan";
       rulePackageVersion: string;
     };
 

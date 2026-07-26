@@ -42,7 +42,7 @@ function completeInput(overrides = {}) {
   };
 }
 
-test("五个高风险项任一命中都会阻断，未知项不会被当作否", () => {
+test("六个高风险项任一命中都会阻断，未知项不会被当作否", () => {
   for (const field of SAFETY_FIELDS) {
     const answers = allAnswers(SAFETY_FIELDS);
     answers[field] = "yes";

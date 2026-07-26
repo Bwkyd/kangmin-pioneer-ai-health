@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   FIRST_QUESTION_KEY,
+  SAFETY_QUESTION_KEYS,
   createAssessmentPayload,
   findNextQuestion,
 } from "../../../lib/agent/conversation.ts";
@@ -93,13 +94,7 @@ test("真实规则顺序先完成安全筛查，再问确诊前提并进入后�
     nextQuestion: FIRST_QUESTION_KEY,
   };
 
-  for (const safetyQuestion of [
-    "respiratoryEmergency",
-    "persistentHighFever",
-    "severeNoseBleed",
-    "unilateralFoulDischarge",
-    "severeNeurologicalSymptoms",
-  ]) {
+  for (const safetyQuestion of SAFETY_QUESTION_KEYS) {
     assert.equal(state.nextQuestion, safetyQuestion);
     state = answerAndNavigate(state.answers, safetyQuestion, "no");
   }
@@ -134,6 +129,7 @@ test("高危肯定立即终止，全部显式不确定则明确结束而不重�
   for (const safetyQuestion of [
     "respiratoryEmergency",
     "persistentHighFever",
+    "facialSwelling",
     "severeNoseBleed",
     "unilateralFoulDischarge",
     "severeNeurologicalSymptoms",
@@ -149,6 +145,7 @@ test("已有严重度肯定项和唯一证型时跳过不影响结论的剩余�
   let answers = {
     respiratoryEmergency: "no",
     persistentHighFever: "no",
+    facialSwelling: "no",
     severeNoseBleed: "no",
     unilateralFoulDischarge: "no",
     severeNeurologicalSymptoms: "no",

@@ -1,0 +1,1 @@
+ALTER TABLE `health_profiles` ADD `common_triggers` text DEFAULT '[]' NOT NULL;
