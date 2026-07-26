@@ -8,16 +8,25 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 14:02:51 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 14:08:10 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；本阶段入口 HEAD 为 `ed3a8f269e4ab90c6c3ed3173fbd8a4c84579c5f`，该业务候选之后只追加了本状态文件记录，工作树核验入口干净。2026-07-26 14:02 主机网络刷新后的 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；当前 HEAD 为 `ce8fb0b844aa3a1caedc44b24c83a0130c1c79e0`，其后只追加本状态文件记录，业务树无差异，工作树干净。实时 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
 - 工作树：实现、定向测试和状态文件已提交；临时 `.dev.vars` 已删除，未跟踪敏感配置不存在。当前候选之后没有新的业务代码修改。
-- GitHub Issue/PR：2026-07-26 14:02 主机网络实时回读成功，仍有 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。`gh auth status` 当前显示 Bwkyd 认证有效且包含 `repo`、`workflow` scope，但凭据恢复不等于获得推送、创建 PR 或触发 CI 的交付授权。
+- GitHub Issue/PR：实时公开读取仍显示 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；本轮 `gh pr list` 因 GitHub API 网络错误未形成新的 PR 清单。刚刚实时执行的 `gh auth status` 显示 Bwkyd token invalid；因此没有推送、创建 PR 或触发 CI 的写入证据。
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 14:02 主机网络只读核验返回 HTTP 200；未登录、未写入。
 - 本地服务：`127.0.0.1:3000` 于 2026-07-26 14:02 无监听，HTTP 探测为 000。基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 14:08 本轮收尾核验
+
+- completed：当前候选代码未再修改；`npm run lint` 通过（0 errors、1 个既有 `<img>` warning），`npm run build` 通过；沙箱内 `npm test` 的唯一失败是 HTTP E2E 监听 `127.0.0.1` 返回 `EPERM`，随后在授权环境对同一代码树重跑，完整 `npm test` 为 100/100 PASS。
+- completed：本地浏览器用户视角在临时 3000 服务上通过：高热/明显头痛显示“先暂停操作”；肺经蕴热特征选择艾灸/电吹风时显示“先暂停操作”并明确“需要避开”；浏览器错误/警告日志为空。测试服务已停止，3000 无监听。
+- completed：再次执行 sequential-thinking 元反思，确认本地测试、合成身份和浏览器结果不能替代生产 verified-phone/D1、临床批准、客户 UAT、CI 或发布授权；没有发现需要扩大一期范围的修复。
+- blocked：实时 `gh auth status` 仍为 token invalid；四视角独立审查两轮均无最终 verdict，且没有合法代码外发授权，因此不启动 Kimi/DeepSeek。临床书面批准、生产 verified-phone/session、生产 D1/Vectorize、客户浏览器 UAT、Draft PR/CI、推送、合并、部署和关闭 Issue均未具备。
+- PASS：本轮本地代码与用户视角验证通过；总体交付仍为 BLOCKED，不能把本地 PASS 写成可发布或可关闭 Issue。
+- pending：恢复合法隔离审查机制/代码外发授权、临床批准、生产身份与客户 UAT，并取得逐项 GitHub 写入及发布授权后，先重新核验 `ce8fb0b844aa3a1caedc44b24c83a0130c1c79e0` 的业务树等价性，再审查、建 PR、跑 CI、部署和逐条验收。
 
 ## 2026-07-26 14:03 看门狗实时核验与阻塞续记
 
