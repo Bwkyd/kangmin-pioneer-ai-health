@@ -37,3 +37,26 @@ test("后台部分更新保留未提交字段，显式空素材才解除绑定",
   );
   assert.equal(detached.mediaId, null);
 });
+
+test("文章图片关联支持保存、替换和显式移除", () => {
+  const existingArticle = {
+    type: "article",
+    title: "原文章标题",
+    category: "日常护理",
+    summary: "原摘要",
+    body: "原正文",
+    source: "原来源",
+    media_id: "media-image-1",
+  };
+
+  const replaced = resolveContentUpdateFields(
+    existingArticle,
+    { mediaId: "media-image-2" },
+    {},
+  );
+  assert.equal(replaced.mediaId, "media-image-2");
+  assert.equal(replaced.body, "原正文");
+
+  const removed = resolveContentUpdateFields(existingArticle, { mediaId: "" }, {});
+  assert.equal(removed.mediaId, null);
+});

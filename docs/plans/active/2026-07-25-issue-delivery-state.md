@@ -20,6 +20,31 @@
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
 
+## 2026-07-26 Issue #100/#83 修复阶段：实时核验后开工
+
+- completed：阶段入口重新同步并核验 `origin/main`；当前基线与 `HEAD` 均为 `1800e8be50f3ba691f14550b8b1d1b2567d04795`，提交为 `Correct final state tree evidence`。此前主工作树仅有本状态文件的未提交修改，未将旧候选 SHA 或部署记录当作本轮业务基线。
+- completed：GitHub 实时确认 #100 与 #83 仍为 OPEN，最新 Issue 正文分别要求入口去重和科普文章图片新建/编辑/保存闭环；两者当前均只有 `task` 标签，未设置 `agent-ready`。本轮由用户明确授权修复，未扩大到其他 Issue。
+- completed：当前没有本地开发服务、测试进程或本任务活跃 worktree；既有 `issue-72-health-ui` 与 `issue-73-health-records` worktree 不属于本轮，保持不接管。
+- in_progress：在 `codex/issue-100-navigation-article-media` 分支实现 #100/#83；先补导航和文章媒体契约，再绑定同一候选 SHA 执行完整测试与浏览器用户旅程。
+- pending：本轮修复后更新/补齐状态证据、飞轮规则、逐轮 P0/P1/P2 复审，创建 Draft PR，并在 PR 候选稳定后按用户要求调用指定评审模型。
+- blocked：当前无本地实现阻塞；若 GitHub 写入、PR、评审模型或自动化凭据出现权限/网络阻塞，只记录精确错误和恢复条件，不把局部测试当作通过。
+
+## 2026-07-26 17:02 看门狗实时核验与活动保护退出
+
+- completed：本轮先读取自动化记忆与本文件，再实时刷新 Git、GitHub Issue/PR、认证、本地服务和客户后台。`origin/main` 与本地 `main` 均为 `1800e8be50f3ba691f14550b8b1d1b2567d04795`；GitHub 认证有效，当前 open PR 仅无关的 Dependabot #66，`quality` 为 SUCCESS。
+- completed：GitHub 实时回读仍有 19 个 open Issue：#69–#71、#82–#83、#88–#101，全部只有 `task` 标签、无 `agent-ready`。#100 与 #83 仍为 OPEN；本地 `127.0.0.1:3000` 无监听（HTTP 000），客户后台 `/admin` 无登录只读探测为 HTTP 200。
+- in_progress：当前分支为 `codex/issue-100-navigation-article-media`，HEAD 为 `1800e8be50f3ba691f14550b8b1d1b2567d04795`，远端尚无同名分支。阶段入口已有 `app/admin/page.tsx` 和本状态文件修改；二次核验时活动实现已扩展到 `app/admin/admin.css`、`app/page.tsx`、`tests/rendered-html.test.mjs`、`tests/unit/admin/content-update-policy.test.mjs`，并新增 `app/api/admin/uploads/[id]/` 与 `tests/unit/admin/article-media-contract.test.mjs`。17:03:44 复核时 `git diff --check` PASS，但 `app/admin/page.tsx` 又于 17:03:12 写入，证明 #100/#83 owner 正在持续实现，当前快照不是冻结候选。
+- blocked：命中 20 分钟活动保护。恢复条件是从最后一次实现文件写入起连续至少 20 分钟无新的实现提交或文件漂移、没有活动验收进程，并冻结新的精确候选 SHA；届时先核对 #100 入口去重和 #83 文章图片契约，再串行运行绑定同一 SHA 的测试、浏览器用户旅程与只读复审。
+- blocked：临床书面批准、#101 产品/数据源口径、真实患者数据、生产身份与数据源，以及后续推送、PR、合并、部署和 Issue 关闭仍保持独立授权门禁；本轮不因认证可用或客户后台 HTTP 200 绕过。
+- pending：当前没有可与活跃 owner 并行且不受外部决策阻塞的下一实现步骤；下一轮先重新核验 HEAD、工作树、Issue/PR、服务和活动时间，再决定是否进入冻结候选验证。
+- 本轮动作：仅完成实时只读核验并写回本状态文件；未读取或写入秘密，未修改业务代码或临床规则，未运行会与 owner 竞争的测试，未提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
+
+## 2026-07-26 16:00 看门狗实时核验进行中
+
+- in_progress：已先读取自动化记忆与本文件；阶段入口实时 Git 显示当前分支为 `main`，HEAD `1800e8be50f3ba691f14550b8b1d1b2567d04795`（`Correct final state tree evidence`），工作树干净。该事实晚于本文件 15:43 的收尾快照，因此本轮不沿用旧聊天或缓存判断当前状态。
+- pending：只读刷新并核验 `origin/main`、HEAD 与已部署业务树关系、GitHub open Issue/PR/CI、认证、本地服务和客户后台；核验完成后再判断是否存在无外部决策阻塞的下一步。
+- blocked：在实时证据完成前，不执行任何业务实现、临床规则变更、推送、合并、部署、Issue 关闭或 worktree/分支清理。
+
 ## 2026-07-26 15:24 测试服务器部署与行为验收
 
 - completed：用户明确授权部署后，重新核验了当前 HEAD `1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d`、构建产物 SHA-256 与远端最终 release；最终 `dist/server/index.js` SHA-256 为 `1593dfb3bf65dd3e61ee9595a31e2b2c7435f3df380e36aa716843462bcf1f04`，`wrangler.json` SHA-256 为 `63bc4b65e2aa7b2206374685b13ea3220ab3100d836b10a896b84225d23b9ef9`，未把状态文件的未提交内容打入运行包，业务代码相对最终验证锚点无差异。
@@ -583,3 +608,56 @@
 2. 重新冻结精确候选后，执行重复/冗余、并发/边界、旧功能回归、临床/交付四视角独立审查；任一 P0/P1 都进入下一轮真修。
 3. 四视角审查 P0/P1 清零后，执行 Kimi/DeepSeek 同 SHA 评审并记录明确 PASS/FAIL。
 4. 仅在 GitHub 凭据、Draft PR/CI、生产 verified-phone、临床批准和客户 UAT 均具备后，才申请推送、部署、合并和逐条关闭 Issue；花粉监测继续延期。
+
+## 2026-07-26 17:26 Issue #100/#83 浏览器验收中
+
+- completed：当前分支 `codex/issue-100-navigation-article-media` 的真实本地浏览器验证确认 #100 主页“今日待完成”唯一进入“过敏原记录”，底部“打开症状评估日历”唯一进入“过敏日历”；两个入口文案、ARIA 与 `data-navigation-purpose` 均可见且目标不同。
+- completed：在隔离 Miniflare D1/R2 和临时合成管理员配置下，#83 管理端真实流程已跑通图片选择、上传成功、草稿保存、重新编辑时图片/正文回显；只使用仓库公开图片素材，不访问生产或真实凭据。
+- in_progress：用 1.8 MB 合成 PNG 替换时，Vinext 本地 1 MB 请求体门限返回纯文本 413；前端旧图片和正文确实保留，但 `api()` 无条件解析 JSON，界面显示原始 `Unexpected token 'P'...`，同时与上传接口声明的 10 MiB 图片限制不一致。这是客观 P1（失败提示与已声明大小边界不一致），下一步先修复运行时上传门限与非 JSON 错误归一化，再重跑同一浏览器替换/移除/保存流程。
+- blocked：无。当前临时 `.dev.vars` 只含合成管理员配置，验收结束必须删除并确认未跟踪文件清零；生产、客户后台与真实凭据仍不在本次范围。
+
+## 2026-07-26 17:31 Issue #100/#83 第二轮真修与回归
+
+- completed：将 Vinext 运行时 Server Action body limit 提升至 `12mb`，覆盖上传接口声明的 10 MiB 图片上限；管理端 `api()` 改为先读取文本再安全解析 JSON，纯文本 413 显示明确失败提示，非 JSON 错误不再污染用户界面，失败时仍恢复原图片/正文。
+- completed：同一临时合成 D1/R2 浏览器批次重新验证 #83：1.8 MB PNG 替换成功；保存后 v2 回读新图片和原正文；移除后保存为 v3，回读确认无图片但正文保留；浏览器 `error/warn` 日志 `[]`。临时 `.dev.vars` 已删除，服务已停止。
+- completed：`npm run build` PASS；`npm run lint` PASS（0 errors，2 个 `<img>` 框架优化 warning）；定向管理契约 6/6 PASS；授权环境完整 `npm test` PASS 105/105，包含 HTTP E2E、渲染检查、规则、健康记录和后台策略回归。
+- in_progress：进入代码候选冻结、P0/P1/P2 客观审查和 PR 前收尾；当前第 2 轮 P1 已修复，待精确 SHA 上完成审查后才给出本轮最终 PASS。
+- blocked：无本地实现阻塞；生产/客户真实身份、生产 D1/R2、客户 UAT 与 Issue 关闭仍不是本次本地代码 PASS 的替代条件。
+
+## 2026-07-26 17:34 候选冻结与实现轮结论
+
+- completed：业务候选冻结为 `564ecb0d2cfe6f8117b4b03f30ae8405be87bb8d`（`Fix navigation intents and article image uploads`），修复分支工作树干净；候选包含 #100/#83 实现、受控媒体预览路由、运行时上传门限、回归测试和本状态证据。
+- completed：候选业务树对应 `npm run build`、`npm run lint`、定向管理契约 6/6、授权环境 `npm test` 105/105，以及合成 D1/R2 管理端浏览器上传/保存/编辑/替换/移除流程；Lint 仅保留 2 个 `<img>` 优化 warning，无错误。
+- PASS：第 2 轮实现与回归验证通过。这里的 PASS 只代表 #100/#83 本地实现和可复核测试/浏览器证据通过，不替代 PR、CI、指定模型评审、客户 UAT、生产发布或 Issue 关闭门禁。
+- in_progress：创建 Draft PR 后，对精确候选 SHA 做 P0/P1/P2 客观评审；每个评审轮次都记录 verdict、依据和真实修复提交。
+- blocked：无本地实现阻塞；若 GitHub 写入或指定评审工具认证失败，只记录精确错误和恢复条件，继续执行不依赖该凭据的安全步骤。
+
+## 2026-07-26 17:59 第1轮三方评审结论与第3轮真修入口
+
+- completed：PR #107 的 `quality` CI 已对 `fe37d70ad691896f9e0a393b7b7e4921f791ee1c` 返回 SUCCESS；PR 仍为 Draft、OPEN，未合并、未部署、未关闭 Issue。
+- completed：Kimi K3 与 DeepSeek v4 pro 对同一 SHA 明确 `REVIEW_RESULT: PASS`，均为 P0=0、P1=0；Kimi 记录了视频/PDF 共用上传门限、非图片 413 文案、孤儿素材和缺少自动浏览器 E2E 等 P2 观察，暂不扩大本轮范围。
+- completed：Codex CLI 5.6sol 对同一 SHA 明确 `REVIEW_RESULT: FAIL`，发现 1 个 P0、5 个 P1。经当前源码调用链复核，跨栏目复用编辑状态造成文章正文/图片可被覆盖清空、已发布文章图片未在用户端渲染、服务端仅信任 MIME、以及缺少可运行 #100/#83 E2E 均纳入下一轮；其对 `serverActions.bodySizeLimit` 直接控制 Route Handler 的判断需用实测/运行时证据复核，不盲改。
+- FAIL：第1轮评审门未通过，原因是上述 P0/P1 未清零；不把 Kimi/DeepSeek 的 PASS 当作三方一致通过。
+- in_progress：第3轮真修：隔离 `ContentManager` 栏目状态并补服务端类型一致性校验；让已发布文章在用户端显示已审核媒体；服务端校验 JPEG/PNG/WebP 文件签名；新增可运行的 HTTP/浏览器可复核 E2E 覆盖两 Issue 的关键链路。
+- pending：新候选必须重新运行 build/lint/npm test、真实 E2E、CI，并让三路模型只审新的精确 SHA；每一轮继续按 P0/P1/P2 给明确 PASS/FAIL。
+- blocked：无实现阻塞；旧 PR SHA 不再作为通过依据，生产、客户真实数据/凭据、合并、部署、关闭 Issue 仍保持独立门禁。
+
+## 2026-07-26 18:15 第3轮真修与回归结论
+
+- completed：修复第1轮三方评审发现的 P0/P1：栏目切换状态隔离与服务端内容类型防串写、跨重试稳定幂等键、图片文件签名校验、已发布文章列表/详情媒体展示，并新增可运行的 Issue #100/#83 HTTP E2E。
+- completed：当前代码的 `npm run build` PASS；`npm run lint` 0 errors（4 个既有/新增 `<img>` 优化 warning）；完整 `npm test` 108/108 PASS；HTTP E2E 真实启动 Vinext 服务并覆盖登录、媒体鉴权、上传拒绝/成功、草稿、重放、跨类型更新、审核、发布和公开媒体读取。
+- completed：本地浏览器重新验证 #100 两个导航入口均到达正确页面，控制台 `error/warn` 日志为空；仅使用合成身份、合成 D1/R2 和公开素材，未访问生产。
+- PASS：第3轮实现与回归门通过；第1轮评审的 P0/P1 已有真实代码和测试修复，下一步冻结新 SHA 后重跑 CI 与三方模型评审。
+- in_progress：提交并推送新候选更新 PR #107，等待 `quality` CI；随后让 Codex CLI 5.6sol、Kimi K3、DeepSeek v4 pro 仅审同一新 SHA。
+- pending：若新评审仍有 P0/P1，按根因进入下一轮真修；若三方均为 P0/P1=0，记录最终 PASS 并保留 P2 范围边界。
+- blocked：无本地实现阻塞；生产、客户真实数据/凭据、合并、部署、关闭 Issue、清理 worktree/分支仍未经授权。
+
+## 2026-07-26 18:31 第2轮三方评审与最终功能结论
+
+- completed：精确候选 SHA `2a55818d663b4cb8f13aa7d95781fe42b96a717b` 已推送至 PR #107；PR 保持 Draft/OPEN，`quality` CI SUCCESS，未合并、未部署、未关闭 Issue。
+- completed：Codex CLI 5.6sol、Kimi K3、DeepSeek v4 pro 均审查同一 SHA 并给出明确 `REVIEW_RESULT: PASS`。三方 P0=0、P1=0；Codex P2=1（替换/移除和浏览器列表/详情点击尚未纳入可运行 E2E），Kimi 仅记录非阻塞测试契约/WebP/配置语义观察，DeepSeek P0/P1/P2 均为 0。
+- completed：Codex 只读沙箱自身运行 E2E 时记录 `listen EPERM`，但未将其计为代码缺陷；授权环境已对同一 SHA 实际跑通新增 HTTP E2E，完整 `npm test` 为 108/108，故不把环境阻断误报为 FAIL。
+- PASS：第2轮三方评审门通过；P0/P1 已清零，P2 有明确范围边界，不再无限修复。本轮 #100/#83 功能交付达到代码、测试、CI 和指定评审的 PASS。
+- completed：最终 verdict 已回写状态文件并推送 PR；最终远端 head、`quality` CI、工作树和临时凭据清理均已回读确认。
+- pending：如需补齐 P2 的替换/移除浏览器 E2E，另开受控测试增强任务；不作为本轮通过门禁条件。
+- blocked：生产、客户真实数据/凭据、合并、部署、关闭 Issue、清理 worktree/分支仍未经授权。

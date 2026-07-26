@@ -1140,9 +1140,9 @@ export default function Home() {
                 </aside>
 
                 <section className="today-grid">
-                  <button onClick={() => startAllergenRecord(localDateValue())}>
+                  <button aria-label="今日待完成：打开过敏原记录" data-navigation-purpose="allergen-record" onClick={() => startAllergenRecord(localDateValue())}>
                     <span className="feature-icon chart-icon">↘</span>
-                    <small>今日待完成</small><strong>过敏原记录</strong><i>记录今天</i>
+                    <small>今日待完成 · 患者自述</small><strong>过敏原记录</strong><i>记录今天</i>
                   </button>
                   <button onClick={openDiscover}>
                     <span className="feature-icon book-icon">知</span>
@@ -1544,7 +1544,7 @@ export default function Home() {
             <button className={tab === "home" ? "active" : ""} onClick={() => navigateTo("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
             <button className={tab === "chat" ? "active" : ""} onClick={() => navigateTo("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
             <button className="nav-add" onClick={() => { navigateTo("assessment"); openSymptomDate(localDateValue()); }} aria-label="新增症状记录"><span>＋</span></button>
-            <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} onClick={() => navigateTo("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
+            <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} aria-label="打开症状评估日历" data-navigation-purpose="symptom-calendar" title="症状评估日历" onClick={() => navigateTo("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
             <button className={tab === "profile" || tab === "healthProfile" ? "active" : ""} onClick={() => navigateTo("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
           </nav>
 
