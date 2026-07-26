@@ -21,6 +21,11 @@ export type KnowledgeCitation = {
   text: string;
 };
 
+export type PreviousVectorGeneration = {
+  version: number;
+  writeTokens: string[];
+};
+
 type SearchRow = {
   id: string;
   knowledge_id: string;
@@ -61,19 +66,27 @@ export async function writeOptionalVectorIndex(
   previousChunks: number,
   writeToken?: string,
   assertLease?: () => Promise<void>,
+  previousGenerations: PreviousVectorGeneration[] = [],
 ) {
   if (!values.VECTORIZE || !values.EMBEDDINGS) return "d1" as const;
   const vectors = await embed(values.EMBEDDINGS, chunks);
-  await assertLease?.();
-  if (previousChunks > 0 && !writeToken) {
-    await values.VECTORIZE.deleteByIds(Array.from({ length: previousChunks }, (_, index) => `${source.id}:${index}`));
+  const vectorIds = vectors.map((_, index) => writeToken ? `${source.id}:${source.version}:${writeToken}:${index}` : `${source.id}:${index}`);
+  const previousVectorIds = previousGenerations.flatMap((generation) => generation.writeTokens.flatMap((generationToken) => Array.from({ length: previousChunks }, (_, index) => `${source.id}:${generation.version}:${generationToken}:${index}`)));
+  const legacyVectorIds = previousVectorIds.length || previousChunks === 0 ? [] : Array.from({ length: previousChunks }, (_, index) => `${source.id}:${index}`);
+  try {
+    await assertLease?.();
+    if (previousVectorIds.length || legacyVectorIds.length) await values.VECTORIZE.deleteByIds([...previousVectorIds, ...legacyVectorIds]);
+    await assertLease?.();
+    await values.VECTORIZE.upsert(vectors.map((vector, index) => ({
+      id: vectorIds[index],
+      values: vector,
+      metadata: { sourceId: source.id, sourceVersion: source.version, chunk: index, chunkId: `${source.id}:${source.version}:${index}`, writeToken: writeToken ?? "legacy" },
+    })));
+    await assertLease?.();
+  } catch (error) {
+    if (writeToken) await values.VECTORIZE.deleteByIds(vectorIds).catch(() => undefined);
+    throw error;
   }
-  await assertLease?.();
-  await values.VECTORIZE.upsert(vectors.map((vector, index) => ({
-    id: writeToken ? `${source.id}:${source.version}:${writeToken}:${index}` : `${source.id}:${index}`,
-    values: vector,
-    metadata: { sourceId: source.id, sourceVersion: source.version, chunk: index, chunkId: writeToken ? `${source.id}:${source.version}:${index}` : `${source.id}:${index}` },
-  })));
   return "d1+vector" as const;
 }
 
@@ -98,13 +111,21 @@ async function vectorSearch(values: RuntimeEnv & { DB: D1Database }, query: stri
   if (!values.VECTORIZE || !values.EMBEDDINGS) return null;
   try {
     const [vector] = await embed(values.EMBEDDINGS, [query]);
-    const result = await values.VECTORIZE.query(vector, { topK: limit, returnMetadata: "all" });
+    const result = await values.VECTORIZE.query(vector, { topK: Math.min(50, Math.max(limit * 8, limit)), returnMetadata: "all" });
     const rows = await Promise.all(result.matches.map((match) => {
       const metadata = match.metadata as Record<string, unknown> | undefined;
       const chunkId = typeof metadata?.chunkId === "string" ? metadata.chunkId : match.id;
       return publishedChunk(values, chunkId);
     }));
-    return rows.filter((row): row is SearchRow => Boolean(row)).map(citation);
+    const citations: KnowledgeCitation[] = [];
+    const seen = new Set<string>();
+    for (const row of rows) {
+      if (!row || seen.has(row.id)) continue;
+      seen.add(row.id);
+      citations.push(citation(row));
+      if (citations.length >= limit) break;
+    }
+    return citations;
   } catch {
     return null;
   }

@@ -1,5 +1,6 @@
 import { requireAdmin } from "@/lib/admin/auth";
 import { adminRouteError, executeIdempotent, hasCurrentClinicalApproval, identifier, jsonError, now, runtime, stableIdentifier, stableRequestHash, type ContentStatus, type ContentType } from "@/lib/admin/store";
+import { invalidPlanStepMediaSql, planVideoDependencyError } from "@/lib/admin/content-dependencies";
 import { cleanText, contentTypes, clinicalApprovalRequiredMessage, parseMetadata, publishProblem, requiresClinicalApproval } from "@/lib/admin/validation";
 
 type ContentRow = { id: string; type: ContentType; title: string; category: string; summary: string; body: string; source: string; status: ContentStatus; version: number; media_id: string | null; metadata: string; published_at: string | null; created_at: string; updated_at: string; clinical_approval_version?: number | null; clinical_approver?: string | null; clinical_approved_at?: string | null };
@@ -83,11 +84,11 @@ export async function PATCH(request: Request) {
     if (version !== item.version) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
     if (action === "publish") {
       const stepStats = item.type === "plan"
-        ? await DB.prepare("SELECT COUNT(*) count, SUM(CASE WHEN title = '' OR instruction = '' THEN 1 ELSE 0 END) invalid, SUM(CASE WHEN media_id IS NOT NULL AND NOT EXISTS (SELECT 1 FROM media_assets asset WHERE asset.id = plan_steps.media_id AND asset.kind = 'video' AND asset.status = 'ready') THEN 1 ELSE 0 END) invalid_media, GROUP_CONCAT(COALESCE(title, '') || char(10) || COALESCE(instruction, ''), char(10)) step_text FROM plan_steps WHERE plan_id = ?").bind(id).first<{ count: number; invalid: number; invalid_media: number; step_text: string | null }>()
+        ? await DB.prepare(`SELECT COUNT(*) count, SUM(CASE WHEN step.title = '' OR step.instruction = '' THEN 1 ELSE 0 END) invalid, SUM(CASE WHEN ${invalidPlanStepMediaSql} THEN 1 ELSE 0 END) invalid_media, GROUP_CONCAT(COALESCE(step.title, '') || char(10) || COALESCE(step.instruction, ''), char(10)) step_text FROM plan_steps step WHERE step.plan_id = ?`).bind(id).first<{ count: number; invalid: number; invalid_media: number; step_text: string | null }>()
         : null;
       if (item.type === "plan" && Number(stepStats?.count ?? 0) < 1) return jsonError("调理方案至少需要一个有效步骤", 422);
       if (stepStats?.invalid) return jsonError("调理步骤标题和说明不能为空", 422);
-      if (stepStats?.invalid_media) return jsonError("调理步骤只能关联可用的视频素材", 422);
+      if (stepStats?.invalid_media) return jsonError(planVideoDependencyError, 422);
       const problem = publishProblem(item.type, { ...item, mediaId: item.media_id, stepsText: stepStats?.step_text ?? "" });
       if (problem) return jsonError(problem, 422);
       if (requiresClinicalApproval(item.type, item) && !(await hasCurrentClinicalApproval(DB, item.id, item.version))) {
@@ -102,7 +103,7 @@ export async function PATCH(request: Request) {
       const timestamp = now();
       const writeToken = crypto.randomUUID();
       const needsApproval = requiresClinicalApproval(item.type, item);
-      const publishDependencyGuard = "AND (? <> 'plan' OR NOT EXISTS (SELECT 1 FROM plan_steps step JOIN content_items video ON video.type = 'video' AND video.media_id = step.media_id WHERE step.plan_id = ? AND step.media_id IS NOT NULL AND video.status <> 'published'))";
+      const publishDependencyGuard = `AND (? <> 'plan' OR NOT EXISTS (SELECT 1 FROM plan_steps step WHERE step.plan_id = ? AND ${invalidPlanStepMediaSql}))`;
       const publishUpdate = needsApproval
         ? DB.prepare(`UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') ${publishDependencyGuard} AND EXISTS (SELECT 1 FROM clinical_approvals WHERE content_id = ? AND content_version = ?)`).bind(timestamp, writeToken, timestamp, id, item.version, item.type, id, id, item.version)
         : DB.prepare(`UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') ${publishDependencyGuard}`).bind(timestamp, writeToken, timestamp, id, item.version, item.type, id);
@@ -112,7 +113,13 @@ export async function PATCH(request: Request) {
       }
       statements.push(DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'publish', ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'published' AND version = ? AND published_at = ? AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, JSON.stringify({ notify: body.notify === true }), timestamp, id, item.version, timestamp, writeToken));
       const results = await DB.batch(statements);
-      if (results[0].meta.changes === 0) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
+      if (results[0].meta.changes === 0) {
+        if (item.type === "plan") {
+          const dependency = await DB.prepare(`SELECT COUNT(*) count FROM plan_steps step WHERE step.plan_id = ? AND ${invalidPlanStepMediaSql}`).bind(id).first<{ count: number }>();
+          if (Number(dependency?.count ?? 0) > 0) return jsonError(planVideoDependencyError, 422);
+        }
+        return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
+      }
       return Response.json({ id, status: "published" });
     }
     if (action === "offline") {
@@ -137,11 +144,17 @@ export async function PATCH(request: Request) {
     if (action === "update") {
       if (item.status === "published") return jsonError("已发布内容不能直接修改，请先下架并重新审核", 409);
       const metadata = parseMetadata(body.metadata);
+      const previousKnowledgeMetadata = item.type === "knowledge"
+        ? JSON.parse(item.metadata || "{}") as { indexedChunks?: number; indexedVersion?: number; indexedWriteToken?: string; failedWriteToken?: string | null }
+        : {};
+      const nextMetadata = item.type === "knowledge"
+        ? { ...metadata, indexedChunks: previousKnowledgeMetadata.indexedChunks, indexedVersion: previousKnowledgeMetadata.indexedVersion, indexedWriteToken: previousKnowledgeMetadata.indexedWriteToken, failedWriteToken: previousKnowledgeMetadata.failedWriteToken }
+        : metadata;
       const timestamp = now();
       const writeToken = crypto.randomUUID();
       const results = await DB.batch([
         DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', published_at = NULL, write_token = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
-          .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), writeToken, timestamp, id, item.version),
+          .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(nextMetadata), writeToken, timestamp, id, item.version),
         DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(id, id, item.version + 1, writeToken),
         DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'update', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, timestamp, id, item.version + 1, writeToken),
       ]);

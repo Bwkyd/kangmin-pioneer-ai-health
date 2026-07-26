@@ -35,10 +35,14 @@ export async function POST(request: Request) {
     try {
       const chunks = textChunks(item.body || item.title);
       if (chunks.length === 0) throw new Error("KNOWLEDGE_TEXT_EMPTY");
-      const previous = JSON.parse(item.metadata || "{}") as { indexedChunks?: number };
-      const mode = await writeOptionalVectorIndex(values, item, chunks, Number(previous.indexedChunks ?? 0), writeToken, () => assertIndexLease(values.DB, item.id, item.version, writeToken));
+      const previous = JSON.parse(item.metadata || "{}") as { indexedChunks?: number; indexedVersion?: number; indexedWriteToken?: string; failedWriteToken?: string | null };
+      const previousTokens = [previous.indexedWriteToken, previous.failedWriteToken].filter((token): token is string => typeof token === "string" && token.length > 0);
+      const previousGenerations = previousTokens.length > 0
+        ? [{ version: Number(previous.indexedVersion ?? item.version), writeTokens: [...new Set(previousTokens)] }]
+        : [];
+      const mode = await writeOptionalVectorIndex(values, item, chunks, Number(previous.indexedChunks ?? 0), writeToken, () => assertIndexLease(values.DB, item.id, item.version, writeToken), previousGenerations);
       const timestamp = now();
-      const metadata = JSON.stringify({ ...previous, indexedChunks: chunks.length, indexedVersion: item.version, indexMode: mode, indexError: null });
+      const metadata = JSON.stringify({ ...previous, indexedChunks: chunks.length, indexedVersion: item.version, indexedWriteToken: writeToken, failedWriteToken: null, indexMode: mode, indexError: null });
       const lease = "EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?)";
       const statements: D1PreparedStatement[] = [values.DB.prepare(`DELETE FROM knowledge_chunks WHERE knowledge_id = ? AND source_version = ? AND ${lease}`).bind(item.id, item.version, id, item.version, writeToken)];
       chunks.forEach((chunk, position) => statements.push(values.DB.prepare(`INSERT INTO knowledge_chunks (id, knowledge_id, source_version, position, chunk_text, created_at) SELECT ?, ?, ?, ?, ?, ? WHERE ${lease}`).bind(`${item.id}:${item.version}:${position}`, item.id, item.version, position, chunk, timestamp, id, item.version, writeToken)));
@@ -50,7 +54,7 @@ export async function POST(request: Request) {
       if (results[statements.length - 2].meta.changes === 0) throw new Error("KNOWLEDGE_VERSION_CONFLICT");
       return Response.json({ id, status: "draft", chunks: chunks.length, version: item.version, mode });
     } catch (error) {
-      await values.DB.prepare("UPDATE content_items SET status = 'index_failed', metadata = json_set(metadata, '$.indexError', ?), updated_at = ? WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?").bind(error instanceof Error ? error.message : "INDEX_FAILED", now(), id, item.version, writeToken).run();
+      await values.DB.prepare("UPDATE content_items SET status = 'index_failed', metadata = json_set(json_set(metadata, '$.indexError', ?), '$.failedWriteToken', ?), updated_at = ? WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?").bind(error instanceof Error ? error.message : "INDEX_FAILED", writeToken, now(), id, item.version, writeToken).run();
       return jsonError("知识索引失败，可安全重试", 503);
     }
   } catch (error) {
