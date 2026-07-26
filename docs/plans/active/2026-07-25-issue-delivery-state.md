@@ -8,17 +8,65 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 08:07:17 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 10:38:01 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前业务代码候选：`8baafc5`（`Fail closed when identity binding is unavailable`，包含父提交 `cdf4381` 的本轮修复）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：业务代码候选已提交；本状态文件正在更新，状态锚点提交后工作树应再次干净。四视角和双模型审查必须绑定业务代码候选 `8baafc5`，状态文件不改变业务代码树。
-- 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
-- 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
-- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 08:02 主机网络只读核验返回 HTTP 200；未登录、未写入
-- 本地服务：`127.0.0.1:3000` vinext 于 2026-07-26 08:02 主机网络只读探测返回 HTTP 200，进程自 2026-07-25 21:59:20 持续监听；隔离 Wrangler 已停止。基础可达不等于浏览器 UAT、真实登录或生产通过。
+- 当前业务代码候选：`347af77d28b3b5ad332b1007f7eeabe194360727`（`Close content dependency and vector generation races`）；`cbed37b` 已被本轮 P1 修复提交取代。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：当前只有本状态文件未提交；业务代码树没有未提交修改，`git diff --check` PASS。`347af77` 已完成同 SHA 测试和 D1 验证；本状态文件待最终提交。
+- GitHub Issue/PR：本次最终收敛未重新读取远端清单；10:02 的 #69–#103 / PR 记录只保留为历史只读证据，不作为本轮外部状态结论。
+- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 10:02 主机网络只读核验返回 HTTP 200；未登录、未写入
+- 本地服务：`127.0.0.1:3000` vinext 于 2026-07-26 10:02 主机网络只读探测返回 HTTP 200，监听进程 PID 66201；基础可达不等于浏览器 UAT、真实登录或生产通过。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 10:38 P1 修复第二轮（当前唯一执行状态）
+
+- completed：上一轮精确 `cbed37b` 四视角复审发现的 P1 已逐项修复：调理方案步骤现在必须同时关联 ready 视频素材、对应已发布视频内容和当前临床审核；发布写入再次执行同一条件，失败时返回 422，避免误报管理员并发冲突；视频下架的反向条件仍阻止已发布方案被悬挂引用。
+- completed：知识索引现在保留 `indexedWriteToken`/`failedWriteToken`，清理已知旧向量代际；写入租约丢失时补偿删除当前代际；检索候选扩大到可用上限并按 D1 chunk 去重。历史上没有代际令牌的外部向量无法在本地凭据缺失时证明已全量回收，仍需生产索引运维核验，不虚报为完成。
+- completed：新增真实 SQLite 行为测试，验证无视频内容、视频未发布、视频已发布且当前审核三种状态下的发布依赖结果；新增向量旧代际清理、租约丢失补偿和检索去重行为测试。
+- completed：精确 `347af77d28b3b5ad332b1007f7eeabe194360727` 上 `npm run lint` PASS（0 errors、1 个既有 `<img>` warning）、`npm run build` PASS、授权环境 `npm test` PASS（94/94，包含完整 HTTP E2E）；精确 SHA 的隔离 SQLite/D1 0000→0009 迁移、0007 审计和并发乐观更新再次 PASS。
+- completed：已再次完成 sequential-thinking 元反思，确认新改动没有触碰身份、健康记录、规则优先和临床安全门禁；没有新增 Word/PDF/图片导入或花粉监测。
+- blocked：本轮 4 个精确 `347af77` 只读复审分身在 180 秒内没有返回 verdict，随后已关闭；因此不能伪造“独立四视角 PASS”。Kimi/DeepSeek 没有合法代码外发授权，未调用。
+- P0：当前本地代码/行为证据未发现 P0；P1：上一轮发现的具体 P1 已修复并有 94/94 与真实 SQLite 反例证据，但由于本轮独立复审没有返回，交付门禁不标记为完全 PASS。P2 仍包括档案失败时“待填写”、兼容路由/legacy 字段、后台序列化和 discover 旧消息短暂残留、既有 `<img>` warning，以及历史 Vectorize 垃圾回收需生产核验。
+- blocked：临床 D-002（T1/T5 优先级）、生产 verified-phone/session secret、生产 D1/Vectorize、客户浏览器 UAT、GitHub token/PR/CI、推送/合并/部署/关闭 Issue/删除分支均无授权或批准；3000 本地服务 PID 66201 继续运行。
+- pending：提交本状态文件后冻结最终状态 SHA；不推送、不合并、不部署、不关闭 Issue、不清理 worktree/分支。若要把总体结论改为 PASS，必须先补齐 347 SHA 的独立复审 verdict 和上述外部门禁。
+
+## 2026-07-26 10:07 cbed 业务候选收敛阶段（已被 10:38 的 347af77 取代）
+
+- completed：精确业务候选为 `cbed37b965019d38d8647947d51ecbe30b15b36f`（`Harden versioned content and agent responses`），分支为 `codex/issue-72-103-health-integration`；未复用 `22b6be5` 或更早 SHA 的测试结论。
+- completed：修复方案返回的 `contentVersion` 绑定、同版本审核/步骤读取、后台发布时视频依赖状态保护、版本化向量 chunk id、姜刮/普通刮痧关键词校验和智能体私有禁止缓存响应；没有新增 Word/PDF/图片导入，也没有扩大花粉监测范围。
+- completed：已调用 sequential-thinking 做元反思；复核了身份 fail-closed、规则优先、版本绑定、竞态、账号隔离和一期范围边界。T1/T5 重叠仍按 `spce/` 的 D-002 OPEN 处理，未擅自决定临床优先级。
+- completed：同一 `cbed37b` 上 `npm run lint` PASS（0 errors、1 个既有 `<img>` warning）；`npm run build` PASS；授权环境 `npm test` PASS（91/91，包含完整 HTTP E2E）。沙箱内同命令仅因监听 127.0.0.1 被 EPERM 拒绝，未计入通过。
+- completed：同一 `cbed37b` 的隔离 SQLite/D1 验证通过：0000→0009 真实顺序升级；0007 同日重复只保留最新患者自述并审计旧记录完整字段；0008/0009 journal、snapshot、联合主键和 write token 均有效；并发乐观更新 1 次成功、1 次 0 行。
+- completed：已完成用户视角浏览器证据：未认证时高危问卷显示“先暂停操作”、肺经蕴热型+艾灸/吹风被阻断、未认证档案不显示正式数据；隔离 synthetic D1 中用药/过敏原/症状保存回读，切换到另一 synthetic 账号为空。该浏览器批次使用的健康记录 UI/身份文件在 `cbed37b` 中未改动；当前 SHA 的 HTTP 行为以 91/91 E2E 为准。
+- fail→fixed：精确 `22b6be5` 的四视角审查曾发现 P1（方案内容版本、视频依赖竞态、向量代际、姜刮字段覆盖、Agent 缓存边界）；均已在 `cbed37b` 修复。当前待做的是对 `cbed37b` 重新四视角复审，旧 verdict 不继承。
+- blocked：T1/T5 同时命中导致的临床规则优先级尚无书面决定（D-002 OPEN）；不能自行改规则。生产 verified-phone provider/session secret、生产 D1、临床批准、客户浏览器 UAT、GitHub token/PR/CI、Kimi/DeepSeek 合法代码外发授权、推送/合并/部署/关闭 Issue/删除分支均未获得授权。
+- P2：健康档案读取失败时基础信息仍显示“待填写”；重复兼容路由、legacy `commonTriggers`、错误封装/后台序列化、旧向量清理、`discover` 旧消息短暂残留和既有 `<img>` lint warning。它们不阻塞本轮 P0/P1 收敛，未扩大范围修复。
+- pending：四个只读复审返回后按 P0/P1 继续真修；若 P0/P1 为零，提交本状态文件并冻结最终状态 SHA；不推送、不合并、不部署、不关闭 Issue、不清理 worktree/分支。
+
+## 2026-07-26 10:02 看门狗实时核验阶段
+
+- completed：先读取自动化记忆和本文件，再实时刷新 Git、GitHub Issue/PR、本地服务和客户后台；`origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- completed：GitHub 只读回读成功；仍有 #69–#103 共 35 个 open Issue，实时标签均只有 `task`、不含 `agent-ready`；open PR 仅无关的 Dependabot #66。
+- completed：当前 HEAD 为 `cbed37b965019d38d8647947d51ecbe30b15b36f`，提交时间 10:01:21，修改内容版本、知识索引和智能体响应的 10 个实现/测试文件，26 行新增、13 行删除；09:38:44 还有前一业务提交 `22b6be5`，因此 `df9872a` 明确失效。
+- completed：核验入口时除本状态文件外无未提交业务修改，`git diff --check` PASS；Drizzle `0000`–`0009` 文件与 journal idx/tag 连续一致，本轮未见新的未提交迁移漂移。
+- completed：主机网络只读探测本地 `127.0.0.1:3000/` 与客户后台 `/admin` 均为 HTTP 200；本地监听 PID 66201。这只证明基础可达。
+- blocked：20 分钟活动保护条件成立。`cbed37b` 在本轮核验前不足 1 分钟才提交，且上一轮后连续出现两个业务提交；本轮不运行完整测试、隔离 D1、浏览器验收或独立审查。恢复条件是自 10:01:21 起连续至少 20 分钟无新的实现写入或提交、无活动验收进程，并重新确认精确 SHA 和干净工作树。
+- blocked：所有 open Issue 仍缺 `agent-ready`；临床书面批准、真实 verified-phone/生产 D1、数据外发审查授权、客户浏览器 UAT、推送、PR/CI、合并、部署和 Issue 关闭继续保持独立门禁。
+- pending：保护窗口结束后，先只读确认 HEAD、工作树、迁移序列和服务未漂移；若 `cbed37b` 仍稳定，再对同一 SHA 串行执行完整测试、隔离 D1/浏览器验收和获批准的只读审查；不复用 `df9872a` 或更旧 SHA 的结果。
+- 本轮动作：仅完成实时只读核验并写回证据；未修改业务代码或临床规则，未运行测试，未重启或停止服务，未提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
+
+## 2026-07-26 09:02 看门狗实时核验阶段
+
+- completed：先读取自动化记忆和本文件；随后实时刷新 `origin/main` 并核验 Git、GitHub Issue、GitHub PR、本地服务、客户后台和监听进程。`origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- completed：GitHub Issue 实时回读成功，仍有 #69–#103 共 35 条 open Issue；实时标签均只有 `task`、不含 `agent-ready`。
+- completed：当前 HEAD 为 `df9872a6d490360db420cfc317560a293a83c719`，提交时间 08:51:35，包含健康记录、内容读取/索引并发处理和行为测试等 11 个业务/测试文件，142 行新增、50 行删除；核验入口工作树干净，`git diff --check` PASS。
+- completed：主机网络只读探测本地 `127.0.0.1:3000/` 与客户后台 `/admin` 均为 HTTP 200；本地监听进程 PID 66201 自 2026-07-25 21:59:20 运行。只记录基础可达，不替代隔离 D1、真实身份、浏览器、生产或客户验收。
+- blocked：GitHub PR GraphQL 查询实时返回 `HTTP 499`，REST 只读复核又返回 `error connecting to api.github.com`，因此本轮 open PR 清单无法确认。恢复条件是 GitHub PR API 恢复稳定只读访问；不得把上一轮 #66 清单写成当前确认结果。
+- blocked：20 分钟活动保护条件成立。`df9872a` 距本轮核验不足 20 分钟，且上一候选 `8baafc5` 已明确漂移；本轮不运行会写生成物或与 owner 竞争的完整测试、隔离 D1、浏览器验收和独立审查。恢复条件是自 08:51:35 起连续至少 20 分钟无新的实现写入或提交、无活动验收进程，并重新确认精确候选 SHA 与干净工作树。
+- blocked：所有 open Issue 仍缺 `agent-ready`；临床书面批准、真实 verified-phone/生产 D1、数据外发审查授权、客户浏览器 UAT、推送、PR/CI、合并、部署和 Issue 关闭继续保持独立门禁。
+- pending：保护窗口结束后，先只读确认 HEAD、工作树、迁移序列和服务未漂移；若 `df9872a` 仍稳定，再按状态文件顺序执行绑定同一 SHA 的完整测试、隔离 D1/浏览器验收和获批准的只读审查，不复用 `8baafc5` 或更旧 SHA 的结果。
+- 本轮动作：仅完成实时只读核验并写回证据；未修改业务代码或临床规则，未运行测试，未重启或停止服务，未提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
 
 ## 2026-07-26 08:02 看门狗实时核验阶段
 
