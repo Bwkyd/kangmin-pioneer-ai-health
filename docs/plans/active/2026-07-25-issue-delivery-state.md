@@ -658,6 +658,6 @@
 - completed：Codex CLI 5.6sol、Kimi K3、DeepSeek v4 pro 均审查同一 SHA 并给出明确 `REVIEW_RESULT: PASS`。三方 P0=0、P1=0；Codex P2=1（替换/移除和浏览器列表/详情点击尚未纳入可运行 E2E），Kimi 仅记录非阻塞测试契约/WebP/配置语义观察，DeepSeek P0/P1/P2 均为 0。
 - completed：Codex 只读沙箱自身运行 E2E 时记录 `listen EPERM`，但未将其计为代码缺陷；授权环境已对同一 SHA 实际跑通新增 HTTP E2E，完整 `npm test` 为 108/108，故不把环境阻断误报为 FAIL。
 - PASS：第2轮三方评审门通过；P0/P1 已清零，P2 有明确范围边界，不再无限修复。本轮 #100/#83 功能交付达到代码、测试、CI 和指定评审的 PASS。
-- in_progress：将本最终 verdict 回写状态文件并推送 PR，随后做最终远端 SHA、CI、工作树和临时凭据清理核验。
+- completed：最终 verdict 已回写状态文件并推送 PR；最终远端 head、`quality` CI、工作树和临时凭据清理均已回读确认。
 - pending：如需补齐 P2 的替换/移除浏览器 E2E，另开受控测试增强任务；不作为本轮通过门禁条件。
 - blocked：生产、客户真实数据/凭据、合并、部署、关闭 Issue、清理 worktree/分支仍未经授权。
