@@ -18,10 +18,12 @@ test("未知安全信息不能被当作可以操作", () => {
   assert.deepEqual(result.nextQuestions, ["bleedingRisk"]);
 });
 
-test("肺经蕴热型不能推荐艾灸或电吹风吹大椎", () => {
-  const result = evaluateRehabSafety("moxa_or_blow_dazhui", answers({ lungHeatPattern: "yes" }));
-  assert.equal(result.status, "blocked");
-  assert.ok(result.blockedBy.includes("lungHeatPattern"));
+test("肺经蕴热型不能推荐艾灸或电吹风吹大椎，两个方法分别受拦截", () => {
+  for (const method of ["moxa_dazhui_fengchi", "electric_blow_dazhui_fengchi"]) {
+    const result = evaluateRehabSafety(method, answers({ lungHeatPattern: "yes" }));
+    assert.equal(result.status, "blocked");
+    assert.ok(result.blockedBy.includes("lungHeatPattern"));
+  }
 });
 
 test("全部专项风险明确排除后才允许进入已审核方案检索", () => {

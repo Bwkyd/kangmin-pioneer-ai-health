@@ -9,6 +9,8 @@ export type ExistingContentFields = {
   body: string;
   source: string;
   media_id: string | null;
+  clinical_candidate_kind?: string | null;
+  clinical_change_diff?: string;
 };
 
 /**
@@ -30,5 +32,7 @@ export function resolveContentUpdateFields(
     source: hasOwn("source") ? cleanText(body.source, 1000) : item.source,
     mediaId: hasOwn("mediaId") ? cleanText(body.mediaId, 120) || null : item.media_id,
     metadata: JSON.stringify(metadata),
+    clinicalCandidateKind: hasOwn("candidateKind") ? cleanText(body.candidateKind, 80) || null : item.clinical_candidate_kind ?? null,
+    clinicalChangeDiff: hasOwn("changeDiff") ? cleanText(body.changeDiff, 4000) : item.clinical_change_diff ?? "",
   };
 }

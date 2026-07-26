@@ -13,6 +13,7 @@ export const invalidPlanStepMediaSql = `
     WHERE video.type = 'video'
       AND video.media_id = step.media_id
       AND video.status = 'published'
+      AND video.clinical_review_status = 'approved'
   )`;
 
 export const planVideoDependencyError = "调理步骤只能关联已发布且通过当前临床审核的视频";

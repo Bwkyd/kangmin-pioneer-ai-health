@@ -2,9 +2,9 @@ import { requireAdmin } from "@/lib/admin/auth";
 import { adminRouteError, executeIdempotent, hasCurrentClinicalApproval, identifier, jsonError, now, runtime, stableIdentifier, stableRequestHash, type ContentStatus, type ContentType } from "@/lib/admin/store";
 import { invalidPlanStepMediaSql, planVideoDependencyError } from "@/lib/admin/content-dependencies";
 import { resolveContentUpdateFields } from "@/lib/admin/content-update";
-import { cleanText, contentTypes, clinicalApprovalRequiredMessage, parseMetadata, publishProblem, requiresClinicalApproval } from "@/lib/admin/validation";
+import { cleanText, clinicalCandidateContentProblem, clinicalCandidateProblem, contentTypes, clinicalApprovalRequiredMessage, parseMetadata, publishProblem, requiresClinicalApproval } from "@/lib/admin/validation";
 
-type ContentRow = { id: string; type: ContentType; title: string; category: string; summary: string; body: string; source: string; status: ContentStatus; version: number; media_id: string | null; metadata: string; published_at: string | null; created_at: string; updated_at: string; clinical_approval_version?: number | null; clinical_approver?: string | null; clinical_approved_at?: string | null };
+type ContentRow = { id: string; type: ContentType; title: string; category: string; summary: string; body: string; source: string; status: ContentStatus; version: number; media_id: string | null; metadata: string; clinical_candidate_kind: string | null; clinical_change_diff: string; clinical_review_status: "pending_review" | "approved" | "rejected"; clinical_reviewer: string | null; clinical_reviewed_at: string | null; published_at: string | null; created_at: string; updated_at: string; clinical_approval_version?: number | null; clinical_approver?: string | null; clinical_approved_at?: string | null };
 
 function expectedVersion(request: Request) {
   const match = request.headers.get("if-match")?.match(/^"?(\d+)"?$/);
@@ -12,15 +12,25 @@ function expectedVersion(request: Request) {
 }
 
 function serialize(row: ContentRow) {
+  const metadata = JSON.parse(row.metadata);
   return {
     ...row,
     mediaId: row.media_id,
-    metadata: JSON.parse(row.metadata),
+    metadata,
+    clinicalCandidateKind: row.clinical_candidate_kind,
+    clinicalChangeDiff: row.clinical_change_diff,
+    clinicalReviewStatus: row.clinical_review_status,
     publishedAt: row.published_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     clinicalApproval: row.clinical_approval_version == null ? null : { contentVersion: row.clinical_approval_version, approver: row.clinical_approver, approvedAt: row.clinical_approved_at },
+    clinicalReview: { status: row.clinical_review_status, candidateKind: row.clinical_candidate_kind, changeDiff: row.clinical_change_diff, reviewer: row.clinical_reviewer, reviewedAt: row.clinical_reviewed_at },
   };
+}
+
+async function recordPublishBlocked(database: D1Database, actor: string, item: ContentRow, reason: string) {
+  await database.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) VALUES (?, ?, 'publish_blocked', ?, ?, ?, ?)")
+    .bind(identifier("audit"), actor, item.type, item.id, JSON.stringify({ reason, contentVersion: item.version, clinicalReviewStatus: item.clinical_review_status, candidateKind: item.clinical_candidate_kind, changeDiff: item.clinical_change_diff }), now()).run();
 }
 
 export async function GET(request: Request) {
@@ -47,16 +57,22 @@ export async function POST(request: Request) {
     if (!contentTypes.has(type)) return jsonError("无效内容类型");
     const title = cleanText(body.title, 160);
     if (!title) return jsonError("标题不能为空");
+    const candidateProblem = clinicalCandidateProblem(body.candidateKind, body.changeDiff, body.source);
+    if (candidateProblem) return jsonError(candidateProblem, 422);
+    const metadata = parseMetadata(body.metadata, type);
+    const candidateContentProblem = clinicalCandidateContentProblem(body.candidateKind, body.metadata, type);
+    if (candidateContentProblem) return jsonError(candidateContentProblem, 422);
+    const clinicalCandidateKind = cleanText(body.candidateKind, 80) || null;
+    const clinicalChangeDiff = cleanText(body.changeDiff, 4000);
     const idempotencyKey = request.headers.get("Idempotency-Key");
     const requestHash = idempotencyKey ? await stableRequestHash(body) : null;
     return executeIdempotent(session.username, idempotencyKey, requestHash, async (lease) => {
       const id = lease ? await stableIdentifier(type, `${session.username}:${idempotencyKey}:${type}`) : identifier(type);
       const timestamp = now();
-      const metadata = parseMetadata(body.metadata, type);
       const { DB } = await runtime();
       const insert = lease
-        ? DB.prepare("INSERT OR IGNORE INTO content_items (id, type, title, category, summary, body, source, status, version, media_id, metadata, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ?)").bind(id, type, title, cleanText(body.category, 80) || "未分类", cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), timestamp, timestamp, idempotencyKey, session.username, lease.marker)
-        : DB.prepare("INSERT INTO content_items (id, type, title, category, summary, body, source, status, version, media_id, metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?, ?)").bind(id, type, title, cleanText(body.category, 80) || "未分类", cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), timestamp, timestamp);
+        ? DB.prepare("INSERT OR IGNORE INTO content_items (id, type, title, category, summary, body, source, status, version, media_id, metadata, clinical_candidate_kind, clinical_change_diff, clinical_review_status, clinical_reviewer, clinical_reviewed_at, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?, ?, 'pending_review', NULL, NULL, ?, ? WHERE EXISTS (SELECT 1 FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ?)").bind(id, type, title, cleanText(body.category, 80) || "未分类", cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), clinicalCandidateKind, clinicalChangeDiff, timestamp, timestamp, idempotencyKey, session.username, lease.marker)
+        : DB.prepare("INSERT INTO content_items (id, type, title, category, summary, body, source, status, version, media_id, metadata, clinical_candidate_kind, clinical_change_diff, clinical_review_status, clinical_reviewer, clinical_reviewed_at, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?, ?, 'pending_review', NULL, NULL, ?, ?)").bind(id, type, title, cleanText(body.category, 80) || "未分类", cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), clinicalCandidateKind, clinicalChangeDiff, timestamp, timestamp);
       const auditStatement = lease
         ? DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'create', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ?)").bind(identifier("audit"), session.username, type, id, timestamp, idempotencyKey, session.username, lease.marker)
         : DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) VALUES (?, ?, 'create', ?, ?, '{}', ?)").bind(identifier("audit"), session.username, type, id, timestamp);
@@ -64,7 +80,7 @@ export async function POST(request: Request) {
         insert,
         auditStatement,
       ]);
-      return Response.json({ id, status: "draft", version: 1 }, { status: 201 });
+      return Response.json({ id, status: "draft", version: 1, clinicalReviewStatus: "pending_review" }, { status: 201 });
     });
   } catch (error) {
     return adminRouteError(error);
@@ -88,26 +104,50 @@ export async function PATCH(request: Request) {
       const stepStats = item.type === "plan"
         ? await DB.prepare(`SELECT COUNT(*) count, SUM(CASE WHEN step.title = '' OR step.instruction = '' THEN 1 ELSE 0 END) invalid, SUM(CASE WHEN ${invalidPlanStepMediaSql} THEN 1 ELSE 0 END) invalid_media, GROUP_CONCAT(COALESCE(step.title, '') || char(10) || COALESCE(step.instruction, ''), char(10)) step_text FROM plan_steps step WHERE step.plan_id = ?`).bind(id).first<{ count: number; invalid: number; invalid_media: number; step_text: string | null }>()
         : null;
-      if (item.type === "plan" && Number(stepStats?.count ?? 0) < 1) return jsonError("调理方案至少需要一个有效步骤", 422);
-      if (stepStats?.invalid) return jsonError("调理步骤标题和说明不能为空", 422);
-      if (stepStats?.invalid_media) return jsonError(planVideoDependencyError, 422);
+      if (item.type === "plan" && Number(stepStats?.count ?? 0) < 1) {
+        await recordPublishBlocked(DB, session.username, item, "plan_steps_missing");
+        return jsonError("调理方案至少需要一个有效步骤", 422);
+      }
+      if (stepStats?.invalid) {
+        await recordPublishBlocked(DB, session.username, item, "plan_step_invalid");
+        return jsonError("调理步骤标题和说明不能为空", 422);
+      }
+      if (stepStats?.invalid_media) {
+        await recordPublishBlocked(DB, session.username, item, "plan_video_dependency_invalid");
+        return jsonError(planVideoDependencyError, 422);
+      }
+      const candidateContentProblem = clinicalCandidateContentProblem(item.clinical_candidate_kind, item.metadata, item.type);
+      if (candidateContentProblem) {
+        await recordPublishBlocked(DB, session.username, item, candidateContentProblem);
+        return jsonError(candidateContentProblem, 422);
+      }
       const problem = publishProblem(item.type, { ...item, mediaId: item.media_id, stepsText: stepStats?.step_text ?? "" });
-      if (problem) return jsonError(problem, 422);
-      if (requiresClinicalApproval(item.type, item) && !(await hasCurrentClinicalApproval(DB, item.id, item.version))) {
+      if (problem) {
+        await recordPublishBlocked(DB, session.username, item, problem);
+        return jsonError(problem, 422);
+      }
+      const needsApproval = requiresClinicalApproval(item.type, item);
+      if (needsApproval && (item.clinical_review_status !== "approved" || !(await hasCurrentClinicalApproval(DB, item.id, item.version)))) {
+        await recordPublishBlocked(DB, session.username, item, "clinical_review_required");
         return jsonError(clinicalApprovalRequiredMessage, 422);
       }
       if (item.media_id) {
         const asset = await DB.prepare("SELECT status, kind FROM media_assets WHERE id = ?").bind(item.media_id).first<{ status: string; kind: string }>();
         const expectedKind = item.type === "video" ? "video" : item.type === "knowledge" ? "document" : item.type === "article" ? "image" : null;
-        if (!asset || asset.status !== "ready") return jsonError("关联文件不可用", 422);
-        if (expectedKind && asset.kind !== expectedKind) return jsonError(`${item.type === "video" ? "视频" : item.type === "knowledge" ? "知识资料" : "文章"}只能关联${expectedKind === "video" ? "视频" : expectedKind === "document" ? "文档" : "图片"}素材`, 422);
+        if (!asset || asset.status !== "ready") {
+          await recordPublishBlocked(DB, session.username, item, "linked_asset_unavailable");
+          return jsonError("关联文件不可用", 422);
+        }
+        if (expectedKind && asset.kind !== expectedKind) {
+          await recordPublishBlocked(DB, session.username, item, "linked_asset_kind_invalid");
+          return jsonError(`${item.type === "video" ? "视频" : item.type === "knowledge" ? "知识资料" : "文章"}只能关联${expectedKind === "video" ? "视频" : expectedKind === "document" ? "文档" : "图片"}素材`, 422);
+        }
       }
       const timestamp = now();
       const writeToken = crypto.randomUUID();
-      const needsApproval = requiresClinicalApproval(item.type, item);
       const publishDependencyGuard = `AND (? <> 'plan' OR NOT EXISTS (SELECT 1 FROM plan_steps step WHERE step.plan_id = ? AND ${invalidPlanStepMediaSql}))`;
       const publishUpdate = needsApproval
-        ? DB.prepare(`UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') ${publishDependencyGuard} AND EXISTS (SELECT 1 FROM clinical_approvals WHERE content_id = ? AND content_version = ?)`).bind(timestamp, writeToken, timestamp, id, item.version, item.type, id, id, item.version)
+        ? DB.prepare(`UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') AND clinical_review_status = 'approved' ${publishDependencyGuard} AND EXISTS (SELECT 1 FROM clinical_approvals WHERE content_id = ? AND content_version = ?)`).bind(timestamp, writeToken, timestamp, id, item.version, item.type, id, id, item.version)
         : DB.prepare(`UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') ${publishDependencyGuard}`).bind(timestamp, writeToken, timestamp, id, item.version, item.type, id);
       const statements = [publishUpdate];
       if (body.notify === true && (item.type === "article" || item.type === "video")) {
@@ -133,8 +173,8 @@ export async function PATCH(request: Request) {
       const writeToken = crypto.randomUUID();
       const nextVersion = item.version + 1;
       const offlineUpdate = item.type === "video" && item.media_id
-        ? DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published' AND NOT EXISTS (SELECT 1 FROM plan_steps step JOIN content_items plan ON plan.id = step.plan_id WHERE step.media_id = ? AND plan.status = 'published')").bind(timestamp, writeToken, id, item.version, item.media_id)
-        : DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published'").bind(timestamp, writeToken, id, item.version);
+        ? DB.prepare("UPDATE content_items SET status = 'offline', clinical_review_status = 'pending_review', clinical_reviewer = NULL, clinical_reviewed_at = NULL, updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published' AND NOT EXISTS (SELECT 1 FROM plan_steps step JOIN content_items plan ON plan.id = step.plan_id WHERE step.media_id = ? AND plan.status = 'published')").bind(timestamp, writeToken, id, item.version, item.media_id)
+        : DB.prepare("UPDATE content_items SET status = 'offline', clinical_review_status = 'pending_review', clinical_reviewer = NULL, clinical_reviewed_at = NULL, updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published'").bind(timestamp, writeToken, id, item.version);
       const results = await DB.batch([
         offlineUpdate,
         DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'offline' AND version = ? AND write_token = ?)").bind(id, id, nextVersion, writeToken),
@@ -156,6 +196,10 @@ export async function PATCH(request: Request) {
         ? { ...metadata, indexedChunks: previousKnowledgeMetadata.indexedChunks, indexedVersion: previousKnowledgeMetadata.indexedVersion, indexedWriteToken: previousKnowledgeMetadata.indexedWriteToken, failedWriteToken: previousKnowledgeMetadata.failedWriteToken }
         : metadata;
       const nextFields = resolveContentUpdateFields(item, body, nextMetadata);
+      const candidateProblem = clinicalCandidateProblem(nextFields.clinicalCandidateKind, nextFields.clinicalChangeDiff, nextFields.source);
+      if (candidateProblem) return jsonError(candidateProblem, 422);
+      const candidateContentProblem = clinicalCandidateContentProblem(nextFields.clinicalCandidateKind, nextFields.metadata, item.type);
+      if (candidateContentProblem) return jsonError(candidateContentProblem, 422);
       if (nextFields.mediaId) {
         const asset = await DB.prepare("SELECT status, kind FROM media_assets WHERE id = ?").bind(nextFields.mediaId).first<{ status: string; kind: string }>();
         const expectedKind = item.type === "video" ? "video" : item.type === "knowledge" ? "document" : item.type === "article" ? "image" : null;
@@ -165,8 +209,8 @@ export async function PATCH(request: Request) {
       const timestamp = now();
       const writeToken = crypto.randomUUID();
       const results = await DB.batch([
-        DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', published_at = NULL, write_token = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
-          .bind(nextFields.title, nextFields.category, nextFields.summary, nextFields.body, nextFields.source, nextFields.mediaId, nextFields.metadata, writeToken, timestamp, id, item.version),
+        DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, clinical_candidate_kind = ?, clinical_change_diff = ?, clinical_review_status = 'pending_review', clinical_reviewer = NULL, clinical_reviewed_at = NULL, status = 'draft', published_at = NULL, write_token = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
+          .bind(nextFields.title, nextFields.category, nextFields.summary, nextFields.body, nextFields.source, nextFields.mediaId, nextFields.metadata, nextFields.clinicalCandidateKind, nextFields.clinicalChangeDiff, writeToken, timestamp, id, item.version),
         DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(id, id, item.version + 1, writeToken),
         DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'update', ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, JSON.stringify({ fromVersion: item.version, toVersion: item.version + 1 }), timestamp, id, item.version + 1, writeToken),
       ]);

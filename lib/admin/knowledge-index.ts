@@ -36,6 +36,7 @@ type SearchRow = {
   body?: string;
   metadata?: string;
   clinicalApprovalId?: string;
+  clinicalReviewStatus?: string;
 };
 
 export function textChunks(text: string, size = 900) {
@@ -102,9 +103,9 @@ function citation(row: SearchRow): KnowledgeCitation {
 }
 
 async function publishedChunk(values: RuntimeEnv & { DB: D1Database }, id: string) {
-  const row = await values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.type, c.title, c.category, c.summary, c.source, c.body, c.metadata, a.content_id clinicalApprovalId FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE k.id = ? AND c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version")
+  const row = await values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.type, c.title, c.category, c.summary, c.source, c.body, c.metadata, c.clinical_review_status clinicalReviewStatus, a.content_id clinicalApprovalId FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE k.id = ? AND c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version")
     .bind(id).first<SearchRow>();
-  return row && (!requiresClinicalApproval("knowledge", row) || row.clinicalApprovalId) ? row : null;
+  return row && (!requiresClinicalApproval("knowledge", row) || (row.clinicalReviewStatus === "approved" && row.clinicalApprovalId)) ? row : null;
 }
 
 async function vectorSearch(values: RuntimeEnv & { DB: D1Database }, query: string, limit: number) {
@@ -134,7 +135,7 @@ async function vectorSearch(values: RuntimeEnv & { DB: D1Database }, query: stri
 export async function searchPublishedKnowledge(values: RuntimeEnv & { DB: D1Database }, query: string, limit: number) {
   const vectorMatches = await vectorSearch(values, query, limit);
   if (vectorMatches?.length) return { mode: "vector" as const, items: vectorMatches };
-  const rows = await values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.type, c.title, c.category, c.summary, c.source, c.body, c.metadata, a.content_id clinicalApprovalId FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version AND instr(lower(k.chunk_text), lower(?)) > 0 ORDER BY c.published_at DESC, k.position ASC LIMIT ?")
+  const rows = await values.DB.prepare("SELECT k.id, k.knowledge_id, k.source_version, k.chunk_text, c.type, c.title, c.category, c.summary, c.source, c.body, c.metadata, c.clinical_review_status clinicalReviewStatus, a.content_id clinicalApprovalId FROM knowledge_chunks k JOIN content_items c ON c.id = k.knowledge_id LEFT JOIN clinical_approvals a ON a.content_id = c.id AND a.content_version = c.version WHERE c.type = 'knowledge' AND c.status = 'published' AND c.version = k.source_version AND instr(lower(k.chunk_text), lower(?)) > 0 ORDER BY c.published_at DESC, k.position ASC LIMIT ?")
     .bind(query, limit).all<SearchRow>();
-  return { mode: "d1" as const, items: rows.results.filter((row) => !requiresClinicalApproval("knowledge", row) || row.clinicalApprovalId).map(citation) };
+  return { mode: "d1" as const, items: rows.results.filter((row) => !requiresClinicalApproval("knowledge", row) || (row.clinicalReviewStatus === "approved" && row.clinicalApprovalId)).map(citation) };
 }

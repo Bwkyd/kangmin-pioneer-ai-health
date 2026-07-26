@@ -1,12 +1,14 @@
 import type { TriState } from "./rules.ts";
+import { isThermalRehabMethod, type RehabMethodCode } from "./rehab-methods.ts";
 
 export const REHAB_METHODS = [
   "nose_three_line_ginger_scrape",
   "finger_pressure_yingxiang",
   "acupoint_massage",
   "ear_acupressure",
-  "moxa_or_blow_dazhui",
-] as const;
+  "moxa_dazhui_fengchi",
+  "electric_blow_dazhui_fengchi",
+] as const satisfies readonly Exclude<RehabMethodCode, "gua_sha">[];
 
 export type RehabMethod = (typeof REHAB_METHODS)[number];
 
@@ -53,7 +55,7 @@ export const REHAB_SAFETY_DISCLAIMER = "这是居家健康管理的安全筛查�
 
 export function evaluateRehabSafety(method: RehabMethod, answers: RehabSafetyAnswers): RehabSafetyResult {
   const blockedBy = REHAB_SAFETY_FIELDS.filter((field) => answers[field] === "yes");
-  if (method === "moxa_or_blow_dazhui" && answers.lungHeatPattern === "yes" && !blockedBy.includes("lungHeatPattern")) blockedBy.push("lungHeatPattern");
+  if (isThermalRehabMethod(method) && answers.lungHeatPattern === "yes" && !blockedBy.includes("lungHeatPattern")) blockedBy.push("lungHeatPattern");
   if (blockedBy.length > 0) {
     return { status: "blocked", method, blockedBy, rulePackageVersion: REHAB_RULE_PACKAGE_VERSION, disclaimer: REHAB_SAFETY_DISCLAIMER };
   }

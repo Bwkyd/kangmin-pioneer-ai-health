@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useRef, useState } from "react";
+import { REHAB_METHOD_DEFINITIONS } from "@/lib/agent/rehab-methods";
 import {
   AllergenExposure,
   AllergenExposureDraft,
@@ -134,6 +135,9 @@ type AgentResult = {
     plan?: {
       title: string;
       summary: string;
+      methodLabel: string;
+      routes: Array<{ code: string; label: string; points: string[] }>;
+      pointGroups: Array<{ code: string; label: string; methodCode: string; points: string[]; relation?: string }>;
       risks: string;
       contraindications: string;
       steps: Array<{ title: string; instruction: string }>;
@@ -176,13 +180,9 @@ const agentRehabFields = [
   ["mediumAllergy", "对姜、油、乳液等操作介质过敏"],
   ["lungHeatPattern", "鼻涕黄稠、口干怕热，或已知肺经蕴热"],
 ] as const;
-const rehabMethodOptions = [
-  ["nose_three_line_ginger_scrape", "鼻三线姜刮（不等同于普通刮痧）"],
-  ["finger_pressure_yingxiang", "指腹擦迎香"],
-  ["acupoint_massage", "穴位按摩"],
-  ["ear_acupressure", "耳穴压豆"],
-  ["moxa_or_blow_dazhui", "艾灸/电吹风吹大椎、风池"],
-] as const;
+const rehabMethodOptions = REHAB_METHOD_DEFINITIONS
+  .filter(({ code }) => code !== "gua_sha")
+  .map(({ code, label, note }) => [code, note ? `${label}（${note}）` : label] as const);
 
 const agentFieldLabels: Record<string, string> = Object.fromEntries([
   ...agentSafetyFields,
@@ -291,6 +291,9 @@ function AgentAssessmentPanel({
             <div className="agent-plan-detail">
               <h3>{result.explanation.plan.title}</h3>
               <p>{result.explanation.plan.summary}</p>
+              <p><strong>方法：</strong>{result.explanation.plan.methodLabel}</p>
+              {result.explanation.plan.routes.length > 0 && <p><strong>路线/穴位：</strong>{result.explanation.plan.routes.map((route) => `${route.label}（${route.points.join("、")}）`).join("；")}</p>}
+              {result.explanation.plan.pointGroups.length > 0 && <p><strong>穴位结构：</strong>{result.explanation.plan.pointGroups.map((group) => `${group.label}${group.relation ? `（${group.relation}）` : ""}`).join("；")}</p>}
               <p><strong>风险提示：</strong>{result.explanation.plan.risks}</p>
               <p><strong>禁忌事项：</strong>{result.explanation.plan.contraindications}</p>
               <ol>{result.explanation.plan.steps.map((step, index) => <li key={`${step.title}-${index}`}><strong>{step.title}</strong><span>{step.instruction}</span></li>)}</ol>

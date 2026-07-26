@@ -16,7 +16,7 @@ const existing = {
 test("后台部分更新保留未提交字段，显式空素材才解除绑定", () => {
   const changed = resolveContentUpdateFields(
     existing,
-    { summary: "新摘要" },
+    { summary: "新摘要", candidateKind: "pediatric", changeDiff: "新增儿童边界" },
     { videoTopicType: "symptom" },
   );
 
@@ -28,6 +28,8 @@ test("后台部分更新保留未提交字段，显式空素材才解除绑定",
     source: "原来源",
     mediaId: "media-video-1",
     metadata: JSON.stringify({ videoTopicType: "symptom" }),
+    clinicalCandidateKind: "pediatric",
+    clinicalChangeDiff: "新增儿童边界",
   });
 
   const detached = resolveContentUpdateFields(
