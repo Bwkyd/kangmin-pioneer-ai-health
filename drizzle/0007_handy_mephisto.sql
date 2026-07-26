@@ -10,6 +10,12 @@ SELECT
     'keptId', keeper.`id`,
     'userId', duplicate.`user_id`,
     'date', duplicate.`exposure_date`,
+    'otherDescription', duplicate.`other_description`,
+    'note', duplicate.`note`,
+    'mutationId', duplicate.`mutation_id`,
+    'version', duplicate.`version`,
+    'createdAt', duplicate.`created_at`,
+    'updatedAt', duplicate.`updated_at`,
     'selections', (SELECT json_group_array(json_object('group', selection.`group_code`, 'code', selection.`option_code`)) FROM `allergen_exposure_selections` selection WHERE selection.`exposure_id` = duplicate.`id`)
   ),
   datetime('now')

@@ -126,7 +126,7 @@ type AgentAssessmentDraft = {
 };
 
 type AgentResult = {
-  assessment?: { status?: string; planStatus?: string; disclaimer?: string; nextQuestions?: string[] };
+  assessment?: { status?: string; planStatus?: string; disclaimer?: string; nextQuestions?: string[]; matchedRuleIds?: string[]; reason?: string; stage?: string };
   rehabSafety?: { status?: string; nextQuestions?: string[]; blockedBy?: string[]; disclaimer?: string };
   explanation?: {
     summary?: string;
@@ -183,6 +183,18 @@ const rehabMethodOptions = [
   ["ear_acupressure", "耳穴压豆"],
   ["moxa_or_blow_dazhui", "艾灸/电吹风吹大椎、风池"],
 ] as const;
+
+const agentFieldLabels: Record<string, string> = Object.fromEntries([
+  ...agentSafetyFields,
+  ...agentSeverityFields,
+  ...agentSyndromeFields,
+  ...agentRehabFields,
+  ["diagnosedAllergicRhinitis", "是否已经被医生或检查确认过敏性鼻炎"],
+].map(([key, label]) => [key, label])) as Record<string, string>;
+
+function agentQuestionLabel(field: string): string {
+  return agentFieldLabels[field] || "相关情况";
+}
 
 function createAgentDraft(): AgentAssessmentDraft {
   const unknowns = (fields: readonly (readonly [string, string])[]) => Object.fromEntries(fields.map(([key]) => [key, "unknown"] as const));
@@ -266,10 +278,15 @@ function AgentAssessmentPanel({
       <button className="agent-submit" type="button" disabled={status === "submitting"} onClick={onSubmit}>{status === "submitting" ? "正在安全评估…" : "获取安全建议"}</button>
       {result && (
         <article className="agent-result" aria-label="智能体评估结果">
-          <div className="agent-result-title"><strong>服务端评估结果</strong><span>{result.assessment?.planStatus === "approved_plan" ? "已匹配审核方案" : result.assessment?.status === "blocked" || result.rehabSafety?.status === "blocked" ? "先暂停操作" : "需继续确认"}</span></div>
+          <div className="agent-result-title"><strong>服务端评估结果</strong><span className={result.assessment?.planStatus === "approved_plan" ? "approved" : result.assessment?.status === "blocked" || result.rehabSafety?.status === "blocked" ? "blocked" : "pending"}>{result.assessment?.planStatus === "approved_plan" ? "已匹配审核方案" : result.assessment?.status === "blocked" || result.rehabSafety?.status === "blocked" ? "先暂停操作" : result.assessment?.status === "referred" ? "先完成确认" : "需继续确认"}</span></div>
           {result.explanation?.summary && <p>{result.explanation.summary}</p>}
+          {result.assessment?.status === "blocked" && <p className="error-text">检测到需要先处理的高风险信号：{result.assessment.matchedRuleIds?.map((field) => agentQuestionLabel(field.replace(/^SAFE-/u, ""))).join("、") || "请先咨询专业人员"}。</p>}
+          {result.assessment?.status === "referred" && <p>目前还不能进入康复方案建议：请先完成过敏性鼻炎的医生或检查确认。</p>}
+          {result.assessment?.status === "need_more_information" && <p>还需要确认：{result.assessment.nextQuestions?.map(agentQuestionLabel).join("、") || "请补充未确认的信息"}。</p>}
           {result.rehabSafety?.status === "blocked" && <p className="error-text">当前情况不适合直接进行这项操作，请先咨询专业人员。</p>}
-          {result.rehabSafety?.status === "need_more_information" && <p>还有安全信息未确认：{result.rehabSafety.nextQuestions?.join("、") || "请补充后再试"}。</p>}
+          {result.rehabSafety?.status === "blocked" && result.rehabSafety.blockedBy && <p className="error-text">需要避开的情况：{result.rehabSafety.blockedBy.map(agentQuestionLabel).join("、")}。</p>}
+          {result.rehabSafety?.status === "need_more_information" && <p>还有安全信息未确认：{result.rehabSafety.nextQuestions?.map(agentQuestionLabel).join("、") || "请补充后再试"}。</p>}
+          {!result.explanation?.plan && result.assessment?.status === "classified" && result.rehabSafety?.status === "clear" && <p>筛查已完成，但当前账户没有可返回的已审核方案；智能体不会直接推荐未经审核的操作。</p>}
           {result.explanation?.plan && (
             <div className="agent-plan-detail">
               <h3>{result.explanation.plan.title}</h3>
@@ -386,7 +403,7 @@ export default function Home() {
   const [medicationDraft, setMedicationDraft] = useState<MedicationDraft>(emptyMedication);
   const [editingMedicationId, setEditingMedicationId] = useState<string | null>(null);
   const [medicationEditing, setMedicationEditing] = useState(false);
-  const [medicationStatus, setMedicationStatus] = useState<"idle" | "saving" | "ready" | "error">("idle");
+  const [medicationStatus, setMedicationStatus] = useState<"idle" | "loading" | "saving" | "ready" | "error">("idle");
   const [medicationNotice, setMedicationNotice] = useState("");
   const [medicationCreateKey, setMedicationCreateKey] = useState<string | null>(null);
   const [symptoms, setSymptoms] = useState<SymptomRecord[]>([]);
@@ -410,6 +427,8 @@ export default function Home() {
   const [symptomRequest] = useState(() => new RequestVersion());
   const [medicationRequest] = useState(() => new RequestVersion());
   const [exposureRequest] = useState(() => new RequestVersion());
+  const [agentRequest] = useState(() => new RequestVersion());
+  const agentAbort = useRef<AbortController | null>(null);
 
   const scoresComplete = hasCompleteSymptomScores(scores);
   const totalScore = scores.reduce<number>((sum, score) => sum + (score ?? 0), 0);
@@ -539,7 +558,7 @@ export default function Home() {
   }, [tab, profileReload, profileRequest]);
 
   useEffect(() => {
-    if (tab !== "assessment") return;
+    if (tab !== "assessment" || entryOpen) return;
     let cancelled = false;
     const requestVersion = symptomRequest.next();
     listSymptoms()
@@ -556,7 +575,7 @@ export default function Home() {
         setSymptomNotice(error instanceof Error ? error.message : "症状历史暂时无法读取");
       });
     return () => { cancelled = true; };
-  }, [tab, assessmentReload, symptomRequest]);
+  }, [tab, entryOpen, assessmentReload, symptomRequest]);
 
   useEffect(() => {
     if (tab !== "allergenRecord") return;
@@ -610,6 +629,9 @@ export default function Home() {
   };
 
   const startConsultation = () => {
+    agentRequest.next();
+    agentAbort.current?.abort();
+    agentAbort.current = null;
     setTab("chat");
     setAgentAssessmentOpen(true);
     setAgentStatus("idle");
@@ -617,24 +639,43 @@ export default function Home() {
     setAgentResult(null);
   };
 
+  const changeAgentDraft: React.Dispatch<React.SetStateAction<AgentAssessmentDraft>> = (update) => {
+    agentRequest.next();
+    agentAbort.current?.abort();
+    agentAbort.current = null;
+    setAgentDraft(update);
+    setAgentResult(null);
+    setAgentStatus("idle");
+    setAgentNotice("");
+  };
+
   const submitAgentAssessment = async () => {
+    const requestVersion = agentRequest.next();
+    agentAbort.current?.abort();
+    const controller = new AbortController();
+    agentAbort.current = controller;
+    const draft = agentDraft;
     setAgentStatus("submitting");
     setAgentNotice("正在提交服务端规则和操作安全筛查…");
     setAgentResult(null);
-    const { rehabMethod, rehabSafety, ...assessment } = agentDraft;
+    const { rehabMethod, rehabSafety, ...assessment } = draft;
     try {
       const response = await fetch("/api/v1/agent/explain", {
         method: "POST",
         headers: { "content-type": "application/json" },
         credentials: "same-origin",
+        signal: controller.signal,
         body: JSON.stringify({ ...assessment, rehabSafety: { method: rehabMethod, answers: rehabSafety } }),
       });
       const payload = await response.json() as { ok?: boolean; data?: AgentResult; error?: { message?: string } };
       if (!response.ok || !payload.ok || !payload.data) throw new Error(payload.error?.message || "智能体暂时无法完成评估");
+      if (!agentRequest.isCurrent(requestVersion)) return;
       setAgentResult(payload.data);
       setAgentStatus("ready");
-      setAgentNotice(payload.data.explanation?.plan ? "已返回当前已审核的康复方案" : "服务端已完成筛查；没有已审核方案时不会直接推荐操作");
+      setAgentNotice(payload.data.explanation?.plan ? "已返回当前已审核的康复方案" : payload.data.model?.degradedReason === "identity_required" ? "当前账户尚未完成服务端身份确认，只返回安全筛查结果" : "服务端已完成筛查；没有已审核方案时不会直接推荐操作");
     } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") return;
+      if (!agentRequest.isCurrent(requestVersion)) return;
       setAgentStatus("error");
       setAgentNotice(error instanceof Error ? error.message : "智能体评估失败，请稍后重试");
     }
@@ -704,6 +745,7 @@ export default function Home() {
     returnTab: "assessment" | "healthProfile" = "assessment",
   ) => {
     exposureRequest.next();
+    setExposures([]);
     setExposureCreateKey(crypto.randomUUID());
     setSelectedDate(date);
     setAllergenReturnTab(returnTab);
@@ -717,9 +759,15 @@ export default function Home() {
 
   const openHealthProfile = () => {
     profileRequest.next();
+    setHealthProfile(null);
+    setProfileDraft(emptyHealthProfile);
+    setExposures([]);
+    setMedications([]);
     setProfileLoadError(false);
     setProfileReload((current) => current + 1);
     setProfileStatus("loading");
+    setExposureStatus("loading");
+    setMedicationStatus("loading");
     setProfileNotice("正在读取健康档案…");
     setTab("healthProfile");
   };
@@ -950,8 +998,23 @@ export default function Home() {
     setSymptomStatus((current) => current === "saving" ? "idle" : current);
     setMedicationStatus((current) => current === "saving" ? "idle" : current);
     setExposureStatus((current) => current === "saving" ? "idle" : current);
-    if (next === "assessment") setSymptomStatus("loading");
-    if (next === "allergenRecord") setExposureStatus("loading");
+    if (next === "assessment") {
+      setSymptoms([]);
+      setSymptomStatus("loading");
+    }
+    if (next === "allergenRecord") {
+      setExposures([]);
+      setExposureStatus("loading");
+    }
+    if (next === "chat") {
+      agentRequest.next();
+      agentAbort.current?.abort();
+      agentAbort.current = null;
+      setAgentAssessmentOpen(true);
+      setAgentStatus("idle");
+      setAgentNotice("");
+      setAgentResult(null);
+    }
     setTab(next);
   };
 
@@ -968,6 +1031,9 @@ export default function Home() {
     symptomRequest.next();
     medicationRequest.next();
     exposureRequest.next();
+    agentRequest.next();
+    agentAbort.current?.abort();
+    agentAbort.current = null;
     setMessages([
       {
         id: Date.now(),
@@ -1075,7 +1141,7 @@ export default function Home() {
                   </button>
                 </section>
 
-                <section className="mini-trend" onClick={() => setTab("assessment")}>
+                <section className="mini-trend" onClick={() => navigateTo("assessment")}>
                   <div><small>趋势展示占位</small><h3>暂无真实健康记录</h3></div>
                   <div className="sparkline" aria-hidden="true">
                     <i style={{ height: "84%" }} /><i style={{ height: "73%" }} /><i style={{ height: "64%" }} />
@@ -1118,7 +1184,7 @@ export default function Home() {
                   {agentAssessmentOpen && (
                     <AgentAssessmentPanel
                       draft={agentDraft}
-                      setDraft={setAgentDraft}
+                      setDraft={changeAgentDraft}
                       status={agentStatus}
                       notice={agentNotice}
                       result={agentResult}
@@ -1169,7 +1235,7 @@ export default function Home() {
                         <strong>正式康复方案暂未开放</strong>
                         <span>相关内容需完成临床负责人审核后，才会进入用户端。</span>
                       </div>
-                      <button className="feedback-button" onClick={() => setTab("assessment")}>去记录今天的症状</button>
+                      <button className="feedback-button" onClick={() => navigateTo("assessment")}>去记录今天的症状</button>
                     </>
                   )}
                   <div ref={chatEnd} />
@@ -1323,7 +1389,7 @@ export default function Home() {
                           <div className="record-form-actions"><button type="button" disabled={medicationStatus === "saving"} onClick={() => { medicationRequest.next(); setMedicationCreateKey(null); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
                         </form>
                       )}
-                      {medicationStatus === "error" ? <p className="record-empty error-text">读取失败，不能判断当前是否没有用药记录；请先重试。</p> : medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)} disabled={medicationStatus !== "ready"}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus !== "ready"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
+                      {medicationStatus === "error" ? <p className="record-empty error-text">读取失败，不能判断当前是否没有用药记录；请先重试。</p> : medicationStatus === "loading" ? <p className="record-empty">正在读取服务端用药记录…</p> : medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{new Date(record.takenAt).toLocaleString("zh-CN", { dateStyle: "short", timeStyle: "short" })}</time><strong>{record.medicationName}</strong><span>{record.dosage.status === "known" ? `${record.dosage.value} ${record.dosage.unit}` : "剂量不详"}</span><small>{record.actualUse.status === "known" ? record.actualUse.description : "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)} disabled={medicationStatus !== "ready"}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus !== "ready"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
                     </section>
                   </>
                 )}
@@ -1429,7 +1495,7 @@ export default function Home() {
                     <div><strong>健康档案</strong><small>基础信息、过敏史与常见诱因</small></div>
                     <b>›</b>
                   </button>
-                  <button onClick={() => setTab("assessment")}>
+                  <button onClick={() => navigateTo("assessment")}>
                     <span className="profile-item-icon amber">记</span>
                     <div><strong>症状记录</strong><small>查看日历、趋势与 TNSS 评估</small></div>
                     <b>›</b>

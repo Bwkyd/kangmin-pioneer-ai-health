@@ -10,7 +10,7 @@ test("用户端和智能体必须带出已审核方案的步骤与风险边界",
   assert.match(publicRoute, /contraindications/);
   assert.match(agentProvider, /risks/);
   assert.match(agentProvider, /contraindications/);
-  assert.match(agentProvider, /steps\.results\.length === 0/);
+  assert.match(agentProvider, /steps\.length === 0/);
 });
 
 test("方案步骤视频只允许通过当前已审核的发布方案播放", async () => {

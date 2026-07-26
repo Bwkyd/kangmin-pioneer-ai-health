@@ -100,15 +100,16 @@ export async function PATCH(request: Request) {
         if (expectedKind && asset.kind !== expectedKind) return jsonError(`${item.type === "video" ? "视频" : item.type === "knowledge" ? "知识资料" : "文章"}只能关联${expectedKind === "video" ? "视频" : expectedKind === "document" ? "文档" : "图片"}素材`, 422);
       }
       const timestamp = now();
+      const writeToken = crypto.randomUUID();
       const needsApproval = requiresClinicalApproval(item.type, item);
       const publishUpdate = needsApproval
-        ? DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') AND EXISTS (SELECT 1 FROM clinical_approvals WHERE content_id = ? AND content_version = ?)").bind(timestamp, timestamp, id, item.version, id, item.version)
-        : DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')").bind(timestamp, timestamp, id, item.version);
+        ? DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed') AND EXISTS (SELECT 1 FROM clinical_approvals WHERE content_id = ? AND content_version = ?)").bind(timestamp, writeToken, timestamp, id, item.version, id, item.version)
+        : DB.prepare("UPDATE content_items SET status = 'published', published_at = ?, write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')").bind(timestamp, writeToken, timestamp, id, item.version);
       const statements = [publishUpdate];
       if (body.notify === true && (item.type === "article" || item.type === "video")) {
-        statements.push(DB.prepare("INSERT INTO notifications (id, content_id, title, body, published_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'published' AND version = ? AND published_at = ?) ON CONFLICT(content_id) DO UPDATE SET title = excluded.title, body = excluded.body, published_at = excluded.published_at").bind(identifier("notice"), id, item.title, item.summary || "有新内容已发布", timestamp, id, item.version, timestamp));
+        statements.push(DB.prepare("INSERT INTO notifications (id, content_id, title, body, published_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'published' AND version = ? AND published_at = ? AND write_token = ?) ON CONFLICT(content_id) DO UPDATE SET title = excluded.title, body = excluded.body, published_at = excluded.published_at").bind(identifier("notice"), id, item.title, item.summary || "有新内容已发布", timestamp, id, item.version, timestamp, writeToken));
       }
-      statements.push(DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'publish', ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'published' AND version = ? AND published_at = ?)").bind(identifier("audit"), session.username, item.type, id, JSON.stringify({ notify: body.notify === true }), timestamp, id, item.version, timestamp));
+      statements.push(DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'publish', ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'published' AND version = ? AND published_at = ? AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, JSON.stringify({ notify: body.notify === true }), timestamp, id, item.version, timestamp, writeToken));
       const results = await DB.batch(statements);
       if (results[0].meta.changes === 0) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
       return Response.json({ id, status: "published" });
@@ -121,10 +122,13 @@ export async function PATCH(request: Request) {
       const timestamp = now();
       const writeToken = crypto.randomUUID();
       const nextVersion = item.version + 1;
+      const offlineUpdate = item.type === "video" && item.media_id
+        ? DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published' AND NOT EXISTS (SELECT 1 FROM plan_steps step JOIN content_items plan ON plan.id = step.plan_id WHERE step.media_id = ? AND plan.status = 'published')").bind(timestamp, writeToken, id, item.version, item.media_id)
+        : DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published'").bind(timestamp, writeToken, id, item.version);
       const results = await DB.batch([
-        DB.prepare("UPDATE content_items SET status = 'offline', updated_at = ?, write_token = ?, version = version + 1 WHERE id = ? AND version = ? AND status = 'published'").bind(timestamp, writeToken, id, item.version),
-        DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'offline' AND version = ?)").bind(id, id, nextVersion),
-        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'offline', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'offline' AND version = ?)").bind(identifier("audit"), session.username, item.type, id, timestamp, id, nextVersion),
+        offlineUpdate,
+        DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'offline' AND version = ? AND write_token = ?)").bind(id, id, nextVersion, writeToken),
+        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'offline', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND status = 'offline' AND version = ? AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, timestamp, id, nextVersion, writeToken),
       ]);
       if (results[0].meta.changes === 0) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
       return Response.json({ id, status: "offline" });
@@ -137,8 +141,8 @@ export async function PATCH(request: Request) {
       const results = await DB.batch([
         DB.prepare("UPDATE content_items SET title = ?, category = ?, summary = ?, body = ?, source = ?, media_id = ?, metadata = ?, status = 'draft', published_at = NULL, write_token = ?, updated_at = ?, version = version + 1 WHERE id = ? AND version = ? AND status IN ('draft', 'offline', 'index_failed')")
           .bind(cleanText(body.title, 160) || item.title, cleanText(body.category, 80) || item.category, cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), writeToken, timestamp, id, item.version),
-        DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft')").bind(id, id, item.version + 1),
-        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'update', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft')").bind(identifier("audit"), session.username, item.type, id, timestamp, id, item.version + 1),
+        DB.prepare("DELETE FROM notifications WHERE content_id = ? AND EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(id, id, item.version + 1, writeToken),
+        DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'update', ?, ?, '{}', ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(identifier("audit"), session.username, item.type, id, timestamp, id, item.version + 1, writeToken),
       ]);
       if (results[0].meta.changes === 0) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
       return Response.json({ id, status: "draft" });

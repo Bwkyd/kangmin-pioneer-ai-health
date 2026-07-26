@@ -25,6 +25,12 @@ test("knowledge requires source and completed index", () => {
   assert.equal(publishProblem("knowledge", { title: "来源", version: 2, mediaId: "media_1", metadata: "{\"indexedChunks\":2,\"indexedVersion\":2}" }), null);
 });
 
+test("鼻三线姜刮不能被正文偷偷改成普通刮痧", () => {
+  const metadata = JSON.stringify({ methodCode: "nose_three_line_ginger_scrape", syndromeCodes: ["LUNG_QI_COLD"], risks: "风险", contraindications: "禁忌" });
+  assert.equal(publishProblem("plan", { title: "普通刮痧方案", body: "沿鼻部进行普通刮痧", metadata }), "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布");
+  assert.equal(publishProblem("plan", { title: "鼻三线姜刮", body: "鼻三线姜刮，不等同于普通刮痧", metadata }), null);
+});
+
 test("康复内容需要审核，但通过审核后不应被通用字段校验永久拦截", () => {
   const metadata = JSON.stringify({ risks: "有风险", contraindications: "有禁忌", syndromeCodes: ["LUNG_HEAT"] });
   assert.equal(requiresClinicalApproval("plan", { title: "方案", metadata: "{}" }), true);

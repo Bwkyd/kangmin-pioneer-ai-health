@@ -25,6 +25,7 @@ import {
   evaluateRehabSafety,
   isRehabMethod,
   REHAB_SAFETY_FIELDS,
+  REHAB_SAFETY_DISCLAIMER,
   type RehabSafetyAnswers,
   type RehabSafetyResult,
 } from "./rehab-safety.ts";
@@ -275,7 +276,7 @@ function publicAssessment(assessment: ReturnType<typeof evaluateAssessment>) {
   const base = { rulePackageVersion: assessment.rulePackageVersion, disclaimer };
   if (assessment.status === "classified") return { ...base, status: assessment.status, planStatus: assessment.planStatus };
   if (assessment.status === "conflict" || assessment.status === "no_match") return { ...base, status: assessment.status };
-  if (assessment.status === "blocked") return { ...base, status: assessment.status, safetyStatus: "blocked" as const };
+  if (assessment.status === "blocked") return { ...base, status: assessment.status, safetyStatus: "blocked" as const, matchedRuleIds: assessment.safety.matchedRuleIds };
   return { ...base, status: assessment.status, ...("stage" in assessment ? { stage: assessment.stage } : {}), ...("reason" in assessment ? { reason: assessment.reason } : {}), ...("nextQuestions" in assessment && assessment.nextQuestions ? { nextQuestions: assessment.nextQuestions } : {}) };
 }
 
@@ -285,6 +286,7 @@ interface AgentApiDependencies {
   fetchImpl?: typeof fetch;
   modelTimeoutMs?: number;
   approvedPlanProvider?: (syndromeCode: string, method: Parameters<typeof evaluateRehabSafety>[0]) => Promise<ApprovedPlan | null>;
+  approvedPlanAccess?: (request: Request) => Promise<boolean>;
 }
 
 function resolveApiKey(dependencies: AgentApiDependencies): string | null {
@@ -524,7 +526,16 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           });
         }
 
-        const rehabSafety: RehabSafetyResult = evaluateRehabSafety(parsed.rehabSafety.method, parsed.rehabSafety.answers);
+        const forcedLungHeatBlock = assessment.syndrome.syndromeCode === "LUNG_HEAT" && parsed.rehabSafety.method === "moxa_or_blow_dazhui";
+        const rehabSafety: RehabSafetyResult = forcedLungHeatBlock
+          ? {
+              status: "blocked" as const,
+              method: parsed.rehabSafety.method,
+              blockedBy: ["lungHeatPattern"],
+              rulePackageVersion: "rehab-safety-v1",
+              disclaimer: REHAB_SAFETY_DISCLAIMER,
+            }
+          : evaluateRehabSafety(parsed.rehabSafety.method, parsed.rehabSafety.answers);
         if (rehabSafety.status !== "clear") {
           return jsonResponse({
             ok: true,
@@ -537,7 +548,8 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
           });
         }
 
-        const plan = dependencies.approvedPlanProvider
+        const approvedPlanAllowed = dependencies.approvedPlanAccess ? await dependencies.approvedPlanAccess(request) : true;
+        const plan = approvedPlanAllowed && dependencies.approvedPlanProvider
           ? await dependencies.approvedPlanProvider(assessment.syndrome.syndromeCode, parsed.rehabSafety.method)
           : null;
         if (plan) {
@@ -567,7 +579,7 @@ export function createAgentApi(dependencies: AgentApiDependencies = {}) {
             },
             model: {
               used: false as const,
-              degradedReason: "no_approved_knowledge" as const,
+              degradedReason: approvedPlanAllowed ? "no_approved_knowledge" as const : "identity_required" as const,
             },
           },
         });

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import "./discover.css";
 
@@ -14,34 +14,40 @@ export default function DiscoverPage() {
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<Content | null>(null);
+  const contentRequest = useRef(0);
 
   useEffect(() => {
     const controller = new AbortController();
+    const requestVersion = contentRequest.current + 1;
+    contentRequest.current = requestVersion;
     void Promise.resolve().then(() => {
       setNotice("");
       setLoading(true);
       setItems([]);
     });
     if (tab === "messages") {
-      fetch("/api/messages", { signal: controller.signal }).then((response) => { if (!response.ok) throw new Error("messages"); return response.json(); }).then((payload) => setMessages(payload.items || [])).catch((error: unknown) => { if (error instanceof DOMException && error.name === "AbortError") return; setMessages([]); setNotice("消息暂时无法加载，请稍后重试"); }).finally(() => setLoading(false));
+      fetch("/api/messages", { signal: controller.signal }).then((response) => { if (!response.ok) throw new Error("messages"); return response.json(); }).then((payload) => { if (contentRequest.current === requestVersion) setMessages(payload.items || []); }).catch((error: unknown) => { if (error instanceof DOMException && error.name === "AbortError") return; if (contentRequest.current !== requestVersion) return; setMessages([]); setNotice("消息暂时无法加载，请稍后重试"); }).finally(() => { if (contentRequest.current === requestVersion) setLoading(false); });
       return () => controller.abort();
     }
     fetch(`/api/content?type=${tab}`, { signal: controller.signal }).then(async (response) => {
       const payload = await response.json().catch(() => null) as { items?: Content[]; error?: string } | null;
       if (!response.ok) throw new Error(payload?.error || (response.status === 404 ? "该类内容正在临床审核" : "内容服务暂时不可用"));
-      setItems(Array.isArray(payload?.items) ? payload.items : []);
-    }).catch((error: unknown) => { if (error instanceof DOMException && error.name === "AbortError") return; setItems([]); setNotice(error instanceof Error ? error.message : "内容暂时无法加载，请稍后重试"); }).finally(() => setLoading(false));
+      if (contentRequest.current === requestVersion) setItems(Array.isArray(payload?.items) ? payload.items : []);
+    }).catch((error: unknown) => { if (error instanceof DOMException && error.name === "AbortError") return; if (contentRequest.current !== requestVersion) return; setItems([]); setNotice(error instanceof Error ? error.message : "内容暂时无法加载，请稍后重试"); }).finally(() => { if (contentRequest.current === requestVersion) setLoading(false); });
     return () => controller.abort();
   }, [tab]);
 
   async function openContent(item: Content) {
     if (tab === "video") return;
+    const requestVersion = contentRequest.current + 1;
+    contentRequest.current = requestVersion;
     try {
       const response = await fetch(`/api/content?type=${tab}&id=${encodeURIComponent(item.id)}`);
       if (!response.ok) throw new Error("内容详情暂时无法加载");
       const payload = await response.json() as { item?: Content };
+      if (contentRequest.current !== requestVersion) return;
       setSelected(payload.item ?? item);
-    } catch { setNotice("内容详情暂时无法加载，请稍后重试"); }
+    } catch { if (contentRequest.current === requestVersion) setNotice("内容详情暂时无法加载，请稍后重试"); }
   }
 
   async function markRead(id: string) {

@@ -19,7 +19,8 @@ export async function POST(request: Request) {
     if (!item) return jsonError("知识资料不存在", 404);
     if (version !== item.version) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
     if (requiresClinicalApproval("knowledge", item) && !(await hasCurrentClinicalApproval(values.DB, item.id, item.version))) return jsonError(clinicalApprovalRequiredMessage, 422);
-    const started = await values.DB.prepare("UPDATE content_items SET status = 'indexing', updated_at = ? WHERE id = ? AND version = ?").bind(now(), id, item.version).run();
+    const writeToken = crypto.randomUUID();
+    const started = await values.DB.prepare("UPDATE content_items SET status = 'indexing', write_token = ?, updated_at = ? WHERE id = ? AND version = ? AND status IN ('draft', 'index_failed')").bind(writeToken, now(), id, item.version).run();
     if (started.meta.changes === 0) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
     try {
       const chunks = textChunks(item.body || item.title);
@@ -31,14 +32,14 @@ export async function POST(request: Request) {
       const statements: D1PreparedStatement[] = [values.DB.prepare("DELETE FROM knowledge_chunks WHERE knowledge_id = ? AND source_version = ?").bind(item.id, item.version)];
       chunks.forEach((chunk, position) => statements.push(values.DB.prepare("INSERT INTO knowledge_chunks (id, knowledge_id, source_version, position, chunk_text, created_at) VALUES (?, ?, ?, ?, ?, ?)").bind(`${item.id}:${position}`, item.id, item.version, position, chunk, timestamp)));
       statements.push(
-        values.DB.prepare("UPDATE content_items SET status = 'draft', metadata = ?, updated_at = ? WHERE id = ? AND version = ? AND status = 'indexing'").bind(metadata, timestamp, id, item.version),
-        values.DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'index', 'knowledge', ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft')").bind(identifier("audit"), session.username, item.id, JSON.stringify({ chunks: chunks.length, version: item.version, mode }), timestamp, id, item.version),
+        values.DB.prepare("UPDATE content_items SET status = 'draft', metadata = ?, updated_at = ? WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?").bind(metadata, timestamp, id, item.version, writeToken),
+        values.DB.prepare("INSERT INTO audit_logs (id, actor, action, entity_type, entity_id, details, created_at) SELECT ?, ?, 'index', 'knowledge', ?, ?, ? WHERE EXISTS (SELECT 1 FROM content_items WHERE id = ? AND version = ? AND status = 'draft' AND write_token = ?)").bind(identifier("audit"), session.username, item.id, JSON.stringify({ chunks: chunks.length, version: item.version, mode }), timestamp, id, item.version, writeToken),
       );
       const results = await values.DB.batch(statements);
       if (results[statements.length - 2].meta.changes === 0) throw new Error("KNOWLEDGE_VERSION_CONFLICT");
       return Response.json({ id, status: "draft", chunks: chunks.length, version: item.version, mode });
     } catch (error) {
-      await values.DB.prepare("UPDATE content_items SET status = 'index_failed', metadata = json_set(metadata, '$.indexError', ?), updated_at = ? WHERE id = ? AND version = ? AND status = 'indexing'").bind(error instanceof Error ? error.message : "INDEX_FAILED", now(), id, item.version).run();
+      await values.DB.prepare("UPDATE content_items SET status = 'index_failed', metadata = json_set(metadata, '$.indexError', ?), updated_at = ? WHERE id = ? AND version = ? AND status = 'indexing' AND write_token = ?").bind(error instanceof Error ? error.message : "INDEX_FAILED", now(), id, item.version, writeToken).run();
       return jsonError("知识索引失败，可安全重试", 503);
     }
   } catch (error) {

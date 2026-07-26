@@ -362,6 +362,9 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .agent-result-title { display: flex; justify-content: space-between; gap: 8px; align-items: center; }
 .agent-result-title strong { color: #1e5a4a; font-size: 11px; }
 .agent-result-title span { padding: 3px 6px; border-radius: 8px; background: #edf6f1; color: #31775e; font-size: 8px; }
+.agent-result-title span.blocked { background: #fff0ed; color: #b24d3c; }
+.agent-result-title span.pending { background: #fff7e8; color: #9a6a24; }
+.agent-result-title span.approved { background: #edf6f1; color: #31775e; }
 .agent-result > p { margin: 8px 0 0; color: #5f746b; font-size: 10px; line-height: 1.6; }
 .agent-result > small { display: block; margin-top: 8px; color: #8a6a32; font-size: 9px; line-height: 1.5; }
 .agent-plan-detail { margin-top: 9px; padding-top: 8px; border-top: 1px dashed #d7e4dd; }

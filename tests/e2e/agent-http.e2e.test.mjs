@@ -185,7 +185,7 @@ test("完整服务通过 HTTP 跑通提取、评估、解释及安全降级路�
     );
     assert.deepEqual(explanation.body.data.model, {
       used: false,
-      degradedReason: "no_approved_knowledge",
+      degradedReason: "identity_required",
     });
 
     const conflict = await postJson(

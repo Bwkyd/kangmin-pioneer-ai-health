@@ -405,6 +405,46 @@ test("explain 对高危、冲突和无命中不调用模型；已分类也不越
   assert.equal(fetchCalls, 0);
 });
 
+test("服务端强制阻断肺经蕴热型的艾灸或吹风方案，不信任客户端把肺热填成没有", async () => {
+  const api = createAgentApi({
+    limiter: new InMemoryAgentLimiter(),
+    approvedPlanProvider: async () => { throw new Error("blocked request must not read plan"); },
+  });
+  const result = await responseBody(await api.explain(post("/api/v1/agent/explain", {
+    ...completeInput({
+      syndrome: { thirst: "yes", fatigue: "no", limbsNotWarm: "no", fearWind: "no", coldIntolerance: "no" },
+    }),
+    rehabSafety: { method: "moxa_or_blow_dazhui", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") },
+  })));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.rehabSafety.status, "blocked");
+  assert.deepEqual(result.body.data.rehabSafety.blockedBy, ["lungHeatPattern"]);
+  assert.equal(result.body.data.explanation, null);
+});
+
+test("未完成服务端身份确认时只返回筛查，不返回正式审核方案", async () => {
+  const api = createAgentApi({
+    limiter: new InMemoryAgentLimiter(),
+    approvedPlanAccess: async () => false,
+    approvedPlanProvider: async () => ({
+      id: "plan_test",
+      title: "不应返回",
+      summary: "不应返回",
+      method: "finger_pressure_yingxiang",
+      risks: "",
+      contraindications: "",
+      steps: [{ title: "不应返回", instruction: "不应返回" }],
+    }),
+  });
+  const result = await responseBody(await api.explain(post("/api/v1/agent/explain", {
+    ...completeInput(),
+    rehabSafety: { method: "finger_pressure_yingxiang", answers: allAnswers(REHAB_SAFETY_FIELDS, "no") },
+  })));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.data.explanation.plan, undefined);
+  assert.equal(result.body.data.model.degradedReason, "identity_required");
+});
+
 test("请求长度和每分钟限流返回稳定错误及 Retry-After", async () => {
   const api = createAgentApi({
     limiter: new InMemoryAgentLimiter(),

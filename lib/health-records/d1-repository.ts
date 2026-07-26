@@ -171,15 +171,30 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
         "INSERT OR IGNORE INTO health_profiles (user_id, basic_info, allergy_history, common_triggers, version, created_at, updated_at) VALUES (?, ?, ?, ?, 1, ?, ?)",
       ).bind(userId, JSON.stringify(input.basicInfo), JSON.stringify(input.allergyHistory), JSON.stringify(input.commonTriggers), timestamp, timestamp).run();
       if (inserted.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "健康档案已存在，请刷新后重试");
+      return {
+        basicInfo: input.basicInfo,
+        allergyHistory: input.allergyHistory,
+        commonTriggers: [],
+        version: 1,
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
     } else {
-      const exists = await database.prepare("SELECT version FROM health_profiles WHERE user_id = ?").bind(userId).first<{ version: number }>();
+      const exists = await database.prepare("SELECT version, common_triggers, created_at FROM health_profiles WHERE user_id = ?").bind(userId).first<{ version: number; common_triggers: string; created_at: string }>();
       if (!exists) throw new HealthRecordError(404, "NOT_FOUND", "健康档案不存在");
       const updated = await database.prepare(
         "UPDATE health_profiles SET basic_info = ?, allergy_history = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND version = ?",
       ).bind(JSON.stringify(input.basicInfo), JSON.stringify(input.allergyHistory), timestamp, userId, expectedVersion).run();
       if (updated.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "健康档案已被更新，请刷新后重试");
+      return {
+        basicInfo: input.basicInfo,
+        allergyHistory: input.allergyHistory,
+        commonTriggers: JSON.parse(exists.common_triggers),
+        version: expectedVersion + 1,
+        createdAt: exists.created_at,
+        updatedAt: timestamp,
+      };
     }
-    return (await this.getProfile(userId))!;
   }
 
   async listMedications(userId: string) {
@@ -244,6 +259,8 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
     const timestamp = now();
     const id = `symptom_${crypto.randomUUID()}`;
     const totalScore = Object.values(input.scores).reduce((sum, item) => sum + item, 0);
+    let currentId = id;
+    let createdAt = timestamp;
     const claim = expectedVersion === 0 && idempotencyKey && requestHash
       ? await this.claimIdempotency<SymptomRecord>(database, userId, `symptom:${date}`, idempotencyKey, requestHash)
       : null;
@@ -264,13 +281,15 @@ export class D1HealthRecordsRepository implements HealthRecordsRepository {
           .bind(id, userId, date, input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, timestamp).run();
         if (inserted.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已存在，请刷新后重试");
       } else {
+        const current = await database.prepare("SELECT id, created_at FROM symptom_records WHERE user_id = ? AND symptom_date = ? AND version = ?").bind(userId, date, expectedVersion).first<{ id: string; created_at: string }>();
+        if (!current) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
+        currentId = current.id;
+        createdAt = current.created_at;
         const updated = await database.prepare("UPDATE symptom_records SET sneezing = ?, rhinorrhea = ?, congestion = ?, itching = ?, total_score = ?, version = version + 1, updated_at = ? WHERE user_id = ? AND symptom_date = ? AND version = ?")
           .bind(input.scores.sneezing, input.scores.rhinorrhea, input.scores.congestion, input.scores.itching, totalScore, timestamp, userId, date, expectedVersion).run();
         if (updated.meta.changes === 0) throw new HealthRecordError(409, "VERSION_CONFLICT", "症状记录已被更新，请刷新后重试");
       }
-      const row = await database.prepare("SELECT id, symptom_date, sneezing, rhinorrhea, congestion, itching, total_score, version, created_at, updated_at FROM symptom_records WHERE user_id = ? AND symptom_date = ?").bind(userId, date).first<SymptomRow>();
-      if (!row) throw new HealthRecordError(500, "INTERNAL_ERROR", "症状记录保存后无法读取");
-      const value = mapSymptom(row);
+      const value = mapSymptom({ id: currentId, symptom_date: date, sneezing: input.scores.sneezing, rhinorrhea: input.scores.rhinorrhea, congestion: input.scores.congestion, itching: input.scores.itching, total_score: totalScore, version: expectedVersion + 1, created_at: createdAt, updated_at: timestamp });
       if (claim) {
         const completed = await database.prepare("UPDATE health_record_idempotency SET state = 'completed', response = ?, completed_at = ? WHERE id = ? AND state = 'pending'")
           .bind(JSON.stringify(value), timestamp, claim.id).run();

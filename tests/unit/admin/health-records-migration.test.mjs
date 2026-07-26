@@ -19,4 +19,6 @@ test("latest health migration makes one patient-reported exposure record per day
   assert.match(sql, /DELETE FROM `allergen_exposure_selections`/u);
   assert.match(sql, /DELETE FROM `allergen_exposure_records`/u);
   assert.match(sql, /CREATE UNIQUE INDEX `allergen_exposure_records_user_date_idx` ON `allergen_exposure_records` \(`user_id`,`exposure_date`\)/u);
+  assert.match(sql, /'otherDescription', duplicate\.`other_description`/u);
+  assert.match(sql, /'note', duplicate\.`note`/u);
 });

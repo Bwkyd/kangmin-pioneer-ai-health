@@ -78,5 +78,15 @@ export function publishProblem(type: ContentType, item: { title?: string; body?:
     const raw = item.metadata ? JSON.parse(item.metadata) as { indexedChunks?: number; indexedVersion?: number } : {};
     if (!raw.indexedChunks || raw.indexedVersion !== item.version) return "知识资料必须先完成当前版本索引";
   }
+  if (type === "plan") {
+    const metadata = parseMetadata(item.metadata);
+    const text = [item.title, item.body].filter((value): value is string => typeof value === "string").join("\n");
+    if (metadata.methodCode === "nose_three_line_ginger_scrape" && /普通刮痧|传统刮痧/u.test(text) && !/不等同于普通刮痧|不是普通刮痧/u.test(text)) {
+      return "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布";
+    }
+    if (metadata.methodCode !== "nose_three_line_ginger_scrape" && /鼻三线姜刮/u.test(text)) {
+      return "正文中的鼻三线姜刮与受控方法不一致，请修正后再发布";
+    }
+  }
   return null;
 }
