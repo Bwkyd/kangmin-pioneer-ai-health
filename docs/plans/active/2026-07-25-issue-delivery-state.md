@@ -8,7 +8,7 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 11:43:39 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 11:47:18 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
 - 当前业务代码候选：`98f47c6d768e31bdc7106ce68beb98b78af8ef4d`（`Add video topic navigation`）；它包含上一候选 `347af77d...` 之后本轮 #74/#78/#79 的用户端视频分类和入口修复。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
@@ -27,6 +27,7 @@
 - completed：公共内容接口仅对已发布且有当前临床审核的视频暴露受控 `topicType`；视频发布选择分类维度后必须填写具体分类，临床审核和发布门禁未被绕过。
 - completed：新增分类筛选行为测试、受控元数据测试和渲染契约；最终精确 SHA `98f47c6d768e31bdc7106ce68beb98b78af8ef4d` 上 `npm run lint`（0 errors、1 个既有 `<img>` warning）、`npm run build`、`npm test`（99/99，包含 HTTP E2E）均通过。
 - completed：本地浏览器合成 D1 验收验证症状/证型两条视频的分类筛选、具体主题筛选、详情打开和首页入口；浏览器 error/warn 为 `[]`。合成数据已清理，未写入生产或客户系统。
+- completed：11:47 在业务候选 `98f47c6d768e31bdc7106ce68beb98b78af8ef4d` 对应代码上再次完成同样的浏览器验收；症状筛选只保留鼻塞卡片并排除证型卡片，详情和 `/discover?type=video` 首页入口均通过，error/warn 为 `[]`。验证后再次删除合成数据并停止服务。
 - PASS：本轮 #74/#78/#79 的工程行为修复和同 SHA 本地回归通过。
 - BLOCKED：总体交付仍不能标记 PASS。四个精确 SHA 只读对抗评审在 180 秒内未返回 verdict；Kimi/DeepSeek 无合法代码外发授权；临床正式批准、生产 verified-phone/session secret、生产 D1/Vectorize、客户浏览器 UAT、PR/CI、推送、合并、部署和关闭 Issue 仍缺失。
 - pending：获得合法审查授权后重跑四视角复审；获得 GitHub 凭据、临床/客户/生产批准后再按门禁申请 Draft PR、发布和逐条 Issue 验收。当前不推送、不合并、不部署、不关闭 Issue。
