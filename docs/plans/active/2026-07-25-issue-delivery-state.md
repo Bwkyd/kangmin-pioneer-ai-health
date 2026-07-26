@@ -8,16 +8,48 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 14:11:35 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 15:24:36 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；最终业务验证锚点为 `03a345ffe73d1588ae00cd29f82912082d79d46c`，其后只追加本状态文件记录，业务树无差异，工作树干净。实时 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
-- 工作树：实现、定向测试和状态文件已提交；临时 `.dev.vars` 已删除，未跟踪敏感配置不存在。当前候选之后没有新的业务代码修改。
-- GitHub Issue/PR：实时公开读取仍显示 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；本轮 `gh pr list` 因 GitHub API 网络错误未形成新的 PR 清单。刚刚实时执行的 `gh auth status` 显示 Bwkyd token invalid；因此没有推送、创建 PR 或触发 CI 的写入证据。
-- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 14:02 主机网络只读核验返回 HTTP 200；未登录、未写入。
-- 本地服务：`127.0.0.1:3000` 于 2026-07-26 14:02 无监听，HTTP 探测为 000。基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
+- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；最终业务验证锚点为 `03a345ffe73d1588ae00cd29f82912082d79d46c`，当前 HEAD 为仅同步状态记录的 `1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d`。排除本状态文件后，业务树相对候选无差异。实时 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- 工作树：当前唯一未提交修改是本状态文件，其中包含前序部署阻塞记录和本轮看门狗证据；临时 `.dev.vars` 不存在，候选之后没有新的业务代码修改，`git diff --check` PASS。
+- GitHub Issue/PR：2026-07-26 15:03 实时回读仍显示 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。`gh auth status` 当前显示 Bwkyd 认证有效且有 `repo`、`workflow` scope，但远端没有当前集成分支；凭据恢复不自动解除推送、PR 或 CI 授权门禁。
+- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 已从服务本机和外部域名核验返回 HTTP 200；本轮未登录后台、未写入业务内容。
+- 本地服务：`127.0.0.1:3000` 于 2026-07-26 15:03 无监听，HTTP 探测为 000。基础可达或不可达均不替代浏览器 UAT、真实登录或生产通过。
+- 测试服务器：`/srv/kangmin-pioneer/current` 已原子切换至 `/srv/kangmin-pioneer/releases/1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d-verified-20260726`，`kangmin-pioneer.service` 为 active，8080 正常监听。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 15:24 测试服务器部署与行为验收
+
+- completed：用户明确授权部署后，重新核验了当前 HEAD `1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d`、构建产物 SHA-256 与远端最终 release；最终 `dist/server/index.js` SHA-256 为 `1593dfb3bf65dd3e61ee9595a31e2b2c7435f3df380e36aa716843462bcf1f04`，`wrangler.json` SHA-256 为 `63bc4b65e2aa7b2206374685b13ea3220ab3100d836b10a896b84225d23b9ef9`，未把状态文件的未提交内容打入运行包，业务代码相对最终验证锚点无差异。
+- completed：远端保留旧版本 `3397b07ece7e70d8777c7885992087dffbd95dcd` 和前一候选 release，最终版本使用独立目录 `/srv/kangmin-pioneer/releases/1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d-verified-20260726` 并原子切换 `current`；D1 部署前快照为 `/srv/kangmin-pioneer/backups/predeploy-1b8ef4e/d1.sqlite`，`PRAGMA integrity_check` 返回 `ok`。
+- completed：远端 D1 以 Wrangler 登记 `0000–0009` 全部迁移；旧后台已存在的基础表按基线登记，实际补齐健康档案、用药、过敏原、症状及 0007 同日去重审计迁移，迁移后表结构可读。
+- completed：最终服务重启后本机 `/`、`/admin` 返回 200；外部 `http://kangmin.49.232.26.48.nip.io/` 与 `/admin` 返回 200；健康档案和过敏原匿名读取返回 401；匿名 explain 返回 `identity_required`，未返回正式方案；肺经蕴热选择 `moxa_or_blow_dazhui` 返回 `blockedBy: [lungHeatPattern]`。
+- completed：浏览器用户视角打开外部首页并进入“我的 → 健康档案”，页面显示“档案暂时无法读取”并禁用编辑/新增/删除，未认证数据不被伪造为空或写入。
+- completed：最终测试构建 `npm run lint`（0 errors、1 个既有 warning）、`npm run build` 和授权环境 `npm test` 均通过，完整测试为 100/100；浏览器外部页面错误/警告日志为空。
+- PASS：本轮测试服务器部署、服务健康、迁移台账、匿名身份门禁、肺经蕴热艾灸阻断和最终测试产物一致性均通过。
+- BLOCKED：这只是现有 `/srv/kangmin-pioneer` 测试服务器发布，不等于 Cloudflare Sites/生产发布；当前仍未推送分支、创建/合并 PR、触发 CI、关闭 Issue，也未完成 verified-phone 真实账号和客户/临床验收。旧的 14:33“SSH 不可用”记录已被本节后续成功 SSH 证据覆盖，不再代表当前真实状态。
+
+## 2026-07-26 15:03 看门狗实时核验与授权门禁续记
+
+- completed：阶段入口先读取自动化记忆和本文件，再实时核验 Git、GitHub Issue/PR、认证、本地服务及客户后台；当前分支为 `codex/issue-72-103-health-integration`，HEAD `1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d`，`git diff --check` PASS，`.dev.vars` 不存在。
+- completed：主机网络刷新确认 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`，当前分支领先 48 个提交且远端不存在同名集成分支。相对已验证业务候选 `6a7f7975fa65393a9f19b93f0d215017b0abd870`，排除本状态文件后业务树无差异；未复用旧聊天或缓存判断业务漂移。
+- completed：GitHub 实时回读仍为 #69–#103 共 35 个 open Issue，全部只有 `task` 标签、均无 `agent-ready`；open PR 仍仅 #66（Dependabot Vite 更新），与当前集成分支无关。`gh auth status` 当前恢复为 Bwkyd 认证有效并具有 `repo`、`workflow` scope。
+- completed：客户后台 `/admin` 无登录只读探测为 HTTP 200；本地 `127.0.0.1:3000` 无监听、HTTP 000。本轮未登录客户后台、未启动或停止服务、未写入外部系统。
+- blocked：虽然 GitHub 凭据当前有效，但所有 open Issue 仍无 `agent-ready`，也没有新增推送、创建 Draft PR 或触发 CI 的明确授权；认证可用不等于授权恢复。本轮不推送分支、不创建 PR、不触发 CI。
+- blocked：前序部署尝试仍缺可用 Sites project/源码凭据或已批准且可用的服务器 SSH 登录方式；线上 HTTP 200 只证明旧服务可达，不能证明 `1b8ef4e` 已部署。四视角最终 verdict、合法隔离审查机制/代码外发授权、临床书面批准、客户产品口径、真实患者数据、生产 verified-phone/session、生产 D1/Vectorize、客户 UAT、合并、部署和 Issue 关闭授权均未恢复。
+- pending：当前没有未完成且不受外部决策阻塞的安全实现或验证步骤。恢复任一对应门禁后，先重新核验精确 SHA 与业务树，再执行同 SHA 独立审查、经授权的 Draft PR/CI、生产/客户 UAT 或发布步骤；不得把本地 100/100 和浏览器 PASS 外推为生产交付。
+- 本轮动作：仅完成实时只读核验并写回证据；未修改业务代码或临床规则，未重复运行已通过且业务树未漂移的完整测试，未提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
+
+## 2026-07-26 14:33 部署尝试与阻塞
+
+- completed：用户已明确要求部署；实时核验当前工作树干净，候选 HEAD 为 `1b8ef4ec7d6a2ca6cee678785ae2488d6d853d5d`，本地 3000 无监听，上一轮该业务树的 lint/build/100 项测试均已通过。
+- blocked：按仓库 `.openai/hosting.json` 的现有 project id 调用 Sites 读取接口返回 `project_not_found`，不能创建新 Sites 项目替代原项目，也没有可用的 Sites 源码写入凭据。
+- blocked：GitHub 当前 token invalid，当前候选分支没有出现在远端；仓库记录的备用测试服务器路径为 `/srv/kangmin-pioneer`，本机没有 SSH 配置、代理密钥或已批准的服务器登录方式，不能猜测或使用后台密码作为 SSH 凭据。
+- blocked：使用用户提供的 `codex_deploy_20260707` 与本机对应公钥的私钥执行只读 SSH `echo ok`，服务器返回 `Permission denied (publickey)`；该字符串不是已被服务器接受的登录账号/密钥组合，未继续猜测其他账号或复用其他项目密钥。
+- completed：线上后台地址只读 HTTP 200，仅证明现有服务可达，不能证明候选 `1b8ef4e` 已上线；本轮没有推送、上传、重启、替换生产文件或写入生产数据。
+- BLOCKED：部署未完成。恢复条件是恢复该 Sites project/源码凭据，或提供已批准的服务器 SSH 登录方式及部署授权；恢复后从精确候选构建、迁移、发布并做线上用户旅程核验。
 
 ## 2026-07-26 14:11 本轮收尾核验
 
