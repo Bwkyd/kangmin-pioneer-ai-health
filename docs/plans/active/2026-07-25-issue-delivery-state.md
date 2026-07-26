@@ -11,7 +11,7 @@
 - 核验时间：2026-07-26 12:31:31 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 最近一次已验证业务候选和当前 HEAD 均为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；该 SHA 已冻结，工作树当前干净。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- 最近一次已验证业务候选为 `6a7f7975fa65393a9f19b93f0d215017b0abd870`（`Complete admin content editing flow`）；当前分支仅在该业务候选之后追加状态记录提交，工作树当前干净。实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`。
 - 工作树：实现、定向测试和状态文件已提交；临时 `.dev.vars` 已删除，未跟踪敏感配置不存在。当前候选之后没有新的业务代码修改。
 - GitHub Issue/PR：2026-07-26 12:03 主机网络实时回读成功，仍有 #69–#103 共 35 个 open Issue，标签均只有 `task`、无 `agent-ready`；open PR 仍仅无关的 Dependabot #66。实时刷新后 `origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
 - 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 12:03 主机网络只读核验返回 HTTP 200；未登录、未写入。
@@ -21,7 +21,7 @@
 
 ## 2026-07-26 12:31 精确 SHA 收敛与同 SHA 验证
 
-- completed：精确候选 `6a7f7975fa65393a9f19b93f0d215017b0abd870` 已提交并冻结；内容编辑 UI、服务端部分更新字段保留、媒体关联状态/类型校验、缺失媒体 404 和行为测试已纳入该 SHA。工作树干净，3000 无监听，临时 `.dev.vars` 已删除。
+- completed：精确业务候选 `6a7f7975fa65393a9f19b93f0d215017b0abd870` 已提交并冻结；内容编辑 UI、服务端部分更新字段保留、媒体关联状态/类型校验、缺失媒体 404 和行为测试已纳入该 SHA。随后只追加状态记录提交；工作树干净，3000 无监听，临时 `.dev.vars` 已删除。
 - completed：该 SHA 上 `npm run lint` 通过（0 errors、1 个既有 `<img>` warning），`npm run build` 通过，完整 `npm test` 通过 100/100（含完整 HTTP E2E）；`git diff --check` 通过。
 - completed：该 SHA 上隔离 D1/SQLite 定向测试 28/28 通过；另从真实 0000→0009 顺序执行迁移，在 0007 前插入同日重复患者自述，确认只保留最新记录、保留选择项、写入完整 `merge_duplicate_exposure` 审计，0008 `write_token` 和 0009 幂等联合主键均成功建立。
 - completed：该 SHA 浏览器用户视角通过：后台草稿创建后编辑升为 v2 且正文/来源等未提交字段保留；不存在媒体返回 404；合成账号保存并回读患者自述过敏原、用药时间/名称/剂量/实际用量和症状 4 分；切换第二 synthetic 账号后上述数据均为空；发热显示“先暂停操作”；肺经蕴热+艾灸/吹风被服务端阻断；无服务端身份时只返回筛查、不返回正式方案。验收合成数据已清理。
