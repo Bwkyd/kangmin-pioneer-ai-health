@@ -1,5 +1,6 @@
 import type { ContentType } from "./store";
 import { SYNDROME_CODES, type SyndromeCode } from "../agent/syndromes.ts";
+import { parseVideoTopicType } from "../content/video-topics.ts";
 
 export const contentTypes = new Set<ContentType>(["article", "video", "knowledge", "plan"]);
 export const approvedSyndromes = new Set<SyndromeCode>(SYNDROME_CODES);
@@ -30,7 +31,7 @@ export function cleanText(value: unknown, maximum = 20_000) {
   return typeof value === "string" ? value.trim().slice(0, maximum) : "";
 }
 
-export function parseMetadata(value: unknown) {
+export function parseMetadata(value: unknown, contentType?: ContentType) {
   let metadata: Record<string, unknown> = {};
   if (typeof value === "string") {
     try {
@@ -49,6 +50,7 @@ export function parseMetadata(value: unknown) {
       ? metadata.syndromeCodes.filter((code): code is SyndromeCode => typeof code === "string" && approvedSyndromes.has(code as SyndromeCode))
       : [],
     methodCode: typeof metadata.methodCode === "string" && approvedRehabMethods.has(metadata.methodCode as ApprovedRehabMethod) ? metadata.methodCode as ApprovedRehabMethod : null,
+    videoTopicType: contentType === "video" ? parseVideoTopicType(metadata.topicType) : null,
   };
 }
 
@@ -70,17 +72,18 @@ export function requiresClinicalApproval(type: ContentType, item: ClinicalConten
   return contentTypes.has(type) || hasUnapprovedClinicalContent(item);
 }
 
-export function publishProblem(type: ContentType, item: { title?: string; summary?: string; body?: string; source?: string; stepsText?: string; version?: number; mediaId?: string | null; metadata?: string }) {
+export function publishProblem(type: ContentType, item: { title?: string; category?: string; summary?: string; body?: string; source?: string; stepsText?: string; version?: number; mediaId?: string | null; metadata?: string }) {
   if (!item.title?.trim()) return "请先填写标题";
   if (type === "article" && !item.body?.trim()) return "文章正文不能为空";
   if (type === "video" && !item.mediaId) return "视频发布前必须上传视频文件";
+  if (type === "video" && parseMetadata(item.metadata, "video").videoTopicType && (!item.category || item.category === "未分类")) return "视频选择分类维度后必须填写具体分类";
   if (type === "knowledge") {
     if (!item.mediaId) return "知识资料发布前必须上传来源文件";
     const raw = item.metadata ? JSON.parse(item.metadata) as { indexedChunks?: number; indexedVersion?: number } : {};
     if (!raw.indexedChunks || raw.indexedVersion !== item.version) return "知识资料必须先完成当前版本索引";
   }
   if (type === "plan") {
-    const metadata = parseMetadata(item.metadata);
+    const metadata = parseMetadata(item.metadata, type);
     const text = [item.title, item.summary, item.body, item.source, item.stepsText].filter((value): value is string => typeof value === "string").join("\n");
     if (metadata.methodCode === "nose_three_line_ginger_scrape" && /普通刮痧|传统刮痧/u.test(text) && !/不等同于普通刮痧|不是普通刮痧/u.test(text)) {
       return "鼻三线姜刮不等同于普通刮痧，请修正方法名称和正文后再发布";

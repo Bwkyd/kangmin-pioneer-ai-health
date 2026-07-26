@@ -51,7 +51,7 @@ export async function POST(request: Request) {
     return executeIdempotent(session.username, idempotencyKey, requestHash, async (lease) => {
       const id = lease ? await stableIdentifier(type, `${session.username}:${idempotencyKey}:${type}`) : identifier(type);
       const timestamp = now();
-      const metadata = parseMetadata(body.metadata);
+      const metadata = parseMetadata(body.metadata, type);
       const { DB } = await runtime();
       const insert = lease
         ? DB.prepare("INSERT OR IGNORE INTO content_items (id, type, title, category, summary, body, source, status, version, media_id, metadata, created_at, updated_at) SELECT ?, ?, ?, ?, ?, ?, ?, 'draft', 1, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM idempotency_keys WHERE key = ? AND actor = ? AND response = ?)").bind(id, type, title, cleanText(body.category, 80) || "未分类", cleanText(body.summary, 1000), cleanText(body.body), cleanText(body.source, 1000), cleanText(body.mediaId, 120) || null, JSON.stringify(metadata), timestamp, timestamp, idempotencyKey, session.username, lease.marker)
@@ -143,7 +143,7 @@ export async function PATCH(request: Request) {
     }
     if (action === "update") {
       if (item.status === "published") return jsonError("已发布内容不能直接修改，请先下架并重新审核", 409);
-      const metadata = parseMetadata(body.metadata);
+      const metadata = parseMetadata(body.metadata, item.type);
       const previousKnowledgeMetadata = item.type === "knowledge"
         ? JSON.parse(item.metadata || "{}") as { indexedChunks?: number; indexedVersion?: number; indexedWriteToken?: string; failedWriteToken?: string | null }
         : {};

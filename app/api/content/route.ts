@@ -1,5 +1,6 @@
 import { contentTypes, requiresClinicalApproval } from "@/lib/admin/validation";
 import { jsonError, runtime, type ContentType } from "@/lib/admin/store";
+import { normalizeVideoTopicType } from "@/lib/content/video-topics";
 
 type ContentRow = {
   id: string;
@@ -33,6 +34,11 @@ async function publicContentItem(database: D1Database, item: ContentRow, include
     result.risks = typeof metadata.risks === "string" ? metadata.risks : "";
     result.contraindications = typeof metadata.contraindications === "string" ? metadata.contraindications : "";
     result.steps = steps.results;
+  }
+  if (item.type === "video") {
+    let metadata: { topicType?: unknown } = {};
+    try { metadata = JSON.parse(item.metadata) as typeof metadata; } catch { /* invalid metadata uses the general bucket */ }
+    result.topicType = normalizeVideoTopicType(metadata.topicType);
   }
   return result;
 }

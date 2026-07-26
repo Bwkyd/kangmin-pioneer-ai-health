@@ -14,6 +14,18 @@ test("metadata only accepts approved fixed syndrome codes", () => {
   assert.deepEqual([...approvedSyndromes], ["LUNG_HEAT", "LUNG_QI_COLD", "SPLEEN_QI_DEF", "KIDNEY_YANG_DEF", "MIXED_COLD_HEAT"]);
 });
 
+test("视频分类维度只接受症状、证型或通用三种受控值", () => {
+  assert.equal(parseMetadata({ topicType: "symptom" }, "video").videoTopicType, "symptom");
+  assert.equal(parseMetadata({ topicType: "syndrome" }, "video").videoTopicType, "syndrome");
+  assert.equal(parseMetadata({ topicType: "invented" }, "video").videoTopicType, null);
+  assert.equal(parseMetadata({ topicType: "symptom" }, "article").videoTopicType, null);
+});
+
+test("视频选择分类维度后必须填写具体分类", () => {
+  assert.equal(publishProblem("video", { title: "操作视频", category: "未分类", mediaId: "media_1", metadata: JSON.stringify({ topicType: "symptom" }) }), "视频选择分类维度后必须填写具体分类");
+  assert.equal(publishProblem("video", { title: "鼻塞视频", category: "鼻塞", mediaId: "media_1", metadata: JSON.stringify({ topicType: "symptom" }) }), null);
+});
+
 test("article cannot publish without body", () => {
   assert.equal(publishProblem("article", { title: "标题", body: "" }), "文章正文不能为空");
 });

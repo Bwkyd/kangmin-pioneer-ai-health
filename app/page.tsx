@@ -1026,7 +1026,7 @@ export default function Home() {
     setTab(next);
   };
 
-  const openDiscover = () => window.location.assign("/discover");
+  const openDiscover = (type: "article" | "video" = "article") => window.location.assign(type === "video" ? "/discover?type=video" : "/discover");
 
   const goBack = () => {
     setEntryOpen(false);
@@ -1120,7 +1120,7 @@ export default function Home() {
                     <p>先做服务端规则和操作安全筛查，再匹配已审核康复方案。</p>
                     <b>开始安全评估 <i>→</i></b>
                   </button>
-                  <button className="learn-module" onClick={openDiscover}>
+                  <button className="learn-module" onClick={() => openDiscover("video")}>
                     <span className="module-icon">学</span>
                     <small>内容审核中</small>
                     <strong>学一学</strong>

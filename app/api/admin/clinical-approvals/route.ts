@@ -38,7 +38,7 @@ export async function POST(request: Request) {
     if (!item || !contentTypes.has(item.type)) return jsonError("内容不存在", 404);
     if (version !== item.version) return jsonError("内容已被其他管理员更新，请刷新后重试", 409);
     if (item.status === "published") return jsonError("已发布内容不能在原版本上补充审核，请先形成新版本", 409);
-    const metadata = parseMetadata(item.metadata);
+    const metadata = parseMetadata(item.metadata, item.type);
     if (item.type === "plan" && (!metadata.methodCode || !metadata.risks || !metadata.contraindications || metadata.syndromeCodes.length === 0)) {
       return jsonError("调理方案必须先补齐受控方法、风险、禁忌和适用证型，才能提交临床审核", 422);
     }
