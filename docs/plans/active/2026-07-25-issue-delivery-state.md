@@ -8,17 +8,29 @@
 
 ## 当前真实状态
 
-- 核验时间：2026-07-26 08:02:55 +0800，Asia/Shanghai
+- 核验时间：2026-07-26 08:07:17 +0800，Asia/Shanghai
 - 仓库：`Bwkyd/kangmin-pioneer-ai-health`
 - 当前集成分支：`codex/issue-72-103-health-integration`
-- 当前业务代码候选：`cdf4381`（`Remove duplicate write token migration`，包含父提交 `a138cd1` 的本轮安全修复）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
-- 工作树：业务代码候选已提交；本状态文件正在更新，状态锚点提交后工作树应再次干净。四视角和双模型审查必须绑定业务代码候选 `cdf4381`，状态文件不改变业务代码树。
+- 当前业务代码候选：`8baafc5`（`Fail closed when identity binding is unavailable`，包含父提交 `cdf4381` 的本轮修复）；实时 `origin/main`：`3397b07ece7e70d8777c7885992087dffbd95dcd`
+- 工作树：业务代码候选已提交；本状态文件正在更新，状态锚点提交后工作树应再次干净。四视角和双模型审查必须绑定业务代码候选 `8baafc5`，状态文件不改变业务代码树。
 - 未关闭 Issue：#69–#103，共 35 条；#69–#71 是已拆分的历史总览；实时标签均不含 `agent-ready`
 - 未关闭 PR：#66（Dependabot Vite 更新），与本轮客户需求无关
-- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 07:02 主机网络只读核验返回 HTTP 200；未登录、未写入
-- 本地服务：旧 `127.0.0.1:3000` vinext 进程仍为 HTTP 500，精确原因是未解析新引入的 `@/lib/agent/approved-plans`；本轮先后使用隔离 Wrangler `127.0.0.1:39997`（旧构建）和 `127.0.0.1:39996`（最新构建），均仅使用 synthetic 身份和隔离 D1，验收后已停止，不能混为生产结论
+- 客户后台：`http://kangmin.49.232.26.48.nip.io/admin` 于 2026-07-26 08:02 主机网络只读核验返回 HTTP 200；未登录、未写入
+- 本地服务：`127.0.0.1:3000` vinext 于 2026-07-26 08:02 主机网络只读探测返回 HTTP 200，进程自 2026-07-25 21:59:20 持续监听；隔离 Wrangler 已停止。基础可达不等于浏览器 UAT、真实登录或生产通过。
 - 看门狗：已在 Codex 本地自动化中创建，按 20 分钟周期读取本文件；只执行无外部决策阻塞的安全步骤
 - 凭据：客户提供的后台凭据不写入本文件、仓库、Issue、日志或命令参数
+
+## 2026-07-26 08:02 看门狗实时核验阶段
+
+- completed：先读取自动化记忆和本文件，再实时刷新 Git、GitHub Issue/PR、本地服务、客户后台与相关活动进程；`origin/main` 仍为 `3397b07ece7e70d8777c7885992087dffbd95dcd`。
+- completed：GitHub 仍有 35 个 open Issue（#69–#103），实时标签均只有 `task`、不含 `agent-ready`；open PR 仍仅 #66 Dependabot Vite 更新，与本轮候选无关。
+- completed：主机网络只读探测本地首页与客户后台 `/admin` 均返回 HTTP 200；只记录基础可达，不替代真实身份、生产数据、浏览器或客户验收。
+- in_progress：阶段入口时 HEAD 为 `286b5ea9f2d7036ede3b3a999b369f24ae2f9658` 且存在 23 个 staged/unstaged 业务与迁移路径；最近实现写入为 08:01:23。核验期间主任务于 08:02:06 提交 `a138cd1ae1e6a45672a084a201d226afb95b4795`，并于 08:02:24 提交迁移清理 `cdf4381a12233efbdec6219c8f0ec0059a214c1d`，08:02:37 业务工作树转为干净，证明 owner 仍在活动而非可接管空窗。
+- in_progress：状态锚点 `a7467bc5acf81c0fee690bc6f2595db6d535dd8e` 于 08:03:19 提交后，`app/api/v1/agent/explain/route.ts` 又于 08:04:00 出现 10 行新增、4 行删除的未提交实现修改；`cdf4381` 因代码树继续漂移，尚不能作为最终冻结候选。
+- blocked：20 分钟活动保护条件成立。恢复条件是自 08:04:00 起连续至少 20 分钟无新的实现提交或文件写入、无活动验收进程，且主任务明确冻结精确候选 SHA；届时先核对迁移序列和身份/并发修复，再运行绑定同一 SHA 的完整测试与只读审查。
+- blocked：所有 open Issue 仍缺 `agent-ready`；临床书面批准、真实 verified-phone/生产 D1、数据外发审查授权、客户浏览器 UAT、推送、PR/CI、合并、部署和 Issue 关闭继续保持独立门禁。
+- pending：活动保护窗口结束后，先只读确认 HEAD、工作树、迁移文件和服务未漂移；若候选稳定，再按状态文件顺序执行授权主机 HTTP E2E、隔离 D1/浏览器验收和同 SHA 四视角审查，不复用 `98a81f9b...` 或更旧 SHA 的 verdict。
+- 本轮动作：仅完成实时只读核验并写回证据；未修改业务代码或临床规则，未运行会与活动 owner 竞争的测试，未重启或停止服务，未提交、推送、创建或合并 PR、部署、关闭 Issue、清理 worktree/分支。
 
 ## 2026-07-26 本轮 P0/P1 修复与重新冻结
 
@@ -27,9 +39,10 @@
 - completed：智能体 UI 对问卷变化递增请求版本、取消旧 AbortController、清空旧结果；结果显示中文的阻断原因和下一步，不把服务端字段名直接显示给用户。无 verified-phone/synthetic 身份时只做筛查，不返回正式审核方案。
 - completed：健康档案、用药、过敏原和症状切换时先隔离旧账户数据；症状日期弹窗不会再被 assessment 列表请求抢占；科普详情加入请求版本保护；后台内容发布/下架/更新和知识索引副作用增加 write token 围栏，管理按钮增加 busy 锁；普通刮痧不能伪装成鼻三线姜刮。
 - completed：0008 write token 迁移已生成、登记 journal/snapshot，并删除重复编号的旧迁移文件；0007 同日暴露去重审计保留被删除记录的描述、备注、选择项和时间字段；档案/症状写入回执不再在成功后盲读另一并发写入者的数据。
-- completed：当前代码候选已提交为 `cdf4381`；`git diff --check` PASS；`npm run lint` PASS（0 errors、1 个既有 `<img>` warning）；`npm run build` PASS；非 HTTP 的 81 项单元/API/迁移/渲染测试 PASS。
-- pending：普通沙箱完整 `npm test` 的 HTTP E2E 受 `listen EPERM 127.0.0.1` 限制；需在授权主机网络命名空间重跑完整 HTTP E2E，并以同一候选 SHA 做隔离 D1 和浏览器用户视角验收。
-- in_progress：等待本状态锚点提交后，对精确候选 `cdf4381` 重跑 sequential-thinking、重复/冗余、并发/边界、回归/旧功能、临床/身份/交付四视角审查；任一 P0/P1 都进入下一轮真修，旧候选 verdict 不继承。
+- completed：当前代码候选已提交为 `8baafc5`；`git diff --check` PASS；`npm run lint` PASS（0 errors、1 个既有 `<img>` warning）；`npm run build` PASS；授权主机完整 `npm test` 为 83/83 PASS，包含 HTTP E2E。
+- completed：HTTP E2E 首次在旧 build 上出现 500，确认是修复后未重建产物；重建后单独 E2E PASS，随后完整 `npm test` 83/83 PASS。身份绑定不可用时正式方案返回 `identity_required`，匿名筛查仍返回 200。
+- pending：需以同一候选 SHA 做隔离 D1 迁移和浏览器用户视角验收，并检查服务端身份门禁在 synthetic 与 verified-phone 两种配置下的实际行为。
+- in_progress：等待本状态锚点提交后，对精确候选 `8baafc5` 重跑 sequential-thinking、重复/冗余、并发/边界、回归/旧功能、临床/身份/交付四视角审查；任一 P0/P1 都进入下一轮真修，旧候选 verdict 不继承。
 - blocked：生产 verified-phone 回调/供应商、生产 D1、临床书面批准、Word/PDF 正文解析和文章图片导入发布、客户浏览器 UAT、GitHub token/PR/CI、推送、合并、部署和 Issue 关闭仍没有真实凭据/规格/逐项授权；不以 synthetic、隔离 D1、本地测试或客户后台 HTTP 200 冒充完成。
 
 ## 2026-07-26 07:20 正式智能体入口与最新验收
