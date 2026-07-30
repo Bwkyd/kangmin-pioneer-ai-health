@@ -11,8 +11,8 @@
 
 ```bash
 npm run build
-node --experimental-strip-types src/cli.ts --help
-node --experimental-strip-types src/cli.ts control capability list --json
+node src/cli.mjs --help
+node src/cli.mjs control capability list --json
 ```
 
 详细命令边界见 `docs/architecture/four-group-cli.md`。

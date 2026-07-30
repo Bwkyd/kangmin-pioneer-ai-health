@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 
-import { runCli } from "../cli.ts";
-import { capabilities, commandGroups } from "../core/capabilities.ts";
+import { runCli } from "../cli.mjs";
+import { capabilities, commandGroups } from "../core/capabilities.mjs";
 
 test("exposes exactly four groups with two core groups", () => {
   assert.deepEqual(
@@ -81,7 +81,7 @@ test("rejects a fifth top-level group", () => {
 test("runs through the executable entrypoint", () => {
   const result = spawnSync(
     process.execPath,
-    ["--experimental-strip-types", "src/cli.ts", "--help"],
+    ["src/cli.mjs", "--help"],
     { cwd: process.cwd(), encoding: "utf8" },
   );
   assert.equal(result.status, 0);

@@ -8,9 +8,7 @@ import {
   commandGroups,
   getCapability,
   getGroup,
-  type Capability,
-  type GroupName,
-} from "./core/capabilities.ts";
+} from "./core/capabilities.mjs";
 
 const SCHEMA_VERSION = "1";
 
@@ -22,15 +20,9 @@ const EXIT = {
   approvalRequired: 5,
   externalBlocked: 6,
   validation: 7,
-} as const;
-
-type CliResult = {
-  exitCode: number;
-  stdout?: string;
-  stderr?: string;
 };
 
-function envelope(command: string, data: unknown, ok = true): string {
+function envelope(command, data, ok = true) {
   return JSON.stringify(
     {
       ok,
@@ -43,7 +35,7 @@ function envelope(command: string, data: unknown, ok = true): string {
   );
 }
 
-function renderRootHelp(): string {
+function renderRootHelp() {
   const groups = commandGroups
     .map(
       (group) =>
@@ -71,7 +63,7 @@ ${groups}
 `;
 }
 
-const groupCommands: Record<GroupName, string[]> = {
+const groupCommands = {
   consult: [
     "session start|answer|status",
     "safety check",
@@ -98,7 +90,7 @@ const groupCommands: Record<GroupName, string[]> = {
   ],
 };
 
-function renderGroupHelp(groupName: GroupName): string {
+function renderGroupHelp(groupName) {
   const group = getGroup(groupName);
   const commands = groupCommands[groupName]
     .map((command) => `  kangmin ${groupName} ${command}`)
@@ -115,11 +107,11 @@ ${commands}
 ${groupName === "control" ? "  kangmin control capability list|show|check [--json]\n" : ""}`;
 }
 
-function publicCapability(capability: Capability): Capability {
+function publicCapability(capability) {
   return { ...capability };
 }
 
-function humanCapability(capability: Capability): string {
+function humanCapability(capability) {
   const command = capability.command ?? capability.coveredBy?.join(", ") ?? "无";
   const lines = [
     `#${capability.issue} ${capability.summary}`,
@@ -132,20 +124,14 @@ function humanCapability(capability: Capability): string {
   return lines.join("\n");
 }
 
-function parseArgs(argv: string[]): { args: string[]; json: boolean } {
+function parseArgs(argv) {
   return {
     args: argv.filter((arg) => arg !== "--json"),
     json: argv.includes("--json"),
   };
 }
 
-function failure(
-  command: string,
-  json: boolean,
-  exitCode: number,
-  code: string,
-  message: string,
-): CliResult {
+function failure(command, json, exitCode, code, message) {
   if (json) {
     return {
       exitCode,
@@ -155,8 +141,17 @@ function failure(
   return { exitCode, stderr: `${message}\n` };
 }
 
-function groupStatus(groupName: GroupName, json: boolean): CliResult {
-  const group = getGroup(groupName)!;
+function groupStatus(groupName, json) {
+  const group = getGroup(groupName);
+  if (!group) {
+    return failure(
+      `${groupName} status`,
+      json,
+      EXIT.usage,
+      "UNKNOWN_GROUP",
+      `未知命令组：${groupName}`,
+    );
+  }
   const owned = capabilities.filter(
     (capability) =>
       capability.group === groupName ||
@@ -184,7 +179,7 @@ function groupStatus(groupName: GroupName, json: boolean): CliResult {
   };
 }
 
-function capabilityList(json: boolean): CliResult {
+function capabilityList(json) {
   if (json) {
     return {
       exitCode: EXIT.success,
@@ -200,7 +195,7 @@ function capabilityList(json: boolean): CliResult {
   };
 }
 
-function capabilityShow(reference: string | undefined, json: boolean): CliResult {
+function capabilityShow(reference, json) {
   if (!reference) {
     return failure(
       "control capability show",
@@ -228,7 +223,7 @@ function capabilityShow(reference: string | undefined, json: boolean): CliResult
   };
 }
 
-function capabilityCheck(json: boolean): CliResult {
+function capabilityCheck(json) {
   const blocking = capabilities.filter(
     (capability) =>
       capability.status === "blocked_clinical" ||
@@ -252,7 +247,7 @@ function capabilityCheck(json: boolean): CliResult {
   };
 }
 
-export function runCli(argv: string[]): CliResult {
+export function runCli(argv) {
   const { args, json } = parseArgs(argv);
   if (args.length === 0 || args[0] === "--help" || args[0] === "-h") {
     const data = { groups: commandGroups, schemaVersion: SCHEMA_VERSION };
@@ -311,7 +306,7 @@ export function runCli(argv: string[]): CliResult {
   );
 }
 
-function main(): void {
+function main() {
   const result = runCli(process.argv.slice(2));
   if (result.stdout) {
     process.stdout.write(result.stdout.endsWith("\n") ? result.stdout : `${result.stdout}\n`);

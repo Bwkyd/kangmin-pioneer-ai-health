@@ -16,15 +16,15 @@
 - `scripts/`、`.github/`：仓库级开发与交付治理。
 - `.openai/hosting.json`：旧 Sites 项目的托管标识，保持在仓库根目录。
 
-四组 CLI 的命令边界和能力目录从 `src/cli.ts` 开始实现；这不改变任何临床规则，未获批准的临床候选默认不可用。
+四组 CLI 的命令边界和能力目录从 `src/cli.mjs` 开始实现；这不改变任何临床规则，未获批准的临床候选默认不可用。
 
 ## CLI Quick Start
 
 ```bash
 npm run build
 npm test
-node --experimental-strip-types src/cli.ts --help
-node --experimental-strip-types src/cli.ts control capability list --json
+node src/cli.mjs --help
+node src/cli.mjs control capability list --json
 ```
 
 命令模型和 Issue 归属见

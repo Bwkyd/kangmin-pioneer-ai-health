@@ -1,29 +1,4 @@
-export type GroupName = "consult" | "health" | "content" | "control";
-export type GroupPriority = "core" | "secondary";
-export type CapabilityStatus =
-  | "planned"
-  | "blocked_clinical"
-  | "blocked_external"
-  | "aggregate";
-
-export type CommandGroup = {
-  name: GroupName;
-  priority: GroupPriority;
-  summary: string;
-};
-
-export type Capability = {
-  id: string;
-  issue: number;
-  group: GroupName | "multiple";
-  command: string | null;
-  status: CapabilityStatus;
-  summary: string;
-  blocker?: string;
-  coveredBy?: string[];
-};
-
-export const commandGroups: CommandGroup[] = [
+export const commandGroups = [
   {
     name: "consult",
     priority: "core",
@@ -46,7 +21,7 @@ export const commandGroups: CommandGroup[] = [
   },
 ];
 
-export const capabilities: Capability[] = [
+export const capabilities = [
   {
     id: "requirements-allergen-learning-articles",
     issue: 69,
@@ -192,11 +167,11 @@ export const capabilities: Capability[] = [
   },
 ];
 
-export function getGroup(name: string): CommandGroup | undefined {
+export function getGroup(name) {
   return commandGroups.find((group) => group.name === name);
 }
 
-export function getCapability(reference: string): Capability | undefined {
+export function getCapability(reference) {
   const issue = Number(reference.replace(/^#/, ""));
   return capabilities.find(
     (capability) =>
