@@ -8,6 +8,10 @@
 | [002](changes/arch/002_server-driven-dynamic-followup.md) | 2026-07-23 | 服务端规则驱动动态补问 |
 | [003](changes/arch/003_admin-content-governance.md) | 2026-07-24 | 单管理员内容治理后台 |
 
+## 架构设计
+
+- [抗敏先锋患者 CLI 与管理员后台设计](architecture/kangmin-cli-and-admin-design.md)
+
 ## Runbook
 
 - [Agent 自动化开发](runbooks/agent-development.md)
