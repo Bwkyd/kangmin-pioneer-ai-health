@@ -51,8 +51,8 @@
 ## 候选版本
 
 - 分支：`codex/issue-123-cli-admin-design`
-- 提交 SHA：
-- PR：
+- 首次提交 SHA：`2c322945030738641efbcc18dc0efec3c7c7d620`
+- PR：[#124](https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/124)（Draft）
 
 ## 阻塞项
 
