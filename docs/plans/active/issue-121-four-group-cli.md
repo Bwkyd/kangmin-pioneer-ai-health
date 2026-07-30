@@ -46,14 +46,14 @@
 | 需求确认 | completed | GitHub Issue #121；用户明确只看未关闭 Issue |
 | 实现 | completed | 四组命令、能力目录、JSON/退出码契约和 CI 门禁 |
 | 本地门禁 | completed | 新 CLI 8/8；旧产品 127/127；生产依赖 0 漏洞；lint 仅旧有 4 条图片警告 |
-| 审核 | pending | 等待 Draft PR 的 `quality` CI |
+| 审核 | completed | Draft PR #122 的 `quality` CI PASS |
 | 合并/发布授权 | blocked | 等待明确授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-121-four-group-cli`
-- 提交 SHA：以分支 HEAD 和 Draft PR 回读为准
-- PR：
+- 提交 SHA：以 Draft PR #122 的分支 HEAD 为准
+- PR：[#122](https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/122)（Draft）
 
 ## 阻塞项
 
