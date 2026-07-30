@@ -18,6 +18,7 @@ Closes #
 
 ## 验证证据
 
+- [ ] `npm run build && npm test && npm run lint`（新 CLI，如适用）
 - [ ] `cd legacy && npm run lint`
 - [ ] `cd legacy && npm test`
 - [ ] 已验证相关浏览器路径（如适用）

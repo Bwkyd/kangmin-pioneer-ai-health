@@ -15,6 +15,7 @@
 ## 3. 实现与验证
 
 - Node.js 使用 `.nvmrc` 指定的版本。
+- 新 CLI 在仓库根目录运行 `npm run build && npm test && npm run lint`。
 - 安装旧实现依赖：`cd legacy && npm ci`。
 - 旧实现本地门禁：在 `legacy/` 内运行 `npm run check`（Lint、生产依赖安全审计、构建和测试）。
 - UI 变更还要验证真实浏览器路径并附截图。

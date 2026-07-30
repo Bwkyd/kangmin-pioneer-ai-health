@@ -33,6 +33,9 @@ jobs:
         run: npm ci
         working-directory: legacy
 
-      - name: Quality gate
+      - name: New CLI quality gate
+        run: npm run build && npm test && npm run lint
+
+      - name: Legacy quality gate
         run: npm run check
         working-directory: legacy

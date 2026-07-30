@@ -1,0 +1,17 @@
+{
+  "name": "kangmin-pioneer-cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "kangmin": "./src/cli.ts"
+  },
+  "scripts": {
+    "build": "node --experimental-strip-types --check src/cli.ts && node --experimental-strip-types src/cli.ts --help > /dev/null",
+    "test": "node --experimental-strip-types --test src/tests/*.test.mjs",
+    "lint": "node --experimental-strip-types --check src/cli.ts && node --experimental-strip-types --check src/core/capabilities.ts"
+  }
+}

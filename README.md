@@ -16,7 +16,19 @@
 - `scripts/`、`.github/`：仓库级开发与交付治理。
 - `.openai/hosting.json`：旧 Sites 项目的托管标识，保持在仓库根目录。
 
-本次目录重组不等于四组命令已经实现，也不改变任何临床规则。
+四组 CLI 的命令边界和能力目录从 `src/cli.ts` 开始实现；这不改变任何临床规则，未获批准的临床候选默认不可用。
+
+## CLI Quick Start
+
+```bash
+npm run build
+npm test
+node --experimental-strip-types src/cli.ts --help
+node --experimental-strip-types src/cli.ts control capability list --json
+```
+
+命令模型和 Issue 归属见
+[docs/architecture/four-group-cli.md](docs/architecture/four-group-cli.md)。
 
 ## Legacy Quick Start
 
@@ -115,7 +127,7 @@ or enforce explicit server-side membership or allowlist checks.
 Use SIWC for account pages, user-specific dashboards, saved records, and write
 actions tied to the current ChatGPT user. Leave public content anonymous.
 
-## Useful Commands
+## Legacy Useful Commands
 
 Run these commands from `legacy/`:
 
