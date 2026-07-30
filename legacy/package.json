@@ -13,7 +13,7 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern .worktrees --ignore-pattern .codex",
     "audit:prod": "npm audit --omit=dev --audit-level=high",
     "check": "npm run lint && npm run audit:prod && npm test",
-    "setup:git": "bash scripts/install-git-hooks.sh",
+    "setup:git": "bash ../scripts/install-git-hooks.sh",
     "db:generate": "drizzle-kit generate"
   },
   "dependencies": {

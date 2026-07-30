@@ -20,6 +20,7 @@ Issue 确认
 ```bash
 scripts/worktree-create.sh 123 short-slug
 cd .worktrees/issue-123-short-slug
+cd legacy
 npm ci
 ```
 
@@ -39,7 +40,9 @@ npm ci
 只暂存任务范围内的文件。提交前运行：
 
 ```bash
+cd legacy
 npm run check
+cd ..
 git diff --check
 ```
 

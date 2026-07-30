@@ -18,8 +18,8 @@ Closes #
 
 ## 验证证据
 
-- [ ] `npm run lint`
-- [ ] `npm test`
+- [ ] `cd legacy && npm run lint`
+- [ ] `cd legacy && npm test`
 - [ ] 已验证相关浏览器路径（如适用）
 - [ ] 已附 UI 变更前后截图（如适用）
 - [ ] 已确认没有提交令牌、密码或客户私密资料

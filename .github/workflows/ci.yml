@@ -27,9 +27,12 @@ jobs:
         with:
           node-version: 22.13.0
           cache: npm
+          cache-dependency-path: legacy/package-lock.json
 
       - name: Install locked dependencies
         run: npm ci
+        working-directory: legacy
 
       - name: Quality gate
         run: npm run check
+        working-directory: legacy

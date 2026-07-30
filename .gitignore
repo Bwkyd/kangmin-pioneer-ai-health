@@ -4,6 +4,11 @@
 /.next/
 /.vinext/
 /.wrangler/
+/legacy/node_modules/
+/legacy/dist/
+/legacy/.next/
+/legacy/.vinext/
+/legacy/.wrangler/
 /coverage/
 /out/
 /outputs/
