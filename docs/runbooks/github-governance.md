@@ -15,7 +15,7 @@ GitHub API 返回：私有仓库需升级 GitHub Pro，或改为公开仓库，�
 运行一次：
 
 ```bash
-npm run setup:git
+bash scripts/install-git-hooks.sh
 ```
 
 这会安装仓库级 `pre-push` 钩子，阻止本机和共享 worktree 直接推送 `main`。它是本地防误操作措施，不等于 GitHub 服务端保护；拥有其他克隆的人仍可绕过。

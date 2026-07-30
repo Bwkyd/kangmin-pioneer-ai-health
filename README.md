@@ -1,6 +1,6 @@
 # 抗敏先锋 AI 鼻健康管理系统
 
-面向鼻鼽（过敏性鼻炎）居家调理场景的小程序及管理后台项目。项目包含固定辨证规则、知识库问答、症状评估、科普内容展示，以及后台知识资料和内容管理。
+本仓库正在转向 CLI-first 架构：新的业务内核和薄前端壳从 `src/` 开始，原 Vinext/Cloudflare 产品完整保留在 `legacy/` 作为需求、行为和验收参考。
 
 客户报价、需求原文、决策树研究资料和品牌素材统一存放在 `docs/客户资料/`。
 
@@ -8,28 +8,26 @@
 
 - Node.js `>=22.13.0`
 
-## Quick Start
+## Repository Shape
+
+- `src/`：新的 CLI-first 内核与薄前端壳，禁止直接依赖旧实现内部模块。
+- `legacy/`：迁移前的完整产品源码、配置、迁移、静态资源和测试。
+- `docs/`：需求、决策、计划和运行手册；客户私密资料不会公开发布。
+- `scripts/`、`.github/`：仓库级开发与交付治理。
+- `.openai/hosting.json`：旧 Sites 项目的托管标识，保持在仓库根目录。
+
+本次目录重组不等于四组命令已经实现，也不改变任何临床规则。
+
+## Legacy Quick Start
 
 ```bash
+cd legacy
 npm ci
-npm run setup:git
 npm run dev
 npm run check
 ```
 
-This starter does not use `wrangler.jsonc`.
-
-## Included Shape
-
-- product source code lives in the root-level source directories
-- `app/` contains the site UI and routes
-- `worker/` contains the Cloudflare Worker entry
-- `db/` contains the production database schema and access layer
-- `build/` contains project-specific build plugins
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `drizzle.config.ts` supports local migration generation when needed
+首次克隆后，在仓库根目录执行 `bash scripts/install-git-hooks.sh`。
 
 ## Agent Development
 
@@ -39,6 +37,7 @@ multi-file or higher-risk work, an isolated worktree:
 ```bash
 scripts/worktree-create.sh 123 short-slug
 cd .worktrees/issue-123-short-slug
+cd legacy
 npm ci
 ```
 
@@ -90,7 +89,8 @@ export default async function Home() {
 
 ## Optional Dispatch-Owned ChatGPT Sign-In
 
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
+The legacy app keeps the ready-to-use helpers in `legacy/app/chatgpt-auth.ts`.
+When that site needs
 optional or required ChatGPT sign-in:
 
 - Use `getChatGPTUser()` for optional signed-in UI.
@@ -117,11 +117,13 @@ actions tied to the current ChatGPT user. Leave public content anonymous.
 
 ## Useful Commands
 
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the product and verify its rendered navigation and key entry points
-- `npm run check`: run lint, production dependency audit, build, and tests
-- `npm run db:generate`: generate Drizzle migrations after schema changes
+Run these commands from `legacy/`:
+
+- `npm run dev`: start legacy local development
+- `npm run build`: verify the legacy vinext build output
+- `npm test`: build the legacy product and run its complete test suite
+- `npm run check`: run legacy lint, production dependency audit, build, and tests
+- `npm run db:generate`: generate legacy Drizzle migrations after schema changes
 
 ## Learn More
 
