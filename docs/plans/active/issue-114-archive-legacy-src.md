@@ -43,14 +43,15 @@
 | 需求确认 | completed | GitHub Issue #114 |
 | 实现 | completed | 旧实现已整体迁入 `legacy/`，新建 `src/README.md` |
 | 本地门禁 | completed | build PASS；授权环境完整测试 127/127 PASS；lint 0 errors、4 warnings；生产依赖 0 vulnerabilities；`git diff --check` PASS |
-| 审核 | completed | Git rename 检测确认除 3 个路径适配文件外，旧实现均为 100% 内容一致移动；Sites 元数据打包结果与根配置一致 |
+| 审核 | completed | Git rename 检测确认除 3 个路径适配文件外，旧实现均为 100% 内容一致移动；Sites 元数据打包结果与根配置一致；PR #115 `quality` PASS |
 | 合并/发布授权 | blocked | 等待明确授权 |
 
 ## 候选版本
 
 - 分支：`codex/issue-114-archive-legacy-src`
-- 提交 SHA：分支 HEAD（以 `git rev-parse HEAD` 回读为准）
-- PR：待创建
+- 业务实现 SHA：`4f4c327dd213832e3991a1fc24ceab94612a3b68`
+- PR HEAD：分支 HEAD（以 `git rev-parse HEAD` 和 GitHub 回读为准）
+- PR：[#115](https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/115)（Draft）
 
 ## 阻塞项
 
