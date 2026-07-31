@@ -35,6 +35,8 @@ export type ErrorCode =
   | "permission_denied"
   | "storage_unavailable"
   | "provider_unavailable"
+  | "provider_timeout"
+  | "location_unavailable"
   | "projection_pending"
   | "batch_partial_failure"
   | "internal_error";
@@ -58,6 +60,8 @@ const EXIT_CODES: Record<ErrorCode, number> = {
   permission_denied: 9,
   storage_unavailable: 6,
   provider_unavailable: 6,
+  provider_timeout: 6,
+  location_unavailable: 6,
   projection_pending: 6,
   batch_partial_failure: 10,
   internal_error: 1
@@ -82,6 +86,8 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   permission_denied: 403,
   storage_unavailable: 503,
   provider_unavailable: 503,
+  provider_timeout: 503,
+  location_unavailable: 503,
   projection_pending: 202,
   batch_partial_failure: 409,
   internal_error: 500

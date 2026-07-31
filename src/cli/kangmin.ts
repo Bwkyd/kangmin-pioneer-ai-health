@@ -6,10 +6,10 @@ import { createApplication } from "../app/composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
 import { failure, type CommandResult } from "../kernel/result.js";
 
-const HELP = `抗敏先锋患者 CLI（Patient Record MVP）
+const HELP = `抗敏先锋患者 CLI（Agent + Patient Record MVP）
 
 用法：
-  kangmin                         启动 Agent（本 MVP 明确返回未实现）
+  kangmin                         启动确定性 Agent 安全会话
   kangmin agent                   对话与智能分析
   kangmin record                  管理自己的健康记录
   kangmin browse                  浏览环境与已发布内容
@@ -24,8 +24,27 @@ record 命令：
   record calendar --month YYYY-MM
   record trend --from YYYY-MM-DD --to YYYY-MM-DD
 
+browse 命令：
+  browse
+  browse article list|categories
+  browse article search <query>
+  browse article show <id>
+  browse video list|categories
+  browse video search <query>
+  browse video show <id>
+
+agent 命令：
+  agent start
+  agent continue <session-id> --expected-revision <n> --question urgentHelp --answer yes|no|unknown
+  agent resume <session-id>
+  agent sessions list
+  agent sessions show <session-id>
+
 当前真实可用：
-  record 全部命令（症状、档案、暴露、用药、概览、日历、趋势）
+  agent 安全会话基础、record 全部命令、browse 已发布文章/视频
+
+临床边界：
+  当前无获批临床规则和方案，Agent 不输出证型、穴位、疗程或调理方案。
 
 身份：
   通过 KANGMIN_SESSION_TOKEN 传递不透明会话令牌。
@@ -71,6 +90,8 @@ const OPTION_NAMES: Record<string, string> = {
   "--name": "medicationName",
   "--dosage": "dosage",
   "--actual-use": "actualUse",
+  "--question": "question",
+  "--answer": "answer",
   "--month": "month",
   "--from": "from",
   "--to": "to",
@@ -82,6 +103,46 @@ interface ParsedCommand {
   input: Record<string, unknown>;
   json: boolean;
   help: boolean;
+}
+
+function parseOptions(
+  input: Record<string, unknown>,
+  optionTokens: string[]
+): void {
+  for (let index = 0; index < optionTokens.length; ) {
+    const token = optionTokens[index];
+    if (token === undefined) {
+      break;
+    }
+    const key = OPTION_NAMES[token];
+
+    if (FLAG_OPTIONS.has(token)) {
+      if (key !== undefined) {
+        input[key] = true;
+      }
+      index += 1;
+      continue;
+    }
+
+    const value = optionTokens[index + 1];
+    if (key === undefined || value === undefined) {
+      input.__parseError = `无效或缺少值的参数：${token}`;
+      break;
+    }
+    if (value.startsWith("--")) {
+      input.__parseError = `${token} 的值不能以 -- 开头：${value}`;
+      break;
+    }
+
+    if (REPEATABLE_OPTIONS.has(token)) {
+      const collected = (input[key] as string[] | undefined) ?? [];
+      collected.push(value);
+      input[key] = collected;
+    } else {
+      input[key] = NUMBER_OPTIONS.has(key) ? Number(value) : value;
+    }
+    index += 2;
+  }
 }
 
 function parse(argv: string[]): ParsedCommand {
@@ -97,6 +158,80 @@ function parse(argv: string[]): ParsedCommand {
   }
 
   const [group, resource, maybeAction, positional, ...rest] = filtered;
+  if (group === "browse") {
+    const input: Record<string, unknown> = {};
+    if (resource === undefined) {
+      return { command: "browse", input, json, help: false };
+    }
+    if (resource !== "article" && resource !== "video") {
+      return { command: filtered.join(" "), input, json, help: false };
+    }
+    if (maybeAction === "list" || maybeAction === "categories") {
+      if (positional !== undefined || rest.length > 0) {
+        input.__parseError = `browse ${resource} ${maybeAction} 不接受额外参数`;
+      }
+      return {
+        command: `browse ${resource} ${maybeAction}`,
+        input,
+        json,
+        help: false
+      };
+    }
+    if (maybeAction === "search" || maybeAction === "show") {
+      if (positional === undefined || rest.length > 0) {
+        input.__parseError = `browse ${resource} ${maybeAction} 需要且只接受一个${maybeAction === "search" ? "搜索词" : "内容 ID"}`;
+      } else {
+        input[maybeAction === "search" ? "query" : "id"] = positional;
+      }
+      return {
+        command: `browse ${resource} ${maybeAction}`,
+        input,
+        json,
+        help: false
+      };
+    }
+    return { command: filtered.join(" "), input, json, help: false };
+  }
+  if (group === "agent") {
+    const input: Record<string, unknown> = {};
+    if (resource === undefined || resource === "start") {
+      const unexpected = resource === "start"
+        ? [maybeAction, positional, ...rest].filter(
+            (value): value is string => value !== undefined
+          )
+        : [];
+      if (unexpected.length > 0) {
+        input.__parseError = `agent start 不接受参数：${unexpected[0]}`;
+      }
+      return { command: resource === undefined ? "agent" : "agent start", input, json, help: false };
+    }
+    if (resource === "continue" || resource === "resume") {
+      if (maybeAction === undefined || maybeAction.startsWith("--")) {
+        input.__parseError = `agent ${resource} 需要会话 ID`;
+      } else {
+        input.id = maybeAction;
+        parseOptions(input, [positional, ...rest].filter(
+          (value): value is string => value !== undefined
+        ));
+      }
+      return { command: `agent ${resource}`, input, json, help: false };
+    }
+    if (resource === "sessions" && maybeAction === "list") {
+      if (positional !== undefined || rest.length > 0) {
+        input.__parseError = `agent sessions list 不接受参数：${positional ?? rest[0]}`;
+      }
+      return { command: "agent sessions list", input, json, help: false };
+    }
+    if (resource === "sessions" && maybeAction === "show") {
+      if (positional === undefined || positional.startsWith("--")) {
+        input.__parseError = "agent sessions show 需要会话 ID";
+      } else {
+        input.id = positional;
+      }
+      return { command: "agent sessions show", input, json, help: false };
+    }
+    return { command: filtered.join(" "), input, json, help: false };
+  }
   if (group !== "record") {
     if (filtered.length !== 1) {
       return {
@@ -141,40 +276,7 @@ function parse(argv: string[]): ParsedCommand {
     }
   }
 
-  for (let index = 0; index < optionTokens.length; ) {
-    const token = optionTokens[index];
-    if (token === undefined) {
-      break;
-    }
-    const key = OPTION_NAMES[token];
-
-    if (FLAG_OPTIONS.has(token)) {
-      if (key !== undefined) {
-        input[key] = true;
-      }
-      index += 1;
-      continue;
-    }
-
-    const value = optionTokens[index + 1];
-    if (key === undefined || value === undefined) {
-      input.__parseError = `无效或缺少值的参数：${token}`;
-      break;
-    }
-    if (value.startsWith("--")) {
-      input.__parseError = `${token} 的值不能以 -- 开头：${value}`;
-      break;
-    }
-
-    if (REPEATABLE_OPTIONS.has(token)) {
-      const collected = (input[key] as string[] | undefined) ?? [];
-      collected.push(value);
-      input[key] = collected;
-    } else {
-      input[key] = NUMBER_OPTIONS.has(key) ? Number(value) : value;
-    }
-    index += 2;
-  }
+  parseOptions(input, optionTokens);
 
   return { command, input, json, help: false };
 }
