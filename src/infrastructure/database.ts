@@ -424,11 +424,15 @@ const MIGRATIONS: Migration[] = [
           updated_at TEXT NOT NULL
         ) STRICT;
 
+        -- medication_name_encrypted 为 NOT NULL：旧库含用药记录时
+        -- 缺列 INSERT 直接违约（升级路径 P0）。先写占位空串，随后的
+        -- backfillEncryptedColumn 在同一事务内用真实密文覆盖
+        -- （旧表 medication_name NOT NULL，全部行都会回填，占位不残留）。
         INSERT INTO medication_records_new(
-          id, patient_id, local_date,
+          id, patient_id, local_date, medication_name_encrypted,
           revision, created_at, updated_at
         )
-        SELECT id, patient_id, local_date,
+        SELECT id, patient_id, local_date, '',
           revision, created_at, updated_at
         FROM medication_records;
       `);

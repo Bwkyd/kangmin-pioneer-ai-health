@@ -3,8 +3,13 @@ import assert from "node:assert/strict";
 // 测试进程以本地开发模式启动：组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import test from "node:test";
 
+import { KangminDatabase } from "../infrastructure/database.js";
+import { SqlitePlanRegistry } from "../infrastructure/sqlite-plan-registry.js";
 import { ClinicalRuleKernel } from "../modules/clinical-rules/clinical-rule-kernel.js";
 import type {
   ClinicalVerdict,
@@ -403,4 +408,145 @@ test("规则包内容哈希稳定：同一包两次评估返回同一哈希", ()
   const second = kernel.evaluate([fact("thirst", "yes")]);
   assert.equal(first.rulePackageHash, second.rulePackageHash);
   assert.equal(first.rulePackageHash, kernel.rulePackageHash);
+});
+
+/** 生产注册表集成（评审 P0-1）：管理端自由文本 method 必须确定性映射为
+ * 规则约定的属性键（moxibustion/guasha_cupping），否则 MSAF 规则永不触发。 */
+function insertPlan(
+  database: KangminDatabase,
+  row: {
+    id: string;
+    syndrome: string;
+    method: string;
+    status?: "draft" | "enabled" | "disabled";
+  }
+): void {
+  const now = "2026-08-01T00:00:00Z";
+  database.connection
+    .prepare(`
+      INSERT INTO agent_plans(
+        id, name, syndrome, method, steps_json, precautions, risks,
+        contraindications, display_order, status, revision,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, '[]', '', '', '', 0, ?, 1, ?, ?)
+    `)
+    .run(
+      row.id,
+      `${row.id} 方案`,
+      row.syndrome,
+      row.method,
+      row.status ?? "enabled",
+      now,
+      now
+    );
+}
+
+/** 走到方案安全阶段的完整事实：安全通过 + 轻度 + 肺经伏热（T1）。 */
+function lungHeatFacts(): ConfirmedFact[] {
+  return factsWith(safeFacts(), [
+    ...mildSeverityFacts(),
+    fact("thirst", "yes"),
+    fact("limbs_not_warm", "no")
+  ]);
+}
+
+test("生产注册表：含灸法的启用方案触发 MSAF-01 阻断（自由文本 method 映射）", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-registry-"));
+  const database = new KangminDatabase(join(directory, "registry.sqlite"));
+  try {
+    insertPlan(database, {
+      id: "plan-moxa",
+      syndrome: "LUNG_HEAT",
+      method: "温和艾灸与日常护理"
+    });
+    const registry = new SqlitePlanRegistry(database);
+    const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry);
+
+    // 管理端自由文本“温和艾灸与日常护理”含“灸”→ 属性键 moxibustion。
+    const found = registry.findApprovedPlan({
+      syndromeCode: "LUNG_HEAT",
+      severityCode: "mild"
+    });
+    assert.notEqual(found, null);
+    assert.equal(found?.attributes.moxibustion, "yes");
+    assert.equal(found?.attributes.guasha_cupping, undefined);
+
+    const verdict = kernel.evaluate(lungHeatFacts());
+    assert.equal(verdict.outcome, "blocked");
+    assert.equal(verdict.stage, "plan_safety");
+    assert.ok(verdict.matchedRuleIds.includes("MSAF-01"));
+    assert.ok(verdict.matchedRuleIds.includes("T1"));
+    assert.equal(verdict.planId, "plan-moxa");
+  } finally {
+    database.close();
+  }
+});
+
+test("生产注册表：刮痧/拔罐方法映射为 guasha_cupping（MSAF-02 属性键）", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-registry-"));
+  const database = new KangminDatabase(join(directory, "registry.sqlite"));
+  try {
+    insertPlan(database, {
+      id: "plan-cupping",
+      syndrome: "COLD_HEAT_COMPLEX",
+      method: "刮痧与拔罐组合调理"
+    });
+    const registry = new SqlitePlanRegistry(database);
+    const found = registry.findApprovedPlan({
+      syndromeCode: "COLD_HEAT_COMPLEX",
+      severityCode: "mild"
+    });
+    assert.notEqual(found, null);
+    assert.equal(found?.attributes.guasha_cupping, "yes");
+    assert.equal(found?.attributes.moxibustion, undefined);
+
+    // 注：MSAF-02 与 SAF-05（皮损整体阻断外治）语义重叠矛盾需临床
+    // 裁决；皮损时 pipeline 在 safety 阶段已被 SAF-05 阻断，MSAF-02
+    // 在本测试中通过注册表映射直接验证属性键而非经完整流水线。
+    const guashaFacts = factsWith(lungHeatFacts(), [fact("skin_lesion", "yes")]);
+    const safetyVerdict = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+      guashaFacts
+    );
+    assert.equal(safetyVerdict.outcome, "blocked");
+    assert.equal(safetyVerdict.stage, "safety");
+    assert.ok(safetyVerdict.matchedRuleIds.includes("SAF-05"));
+  } finally {
+    database.close();
+  }
+});
+
+test("生产注册表：method 为空或无法映射时不出属性键（unmatched 安全语义）", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-registry-"));
+  const database = new KangminDatabase(join(directory, "registry.sqlite"));
+  try {
+    const cases: Array<[string, string, string]> = [
+      ["plan-empty", "LUNG_HEAT", ""],
+      ["plan-unmapped", "SPLEEN_QI_DEF", "日常护理"],
+      ["plan-other", "KIDNEY_YANG_DEF", "中药汤剂"]
+    ];
+    for (const [id, syndrome, method] of cases) {
+      insertPlan(database, { id, syndrome, method });
+    }
+    const registry = new SqlitePlanRegistry(database);
+    for (const [id, syndrome] of cases) {
+      const found = registry.findApprovedPlan({
+        syndromeCode: syndrome,
+        severityCode: "mild"
+      });
+      assert.notEqual(found, null);
+      assert.equal(found?.planId, id);
+      assert.deepEqual(found?.attributes, {}, `${id} 不应输出方法属性`);
+    }
+
+    // 无方法属性 → MSAF-01 的 moxibustion 条件按 unmatched 处理，
+    // 方案安全通过（classified + 绑定方案），绝不误阻断。
+    const verdict = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+      lungHeatFacts()
+    );
+    assert.equal(verdict.outcome, "classified");
+    assert.equal(verdict.stage, "completed");
+    assert.ok(!verdict.matchedRuleIds.includes("MSAF-01"));
+  } finally {
+    database.close();
+  }
 });

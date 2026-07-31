@@ -196,7 +196,8 @@ test("安全阻断：高危输入直接阻断并结束对话，输出固定文�
     assert.equal(blocked.state, "completed");
     assert.equal(blocked.verdict?.outcome, "blocked");
     assert.equal(blocked.verdict?.stage, "safety");
-    assert.deepEqual(blocked.verdict?.matchedRuleIds, ["SAF-01"]);
+    // 评审 P0-2：candidate 状态下患者侧 verdict 不暴露命中规则 ID。
+    assert.deepEqual(blocked.verdict?.matchedRuleIds, []);
     assert.ok(blocked.message !== null);
     assert.ok(blocked.message.content.includes("立即就医"));
     assert.equal(blocked.message.contentHash, sha256(blocked.message.content));
@@ -274,10 +275,12 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
     // 裁决为 classified（轻度 + 肺经伏热）……
     assert.equal(turn.verdict?.outcome, "classified");
     assert.equal(turn.verdict?.stage, "completed");
-    assert.equal(turn.verdict?.severityCode, "mild");
-    assert.equal(turn.verdict?.syndromeCode, "LUNG_HEAT");
-    assert.ok(turn.verdict?.matchedRuleIds.includes("SEV-05"));
-    assert.ok(turn.verdict?.matchedRuleIds.includes("T1"));
+    // 评审 P0-2：candidate 状态下对患者裁剪临床结构化字段——证型/
+    // 严重度/命中规则/方案 ID 一律不输出，杜绝拼装完整方案的侧信道。
+    assert.equal(turn.verdict?.severityCode, null);
+    assert.equal(turn.verdict?.syndromeCode, null);
+    assert.deepEqual(turn.verdict?.matchedRuleIds, []);
+    assert.ok(!("planId" in (turn.verdict ?? {})), "verdict 不应携带 planId");
     // ……但正式输出是固定阻断文案，绝不输出个性化方案。
     assert.ok(turn.message !== null);
     assert.equal(turn.message.content, CLINICAL_FREEZE_BLOCK);
@@ -312,6 +315,7 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
         severityCode: string | null;
         syndromeCode: string | null;
         matchedRuleIds: string[];
+        planId: string | null;
       };
     }>(
       await application.execute({
@@ -323,9 +327,12 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
     assert.ok(boundShow.decisionCount >= 4);
     assert.equal(boundShow.lastDecision?.outcome, "classified");
     assert.equal(boundShow.lastDecision?.stage, "completed");
-    assert.equal(boundShow.lastDecision?.severityCode, "mild");
-    assert.equal(boundShow.lastDecision?.syndromeCode, "LUNG_HEAT");
-    assert.ok(boundShow.lastDecision?.matchedRuleIds.includes("T1"));
+    // 评审 P0-2：candidate 状态下决策摘要同样裁剪临床字段（无证型、
+    // 无严重度、无命中规则、无 planId），患者无法借此拼装方案。
+    assert.equal(boundShow.lastDecision?.severityCode, null);
+    assert.equal(boundShow.lastDecision?.syndromeCode, null);
+    assert.deepEqual(boundShow.lastDecision?.matchedRuleIds, []);
+    assert.equal(boundShow.lastDecision?.planId, null);
   } finally {
     application.close();
   }

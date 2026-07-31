@@ -17,8 +17,12 @@
 
 import { createHash, randomUUID } from "node:crypto";
 
-import type { ClinicalRuleKernelPort } from "../clinical-rules/contracts.js";
-import type { ConfirmedFact, NextQuestion } from "../clinical-rules/contracts.js";
+import type {
+  ClinicalRuleKernelPort,
+  ClinicalVerdict,
+  ConfirmedFact,
+  NextQuestion
+} from "../clinical-rules/contracts.js";
 import { DomainError } from "../../kernel/errors.js";
 import type { EncryptionPort } from "../../kernel/encryption.js";
 import { parseStructuredAnswers } from "./answer-parser.js";
@@ -394,17 +398,7 @@ export class ConversationService {
         decisionId
       },
       notices,
-      verdict: {
-        outcome: verdict.outcome,
-        stage: verdict.stage,
-        severityCode: verdict.severityCode,
-        syndromeCode: verdict.syndromeCode,
-        nextQuestions: verdict.nextQuestions,
-        matchedRuleIds: verdict.matchedRuleIds,
-        rulePackageVersion: verdict.rulePackageVersion,
-        rulePackageHash: verdict.rulePackageHash,
-        rulePackageStatus: this.kernel.rulePackageStatus
-      },
+      verdict: this.patientVerdict(verdict),
       proposedCandidates: proposedViews,
       saveConfirmationRequired,
       saved,
@@ -437,17 +431,56 @@ export class ConversationService {
   }
 
   private summarizeDecision(decision: DecisionRow): DecisionSummary {
+    const trimmed =
+      this.kernel.rulePackageStatus !== "approved";
     return {
       id: decision.id,
       decisionSequence: decision.decisionSequence,
       outcome: decision.outcome,
       stage: decision.stage,
-      severityCode: decision.severityCode,
-      syndromeCode: decision.syndromeCode,
-      matchedRuleIds: JSON.parse(decision.matchedRuleIdsJson) as string[],
+      // 未临床冻结（candidate）时对患者裁剪临床字段：绝不通过
+      // 结构化字段侧信道拼装完整方案（评审 P0-2，见 patientVerdict）。
+      severityCode: trimmed ? null : decision.severityCode,
+      syndromeCode: trimmed ? null : decision.syndromeCode,
+      matchedRuleIds: trimmed ? [] : (JSON.parse(decision.matchedRuleIdsJson) as string[]),
       rulePackageVersion: decision.rulePackageVersion,
-      planId: decision.planId,
+      planId: trimmed ? null : decision.planId,
       createdAt: decision.createdAt
+    };
+  }
+
+  /**
+   * 患者侧 verdict 裁剪（评审 P0-2）：
+   * 规则包未临床冻结（candidate）时，execTurn 返回的 verdict 只保留
+   * outcome/stage/nextQuestions 与规则包元数据，severityCode/
+   * syndromeCode/matchedRuleIds 置空——避免患者用 agent exec --json
+   * 拿到证型/严重度/命中规则后拼出完整调理方案，违反 HELP“Agent 不
+   * 输出证型、穴位、疗程或调理方案”承诺。
+   *
+   * 边界与决策记录：
+   * - `agent test run`（模拟链路）与管理员侧不受裁剪：testRun 返回
+   *   完整 ClinicalVerdict，供开发/临床验证规则包（结构独立，不经过
+   *   本方法）；
+   * - `browse plan show` 保持只读可用：它是后台明确发布
+   *   （agent_plans.status='enabled'）的内容浏览，不是 agent 判定。
+   *   本方法裁剪掉 planId 后，患者第一步就拿不到 planId，无法发起
+   *   “exec 拿证型 → conversations show 拿 planId → browse 拼步骤”
+   *   三步拼装，侧信道被切断。
+   */
+  private patientVerdict(
+    verdict: ClinicalVerdict
+  ): ConversationTurnResult["verdict"] {
+    const trimmed = this.kernel.rulePackageStatus !== "approved";
+    return {
+      outcome: verdict.outcome,
+      stage: verdict.stage,
+      severityCode: trimmed ? null : verdict.severityCode,
+      syndromeCode: trimmed ? null : verdict.syndromeCode,
+      nextQuestions: verdict.nextQuestions,
+      matchedRuleIds: trimmed ? [] : verdict.matchedRuleIds,
+      rulePackageVersion: verdict.rulePackageVersion,
+      rulePackageHash: verdict.rulePackageHash,
+      rulePackageStatus: this.kernel.rulePackageStatus
     };
   }
 
