@@ -1,3 +1,4 @@
+import { DomainError } from "../kernel/errors.js";
 import { KangminDatabase } from "./database.js";
 import type {
   ExposureRecord,
@@ -87,6 +88,7 @@ interface IdempotencyRow {
   result_json: string;
 }
 
+/** symptom 投影查询的原始行形状（snake_case），映射为领域形状 MonthSymptomRow。 */
 interface ProjectionRow {
   id: string;
   local_date: string;
@@ -159,6 +161,7 @@ type CreateOutcome<T> =
   | { kind: "created"; record: T }
   | { kind: "replayed"; record: T }
   | { kind: "idempotency_conflict" }
+  | { kind: "stale_replay" }
   | { kind: "date_conflict" };
 
 export class SqliteRecordRepository implements RecordRepository {
@@ -175,6 +178,14 @@ export class SqliteRecordRepository implements RecordRepository {
         requestHash: input.requestHash,
         uniquePatientDate: true,
         result: input.record,
+        createdAt: input.record.createdAt,
+        verifyExists: (record) =>
+          this.findOwned(
+            "symptom_records",
+            input.patientId,
+            record.id,
+            toSymptom
+          ) !== null,
         insert: () => {
           this.database.connection
             .prepare(`
@@ -237,51 +248,40 @@ export class SqliteRecordRepository implements RecordRepository {
         return { kind: "not_found" };
       }
 
-      const result = this.database.connection
-        .prepare(`
-          UPDATE symptom_records
-          SET nasal_congestion = ?,
-              nasal_itching = ?,
-              sneezing = ?,
-              runny_nose = ?,
-              tnss_total = ?,
-              notes = ?,
-              revision = revision + 1,
-              updated_at = ?
-          WHERE id = ? AND patient_id = ? AND revision = ?
-        `)
-        .run(
-          input.nasalCongestion,
-          input.nasalItching,
-          input.sneezing,
-          input.runnyNose,
-          input.tnssTotal,
-          input.notes,
-          input.updatedAt,
-          input.id,
-          input.patientId,
-          input.expectedRevision
-        );
-
-      if (result.changes !== 1) {
-        return {
-          kind: "version_conflict",
-          currentRevision:
-            this.findOwned("symptom_records", input.patientId, input.id, toSymptom)
-              ?.revision ?? current.revision
-        };
-      }
-
-      const updated = this.findOwned(
-        "symptom_records",
-        input.patientId,
-        input.id,
-        toSymptom
-      );
-      if (updated === null) {
-        return { kind: "not_found" };
-      }
-      return { kind: "updated", record: updated };
+      return this.commitOwnedUpdate({
+        table: "symptom_records",
+        patientId: input.patientId,
+        id: input.id,
+        expectedRevision: input.expectedRevision,
+        currentRevision: current.revision,
+        mapRow: toSymptom,
+        applyUpdate: () =>
+          this.database.connection
+            .prepare(`
+              UPDATE symptom_records
+              SET nasal_congestion = ?,
+                  nasal_itching = ?,
+                  sneezing = ?,
+                  runny_nose = ?,
+                  tnss_total = ?,
+                  notes = ?,
+                  revision = revision + 1,
+                  updated_at = ?
+              WHERE id = ? AND patient_id = ? AND revision = ?
+            `)
+            .run(
+              input.nasalCongestion,
+              input.nasalItching,
+              input.sneezing,
+              input.runnyNose,
+              input.tnssTotal,
+              input.notes,
+              input.updatedAt,
+              input.id,
+              input.patientId,
+              input.expectedRevision
+            )
+      });
     });
   }
 
@@ -404,6 +404,14 @@ export class SqliteRecordRepository implements RecordRepository {
         requestHash: input.requestHash,
         uniquePatientDate: true,
         result: input.record,
+        createdAt: input.record.createdAt,
+        verifyExists: (record) =>
+          this.findOwned(
+            "exposure_records",
+            input.patientId,
+            record.id,
+            toExposure
+          ) !== null,
         insert: () => {
           this.database.connection
             .prepare(`
@@ -463,49 +471,34 @@ export class SqliteRecordRepository implements RecordRepository {
         return { kind: "not_found" };
       }
 
-      const result = this.database.connection
-        .prepare(`
-          UPDATE exposure_records
-          SET factors_json = ?,
-              other_description = ?,
-              notes = ?,
-              revision = revision + 1,
-              updated_at = ?
-          WHERE id = ? AND patient_id = ? AND revision = ?
-        `)
-        .run(
-          JSON.stringify(input.factors),
-          input.otherDescription,
-          input.notes,
-          input.updatedAt,
-          input.id,
-          input.patientId,
-          input.expectedRevision
-        );
-
-      if (result.changes !== 1) {
-        return {
-          kind: "version_conflict",
-          currentRevision:
-            this.findOwned(
-              "exposure_records",
-              input.patientId,
+      return this.commitOwnedUpdate({
+        table: "exposure_records",
+        patientId: input.patientId,
+        id: input.id,
+        expectedRevision: input.expectedRevision,
+        currentRevision: current.revision,
+        mapRow: toExposure,
+        applyUpdate: () =>
+          this.database.connection
+            .prepare(`
+              UPDATE exposure_records
+              SET factors_json = ?,
+                  other_description = ?,
+                  notes = ?,
+                  revision = revision + 1,
+                  updated_at = ?
+              WHERE id = ? AND patient_id = ? AND revision = ?
+            `)
+            .run(
+              JSON.stringify(input.factors),
+              input.otherDescription,
+              input.notes,
+              input.updatedAt,
               input.id,
-              toExposure
-            )?.revision ?? current.revision
-        };
-      }
-
-      const updated = this.findOwned(
-        "exposure_records",
-        input.patientId,
-        input.id,
-        toExposure
-      );
-      if (updated === null) {
-        return { kind: "not_found" };
-      }
-      return { kind: "updated", record: updated };
+              input.patientId,
+              input.expectedRevision
+            )
+      });
     });
   }
 
@@ -530,6 +523,14 @@ export class SqliteRecordRepository implements RecordRepository {
         requestHash: input.requestHash,
         uniquePatientDate: false,
         result: input.record,
+        createdAt: input.record.createdAt,
+        verifyExists: (record) =>
+          this.findOwned(
+            "medication_records",
+            input.patientId,
+            record.id,
+            toMedication
+          ) !== null,
         insert: () => {
           this.database.connection
             .prepare(`
@@ -554,8 +555,12 @@ export class SqliteRecordRepository implements RecordRepository {
         }
       });
       if (outcome.kind === "date_conflict") {
-        // 用药记录表没有日期唯一约束，此分支在结构上不可达。
-        throw new Error("medication insert hit an unexpected unique constraint");
+        // 用药记录表没有日期唯一约束，此分支在结构上不可达；
+        // 保留它是为未来加约束时的安全网。
+        throw new DomainError(
+          "internal_error",
+          "用药记录插入意外触发唯一约束"
+        );
       }
       return outcome;
     });
@@ -594,51 +599,36 @@ export class SqliteRecordRepository implements RecordRepository {
         return { kind: "not_found" };
       }
 
-      const result = this.database.connection
-        .prepare(`
-          UPDATE medication_records
-          SET medication_name = ?,
-              dosage = ?,
-              actual_use = ?,
-              notes = ?,
-              revision = revision + 1,
-              updated_at = ?
-          WHERE id = ? AND patient_id = ? AND revision = ?
-        `)
-        .run(
-          input.medicationName,
-          input.dosage,
-          input.actualUse,
-          input.notes,
-          input.updatedAt,
-          input.id,
-          input.patientId,
-          input.expectedRevision
-        );
-
-      if (result.changes !== 1) {
-        return {
-          kind: "version_conflict",
-          currentRevision:
-            this.findOwned(
-              "medication_records",
-              input.patientId,
+      return this.commitOwnedUpdate({
+        table: "medication_records",
+        patientId: input.patientId,
+        id: input.id,
+        expectedRevision: input.expectedRevision,
+        currentRevision: current.revision,
+        mapRow: toMedication,
+        applyUpdate: () =>
+          this.database.connection
+            .prepare(`
+              UPDATE medication_records
+              SET medication_name = ?,
+                  dosage = ?,
+                  actual_use = ?,
+                  notes = ?,
+                  revision = revision + 1,
+                  updated_at = ?
+              WHERE id = ? AND patient_id = ? AND revision = ?
+            `)
+            .run(
+              input.medicationName,
+              input.dosage,
+              input.actualUse,
+              input.notes,
+              input.updatedAt,
               input.id,
-              toMedication
-            )?.revision ?? current.revision
-        };
-      }
-
-      const updated = this.findOwned(
-        "medication_records",
-        input.patientId,
-        input.id,
-        toMedication
-      );
-      if (updated === null) {
-        return { kind: "not_found" };
-      }
-      return { kind: "updated", record: updated };
+              input.patientId,
+              input.expectedRevision
+            )
+      });
     });
   }
 
@@ -693,27 +683,23 @@ export class SqliteRecordRepository implements RecordRepository {
 
   async readMonth(
     patientId: string,
-    monthStart: string,
-    monthEnd: string
+    month: string
   ): Promise<MonthSourceData> {
     return this.database.transaction(() => {
-      const symptoms = this.projectionRows(
+      const symptoms = this.projectionRowsInMonth(
         "symptom_records",
         patientId,
-        monthStart,
-        monthEnd
+        month
       );
-      const exposureDates = this.datesInRange(
+      const exposureDates = this.datesInMonth(
         "exposure_records",
         patientId,
-        monthStart,
-        monthEnd
+        month
       );
-      const medicationDates = this.datesInRange(
+      const medicationDates = this.datesInMonth(
         "medication_records",
         patientId,
-        monthStart,
-        monthEnd
+        month
       );
       return { symptoms, exposureDates, medicationDates };
     });
@@ -738,7 +724,10 @@ export class SqliteRecordRepository implements RecordRepository {
     requestHash: string;
     uniquePatientDate: boolean;
     result: T;
+    createdAt: string;
     insert: () => void;
+    /** 重放时校验原记录仍存在；已删除时返回 stale_replay，避免返回幻影记录。 */
+    verifyExists: (record: T) => boolean;
   }): CreateOutcome<T> {
     const previous = this.database.connection
       .prepare(`
@@ -753,12 +742,13 @@ export class SqliteRecordRepository implements RecordRepository {
       ) as unknown as IdempotencyRow | undefined;
 
     if (previous !== undefined) {
-      return previous.request_hash === options.requestHash
-        ? {
-            kind: "replayed",
-            record: JSON.parse(previous.result_json) as T
-          }
-        : { kind: "idempotency_conflict" };
+      if (previous.request_hash !== options.requestHash) {
+        return { kind: "idempotency_conflict" };
+      }
+      const record = JSON.parse(previous.result_json) as T;
+      return options.verifyExists(record)
+        ? { kind: "replayed", record }
+        : { kind: "stale_replay" };
     }
 
     try {
@@ -783,7 +773,7 @@ export class SqliteRecordRepository implements RecordRepository {
         options.idempotencyKey,
         options.requestHash,
         JSON.stringify(options.result),
-        new Date().toISOString()
+        options.createdAt
       );
 
     return { kind: "created", record: options.result };
@@ -803,6 +793,45 @@ export class SqliteRecordRepository implements RecordRepository {
       `)
       .get(id, patientId) as unknown as R | undefined;
     return row === undefined ? null : mapRow(row);
+  }
+
+  /** 执行乐观锁 UPDATE 并统一处理 changes!==1 的版本冲突与事后丢失。 */
+  private commitOwnedUpdate<T, R>(options: {
+    table: string;
+    patientId: string;
+    id: string;
+    expectedRevision: number;
+    currentRevision: number;
+    mapRow: (row: R) => T;
+    applyUpdate: () => { changes: number | bigint };
+  }):
+    | { kind: "updated"; record: T }
+    | { kind: "not_found" }
+    | { kind: "version_conflict"; currentRevision: number } {
+    const result = options.applyUpdate();
+    if (Number(result.changes) !== 1) {
+      return {
+        kind: "version_conflict",
+        currentRevision:
+          (this.findOwned(
+            options.table,
+            options.patientId,
+            options.id,
+            options.mapRow
+          ) as { revision: number } | null)?.revision ?? options.currentRevision
+      };
+    }
+
+    const updated = this.findOwned(
+      options.table,
+      options.patientId,
+      options.id,
+      options.mapRow
+    );
+    if (updated === null) {
+      return { kind: "not_found" };
+    }
+    return { kind: "updated", record: updated };
   }
 
   private deleteOwned(
@@ -888,23 +917,38 @@ export class SqliteRecordRepository implements RecordRepository {
     return row?.local_date ?? null;
   }
 
-  private datesInRange(
+  private datesInMonth(
     table: string,
     patientId: string,
-    monthStart: string,
-    monthEnd: string
+    month: string
   ): string[] {
     return (
       this.database.connection
         .prepare(`
           SELECT DISTINCT local_date
           FROM ${table}
-          WHERE patient_id = ? AND local_date >= ? AND local_date <= ?
+          WHERE patient_id = ? AND local_date LIKE ?
         `)
-        .all(patientId, monthStart, monthEnd) as unknown as Array<{
+        .all(patientId, `${month}%`) as unknown as Array<{
         local_date: string;
       }>
     ).map((row) => row.local_date);
+  }
+
+  private projectionRowsInMonth(
+    table: string,
+    patientId: string,
+    month: string
+  ): MonthSymptomRow[] {
+    const rows = this.database.connection
+      .prepare(`
+        SELECT id, local_date, tnss_total
+        FROM ${table}
+        WHERE patient_id = ? AND local_date LIKE ?
+        ORDER BY local_date ASC, created_at ASC
+      `)
+      .all(patientId, `${month}%`) as unknown as ProjectionRow[];
+    return rows.map(toMonthSymptom);
   }
 
   private projectionRows(

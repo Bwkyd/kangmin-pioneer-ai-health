@@ -34,6 +34,15 @@ function now(): string {
   return new Date().toISOString();
 }
 
+/** 空更新校验的唯一文案来源，所有 update 命令共用。 */
+const NO_FIELDS_MESSAGE = "至少提供一个需要更新的字段";
+
+function requireUpdateFields(present: boolean): void {
+  if (!present) {
+    throw new DomainError("validation_failed", NO_FIELDS_MESSAGE);
+  }
+}
+
 /** 截至最近一条记录日期的连续记录天数；无记录返回 0。 */
 function consecutiveDayCount(dates: readonly string[]): number {
   if (dates.length === 0) {
@@ -63,6 +72,8 @@ export class RecordService {
     patientId: string,
     input: CreateSymptomInput
   ): Promise<SymptomRecord> {
+    // 幂等键哈希白名单：必须与 record 的业务字段一致。
+    // 新增业务字段时必须同步加入，否则同键重放会被误判为冲突。
     const requestHash = stableHash({
       localDate: input.localDate,
       nasalCongestion: input.nasalCongestion,
@@ -102,9 +113,15 @@ export class RecordService {
         "相同幂等键已用于不同请求"
       );
     }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError(
+        "stale_replay",
+        "该幂等键对应的记录已被删除，请使用新的幂等键"
+      );
+    }
     if (outcome.kind === "date_conflict") {
       throw new DomainError(
-        "version_conflict",
+        "date_conflict",
         "该日期已存在症状记录，请先读取后更新"
       );
     }
@@ -133,6 +150,13 @@ export class RecordService {
     patientId: string,
     input: UpdateSymptomInput
   ): Promise<SymptomRecord> {
+    requireUpdateFields(
+      input.nasalCongestion !== undefined ||
+        input.nasalItching !== undefined ||
+        input.sneezing !== undefined ||
+        input.runnyNose !== undefined ||
+        input.notes !== undefined
+    );
     const current = await this.repository.findSymptom(patientId, input.id);
     if (current === null) {
       throw new DomainError(
@@ -217,6 +241,15 @@ export class RecordService {
     patientId: string,
     input: UpdateProfileInput
   ): Promise<HealthProfile> {
+    requireUpdateFields(
+      input.displayName !== undefined ||
+        input.birthDate !== undefined ||
+        input.sex !== undefined ||
+        input.allergyHistory !== undefined ||
+        input.knownAllergies !== undefined ||
+        input.commonTriggers !== undefined ||
+        input.notes !== undefined
+    );
     const current = await this.repository.getProfile(patientId);
     const outcome = await this.repository.updateProfile({
       patientId,
@@ -250,6 +283,7 @@ export class RecordService {
     input: CreateExposureInput
   ): Promise<ExposureRecord> {
     validateFactors(input.factors, input.otherDescription);
+    // 幂等键哈希白名单：必须与 record 的业务字段一致。
     const requestHash = stableHash({
       localDate: input.localDate,
       factors: input.factors,
@@ -279,9 +313,15 @@ export class RecordService {
         "相同幂等键已用于不同请求"
       );
     }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError(
+        "stale_replay",
+        "该幂等键对应的记录已被删除，请使用新的幂等键"
+      );
+    }
     if (outcome.kind === "date_conflict") {
       throw new DomainError(
-        "version_conflict",
+        "date_conflict",
         "该日期已存在暴露记录，请先读取后更新"
       );
     }
@@ -307,6 +347,11 @@ export class RecordService {
     patientId: string,
     input: UpdateExposureInput
   ): Promise<ExposureRecord> {
+    requireUpdateFields(
+      input.factors !== undefined ||
+        input.otherDescription !== undefined ||
+        input.notes !== undefined
+    );
     const current = await this.repository.findExposure(patientId, input.id);
     if (current === null) {
       throw new DomainError("resource_not_found", "暴露记录不存在");
@@ -319,16 +364,6 @@ export class RecordService {
         : input.otherDescription;
     const notes = input.notes === undefined ? current.notes : input.notes;
 
-    if (
-      input.factors === undefined &&
-      input.otherDescription === undefined &&
-      input.notes === undefined
-    ) {
-      throw new DomainError(
-        "validation_failed",
-        "至少提供一个需要更新的字段"
-      );
-    }
     validateFactors(factors, otherDescription);
 
     const outcome = await this.repository.updateExposure({
@@ -374,6 +409,7 @@ export class RecordService {
     patientId: string,
     input: CreateMedicationInput
   ): Promise<MedicationRecord> {
+    // 幂等键哈希白名单：必须与 record 的业务字段一致。
     const requestHash = stableHash({
       localDate: input.localDate,
       medicationName: input.medicationName,
@@ -405,6 +441,12 @@ export class RecordService {
         "相同幂等键已用于不同请求"
       );
     }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError(
+        "stale_replay",
+        "该幂等键对应的记录已被删除，请使用新的幂等键"
+      );
+    }
     return outcome.record;
   }
 
@@ -427,6 +469,12 @@ export class RecordService {
     patientId: string,
     input: UpdateMedicationInput
   ): Promise<MedicationRecord> {
+    requireUpdateFields(
+      input.medicationName !== undefined ||
+        input.dosage !== undefined ||
+        input.actualUse !== undefined ||
+        input.notes !== undefined
+    );
     const current = await this.repository.findMedication(patientId, input.id);
     if (current === null) {
       throw new DomainError("resource_not_found", "用药记录不存在");
@@ -437,18 +485,6 @@ export class RecordService {
     const actualUse =
       input.actualUse === undefined ? current.actualUse : input.actualUse;
     const notes = input.notes === undefined ? current.notes : input.notes;
-
-    if (
-      input.medicationName === undefined &&
-      input.dosage === undefined &&
-      input.actualUse === undefined &&
-      input.notes === undefined
-    ) {
-      throw new DomainError(
-        "validation_failed",
-        "至少提供一个需要更新的字段"
-      );
-    }
 
     const outcome = await this.repository.updateMedication({
       patientId,
@@ -510,13 +546,7 @@ export class RecordService {
     patientId: string,
     month: string
   ): Promise<CalendarProjection> {
-    const monthStart = `${month}-01`;
-    const monthEnd = `${month}-31`;
-    const source = await this.repository.readMonth(
-      patientId,
-      monthStart,
-      monthEnd
-    );
+    const source = await this.repository.readMonth(patientId, month);
 
     const exposureDates = new Set(source.exposureDates);
     const medicationDates = new Set(source.medicationDates);

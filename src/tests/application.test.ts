@@ -337,7 +337,7 @@ test("暴露记录闭环：互斥校验、同日期冲突、版本冲突与删�
     });
     assert.equal(sameDate.ok, false);
     if (!sameDate.ok) {
-      assert.equal(sameDate.error.code, "version_conflict");
+      assert.equal(sameDate.error.code, "date_conflict");
     }
 
     const updated = await application.execute({
@@ -544,6 +544,88 @@ test("症状删除：确认后删除、同日期可重建、旧版本拒绝", as
     assert.equal(again.ok, false);
     if (!again.ok) {
       assert.equal(again.error.code, "resource_not_found");
+    }
+  } finally {
+    application.close();
+  }
+});
+
+test("删除后同幂等键重放被拒绝为 stale_replay，不返回幻影记录", async () => {
+  const { application, tokenA } = await fixture();
+  try {
+    const created = await application.execute({
+      command: "record symptom add",
+      input: { ...symptomInput, idempotencyKey: "replay-after-delete" },
+      sessionToken: tokenA
+    });
+    const createdData = dataOf<SymptomRecord>(created);
+
+    const deleted = await application.execute({
+      command: "record symptom delete",
+      input: { id: createdData.id, expectedRevision: 1, yes: true },
+      sessionToken: tokenA
+    });
+    assert.equal(deleted.ok, true);
+
+    const replay = await application.execute({
+      command: "record symptom add",
+      input: { ...symptomInput, idempotencyKey: "replay-after-delete" },
+      sessionToken: tokenA
+    });
+    assert.equal(replay.ok, false);
+    if (!replay.ok) {
+      assert.equal(replay.error.code, "stale_replay");
+    }
+  } finally {
+    application.close();
+  }
+});
+
+test("未来日期被拒绝，空更新在查找前校验失败", async () => {
+  const { application, tokenA } = await fixture();
+  try {
+    const future = await application.execute({
+      command: "record symptom add",
+      input: {
+        ...symptomInput,
+        localDate: "2099-01-01",
+        idempotencyKey: "future-date"
+      },
+      sessionToken: tokenA
+    });
+    assert.equal(future.ok, false);
+    if (!future.ok) {
+      assert.equal(future.error.code, "validation_failed");
+    }
+
+    const emptySymptomUpdate = await application.execute({
+      command: "record symptom update",
+      input: { id: "no-such-id", expectedRevision: 1 },
+      sessionToken: tokenA
+    });
+    assert.equal(emptySymptomUpdate.ok, false);
+    if (!emptySymptomUpdate.ok) {
+      assert.equal(emptySymptomUpdate.error.code, "validation_failed");
+    }
+
+    const emptyExposureUpdate = await application.execute({
+      command: "record exposure update",
+      input: { id: "no-such-id", expectedRevision: 1 },
+      sessionToken: tokenA
+    });
+    assert.equal(emptyExposureUpdate.ok, false);
+    if (!emptyExposureUpdate.ok) {
+      assert.equal(emptyExposureUpdate.error.code, "validation_failed");
+    }
+
+    const emptyProfileUpdate = await application.execute({
+      command: "record profile update",
+      input: { expectedRevision: 0 },
+      sessionToken: tokenA
+    });
+    assert.equal(emptyProfileUpdate.ok, false);
+    if (!emptyProfileUpdate.ok) {
+      assert.equal(emptyProfileUpdate.error.code, "validation_failed");
     }
   } finally {
     application.close();

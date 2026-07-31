@@ -136,6 +136,23 @@ export function optionalLocalDate(
   return localDate(input, key);
 }
 
+/** 本地日期不能晚于 today（YYYY-MM-DD），避免年份笔误长期污染概览投影。 */
+export function localDateNotAfterToday(
+  input: Record<string, unknown>,
+  key: string,
+  today: string
+): string {
+  const value = localDate(input, key);
+  if (value > today) {
+    throw new DomainError(
+      "validation_failed",
+      `${key} 不能晚于今天`,
+      { details: { field: key, today } }
+    );
+  }
+  return value;
+}
+
 export function monthString(input: Record<string, unknown>, key: string): string {
   const value = requiredString(input, key);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(value)) {

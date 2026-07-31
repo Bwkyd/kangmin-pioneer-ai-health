@@ -51,6 +51,7 @@ const NUMBER_OPTIONS = new Set([
 
 const OPTION_NAMES: Record<string, string> = {
   "--local-date": "localDate",
+  "--date": "localDate",
   "--nasal-congestion": "nasalCongestion",
   "--nasal-itching": "nasalItching",
   "--sneezing": "sneezing",
@@ -158,6 +159,10 @@ function parse(argv: string[]): ParsedCommand {
     const value = optionTokens[index + 1];
     if (key === undefined || value === undefined) {
       input.__parseError = `无效或缺少值的参数：${token}`;
+      break;
+    }
+    if (value.startsWith("--")) {
+      input.__parseError = `${token} 的值不能以 -- 开头：${value}`;
       break;
     }
 

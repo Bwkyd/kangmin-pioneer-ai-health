@@ -15,6 +15,8 @@ export class KangminDatabase {
       this.connection = new DatabaseSync(path);
       this.connection.exec("PRAGMA foreign_keys = ON");
       this.connection.exec("PRAGMA journal_mode = WAL");
+      // 跨进程并发写时等待锁而非立即失败；见 transaction() 的 BUSY 映射。
+      this.connection.exec("PRAGMA busy_timeout = 3000");
       this.migrate();
     } catch (error) {
       throw new DomainError(
@@ -30,7 +32,7 @@ export class KangminDatabase {
   }
 
   transaction<T>(operation: () => T): T {
-    this.connection.exec("BEGIN IMMEDIATE");
+    this.beginImmediate();
     try {
       const result = operation();
       this.connection.exec("COMMIT");
@@ -41,7 +43,38 @@ export class KangminDatabase {
       } catch {
         // Preserve the original domain/storage failure.
       }
+      if (String(error).includes("database is locked")) {
+        // 跨进程瞬时锁争用：可重试，不应归一化为内部错误。
+        throw new DomainError(
+          "storage_unavailable",
+          "健康记录存储正被其他进程占用，请稍后重试",
+          { retryable: true, cause: error }
+        );
+      }
       throw error;
+    }
+  }
+
+  /**
+   * SQLite 文档规定：BEGIN IMMEDIATE 在数据库被占用时立即返回 SQLITE_BUSY，
+   * 不经过 busy handler，因此 PRAGMA busy_timeout 对 BEGIN 本身无效。
+   * 这里做有限重试（约 3 秒）以容忍跨进程瞬时写锁，超时后由 transaction() 映射为可重试错误。
+   */
+  private beginImmediate(): void {
+    const deadline = Date.now() + 3000;
+    for (;;) {
+      try {
+        this.connection.exec("BEGIN IMMEDIATE");
+        return;
+      } catch (error) {
+        if (
+          !String(error).includes("database is locked") ||
+          Date.now() >= deadline
+        ) {
+          throw error;
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      }
     }
   }
 

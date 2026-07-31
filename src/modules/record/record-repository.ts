@@ -17,6 +17,7 @@ export type CreateSymptomRecordOutcome =
   | { kind: "created"; record: SymptomRecord }
   | { kind: "replayed"; record: SymptomRecord }
   | { kind: "idempotency_conflict" }
+  | { kind: "stale_replay" }
   | { kind: "date_conflict" };
 
 export interface UpdateSymptomRecordInput {
@@ -71,6 +72,7 @@ export type CreateExposureRecordOutcome =
   | { kind: "created"; record: ExposureRecord }
   | { kind: "replayed"; record: ExposureRecord }
   | { kind: "idempotency_conflict" }
+  | { kind: "stale_replay" }
   | { kind: "date_conflict" };
 
 export interface UpdateExposureRecordInput {
@@ -98,7 +100,8 @@ export interface CreateMedicationRecordInput {
 export type CreateMedicationRecordOutcome =
   | { kind: "created"; record: MedicationRecord }
   | { kind: "replayed"; record: MedicationRecord }
-  | { kind: "idempotency_conflict" };
+  | { kind: "idempotency_conflict" }
+  | { kind: "stale_replay" };
 
 export interface UpdateMedicationRecordInput {
   patientId: string;
@@ -194,6 +197,6 @@ export interface RecordRepository {
   ): Promise<DeleteRecordOutcome>;
 
   readOverview(patientId: string, monthPrefix: string): Promise<OverviewSourceData>;
-  readMonth(patientId: string, monthStart: string, monthEnd: string): Promise<MonthSourceData>;
+  readMonth(patientId: string, month: string): Promise<MonthSourceData>;
   readTrend(patientId: string, from: string, to: string): Promise<TrendSourceData>;
 }

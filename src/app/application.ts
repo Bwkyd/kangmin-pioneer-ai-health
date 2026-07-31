@@ -7,6 +7,7 @@ import {
 import {
   integerInRange,
   localDate,
+  localDateNotAfterToday,
   monthString,
   optionalIntegerInRange,
   optionalLocalDate,
@@ -88,7 +89,11 @@ export class KangminApplication {
           return success(
             command,
             await this.records.createSymptom(patientId, {
-              localDate: localDate(input, "localDate"),
+              localDate: localDateNotAfterToday(
+                input,
+                "localDate",
+                localToday()
+              ),
               nasalCongestion: integerInRange(input, "nasalCongestion", 0, 3),
               nasalItching: integerInRange(input, "nasalItching", 0, 3),
               sneezing: integerInRange(input, "sneezing", 0, 3),
@@ -128,19 +133,6 @@ export class KangminApplication {
             runnyNose: optionalIntegerInRange(input, "runnyNose", 0, 3),
             notes: optionalString(input, "notes")
           };
-
-          if (
-            update.nasalCongestion === undefined &&
-            update.nasalItching === undefined &&
-            update.sneezing === undefined &&
-            update.runnyNose === undefined &&
-            update.notes === undefined
-          ) {
-            throw new DomainError(
-              "validation_failed",
-              "至少提供一个需要更新的字段"
-            );
-          }
 
           return success(
             command,
@@ -183,21 +175,6 @@ export class KangminApplication {
             notes: optionalString(input, "notes")
           };
 
-          if (
-            update.displayName === undefined &&
-            update.birthDate === undefined &&
-            update.sex === undefined &&
-            update.allergyHistory === undefined &&
-            update.knownAllergies === undefined &&
-            update.commonTriggers === undefined &&
-            update.notes === undefined
-          ) {
-            throw new DomainError(
-              "validation_failed",
-              "至少提供一个需要更新的字段"
-            );
-          }
-
           return success(
             command,
             await this.records.updateProfile(patientId, update),
@@ -209,7 +186,11 @@ export class KangminApplication {
           return success(
             command,
             await this.records.createExposure(patientId, {
-              localDate: localDate(input, "localDate"),
+              localDate: localDateNotAfterToday(
+                input,
+                "localDate",
+                localToday()
+              ),
               factors: requiredStringArray(input, "factors"),
               otherDescription:
                 optionalString(input, "otherDescription") ?? null,
@@ -263,7 +244,11 @@ export class KangminApplication {
           return success(
             command,
             await this.records.createMedication(patientId, {
-              localDate: localDate(input, "localDate"),
+              localDate: localDateNotAfterToday(
+                input,
+                "localDate",
+                localToday()
+              ),
               medicationName: requiredString(input, "medicationName"),
               dosage: optionalString(input, "dosage") ?? null,
               actualUse: optionalString(input, "actualUse") ?? null,
