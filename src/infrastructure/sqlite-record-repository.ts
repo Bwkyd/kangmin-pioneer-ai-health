@@ -646,7 +646,7 @@ export class SqliteRecordRepository implements RecordRepository {
     patientId: string,
     monthPrefix: string
   ): Promise<OverviewSourceData> {
-    return this.database.transaction(() => {
+    return this.database.readOnly(() => {
       const symptomDates = (
         this.database.connection
           .prepare(`
@@ -685,7 +685,7 @@ export class SqliteRecordRepository implements RecordRepository {
     patientId: string,
     month: string
   ): Promise<MonthSourceData> {
-    return this.database.transaction(() => {
+    return this.database.readOnly(() => {
       const symptoms = this.projectionRowsInMonth(
         "symptom_records",
         patientId,
@@ -710,7 +710,7 @@ export class SqliteRecordRepository implements RecordRepository {
     from: string,
     to: string
   ): Promise<TrendSourceData> {
-    return this.database.transaction(() => {
+    return this.database.readOnly(() => {
       return {
         items: this.projectionRows("symptom_records", patientId, from, to)
       };

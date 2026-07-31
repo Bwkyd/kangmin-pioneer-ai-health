@@ -56,6 +56,26 @@ export class KangminDatabase {
   }
 
   /**
+   * 只读事务使用 BEGIN DEFERRED：WAL 模式下不获取任何锁，
+   * 多个并发读取互不阻塞，也不会被写事务持锁拖死。
+   */
+  readOnly<T>(operation: () => T): T {
+    this.connection.exec("BEGIN");
+    try {
+      const result = operation();
+      this.connection.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        this.connection.exec("ROLLBACK");
+      } catch {
+        // Preserve the original domain/storage failure.
+      }
+      throw error;
+    }
+  }
+
+  /**
    * SQLite 文档规定：BEGIN IMMEDIATE 在数据库被占用时立即返回 SQLITE_BUSY，
    * 不经过 busy handler，因此 PRAGMA busy_timeout 对 BEGIN 本身无效。
    * 这里做有限重试（约 3 秒）以容忍跨进程瞬时写锁；
