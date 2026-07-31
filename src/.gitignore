@@ -5,3 +5,4 @@ node_modules/
 *.sqlite-shm
 *.sqlite-wal
 node_modules
+*.credentials.json

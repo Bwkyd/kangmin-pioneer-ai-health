@@ -123,7 +123,8 @@ export class KangminAdminApplication {
           command,
           await this.auth.login(
             requiredString(input, "username"),
-            typeof input.password === "string" ? input.password : ""
+            typeof input.password === "string" ? input.password : "",
+            request.requestId
           ),
           request.requestId
         );
@@ -139,11 +140,15 @@ export class KangminAdminApplication {
         const identity = await this.tryResolveAdmin(request.adminToken);
         return success(
           command,
-          await this.auth.addAdmin(identity, {
-            username: requiredString(input, "username"),
-            password: typeof input.password === "string" ? input.password : "",
-            role: requiredString(input, "role")
-          }),
+          await this.auth.addAdmin(
+            identity,
+            {
+              username: requiredString(input, "username"),
+              password: typeof input.password === "string" ? input.password : "",
+              role: requiredString(input, "role")
+            },
+            request.requestId
+          ),
           request.requestId
         );
       }
@@ -183,7 +188,11 @@ export class KangminAdminApplication {
           requireOwner(identity);
           return success(
             command,
-            await this.auth.enableAdmin(requiredString(input, "id"), adminId),
+            await this.auth.enableAdmin(
+              requiredString(input, "id"),
+              adminId,
+              request.requestId
+            ),
             request.requestId
           );
         case "auth admins disable":
@@ -191,7 +200,11 @@ export class KangminAdminApplication {
           requireConfirmation(input);
           return success(
             command,
-            await this.auth.disableAdmin(requiredString(input, "id"), adminId),
+            await this.auth.disableAdmin(
+              requiredString(input, "id"),
+              adminId,
+              request.requestId
+            ),
             request.requestId
           );
 
@@ -253,12 +266,14 @@ export class KangminAdminApplication {
               ? await this.content.unpublish(
                   adminId,
                   requiredString(input, "id"),
-                  positiveInteger(input, "expectedRevision")
+                  positiveInteger(input, "expectedRevision"),
+                  request.requestId
                 )
               : await this.content.publish(
                   adminId,
                   requiredString(input, "id"),
-                  positiveInteger(input, "expectedRevision")
+                  positiveInteger(input, "expectedRevision"),
+                  request.requestId
                 ),
             request.requestId
           );
@@ -321,12 +336,14 @@ export class KangminAdminApplication {
               ? await this.content.unpublishVideo(
                   adminId,
                   requiredString(input, "id"),
-                  positiveInteger(input, "expectedRevision")
+                  positiveInteger(input, "expectedRevision"),
+                  request.requestId
                 )
               : await this.content.publishVideo(
                   adminId,
                   requiredString(input, "id"),
-                  positiveInteger(input, "expectedRevision")
+                  positiveInteger(input, "expectedRevision"),
+                  request.requestId
                 ),
             request.requestId
           );
@@ -463,12 +480,14 @@ export class KangminAdminApplication {
               ? await this.aux.unpublishMessage(
                   adminId,
                   requiredString(input, "id"),
-                  positiveInteger(input, "expectedRevision")
+                  positiveInteger(input, "expectedRevision"),
+                  request.requestId
                 )
               : await this.aux.publishMessage(
                   adminId,
                   requiredString(input, "id"),
-                  positiveInteger(input, "expectedRevision")
+                  positiveInteger(input, "expectedRevision"),
+                  request.requestId
                 ),
             request.requestId
           );
@@ -511,7 +530,8 @@ export class KangminAdminApplication {
             command,
             await this.agent.enableKnowledge(
               adminId,
-              requiredString(input, "id")
+              requiredString(input, "id"),
+              request.requestId
             ),
             request.requestId
           );
@@ -521,7 +541,8 @@ export class KangminAdminApplication {
             command,
             await this.agent.disableKnowledge(
               adminId,
-              requiredString(input, "id")
+              requiredString(input, "id"),
+              request.requestId
             ),
             request.requestId
           );
@@ -585,7 +606,8 @@ export class KangminAdminApplication {
             await this.agent.enablePlan(
               adminId,
               requiredString(input, "id"),
-              positiveInteger(input, "expectedRevision")
+              positiveInteger(input, "expectedRevision"),
+              request.requestId
             ),
             request.requestId
           );
@@ -596,7 +618,8 @@ export class KangminAdminApplication {
             await this.agent.disablePlan(
               adminId,
               requiredString(input, "id"),
-              positiveInteger(input, "expectedRevision")
+              positiveInteger(input, "expectedRevision"),
+              request.requestId
             ),
             request.requestId
           );
@@ -665,14 +688,23 @@ export class KangminAdminApplication {
           requireOwner(identity);
           return success(
             command,
-            await this.users.sessions(adminId, requiredString(input, "id")),
+            await this.users.sessions(
+              adminId,
+              requiredString(input, "id"),
+              request.requestId
+            ),
             request.requestId
           );
         case "users records":
           requireOwner(identity);
           return success(
             command,
-            await this.users.records(adminId, requiredString(input, "id"), opt(input, "type")),
+            await this.users.records(
+              adminId,
+              requiredString(input, "id"),
+              opt(input, "type"),
+              request.requestId
+            ),
             request.requestId
           );
 

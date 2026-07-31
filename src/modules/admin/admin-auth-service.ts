@@ -5,7 +5,8 @@ import {
   hashPassword,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
-  verifyPassword
+  verifyPassword,
+  verifyPasswordWithDummy
 } from "../../kernel/credentials.js";
 import { generateToken, hashToken } from "../../kernel/session-tokens.js";
 import type { AuditPort } from "../system/audit-ports.js";
@@ -87,7 +88,8 @@ export class AdminAuthService {
    */
   async addAdmin(
     identity: AdminIdentity | null,
-    input: { username: string; password: string; role: string }
+    input: { username: string; password: string; role: string },
+    requestId?: string
   ): Promise<AdminAccountView> {
     const username = input.username.trim();
     if (!USERNAME_PATTERN.test(username)) {
@@ -148,19 +150,32 @@ export class AdminAuthService {
       action: "admin.create",
       entityType: "admin_account",
       entityId: created.id,
+      requestId,
       details: { role: created.role }
     });
     return viewOf(created);
   }
 
   /** 登录失败统一 authentication_required，不泄露账号是否存在。 */
-  async login(username: string, password: string): Promise<LoginResult> {
+  async login(
+    username: string,
+    password: string,
+    requestId?: string
+  ): Promise<LoginResult> {
     const account = await this.accounts.findByUsername(username.trim());
-    const valid =
+    let passwordMatches = false;
+    if (
       account !== null &&
-      !account.passwordHash.startsWith(DEV_PLACEHOLDER_PREFIX) &&
-      (await verifyPassword(password, account.passwordHash));
-    if (account === null || !valid) {
+      !account.passwordHash.startsWith(DEV_PLACEHOLDER_PREFIX)
+    ) {
+      passwordMatches = await verifyPassword(password, account.passwordHash);
+    } else if (account === null) {
+      // 计时侧信道（评审 P2）：账号不存在也跑一次与真实路径相同参数的
+      // scrypt，使"账号不存在"与"密码错误"耗时相近、不可枚举。
+      // 不测时序（不稳定），此路径通过代码审查保证仍调用 verify。
+      await verifyPasswordWithDummy(password);
+    }
+    if (account === null || !passwordMatches) {
       // 失败审计（actor 为尝试登录的用户名；账号不存在时以用户名作实体）。
       await this.audit.record({
         actorKind: "admin",
@@ -168,17 +183,22 @@ export class AdminAuthService {
         action: "admin.login_failed",
         entityType: "admin_account",
         entityId: account?.id ?? username.trim(),
+        requestId,
         details: { reason: "invalid_credentials" }
       });
       throw new DomainError("authentication_required", "账号或密码错误");
     }
     if (account.status !== "active") {
+      // 决策记录（评审 P2）：管理端保留"账号已停用"提示——停用状态对
+      // 管理员排查有用，管理端是内部工具、账号枚举风险低，因此只修
+      // 登录计时侧信道（账号不存在短路），不改动停用状态提示文案。
       await this.audit.record({
         actorKind: "admin",
         actorId: account.id,
         action: "admin.login_failed",
         entityType: "admin_account",
         entityId: account.id,
+        requestId,
         details: { reason: "disabled" }
       });
       throw new DomainError("authentication_required", "管理员账号已停用");
@@ -200,6 +220,7 @@ export class AdminAuthService {
       action: "admin.login",
       entityType: "admin_account",
       entityId: account.id,
+      requestId,
       details: {}
     });
     return {
@@ -253,7 +274,11 @@ export class AdminAuthService {
   }
 
   /** 启用管理员：actorId 为当前操作者（由接口层传入），entityId 为目标。 */
-  async enableAdmin(id: string, actorId: string): Promise<AdminAccountView> {
+  async enableAdmin(
+    id: string,
+    actorId: string,
+    requestId?: string
+  ): Promise<AdminAccountView> {
     const account = await this.accounts.findById(id);
     if (account === null) {
       throw new DomainError("resource_not_found", "管理员不存在");
@@ -276,13 +301,18 @@ export class AdminAuthService {
       action: "admin.enable",
       entityType: "admin_account",
       entityId: id,
+      requestId,
       details: { role: account.role }
     });
     return viewOf(updated ?? account);
   }
 
   /** 停用管理员：同事务撤销其全部会话；最后一个活跃 owner 不可停用。 */
-  async disableAdmin(id: string, actorId: string): Promise<AdminAccountView> {
+  async disableAdmin(
+    id: string,
+    actorId: string,
+    requestId?: string
+  ): Promise<AdminAccountView> {
     const account = await this.accounts.findById(id);
     if (account === null) {
       throw new DomainError("resource_not_found", "管理员不存在");
@@ -311,6 +341,7 @@ export class AdminAuthService {
       action: "admin.disable",
       entityType: "admin_account",
       entityId: id,
+      requestId,
       details: { role: account.role }
     });
     return viewOf({ ...account, status: "disabled", updatedAt: timestamp });

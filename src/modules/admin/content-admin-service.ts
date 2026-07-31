@@ -108,17 +108,19 @@ export class ContentAdminService {
   async publish(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AdminContentItem> {
-    return this.publishItem(adminId, "article", id, expectedRevision);
+    return this.publishItem(adminId, "article", id, expectedRevision, requestId);
   }
 
   async unpublish(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AdminContentItem> {
-    return this.unpublishItem(adminId, "article", id, expectedRevision);
+    return this.unpublishItem(adminId, "article", id, expectedRevision, requestId);
   }
 
   // ==== 视频 ====
@@ -178,17 +180,19 @@ export class ContentAdminService {
   async publishVideo(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AdminContentItem> {
-    return this.publishItem(adminId, "video", id, expectedRevision);
+    return this.publishItem(adminId, "video", id, expectedRevision, requestId);
   }
 
   async unpublishVideo(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AdminContentItem> {
-    return this.unpublishItem(adminId, "video", id, expectedRevision);
+    return this.unpublishItem(adminId, "video", id, expectedRevision, requestId);
   }
 
   // ==== 内部 ====
@@ -260,7 +264,8 @@ export class ContentAdminService {
     adminId: string,
     kind: ContentItemKind,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AdminContentItem> {
     const current =
       kind === "article" ? await this.get(id) : await this.getVideo(id);
@@ -297,6 +302,7 @@ export class ContentAdminService {
       entityType: "content_item",
       entityId: id,
       entityRevision: published.revision,
+      requestId,
       details: { status: "published" }
     });
     return published;
@@ -306,7 +312,8 @@ export class ContentAdminService {
     adminId: string,
     kind: ContentItemKind,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AdminContentItem> {
     const current =
       kind === "article" ? await this.get(id) : await this.getVideo(id);
@@ -329,6 +336,7 @@ export class ContentAdminService {
       entityType: "content_item",
       entityId: id,
       entityRevision: unpublished.revision,
+      requestId,
       details: { status: "unpublished" }
     });
     return unpublished;

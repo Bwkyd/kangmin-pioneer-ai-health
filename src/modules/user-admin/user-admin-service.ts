@@ -88,7 +88,11 @@ export class UserAdminService {
     };
   }
 
-  async sessions(adminId: string, id: string): Promise<{ items: PatientSessionView[] }> {
+  async sessions(
+    adminId: string,
+    id: string,
+    requestId?: string
+  ): Promise<{ items: PatientSessionView[] }> {
     await this.requireUser(id);
     const rows = await this.repository.listSessions(id, SESSION_LIMIT);
     await this.audit.record({
@@ -97,6 +101,7 @@ export class UserAdminService {
       action: "users.sessions.read",
       entityType: "patient",
       entityId: id,
+      requestId,
       details: { sessionCount: rows.length }
     });
     return {
@@ -109,7 +114,12 @@ export class UserAdminService {
     };
   }
 
-  async records(adminId: string, id: string, type?: string): Promise<UserRecordsView> {
+  async records(
+    adminId: string,
+    id: string,
+    type?: string,
+    requestId?: string
+  ): Promise<UserRecordsView> {
     await this.requireUser(id);
     const recordType = this.recordTypeOf(type);
     let items: Array<SymptomRecordView | ExposureRecordView | MedicationRecordView>;
@@ -146,6 +156,7 @@ export class UserAdminService {
       action: "users.records.read",
       entityType: "patient",
       entityId: id,
+      requestId,
       details: { recordType, itemCount: items.length }
     });
     return { userId: id, type: recordType, items };

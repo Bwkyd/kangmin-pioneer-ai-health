@@ -166,6 +166,16 @@ export class ConversationService {
       );
     }
 
+    // 决策序号语义（评审 P2 核实）：decision_sequence 是"本会话第 N 条
+    // 决策凭证"（每会话从 1 连续递增，UNIQUE(session_id, decision_sequence)），
+    // 与 agent_messages.sequence（消息流水号）相互独立——两者曾共用
+    // session.lastSequence 计数，导致每轮 user+assistant 两条消息后
+    // decision_sequence 出现 1、4、6…空洞（被消息序号吃掉）。现改为
+    // 独立计数（lastDecision.decisionSequence + 1）：新会话从 1 连续
+    // 递增；对修复前已存在的会话（历史序号可能有空洞）则基于最大值
+    // 续号，避免与新序号撞 UNIQUE(session_id, decision_sequence)。
+    // commitTurn 受 session revision CAS 保护，并发轮次在提交时被拒绝，
+    // 读到的 decisions 与 revision 一致。
     const decisions = await this.repository.listDecisions(session.id);
     const lastDecision = decisions[decisions.length - 1] ?? null;
     const lastQuestions: NextQuestion[] =
@@ -300,7 +310,9 @@ export class ConversationService {
     const decision: DecisionRow = {
       id: decisionId,
       sessionId: session.id,
-      decisionSequence: session.lastSequence + 1,
+      // 独立决策计数：见上方"决策序号语义"注释（不再与消息序列混用；
+      // listDecisions 按 decision_sequence ASC 排序，末条即最大值）。
+      decisionSequence: (lastDecision?.decisionSequence ?? 0) + 1,
       sessionRevision: session.revision,
       inputSnapshotEncrypted: snapshotEncrypted,
       inputSnapshotHash: sha256(snapshotJson),

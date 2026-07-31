@@ -119,6 +119,40 @@ test("未登录一次性体验：匿名对话可进行但不保存、不可列�
   }
 });
 
+test("决策序号每会话独立从 1 连续递增，不与消息序号混用（评审 P2）", async () => {
+  const { application } = await fixture();
+  try {
+    const token =
+      (await application.sessions.createDevelopmentSession("conv-seq")).token;
+    const first = await exec(application, { message: "我最近鼻塞" }, token);
+    const second = await exec(
+      application,
+      { message: "急救：否", conversationId: first.conversationId },
+      token
+    );
+    assert.equal(second.conversationId, first.conversationId);
+    assert.ok(second.message !== null);
+
+    // 两轮共产生两条决策（消息流水为 user/assistant ×2 = 1..4，
+    // 曾因共用计数器出现决策序号 1、4 空洞；语义为"第 N 条决策"，
+    // 必须连续 1、2）。
+    const show = dataOf<{
+      decisionCount: number;
+      lastDecision: { decisionSequence: number };
+    }>(
+      await application.execute({
+        command: "agent conversations show",
+        input: { id: first.conversationId },
+        sessionToken: token
+      })
+    );
+    assert.equal(show.decisionCount, 2);
+    assert.equal(show.lastDecision.decisionSequence, 2);
+  } finally {
+    application.close();
+  }
+});
+
 test("匿名会话登录后必须再次确认保存，不能自动绑定", async () => {
   const { application } = await fixture();
   try {

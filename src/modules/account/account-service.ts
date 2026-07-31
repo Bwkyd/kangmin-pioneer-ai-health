@@ -5,7 +5,8 @@ import {
   hashPassword,
   PASSWORD_MAX_LENGTH,
   PASSWORD_MIN_LENGTH,
-  verifyPassword
+  verifyPassword,
+  verifyPasswordWithDummy
 } from "../../kernel/credentials.js";
 import type {
   AccountSnapshot,
@@ -236,6 +237,10 @@ export class AccountService {
       hashUsername(input.username)
     );
     if (account === null) {
+      // 计时侧信道（评审 P2）：账号不存在也跑一次与真实路径相同参数的
+      // scrypt，使"账号不存在"与"密码错误"耗时相近、不可枚举。
+      // 不测时序（不稳定），此路径通过代码审查保证仍调用 verify。
+      await verifyPasswordWithDummy(password);
       throw new DomainError("authentication_required", LOGIN_FAILURE_MESSAGE);
     }
     const passwordMatches = await verifyPassword(

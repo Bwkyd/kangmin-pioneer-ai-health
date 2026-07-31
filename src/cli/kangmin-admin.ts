@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
@@ -439,6 +439,10 @@ function writeCredentials(databasePath: string, credentials: Credentials): void 
   const path = credentialsPath(databasePath);
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(path, `${JSON.stringify(credentials)}\n`, { mode: 0o600 });
+  // 评审 P2：writeFileSync 的 mode 只在新建时生效，已存在的凭据文件
+  // 不会被收权——无论新建还是已存在，写入后一律 chmod 0600，
+  // 保证"仅当前用户可读"（凭据含管理员令牌）。
+  chmodSync(path, 0o600);
 }
 
 function clearCredentials(databasePath: string): void {

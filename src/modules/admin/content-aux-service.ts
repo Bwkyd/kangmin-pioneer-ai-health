@@ -400,7 +400,8 @@ export class ContentAuxService {
   async publishMessage(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<ContentMessageRow> {
     const current = await this.getMessage(id);
     if (current.status === "published") {
@@ -425,6 +426,7 @@ export class ContentAuxService {
       entityType: "content_message",
       entityId: id,
       entityRevision: published.revision,
+      requestId,
       details: { title: published.title }
     });
     return published;
@@ -433,7 +435,8 @@ export class ContentAuxService {
   async unpublishMessage(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<ContentMessageRow> {
     const current = await this.getMessage(id);
     if (current.status !== "published") {
@@ -454,6 +457,7 @@ export class ContentAuxService {
       entityType: "content_message",
       entityId: id,
       entityRevision: unpublished.revision,
+      requestId,
       details: { title: unpublished.title }
     });
     return unpublished;

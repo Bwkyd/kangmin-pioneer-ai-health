@@ -46,6 +46,24 @@ export async function hashPassword(password: string): Promise<string> {
   ].join(":");
 }
 
+/** 固定 dummy 盐：只用于账号不存在路径的等耗时校验，永不入库。 */
+const DUMMY_SALT = Buffer.alloc(SCRYPT_SALT_LENGTH, 0);
+
+/**
+ * 防时序枚举（评审 P2）：账号不存在时仍以与真实路径完全相同的
+ * scrypt 参数（复用 hashPassword 常量）跑一次，使"账号不存在"与
+ * "密码错误"两条路径消耗相近时间；固定盐、不读库、不做时序安全
+ * 比较，恒返回 false。
+ */
+export async function verifyPasswordWithDummy(password: string): Promise<false> {
+  await scryptAsync(password, DUMMY_SALT, SCRYPT_KEY_LENGTH, {
+    N: SCRYPT_N,
+    r: SCRYPT_R,
+    p: SCRYPT_P
+  });
+  return false;
+}
+
 /** 校验密码；非本格式（旧格式/占位符）一律不通过，防枚举统一由调用方处理。 */
 export async function verifyPassword(
   password: string,

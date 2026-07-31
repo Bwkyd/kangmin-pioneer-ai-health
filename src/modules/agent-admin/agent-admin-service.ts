@@ -273,7 +273,11 @@ export class AgentAdminService {
     return this.getKnowledge(id);
   }
 
-  async enableKnowledge(adminId: string, id: string): Promise<KnowledgeItem> {
+  async enableKnowledge(
+    adminId: string,
+    id: string,
+    requestId?: string
+  ): Promise<KnowledgeItem> {
     const item = await this.getKnowledge(id);
     if (item.status === "enabled") {
       return item;
@@ -292,12 +296,17 @@ export class AgentAdminService {
       action: "agent.knowledge.enable",
       entityType: "agent_knowledge_item",
       entityId: id,
+      requestId,
       details: { name: updated.name }
     });
     return updated;
   }
 
-  async disableKnowledge(adminId: string, id: string): Promise<KnowledgeItem> {
+  async disableKnowledge(
+    adminId: string,
+    id: string,
+    requestId?: string
+  ): Promise<KnowledgeItem> {
     const item = await this.getKnowledge(id);
     if (item.status !== "enabled") {
       throw new DomainError("validation_failed", "只有已启用知识可以停用");
@@ -310,6 +319,7 @@ export class AgentAdminService {
       action: "agent.knowledge.disable",
       entityType: "agent_knowledge_item",
       entityId: id,
+      requestId,
       details: { name: updated.name }
     });
     return updated;
@@ -449,7 +459,8 @@ export class AgentAdminService {
   async enablePlan(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AgentPlan> {
     const plan = await this.getPlan(id);
     if (plan.status === "enabled") {
@@ -476,6 +487,7 @@ export class AgentAdminService {
       entityType: "agent_plan",
       entityId: id,
       entityRevision: updated.revision,
+      requestId,
       details: { name: updated.name }
     });
     return updated;
@@ -484,7 +496,8 @@ export class AgentAdminService {
   async disablePlan(
     adminId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId?: string
   ): Promise<AgentPlan> {
     const plan = await this.getPlan(id);
     if (plan.status !== "enabled") {
@@ -504,6 +517,7 @@ export class AgentAdminService {
       entityType: "agent_plan",
       entityId: id,
       entityRevision: updated.revision,
+      requestId,
       details: { name: updated.name }
     });
     return updated;

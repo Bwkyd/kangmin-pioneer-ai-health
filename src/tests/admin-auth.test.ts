@@ -25,18 +25,24 @@ function dataOf<T>(result: CommandResult): T {
 function auditRowsOf(
   databasePath: string,
   action: string
-): Array<{ actor_id: string; entity_id: string; details_json: string }> {
+): Array<{
+  actor_id: string;
+  entity_id: string;
+  details_json: string;
+  request_id: string | null;
+}> {
   const database = new KangminDatabase(databasePath);
   try {
     return database.connection
       .prepare(`
-        SELECT actor_id, entity_id, details_json FROM audit_events
+        SELECT actor_id, entity_id, details_json, request_id FROM audit_events
         WHERE action = ? ORDER BY created_at ASC, id ASC
       `)
       .all(action) as unknown as Array<{
       actor_id: string;
       entity_id: string;
       details_json: string;
+      request_id: string | null;
     }>;
   } finally {
     database.close();
@@ -235,17 +241,22 @@ test("owner 创建/停用普通管理员，停用立即撤销会话，普通管�
     assert.equal(disableAudits[0]?.actor_id, ownerLogin.adminId);
     assert.equal(disableAudits[0]?.entity_id, created.id);
 
+    // 评审 P2：enable 带上显式 requestId，审计行必须落 request_id，
+    // 使审计可关联命令回执（此前恒 NULL）。
+    const ENABLE_REQUEST_ID = "req-enable-001";
     dataOf(
       await app.execute({
         command: "auth admins enable",
         adminToken: ownerLogin.token,
-        input: { id: created.id }
+        input: { id: created.id },
+        requestId: ENABLE_REQUEST_ID
       })
     );
     const enableAudits = auditRowsOf(databasePath, "admin.enable");
     assert.equal(enableAudits.length, 1, "应恰好一条 admin.enable 审计");
     assert.equal(enableAudits[0]?.actor_id, ownerLogin.adminId);
     assert.equal(enableAudits[0]?.entity_id, created.id);
+    assert.equal(enableAudits[0]?.request_id, ENABLE_REQUEST_ID);
 
     // 管理员创建与登录审计同样落库（actor=操作者，entity=目标/账号）。
     const createAudits = auditRowsOf(databasePath, "admin.create");
