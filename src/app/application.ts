@@ -17,8 +17,8 @@ import {
   requiredString,
   requiredStringArray
 } from "../kernel/validation.js";
+import { AccountService } from "../modules/account/account-service.js";
 import { SessionService } from "../modules/account/session-service.js";
-import type { SessionRepository } from "../modules/account/session-repository.js";
 import type { ContentReadRepository } from "../modules/browse/content-read-repository.js";
 import { BrowseService } from "../modules/browse/browse-service.js";
 import type { AgentRepository } from "../modules/agent/agent-repository.js";
@@ -59,21 +59,24 @@ export class KangminApplication {
   private readonly records: RecordService;
   private readonly browse: BrowseService;
   private readonly agent: AgentService;
+  private readonly accounts: AccountService;
 
   constructor(
-    sessionRepository: SessionRepository,
+    sessions: SessionService,
     recordRepository: RecordRepository,
     contentReadRepository: ContentReadRepository,
     agentRepository: AgentRepository,
+    accountService: AccountService,
     private readonly closeResources: () => void = () => {}
   ) {
-    this.sessions = new SessionService(sessionRepository);
+    this.sessions = sessions;
     this.records = new RecordService(recordRepository);
     this.browse = new BrowseService(contentReadRepository);
     this.agent = new AgentService(
       agentRepository,
       new RecordSnapshotAdapter(this.records)
     );
+    this.accounts = accountService;
   }
 
   async execute(request: CommandRequest): Promise<CommandResult> {
@@ -83,11 +86,9 @@ export class KangminApplication {
     try {
       this.rejectClientIdentity(input);
 
-      if (command === "account") {
-        throw new DomainError(
-          "capability_unavailable",
-          `${command} 尚未进入本次 MVP`
-        );
+      if (command === "account" || command.startsWith("account ")) {
+        // 必须 await：让 dispatchAccount 的拒绝在 try/catch 内转为 failure 结果。
+        return await this.dispatchAccount(command, input, request);
       }
 
       switch (command) {
@@ -161,7 +162,7 @@ export class KangminApplication {
           }
       }
 
-      const patientId = await this.sessions.resolvePatient(request.sessionToken);
+      const patientId = (await this.sessions.resolvePatient(request.sessionToken)).patientId;
 
       switch (command) {
         case "agent":
@@ -457,6 +458,114 @@ export class KangminApplication {
       }
     } catch (error) {
       return failure(command, error, request.requestId);
+    }
+  }
+
+  /** account 命令组（患者 CLI 设计 §9）：本地账号、会话、资料、同意与隐私。 */
+  private async dispatchAccount(
+    command: string,
+    input: Record<string, unknown>,
+    request: CommandRequest
+  ): Promise<CommandResult> {
+    const { sessionToken } = request;
+    switch (command) {
+      case "account register": {
+        const outcome = await this.accounts.register({
+          username: requiredString(input, "username"),
+          nickname: optionalString(input, "nickname"),
+          password: input.password
+        });
+        return success(command, outcome, request.requestId);
+      }
+      case "account login": {
+        const outcome = await this.accounts.login({
+          username: requiredString(input, "username"),
+          password: input.password
+        });
+        return success(command, outcome, request.requestId);
+      }
+      case "account status":
+        return success(
+          command,
+          await this.accounts.status(sessionToken),
+          request.requestId
+        );
+      case "account logout":
+        return success(
+          command,
+          await this.accounts.logout(sessionToken),
+          request.requestId
+        );
+      case "account profile show": {
+        const patientId = (await this.sessions.resolvePatient(sessionToken)).patientId;
+        return success(
+          command,
+          await this.accounts.profileShow(patientId),
+          request.requestId
+        );
+      }
+      case "account profile update": {
+        const patientId = (await this.sessions.resolvePatient(sessionToken)).patientId;
+        return success(
+          command,
+          await this.accounts.profileUpdate(
+            patientId,
+            optionalString(input, "nickname")
+          ),
+          request.requestId
+        );
+      }
+      case "account consent show": {
+        const patientId = (await this.sessions.resolvePatient(sessionToken)).patientId;
+        return success(
+          command,
+          await this.accounts.consentShow(patientId),
+          request.requestId
+        );
+      }
+      case "account consent update": {
+        const patientId = (await this.sessions.resolvePatient(sessionToken)).patientId;
+        return success(
+          command,
+          await this.accounts.consentUpdate(patientId, {
+            consentType: input.consentType,
+            decision: input.decision,
+            policyVersion: requiredString(input, "policyVersion"),
+            requestId: requiredString(input, "requestId")
+          }),
+          request.requestId
+        );
+      }
+      case "account privacy":
+        return success(
+          command,
+          this.accounts.privacy(),
+          request.requestId
+        );
+      // 患者 CLI 设计 §9.7：范围、保留期限与处理时限需另行确认，
+      // 本版本明确返回未实现，绝不伪造"已删除"。
+      case "account data":
+      case "account data export":
+      case "account data deletion-request":
+      case "account data request-status":
+      case "account deactivate":
+      case "account reminder":
+      case "account reminder show":
+      case "account reminder update":
+      case "account notification":
+      case "account notification list":
+      case "account notification read":
+        throw new DomainError(
+          "capability_unavailable",
+          "数据导出/删除/停用与提醒通知的范围、保留期限和处理时限尚未确认，本版本明确不提供"
+        );
+      default:
+        throw new DomainError(
+          "command_invalid",
+          command === "account"
+            ? "account 需要子命令（register/login/status/logout/profile/consent/privacy/data/deactivate）"
+            : `未知命令：${command}`
+        );
     }
   }
 

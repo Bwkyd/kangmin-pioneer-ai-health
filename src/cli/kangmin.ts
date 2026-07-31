@@ -1,12 +1,13 @@
 #!/usr/bin/env node
 
 import { resolve } from "node:path";
+import { createInterface } from "node:readline";
 
 import { createApplication } from "../app/composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
 import { failure, type CommandResult } from "../kernel/result.js";
 
-const HELP = `抗敏先锋患者 CLI（Agent + Patient Record MVP）
+const HELP = `抗敏先锋患者 CLI（Agent + Record + Browse + Account MVP）
 
 用法：
   kangmin                         启动确定性 Agent 安全会话
@@ -40,8 +41,30 @@ agent 命令：
   agent sessions list
   agent sessions show <session-id>
 
+account 命令：
+  account register --username <用户名> [--nickname <昵称>]
+  account login --username <用户名>
+  account status
+  account logout
+  account profile show
+  account profile update [--nickname <昵称>]
+  account consent show
+  account consent update --type privacy|medical_boundary
+      --decision granted|withdrawn --policy-version <版本> --request-id <ID>
+  account privacy
+  account data export|deletion-request|request-status|deactivate
+      （本版本明确未实现）
+  account reminder|notification
+      （本版本明确未实现）
+
+密码输入：
+  register/login 的密码从 stdin 读取：交互终端隐藏回显；
+  非交互环境通过管道/重定向提供，未提供时命令明确失败且不阻塞等待。
+  密码不会出现在命令行参数、历史或日志中。
+
 当前真实可用：
-  agent 安全会话基础、record 全部命令、browse 已发布文章/视频
+  agent 安全会话基础、record 全部命令、browse 已发布文章/视频、
+  account 注册/登录/状态/退出/资料/同意/隐私。
 
 临床边界：
   当前无获批临床规则和方案，Agent 不输出证型、穴位、疗程或调理方案。
@@ -95,8 +118,33 @@ const OPTION_NAMES: Record<string, string> = {
   "--month": "month",
   "--from": "from",
   "--to": "to",
-  "--yes": "yes"
+  "--yes": "yes",
+  "--username": "username",
+  "--nickname": "nickname",
+  "--type": "consentType",
+  "--consent-type": "consentType",
+  "--decision": "decision",
+  "--policy-version": "policyVersion",
+  "--request-id": "requestId"
 };
+
+/** account 组中带 action 的资源（第三词是动作而非选项）。 */
+const ACCOUNT_RESOURCES_WITH_ACTION = new Set([
+  "profile",
+  "consent",
+  "data",
+  "reminder",
+  "notification"
+]);
+
+/** account 组中第一个位置参数是记录 ID 的命令。 */
+const ACCOUNT_ID_COMMANDS = new Set([
+  "account notification read",
+  "account data request-status"
+]);
+
+/** 密码从 stdin 读取的命令（密码绝不进入 argv）。 */
+const PASSWORD_COMMANDS = new Set(["account register", "account login"]);
 
 interface ParsedCommand {
   command: string;
@@ -145,6 +193,37 @@ function parseOptions(
   }
 }
 
+function parseAccount(filtered: string[], json: boolean): ParsedCommand {
+  const [, resource, maybeAction, positional, ...rest] = filtered;
+  if (resource === undefined) {
+    return { command: "account", input: {}, json, help: false };
+  }
+
+  const withAction = ACCOUNT_RESOURCES_WITH_ACTION.has(resource);
+  const command = withAction
+    ? `account ${resource} ${maybeAction ?? ""}`.trim()
+    : `account ${resource}`;
+  const optionTokens = withAction
+    ? [positional, ...rest]
+    : [maybeAction, positional, ...rest];
+
+  const input: Record<string, unknown> = {};
+  if (
+    ACCOUNT_ID_COMMANDS.has(command) &&
+    optionTokens[0] !== undefined &&
+    optionTokens[0] !== "" &&
+    !optionTokens[0].startsWith("--")
+  ) {
+    input.id = optionTokens[0];
+    optionTokens.shift();
+  }
+  parseOptions(
+    input,
+    optionTokens.filter((value): value is string => value !== undefined)
+  );
+  return { command, input, json, help: false };
+}
+
 function parse(argv: string[]): ParsedCommand {
   const json = argv.includes("--json");
   const filtered = argv.filter((value) => value !== "--json");
@@ -158,6 +237,9 @@ function parse(argv: string[]): ParsedCommand {
   }
 
   const [group, resource, maybeAction, positional, ...rest] = filtered;
+  if (group === "account") {
+    return parseAccount(filtered, json);
+  }
   if (group === "browse") {
     const input: Record<string, unknown> = {};
     if (resource === undefined) {
@@ -277,7 +359,6 @@ function parse(argv: string[]): ParsedCommand {
   }
 
   parseOptions(input, optionTokens);
-
   return { command, input, json, help: false };
 }
 
@@ -291,11 +372,73 @@ function human(result: CommandResult): string {
     "items" in result.data
   ) {
     const items = (result.data as { items: unknown[] }).items;
-    return items.length === 0
-      ? "暂无症状记录"
-      : JSON.stringify(items, null, 2);
+    if (items.length === 0) {
+      return result.command.startsWith("account ")
+        ? "暂无同意记录"
+        : "暂无症状记录";
+    }
+    return JSON.stringify(items, null, 2);
   }
   return JSON.stringify(result.data, null, 2);
+}
+
+/**
+ * 交互终端：隐藏回显的密码提示（输入以 * 回显，提示文本原样输出）。
+ * 密码只经 stdin 进入进程内存，不落 argv、命令历史或日志。
+ */
+function readPasswordFromTty(): Promise<string> {
+  const readline = createInterface({
+    input: process.stdin,
+    output: process.stderr,
+    terminal: true
+  });
+  const output = (readline as unknown as { output: NodeJS.WritableStream })
+    .output;
+  let firstWrite = true;
+  (
+    readline as unknown as {
+      _writeToOutput: (chunk: string) => void;
+    }
+  )._writeToOutput = (chunk: string) => {
+    if (firstWrite) {
+      output.write(chunk);
+      firstWrite = false;
+    } else {
+      output.write("*");
+    }
+  };
+  return new Promise<string>((resolve) => {
+    readline.question("密码（输入不回显）：", (answer) => {
+      output.write("\n");
+      readline.close();
+      resolve(answer);
+    });
+  });
+}
+
+/** 非交互：读取管道/重定向输入的第一行作为密码；无内容返回 undefined。 */
+function readPasswordFromPipe(): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    let data = "";
+    process.stdin.setEncoding("utf8");
+    process.stdin.on("data", (chunk: string) => {
+      data += chunk;
+    });
+    process.stdin.on("end", () => {
+      const firstLine = data.split("\n")[0] ?? "";
+      resolve(firstLine === "" ? undefined : firstLine);
+    });
+    process.stdin.on("error", () => {
+      resolve(undefined);
+    });
+  });
+}
+
+async function readPassword(): Promise<string | undefined> {
+  if (process.stdin.isTTY) {
+    return readPasswordFromTty();
+  }
+  return readPasswordFromPipe();
 }
 
 export async function runCli(
@@ -319,6 +462,15 @@ export async function runCli(
       process.stderr.write(`command_invalid: ${parsed.input.__parseError}\n`);
     }
     return 2;
+  }
+
+  // 密码只从 stdin 读，绝不接受命令行参数；非交互空 stdin 由应用层
+  // 返回 confirmation_required/authentication_required，不阻塞等待。
+  if (PASSWORD_COMMANDS.has(parsed.command)) {
+    const password = await readPassword();
+    if (password !== undefined) {
+      parsed.input.password = password;
+    }
   }
 
   const databasePath = resolve(

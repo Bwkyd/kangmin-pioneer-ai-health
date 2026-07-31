@@ -1,6 +1,8 @@
 import { KangminDatabase } from "./database.js";
 import type {
+  SaveAccountSessionInput,
   SaveDevelopmentSessionInput,
+  SessionClientKind,
   SessionRepository,
   SessionSnapshot
 } from "../modules/account/session-repository.js";
@@ -12,6 +14,17 @@ interface PatientRow {
 interface SessionRow {
   patient_id: string;
   expires_at: string;
+  client_kind: SessionClientKind;
+  revoked_at: string | null;
+}
+
+function toSnapshot(row: SessionRow): SessionSnapshot {
+  return {
+    patientId: row.patient_id,
+    expiresAt: row.expires_at,
+    clientKind: row.client_kind,
+    revokedAt: row.revoked_at
+  };
 }
 
 export class SqliteSessionRepository implements SessionRepository {
@@ -20,15 +33,13 @@ export class SqliteSessionRepository implements SessionRepository {
   async findSession(tokenHash: string): Promise<SessionSnapshot | null> {
     const row = this.database.connection
       .prepare(`
-        SELECT patient_id, expires_at
+        SELECT patient_id, expires_at, client_kind, revoked_at
         FROM patient_sessions
-        WHERE token_hash = ?
+        WHERE token_hash = ? AND revoked_at IS NULL
       `)
       .get(tokenHash) as unknown as SessionRow | undefined;
 
-    return row === undefined
-      ? null
-      : { patientId: row.patient_id, expiresAt: row.expires_at };
+    return row === undefined ? null : toSnapshot(row);
   }
 
   async saveDevelopmentSession(
@@ -68,5 +79,32 @@ export class SqliteSessionRepository implements SessionRepository {
 
       return patient.id;
     });
+  }
+
+  async saveAccountSession(input: SaveAccountSessionInput): Promise<void> {
+    this.database.connection
+      .prepare(`
+        INSERT INTO patient_sessions(
+          token_hash, patient_id, expires_at, created_at, client_kind
+        ) VALUES (?, ?, ?, ?, ?)
+      `)
+      .run(
+        input.tokenHash,
+        input.patientId,
+        input.expiresAt,
+        input.createdAt,
+        input.clientKind
+      );
+  }
+
+  async revokeSession(tokenHash: string): Promise<boolean> {
+    const result = this.database.connection
+      .prepare(`
+        UPDATE patient_sessions
+        SET revoked_at = ?
+        WHERE token_hash = ? AND revoked_at IS NULL
+      `)
+      .run(new Date().toISOString(), tokenHash);
+    return result.changes > 0;
   }
 }
