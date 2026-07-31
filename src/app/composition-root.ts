@@ -15,8 +15,12 @@
 
 import { DomainError } from "../kernel/errors.js";
 import type { EncryptionPort } from "../kernel/encryption.js";
-import { KangminApplication } from "./application.js";
-import { KangminDatabase } from "../infrastructure/database.js";
+import {
+  KangminApplication,
+  type DoctorCheck,
+  type DoctorReport
+} from "./application.js";
+import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
 import {
   AesGcmEncryption,
   parseEncryptionKeys,
@@ -74,6 +78,102 @@ function defaultEnvironmentProvider(): EnvironmentProviderPort {
   return new TestEnvironmentProvider();
 }
 
+/** doctor 只检查连接与配置状态，不修改任何配置。 */
+export function runPatientDoctor(
+  databasePath: string,
+  environment: NodeJS.ProcessEnv
+): DoctorReport {
+  const checks: DoctorCheck[] = [];
+
+  const keys = parseEncryptionKeys(environment.KANGMIN_ENCRYPTION_KEYS);
+  const appEnvironment = environment.KANGMIN_APP_ENV;
+  const plaintextAllowed =
+    appEnvironment === "local" ||
+    appEnvironment === "integration" ||
+    (environment.KANGMIN_ALLOW_DEV_SESSION === "1" &&
+      appEnvironment !== "staging" &&
+      appEnvironment !== "production");
+  if (keys.length > 0) {
+    checks.push({
+      name: "encryption",
+      status: "ok",
+      message: "已配置 AES-256-GCM 加密密钥（KANGMIN_ENCRYPTION_KEYS）"
+    });
+  } else if (plaintextAllowed) {
+    checks.push({
+      name: "encryption",
+      status: "not_configured",
+      message:
+        "未配置加密密钥，使用明文开发降级（仅 local/integration 或显式 KANGMIN_ALLOW_DEV_SESSION=1）"
+    });
+  } else {
+    checks.push({
+      name: "encryption",
+      status: "failed",
+      message:
+        "未配置 KANGMIN_ENCRYPTION_KEYS，生产语义拒绝启动（fail-closed）"
+    });
+  }
+
+  // 密钥缺失时不阻止诊断数据库本身：以明文端口尝试打开，迁移中的
+  // 加密回填在检测到旧明文数据时仍会抛 config_missing（安全优先）。
+  let encryption: EncryptionPort | undefined;
+  try {
+    encryption = resolveEncryption(environment);
+  } catch {
+    encryption = undefined;
+  }
+
+  try {
+    const database = new KangminDatabase(databasePath, encryption);
+    try {
+      const migrations = appliedMigrationVersions(database);
+      checks.push({
+        name: "database",
+        status: migrations.length === 0 ? "failed" : "ok",
+        message:
+          migrations.length === 0
+            ? "数据库没有任何已应用迁移"
+            : `已应用迁移：${migrations.join(", ")}`
+      });
+    } finally {
+      database.close();
+    }
+  } catch (error) {
+    checks.push({
+      name: "database",
+      status: "failed",
+      message:
+        error instanceof Error ? error.message : "健康记录存储不可用"
+    });
+  }
+
+  checks.push({
+    name: "environment-data",
+    status: "not_configured",
+    message: "环境数据接口为测试替身（后续阶段接入真实供应商）"
+  });
+
+  if (environment.KANGMIN_DEEPSEEK_API_KEY) {
+    checks.push({
+      name: "model",
+      status: "ok",
+      message: "已配置模型 API 密钥（KANGMIN_DEEPSEEK_API_KEY）"
+    });
+  } else {
+    checks.push({
+      name: "model",
+      status: "not_configured",
+      message: "未配置模型 API 密钥，自由对话将降级为结构化问答"
+    });
+  }
+
+  return {
+    checks,
+    healthy: checks.every((check) => check.status !== "failed")
+  };
+}
+
 export function createApplication(
   databasePath: string,
   options: ApplicationOptions = {}
@@ -117,7 +217,8 @@ export function createApplication(
     conversations,
     () => {
       database.close();
-    }
+    },
+    () => Promise.resolve(runPatientDoctor(databasePath, environment))
   );
 }
 

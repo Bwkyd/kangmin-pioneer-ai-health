@@ -51,6 +51,19 @@ export interface CommandRequest {
   requestId?: string | undefined;
 }
 
+export interface DoctorCheck {
+  name: string;
+  status: "ok" | "failed" | "not_configured";
+  message: string;
+}
+
+export interface DoctorReport {
+  checks: DoctorCheck[];
+  healthy: boolean;
+}
+
+export type DoctorCheckProvider = () => Promise<DoctorReport>;
+
 function localToday(): string {
   const now = new Date();
   const year = now.getFullYear();
@@ -87,7 +100,11 @@ export class KangminApplication {
     environmentProvider: EnvironmentProviderPort,
     environmentCache: EnvironmentCacheRepository,
     conversations: ConversationService,
-    private readonly closeResources: () => void = () => {}
+    private readonly closeResources: () => void = () => {},
+    private readonly doctorProvider: DoctorCheckProvider = async () => ({
+      checks: [],
+      healthy: true
+    })
   ) {
     this.sessions = sessions;
     this.records = new RecordService(recordRepository);
@@ -110,6 +127,14 @@ export class KangminApplication {
 
     try {
       this.rejectClientIdentity(input);
+
+      if (command === "doctor") {
+        return success(
+          command,
+          await this.doctorProvider(),
+          request.requestId
+        );
+      }
 
       if (command === "account" || command.startsWith("account ")) {
         // 必须 await：让 dispatchAccount 的拒绝在 try/catch 内转为 failure 结果。

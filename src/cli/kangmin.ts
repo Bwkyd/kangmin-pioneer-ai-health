@@ -1,12 +1,25 @@
 #!/usr/bin/env node
 
+import { readFileSync } from "node:fs";
 import { createInterface as createPromptInterface } from "node:readline/promises";
 import { resolve } from "node:path";
 import { createInterface as createPasswordInterface } from "node:readline";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication, runPatientDoctor } from "../app/composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
-import { failure, type CommandResult } from "../kernel/result.js";
+import { failure, success, type CommandResult } from "../kernel/result.js";
+
+/** 与 package.json version 保持同步（主线程集成时统一）。 */
+const VERSION = (() => {
+  try {
+    const manifest = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf8")
+    ) as { version?: unknown };
+    return typeof manifest.version === "string" ? manifest.version : "unknown";
+  } catch {
+    return "unknown";
+  }
+})();
 
 const HELP = `抗敏先锋患者 CLI（Agent + Record + Browse + Account MVP）
 
@@ -16,6 +29,11 @@ const HELP = `抗敏先锋患者 CLI（Agent + Record + Browse + Account MVP）
   kangmin record                  管理自己的健康记录
   kangmin browse                  浏览环境与已发布内容
   kangmin account                 管理账号、授权和设置
+
+辅助命令：
+  kangmin --version               显示版本
+  kangmin doctor                  检查数据库、存储和密钥配置状态
+  kangmin completion zsh          生成 zsh 补全脚本
 
 record 命令：
   record symptom add|list|show|update|delete
@@ -94,6 +112,38 @@ account 命令：
 
 机器输出：
   添加 --json 后 stdout 只输出一个 JSON 对象。
+`;
+
+const ZSH_COMPLETION = `#compdef kangmin
+# 抗敏先锋患者 CLI 补全（静态生成）
+_kangmin() {
+  local -a groups
+  groups=(
+    'agent:确定性安全会话与自由对话'
+    'record:管理自己的健康记录'
+    'browse:浏览环境与已发布内容'
+    'account:管理账号、授权和设置'
+    'help:显示帮助'
+    'doctor:检查服务状态'
+    'completion:生成 zsh 补全脚本'
+  )
+  if (( CURRENT == 2 )); then
+    _describe '命令组' groups
+    return
+  fi
+  local group="\${words[2]}"
+  local -a sub
+  case "\$group" in
+    agent) sub=('start:开始会话' 'exec:非交互对话' 'continue:继续安全会话' 'resume:恢复安全会话' 'sessions:安全会话列表/详情' 'conversations:自由对话列表/详情' 'feedback:对话反馈' 'test:模拟链路') ;;
+    record) sub=('symptom:症状/TNSS 记录' 'profile:健康档案' 'exposure:暴露记录' 'medication:用药记录' 'overview:健康概览' 'calendar:日历' 'trend:趋势') ;;
+    browse) sub=('article:科普文章' 'video:视频内容' 'plan:通用方案' 'search:跨内容搜索' 'environment:环境快照') ;;
+    account) sub=('register:注册' 'login:登录' 'status:登录状态' 'logout:退出' 'profile:资料' 'consent:同意管理' 'privacy:隐私政策') ;;
+  esac
+  if (( CURRENT == 3 )); then
+    _describe '子命令' sub
+  fi
+}
+_kangmin "\$@"
 `;
 
 /** 值为布尔标志、不需要取值的选项。 */
@@ -410,6 +460,10 @@ function parse(argv: string[]): ParsedCommand {
   const help = filtered.includes("--help") || filtered.includes("-h");
   if (help) {
     return { command: "help", input: {}, json, help: true };
+  }
+
+  if (filtered[0] === "--version") {
+    return { command: "__version__", input: {}, json, help: false };
   }
 
   if (filtered.length === 0) {
@@ -796,6 +850,44 @@ export async function runCli(
     return 0;
   }
 
+  // 辅助命令：版本与补全不依赖应用实例，直接输出。
+  if (parsed.command === "__version__") {
+    process.stdout.write(`kangmin ${VERSION}\n`);
+    return 0;
+  }
+  if (parsed.command === "completion") {
+    const result = failure(
+      "completion",
+      new DomainError("command_invalid", "completion 只支持 zsh")
+    );
+    if (parsed.json) {
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    } else {
+      process.stderr.write(`command_invalid: completion 只支持 zsh\n`);
+    }
+    return 2;
+  }
+  if (parsed.command === "completion zsh") {
+    process.stdout.write(ZSH_COMPLETION);
+    return 0;
+  }
+
+  // doctor 不依赖应用实例：即使加密密钥缺失（createApplication 会抛
+  // config_missing）也要输出结构化检查报告，而不是整体启动失败。
+  if (parsed.command === "doctor") {
+    const databasePath = resolve(
+      environment.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
+    );
+    const report = runPatientDoctor(databasePath, environment);
+    const result = success("doctor", report);
+    if (parsed.json) {
+      process.stdout.write(`${JSON.stringify(result)}\n`);
+    } else {
+      process.stdout.write(`${human(result)}\n`);
+    }
+    return report.healthy ? 0 : 6;
+  }
+
   // 裸 kangmin（TTY 交互终端）：启动对话骨架；非 TTY 回退单轮结构化结果。
   if (parsed.interactive === true && !parsed.json && process.stdin.isTTY === true) {
     const databasePath = resolve(
@@ -860,6 +952,10 @@ export async function runCli(
       process.stdout.write(`${human(result)}\n`);
     } else {
       process.stderr.write(`${human(result)}\n`);
+    }
+    if (parsed.command === "doctor" && result.ok) {
+      const report = result.data as { healthy: boolean };
+      return report.healthy ? 0 : 6;
     }
     return result.ok ? 0 : exitCodeForCode(result.error.code);
   } finally {
