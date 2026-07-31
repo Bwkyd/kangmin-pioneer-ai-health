@@ -57,6 +57,32 @@ npm ci
 npm run check
 ```
 
+### 本地管理文章
+
+`kangmin-admin` 与患者 CLI 使用不同的会话和环境变量。当前只允许在
+local/integration 环境建立开发管理员会话：
+
+```bash
+KANGMIN_APP_ENV=local \
+KANGMIN_ALLOW_DEV_ADMIN_SESSION=1 \
+npm run dev:admin-session -- --subject owner-a
+
+export KANGMIN_ADMIN_TOKEN="<opaque admin token>"
+node dist/cli/kangmin-admin.js content article create \
+  --title "换季鼻健康" \
+  --category "鼻健康" \
+  --summary "科普摘要" \
+  --body "已审核科普正文" \
+  --source "已审核来源" \
+  --idempotency-key article-demo-1 \
+  --json
+```
+
+文章创建后是草稿。发布/下架必须提供当前 revision 和 `--yes`；发布后
+患者 Browse 立即可见，下架后列表、搜索和详情立即不可见。
+
+开发管理员会话不是生产认证。生产模式即使设置开关也拒绝创建开发管理员会话。
+
 建立仅限本地开发的测试会话：
 
 ```bash

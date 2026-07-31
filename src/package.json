@@ -7,7 +7,8 @@
     "node": ">=22.13.0"
   },
   "bin": {
-    "kangmin": "./dist/cli/kangmin.js"
+    "kangmin": "./dist/cli/kangmin.js",
+    "kangmin-admin": "./dist/cli/kangmin-admin.js"
   },
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
@@ -16,6 +17,7 @@
     "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",
     "check": "npm run typecheck && npm run lint && npm test",
     "dev:session": "npm run build --silent && node dist/dev/create-session.js",
+    "dev:admin-session": "npm run build --silent && node dist/dev/create-admin-session.js",
     "start:http": "npm run build --silent && node dist/http/server.js"
   },
   "devDependencies": {
