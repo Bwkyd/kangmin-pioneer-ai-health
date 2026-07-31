@@ -8,11 +8,18 @@ export interface ResultMeta {
   timestamp: string;
 }
 
+/** 操作凭证：一次命令执行唯一，供审计、幂等重放和排障关联。 */
+export interface Receipt {
+  operationId: string;
+  requestId: string;
+}
+
 export interface SuccessResult<T> {
   ok: true;
   command: string;
   status: "completed";
   data: T;
+  receipt: Receipt;
   meta: ResultMeta;
 }
 
@@ -26,6 +33,7 @@ export interface FailureResult {
     retryable: boolean;
     details?: Record<string, unknown>;
   };
+  receipt: Receipt;
   meta: ResultMeta;
 }
 
@@ -39,6 +47,13 @@ function meta(requestId: string = randomUUID()): ResultMeta {
   };
 }
 
+function receipt(requestId: string = randomUUID()): Receipt {
+  return {
+    operationId: randomUUID(),
+    requestId
+  };
+}
+
 export function success<T>(
   command: string,
   data: T,
@@ -49,6 +64,7 @@ export function success<T>(
     command,
     status: "completed",
     data,
+    receipt: receipt(requestId),
     meta: meta(requestId)
   };
 }
@@ -71,6 +87,7 @@ export function failure(
       retryable: error.retryable,
       ...details
     },
+    receipt: receipt(requestId),
     meta: meta(requestId)
   };
 }
