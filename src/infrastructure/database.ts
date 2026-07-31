@@ -215,6 +215,29 @@ export class KangminDatabase {
 
       CREATE INDEX IF NOT EXISTS content_items_public_kind_updated
       ON content_items(kind, status, patient_visible, updated_at DESC);
+
+      CREATE TABLE IF NOT EXISTS admins (
+        id TEXT PRIMARY KEY, development_subject TEXT UNIQUE,
+        role TEXT NOT NULL CHECK(role IN ('owner', 'admin')),
+        enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)), created_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS admin_sessions (
+        token_hash TEXT PRIMARY KEY, admin_id TEXT NOT NULL REFERENCES admins(id),
+        expires_at TEXT NOT NULL, created_at TEXT NOT NULL
+      ) STRICT;
+      CREATE TABLE IF NOT EXISTS admin_idempotency (
+        admin_id TEXT NOT NULL REFERENCES admins(id), scope TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL,
+        result_json TEXT NOT NULL, created_at TEXT NOT NULL,
+        PRIMARY KEY(admin_id, scope, idempotency_key)
+      ) STRICT;
     `);
+    const columns = this.connection.prepare("PRAGMA table_info(content_items)").all() as unknown as Array<{ name: string }>;
+    if (!columns.some((column) => column.name === "revision")) {
+      this.connection.exec("ALTER TABLE content_items ADD COLUMN revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1)");
+    }
+    if (!columns.some((column) => column.name === "created_by")) {
+      this.connection.exec("ALTER TABLE content_items ADD COLUMN created_by TEXT");
+    }
   }
 }
