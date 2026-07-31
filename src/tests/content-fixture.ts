@@ -5,7 +5,7 @@ interface FixtureContent {
   kind: "article" | "video";
   title: string;
   category: string;
-  status: "draft" | "review" | "published" | "withdrawn" | "failed";
+  status: "draft" | "review" | "published" | "unpublished" | "failed";
   patientVisible: number;
   versionValid: number;
   mediaAvailable: number;
@@ -33,11 +33,11 @@ const ITEMS: FixtureContent[] = [
     mediaAvailable: 1
   },
   {
-    id: "article-withdrawn",
+    id: "article-unpublished",
     kind: "article",
     title: "已下架内容",
     category: "旧版",
-    status: "withdrawn",
+    status: "unpublished",
     patientVisible: 1,
     versionValid: 1,
     mediaAvailable: 1

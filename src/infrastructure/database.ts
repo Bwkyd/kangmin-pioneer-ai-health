@@ -205,7 +205,7 @@ export class KangminDatabase {
         cover_url TEXT,
         media_url TEXT,
         status TEXT NOT NULL
-          CHECK(status IN ('draft', 'review', 'published', 'withdrawn', 'failed')),
+          CHECK(status IN ('draft', 'review', 'published', 'unpublished', 'failed')),
         patient_visible INTEGER NOT NULL CHECK(patient_visible IN (0, 1)),
         version_valid INTEGER NOT NULL CHECK(version_valid IN (0, 1)),
         media_available INTEGER NOT NULL CHECK(media_available IN (0, 1)),

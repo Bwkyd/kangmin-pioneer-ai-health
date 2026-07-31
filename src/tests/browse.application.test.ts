@@ -61,7 +61,7 @@ test("列表、搜索和详情共用发布门禁", async () => {
 
     for (const [kind, id] of [
       ["article", "article-draft"],
-      ["article", "article-withdrawn"],
+      ["article", "article-unpublished"],
       ["article", "article-hidden"],
       ["video", "video-review"],
       ["video", "video-invalid-version"],
