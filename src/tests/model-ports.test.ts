@@ -1,4 +1,8 @@
 import assert from "node:assert/strict";
+
+// 测试进程以本地开发模式启动：组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为
+// PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
+process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 import test from "node:test";
 
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";

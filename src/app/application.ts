@@ -812,7 +812,7 @@ export class KangminApplication {
     if (token === undefined || token.trim() === "") {
       return null;
     }
-    return this.sessions.resolvePatient(token);
+    return (await this.sessions.resolvePatient(token)).patientId;
   }
 
   private optionalString(

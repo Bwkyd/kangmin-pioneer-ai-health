@@ -43,6 +43,8 @@ import type { PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
 
+export type AppEnvironment = "local" | "integration" | "staging" | "production";
+
 export interface ApplicationOptions {
   /** 显式注入加密端口；未提供时按环境解析（见 resolveEncryption）。 */
   encryption?: EncryptionPort;
@@ -54,6 +56,8 @@ export interface ApplicationOptions {
   explanation?: ModelExplanationPort | undefined;
   /** 方案注册表端口；默认无任何已批准方案（规则包未冻结）。 */
   planRegistry?: PlanRegistryPort | undefined;
+  /** 显式覆盖 KANGMIN_APP_ENV（测试用）；未提供时读环境变量。 */
+  appEnvironment?: AppEnvironment | undefined;
 }
 
 /**
@@ -73,7 +77,11 @@ export function createApplication(
   databasePath: string,
   options: ApplicationOptions = {}
 ): KangminApplication {
-  const encryption = options.encryption ?? resolveEncryption(process.env);
+  const environment =
+    options.appEnvironment === undefined
+      ? process.env
+      : { ...process.env, KANGMIN_APP_ENV: options.appEnvironment };
+  const encryption = options.encryption ?? resolveEncryption(environment);
   const database = new KangminDatabase(databasePath, encryption);
   const sessions = new SessionService(new SqliteSessionRepository(database));
   const environmentProvider =
@@ -130,12 +138,14 @@ export function resolveEncryption(
     return new AesGcmEncryption(keys);
   }
   const appEnvironment = environment.KANGMIN_APP_ENV;
-  const allowDevelopmentSession =
-    environment.KANGMIN_ALLOW_DEV_SESSION === "1";
+  // 显式 staging/production 时 KANGMIN_ALLOW_DEV_SESSION 不生效：
+  // 即使误设开发会话开关，生产环境也不得明文降级（fail-closed）。
   if (
     appEnvironment === "local" ||
     appEnvironment === "integration" ||
-    allowDevelopmentSession
+    (environment.KANGMIN_ALLOW_DEV_SESSION === "1" &&
+      appEnvironment !== "staging" &&
+      appEnvironment !== "production")
   ) {
     return new PlaintextEncryption();
   }
