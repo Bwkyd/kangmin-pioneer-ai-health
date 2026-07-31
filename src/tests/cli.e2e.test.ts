@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { createApplication } from "../app/application.js";
+import { createApplication } from "../app/composition-root.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, "../cli/kangmin.js");
@@ -24,11 +24,12 @@ function run(
   });
 }
 
-test("真实 CLI 子进程跨重启持久化，JSON stdout 保持纯净", () => {
+test("真实 CLI 子进程跨重启持久化，JSON stdout 保持纯净", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-cli-"));
   const databasePath = join(directory, "records.sqlite");
   const bootstrap = createApplication(databasePath);
-  const token = bootstrap.sessions.createDevelopmentSession("patient-cli").token;
+  const token =
+    (await bootstrap.sessions.createDevelopmentSession("patient-cli")).token;
   bootstrap.close();
 
   const environment = {
@@ -69,7 +70,7 @@ test("真实 CLI 子进程跨重启持久化，JSON stdout 保持纯净", () => 
 
   const crossBootstrap = createApplication(databasePath);
   const otherToken =
-    crossBootstrap.sessions.createDevelopmentSession("patient-other").token;
+    (await crossBootstrap.sessions.createDevelopmentSession("patient-other")).token;
   crossBootstrap.close();
   const cross = run(
     ["record", "symptom", "show", created.data.id, "--json"],

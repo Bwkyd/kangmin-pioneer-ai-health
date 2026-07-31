@@ -22,8 +22,39 @@ async function walk(directory) {
     }
 
     const source = await readFile(path, "utf8");
+    const file = relative(root, path);
     if (/from\s+["'][^"']*legacy\//u.test(source) || /import\s*\(["'][^"']*legacy\//u.test(source)) {
-      violations.push(`${relative(root, path)} imports legacy/`);
+      violations.push(`${file} imports legacy/`);
+    }
+
+    if (
+      file.startsWith("modules/") &&
+      /from\s+["'][^"']*(?:infrastructure|http|cli|dev|web)\//u.test(source)
+    ) {
+      violations.push(`${file} crosses from a core module into an adapter`);
+    }
+
+    if (
+      file === "app/application.ts" &&
+      /from\s+["'][^"']*infrastructure\//u.test(source)
+    ) {
+      violations.push(
+        `${file} imports infrastructure outside the composition root`
+      );
+    }
+
+    if (
+      file.startsWith("kernel/") &&
+      /from\s+["'][^"']*(?:app|modules|infrastructure|http|cli|dev|web)\//u.test(source)
+    ) {
+      violations.push(`${file} depends on an outer application layer`);
+    }
+
+    if (
+      /^(?:cli|http|dev)\//u.test(file) &&
+      /from\s+["'][^"']*infrastructure\//u.test(source)
+    ) {
+      violations.push(`${file} bypasses the composition root`);
     }
   }
 }

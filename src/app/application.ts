@@ -1,4 +1,3 @@
-import { KangminDatabase } from "../infrastructure/database.js";
 import { DomainError } from "../kernel/errors.js";
 import {
   failure,
@@ -14,6 +13,8 @@ import {
   requiredString
 } from "../kernel/validation.js";
 import { SessionService } from "../modules/account/session-service.js";
+import type { SessionRepository } from "../modules/account/session-repository.js";
+import type { RecordRepository } from "../modules/record/record-repository.js";
 import { RecordService } from "../modules/record/record-service.js";
 
 export interface CommandRequest {
@@ -27,12 +28,16 @@ export class KangminApplication {
   readonly sessions: SessionService;
   private readonly records: RecordService;
 
-  constructor(readonly database: KangminDatabase) {
-    this.sessions = new SessionService(database);
-    this.records = new RecordService(database);
+  constructor(
+    sessionRepository: SessionRepository,
+    recordRepository: RecordRepository,
+    private readonly closeResources: () => void = () => {}
+  ) {
+    this.sessions = new SessionService(sessionRepository);
+    this.records = new RecordService(recordRepository);
   }
 
-  execute(request: CommandRequest): CommandResult {
+  async execute(request: CommandRequest): Promise<CommandResult> {
     const command = request.command.trim();
     const input = request.input ?? {};
 
@@ -53,13 +58,13 @@ export class KangminApplication {
         );
       }
 
-      const patientId = this.sessions.resolvePatient(request.sessionToken);
+      const patientId = await this.sessions.resolvePatient(request.sessionToken);
 
       switch (command) {
         case "record symptom add":
           return success(
             command,
-            this.records.createSymptom(patientId, {
+            await this.records.createSymptom(patientId, {
               localDate: localDate(input, "localDate"),
               nasalCongestion: integerInRange(input, "nasalCongestion", 0, 3),
               nasalItching: integerInRange(input, "nasalItching", 0, 3),
@@ -73,13 +78,16 @@ export class KangminApplication {
         case "record symptom list":
           return success(
             command,
-            { items: this.records.listSymptoms(patientId) },
+            { items: await this.records.listSymptoms(patientId) },
             request.requestId
           );
         case "record symptom show":
           return success(
             command,
-            this.records.getSymptom(patientId, requiredString(input, "id")),
+            await this.records.getSymptom(
+              patientId,
+              requiredString(input, "id")
+            ),
             request.requestId
           );
         case "record symptom update": {
@@ -113,7 +121,7 @@ export class KangminApplication {
 
           return success(
             command,
-            this.records.updateSymptom(patientId, update),
+            await this.records.updateSymptom(patientId, update),
             request.requestId
           );
         }
@@ -129,7 +137,7 @@ export class KangminApplication {
   }
 
   close(): void {
-    this.database.close();
+    this.closeResources();
   }
 
   private rejectClientIdentity(input: Record<string, unknown>): void {
@@ -143,8 +151,4 @@ export class KangminApplication {
       }
     }
   }
-}
-
-export function createApplication(databasePath: string): KangminApplication {
-  return new KangminApplication(new KangminDatabase(databasePath));
 }
