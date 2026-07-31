@@ -197,6 +197,72 @@ const MIGRATIONS: Migration[] = [
         ON admin_sessions(admin_id);
       `);
     }
+  },
+  {
+    version: "0004_origin_main_tables",
+    apply: (connection) => {
+      connection.exec(`
+        -- 并行交付流（#131/#133/#135）加入的表，纳入统一迁移账本。
+        -- 注意：admin_sessions 已由 0003_identity 以 admin_accounts 为准创建；
+        -- origin/main 的 dev-admin 代码仍按旧结构写入，FK 集成缺口由 w5 修复。
+        CREATE TABLE IF NOT EXISTS content_items (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+          title TEXT NOT NULL,
+          category TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          body TEXT,
+          source TEXT NOT NULL,
+          cover_url TEXT,
+          media_url TEXT,
+          status TEXT NOT NULL
+            CHECK(status IN ('draft', 'review', 'published', 'unpublished', 'failed')),
+          patient_visible INTEGER NOT NULL CHECK(patient_visible IN (0, 1)),
+          version_valid INTEGER NOT NULL CHECK(version_valid IN (0, 1)),
+          media_available INTEGER NOT NULL CHECK(media_available IN (0, 1)),
+          published_at TEXT,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS content_items_public_kind_updated
+        ON content_items(kind, status, patient_visible, updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS admins (
+          id TEXT PRIMARY KEY, development_subject TEXT UNIQUE,
+          role TEXT NOT NULL CHECK(role IN ('owner', 'admin')),
+          enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)), created_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS admin_idempotency (
+          admin_id TEXT NOT NULL REFERENCES admins(id), scope TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL, request_hash TEXT NOT NULL,
+          result_json TEXT NOT NULL, created_at TEXT NOT NULL,
+          PRIMARY KEY(admin_id, scope, idempotency_key)
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          status TEXT NOT NULL
+            CHECK(status IN ('awaiting_answer', 'safety_blocked', 'completed')),
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          session_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS agent_sessions_patient_updated
+        ON agent_sessions(patient_id, updated_at DESC);
+      `);
+      // origin/main 的兼容逻辑：旧库 content_items 缺列时补齐。
+      const columns = connection.prepare("PRAGMA table_info(content_items)").all() as unknown as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "revision")) {
+        connection.exec("ALTER TABLE content_items ADD COLUMN revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1)");
+      }
+      if (!columns.some((column) => column.name === "created_by")) {
+        connection.exec("ALTER TABLE content_items ADD COLUMN created_by TEXT");
+      }
+    }
   }
 ];
 
