@@ -153,6 +153,22 @@ export function localDateNotAfterToday(
   return value;
 }
 
+/** 可选本地日期：null/空串表示清空，未提供表示继承，合法值不能晚于 today。 */
+export function optionalLocalDateNotAfterToday(
+  input: Record<string, unknown>,
+  key: string,
+  today: string
+): string | null | undefined {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === "") {
+    return null;
+  }
+  return localDateNotAfterToday(input, key, today);
+}
+
 export function monthString(input: Record<string, unknown>, key: string): string {
   const value = requiredString(input, key);
   if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(value)) {

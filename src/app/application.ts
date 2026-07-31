@@ -10,7 +10,7 @@ import {
   localDateNotAfterToday,
   monthString,
   optionalIntegerInRange,
-  optionalLocalDate,
+  optionalLocalDateNotAfterToday,
   optionalString,
   optionalStringArray,
   positiveInteger,
@@ -167,7 +167,11 @@ export class KangminApplication {
               Number.MAX_SAFE_INTEGER
             ),
             displayName: optionalString(input, "displayName"),
-            birthDate: optionalLocalDate(input, "birthDate"),
+            birthDate: optionalLocalDateNotAfterToday(
+              input,
+              "birthDate",
+              localToday()
+            ),
             sex: input.sex === undefined ? undefined : sexOf(input.sex),
             allergyHistory: optionalString(input, "allergyHistory"),
             knownAllergies: optionalString(input, "knownAllergies"),

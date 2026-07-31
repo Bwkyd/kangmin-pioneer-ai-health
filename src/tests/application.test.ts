@@ -303,6 +303,16 @@ test("健康档案校验：非法性别、非法生日、空更新被拒绝", as
       assert.equal(badBirth.error.code, "validation_failed");
     }
 
+    const futureBirth = await application.execute({
+      command: "record profile update",
+      input: { expectedRevision: 0, birthDate: "2099-01-01" },
+      sessionToken: tokenA
+    });
+    assert.equal(futureBirth.ok, false);
+    if (!futureBirth.ok) {
+      assert.equal(futureBirth.error.code, "validation_failed");
+    }
+
     const empty = await application.execute({
       command: "record profile update",
       input: { expectedRevision: 0 },
