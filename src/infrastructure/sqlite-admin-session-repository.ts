@@ -50,30 +50,20 @@ export class SqliteAdminSessionRepository implements AdminSessionRepository {
     expiresAt: string; createdAt: string;
   }): Promise<string> {
     return this.database.transaction(() => {
+      // admins 镜像消除（评审 A P1-5）：dev 会话不再写废弃的 admins 表，
+      // 只写 admin_accounts 占位行（占位密码 login 拒绝），
+      // 保证 find() 的 JOIN admin_accounts 始终成立。
       const existing = this.database.connection.prepare(
-        "SELECT id FROM admins WHERE development_subject = ?"
+        "SELECT id FROM admin_accounts WHERE username = ?"
       ).get(input.subject) as unknown as { id: string } | undefined;
       const adminId = existing?.id ?? input.newAdminId;
       if (existing === undefined) {
         this.database.connection.prepare(`
-          INSERT INTO admins(id, development_subject, role, enabled, created_at)
-          VALUES (?, ?, 'owner', 1, ?)
-        `).run(adminId, input.subject, input.createdAt);
-        // 同步创建生产管理员账号行：占位密码不可登录，仅使
-        // admin_sessions 的外键（admin_accounts）成立；真实密码登录由
-        // kangmin-admin auth login 覆盖（w5 集成）。
-        this.database.connection.prepare(`
           INSERT INTO admin_accounts(
             id, username, password_hash, role, status,
             revision, created_at, updated_at
-          ) VALUES (?, ?, ?, 'owner', 'active', 1, ?, ?)
-        `).run(
-          adminId,
-          input.subject,
-          "!dev-session-only",
-          input.createdAt,
-          input.createdAt
-        );
+          ) VALUES (?, ?, '!dev-session-only', 'owner', 'active', 1, ?, ?)
+        `).run(adminId, input.subject, input.createdAt, input.createdAt);
       }
       this.database.connection.prepare(`
         INSERT OR REPLACE INTO admin_sessions(token_hash, admin_id, expires_at, created_at)

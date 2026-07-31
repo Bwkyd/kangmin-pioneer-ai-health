@@ -97,12 +97,6 @@ export class SqliteAdminAccountRepository implements AdminAccountRepository {
           input.createdAt,
           input.updatedAt
         );
-        // 与 dev-admin 的同步写入互补：admin_idempotency 外键指向 dev 侧
-        // admins 表，密码登录创建的真实账号同样镜像一行，保证幂等表 FK 成立。
-        this.database.connection.prepare(`
-          INSERT INTO admins(id, development_subject, role, enabled, created_at)
-          VALUES (?, ?, ?, 1, ?)
-        `).run(input.id, input.username, input.role, input.createdAt);
         return { kind: "created" as const };
       } catch (error) {
         if (String(error).includes("UNIQUE")) {
@@ -127,7 +121,6 @@ export class SqliteAdminAccountRepository implements AdminAccountRepository {
       if (result.changes !== 1) {
         return "not_found";
       }
-      this.syncDevEnabledFlag(id, status === "active" ? 1 : 0);
       return "updated";
     });
   }
@@ -150,7 +143,6 @@ export class SqliteAdminAccountRepository implements AdminAccountRepository {
         UPDATE admin_sessions SET revoked_at = ?, revoked_reason = ?
         WHERE admin_id = ? AND revoked_at IS NULL
       `).run(updatedAt, reason, id);
-      this.syncDevEnabledFlag(id, 0);
       return "updated";
     });
   }
@@ -194,15 +186,7 @@ export class SqliteAdminAccountRepository implements AdminAccountRepository {
         UPDATE admin_sessions SET revoked_at = ?, revoked_reason = ?
         WHERE admin_id = ? AND revoked_at IS NULL
       `).run(updatedAt, reason, id);
-      this.syncDevEnabledFlag(id, 0);
       return "updated";
     });
-  }
-
-  /** dev 侧 admins 表的 enabled 与 admin_accounts.status 保持同步。 */
-  private syncDevEnabledFlag(id: string, enabled: number): void {
-    this.database.connection.prepare(`
-      UPDATE admins SET enabled = ? WHERE id = ?
-    `).run(enabled, id);
   }
 }

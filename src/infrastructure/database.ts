@@ -901,6 +901,49 @@ const MIGRATIONS: Migration[] = [
         );
       `);
     }
+  },
+  {
+    // admins 镜像消除（评审 A P1-5）：admin_idempotency 外键从废弃的
+    // admins 表改指 admin_accounts(id)，消除双写镜像的最后一个结构性理由。
+    // admins 表本身不 DROP：极旧升级库的 admin_sessions 仍可能引用它，
+    // DROP 会造成升级库 FK 断裂；自本迁移起所有代码停止读写 admins
+    // （0010 的回填继续保留，供 #135 时代旧库升级）。
+    // 重建采用 CREATE new → 复制 → DROP → RENAME，与迁移账本同事务，
+    // 失败自动回滚；开头 DROP TABLE IF EXISTS admin_idempotency_new
+    // 保证失败重试幂等。
+    version: "0011_admin_idempotency_fk",
+    apply: (connection) => {
+      connection.exec("DROP TABLE IF EXISTS admin_idempotency_new");
+      connection.exec(`
+        CREATE TABLE admin_idempotency_new (
+          admin_id TEXT NOT NULL REFERENCES admin_accounts(id),
+          scope TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          result_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(admin_id, scope, idempotency_key)
+        ) STRICT;
+      `);
+      // 极旧库（#135 形态，迁移账本标记 0004 已应用但无本表）不复制，
+      // 仅完成建表；其余库全部数据搬移后交换表名。
+      const hasIdempotency = connection.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'admin_idempotency'"
+      ).get() !== undefined;
+      if (hasIdempotency) {
+        connection.exec(`
+          INSERT INTO admin_idempotency_new(
+            admin_id, scope, idempotency_key, request_hash, result_json, created_at
+          )
+          SELECT admin_id, scope, idempotency_key, request_hash, result_json, created_at
+          FROM admin_idempotency;
+          DROP TABLE admin_idempotency;
+        `);
+      }
+      connection.exec(
+        "ALTER TABLE admin_idempotency_new RENAME TO admin_idempotency"
+      );
+    }
   }
 ];
 

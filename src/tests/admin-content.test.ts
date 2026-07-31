@@ -54,6 +54,19 @@ test("文章发布闭环：create→update→publish→患者可见→unpublish 
       })
     );
 
+    // 分类统一：不存在的分类 create 直接拒绝（validation_failed）
+    const badCategory = await app.execute({
+      command: "content article create",
+      adminToken: token,
+      input: {
+        title: "无分类文章",
+        category: "不存在的分类",
+        idempotencyKey: "bad-category"
+      }
+    });
+    assert.equal(badCategory.ok, false);
+    if (!badCategory.ok) assert.equal(badCategory.error.code, "validation_failed");
+
     const created = dataOf<AdminArticle>(
       await app.execute({
         command: "content article create",
@@ -186,6 +199,15 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
       })
     );
     assert.equal(media.status, "ready");
+
+    // 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories。
+    dataOf<ContentCategoryRow>(
+      await app.execute({
+        command: "content category create",
+        adminToken: token,
+        input: { name: "居家护理", kind: "video" }
+      })
+    );
 
     const video = dataOf<AdminContentItem>(
       await app.execute({

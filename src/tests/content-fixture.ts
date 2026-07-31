@@ -94,9 +94,36 @@ const ITEMS: FixtureContent[] = [
   }
 ];
 
+/**
+ * 分类统一（评审 A P1-6）：browse 分类清单改读 content_categories，
+ * 这里只种子 browse 断言需要的启用分类（鼻健康/居家护理）。
+ * 其余 fixture 分类（内部/旧版/待审核/媒体失效）属于不可见或未发布
+ * 内容，若以 active 种子会破坏 browse.application.test.ts 的分类
+ * 精确相等断言，故不建对应行。
+ */
+const TIMESTAMP = "2026-07-30T00:00:00.000Z";
+
 export function seedContent(databasePath: string): void {
   const database = new KangminDatabase(databasePath);
   try {
+    const categoryStatement = database.connection.prepare(`
+      INSERT INTO content_categories(
+        id, name, kind, description, display_order, status,
+        revision, created_at, updated_at
+      ) VALUES (?, ?, ?, NULL, 0, 'active', 1, ?, ?)
+    `);
+    for (const category of [
+      { id: "category-nose-health", name: "鼻健康", kind: "article" },
+      { id: "category-home-care", name: "居家护理", kind: "video" }
+    ]) {
+      categoryStatement.run(
+        category.id,
+        category.name,
+        category.kind,
+        TIMESTAMP,
+        TIMESTAMP
+      );
+    }
     const statement = database.connection.prepare(`
       INSERT INTO content_items(
         id, kind, title, category, summary, body, source,
@@ -119,10 +146,10 @@ export function seedContent(databasePath: string): void {
         item.patientVisible,
         item.versionValid,
         item.mediaAvailable,
-        item.status === "published" ? "2026-07-30T00:00:00.000Z" : null,
+        item.status === "published" ? TIMESTAMP : null,
         item.id === "video-public"
           ? "2026-07-31T00:00:00.000Z"
-          : "2026-07-30T00:00:00.000Z"
+          : TIMESTAMP
       );
     }
   } finally {

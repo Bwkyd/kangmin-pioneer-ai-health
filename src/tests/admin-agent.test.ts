@@ -30,6 +30,15 @@ async function fixture(): Promise<{
   mkdirSync(mediaDirectory, { recursive: true });
   const app = createAdminApplication(databasePath, { mediaDirectory });
   const session = await app.sessions.createDevelopmentSession("owner-agent");
+  // 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories。
+  const category = await app.execute({
+    command: "content category create",
+    adminToken: session.token,
+    input: { name: "居家护理", kind: "video" }
+  });
+  if (!category.ok) {
+    assert.fail(`${category.error.code}: ${category.error.message}`);
+  }
   return { app, mediaDirectory, token: session.token };
 }
 

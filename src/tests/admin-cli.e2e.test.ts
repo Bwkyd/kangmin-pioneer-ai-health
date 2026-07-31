@@ -133,6 +133,15 @@ test("真实 CLI 全流程：引导→登录→发布→患者可见→退出码
   assert.equal(statusBody.data.loggedIn, true);
   assert.equal(statusBody.data.role, "owner");
 
+  // 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories
+  const categoryCreate = run([
+    "content", "category", "create",
+    "--name", "鼻健康",
+    "--kind", "article",
+    "--json"
+  ], environment);
+  assert.equal(categoryCreate.status, 0, categoryCreate.stderr);
+
   // 发布文章并验证患者可见
   const create = run([
     "content", "article", "create",

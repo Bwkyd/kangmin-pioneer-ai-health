@@ -52,6 +52,7 @@ export class ContentAdminService {
   // ==== 文章（#135 兼容，扩展媒体/分类校验） ====
 
   async create(adminId: string, input: CreateContentInput) {
+    await this.assertCategoryExists("article", input.category);
     const timestamp = new Date().toISOString();
     const request = this.businessFields(input);
     const item: AdminContentItem = {
@@ -121,6 +122,7 @@ export class ContentAdminService {
   // ==== 视频 ====
 
   async createVideo(adminId: string, input: CreateContentInput) {
+    await this.assertCategoryExists("video", input.category);
     const timestamp = new Date().toISOString();
     const request = this.businessFields(input);
     const item: AdminContentItem = {
@@ -231,6 +233,9 @@ export class ContentAdminService {
     if (Object.keys(changes).length === 0) {
       throw new DomainError("validation_failed", "至少提供一个需要更新的字段");
     }
+    if (changes.category !== undefined) {
+      await this.assertCategoryExists(kind, changes.category);
+    }
     // 显式 undefined 表示未提供（继承当前值），不能覆盖现有字段。
     const provided: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(changes)) {
@@ -320,6 +325,34 @@ export class ContentAdminService {
       details: { status: "unpublished" }
     });
     return unpublished;
+  }
+
+  /**
+   * 分类统一（评审 A P1-6）：create/update 的 category（非空时）必须
+   * 引用 content_categories 中已存在的分类，kind 为 general 或与内容
+   * 类型一致；不存在或类型不符 → validation_failed。
+   * 停用状态仍由发布前校验把关（草稿可保留引用停用分类的分类名）。
+   */
+  private async assertCategoryExists(
+    kind: ContentItemKind,
+    category: string
+  ): Promise<void> {
+    if (category.trim() === "") {
+      return;
+    }
+    const row = await this.aux.findCategoryByName(category);
+    if (row === null) {
+      throw new DomainError(
+        "validation_failed",
+        `分类「${category}」不存在，请先创建分类`
+      );
+    }
+    if (row.kind !== "general" && row.kind !== kind) {
+      throw new DomainError(
+        "validation_failed",
+        "分类类型与内容类型不符"
+      );
+    }
   }
 
   /**

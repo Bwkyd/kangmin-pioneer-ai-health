@@ -1,4 +1,5 @@
 import { KangminDatabase } from "./database.js";
+import { runIdempotentCreate } from "./idempotency.js";
 import type {
   AdminContentItem,
   ContentAdminRepository,
@@ -76,57 +77,72 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
   ): Promise<CreateContentItemOutcome | { kind: "conflict" }> {
     return this.database.transaction(() => {
       const scope = this.scopeOf(item.kind);
-      const replay = this.database.connection.prepare(
-        "SELECT request_hash, result_json FROM admin_idempotency WHERE admin_id=? AND scope=? AND idempotency_key=?"
-      ).get(adminId, scope, key) as unknown as { request_hash: string; result_json: string } | undefined;
-      if (replay !== undefined) {
-        if (replay.request_hash !== requestHash) {
-          return { kind: "conflict" as const };
+      // 幂等归一（评审 A P1-4 收缩版）：查重/重放/冲突/写入语义与患者侧
+      // 共用 runIdempotentCreate（表名与主键列参数化，物理表不合并）。
+      // 重放前校验目标仍存在：已删除的内容同键重放返回 stale_replay，
+      // 不返回幻影记录（评审 B P2，与患者侧语义一致）。
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "admin_idempotency",
+        actorColumn: "admin_id",
+        scopeColumn: "scope",
+        keyColumn: "idempotency_key",
+        actorId: adminId,
+        scope,
+        key,
+        requestHash,
+        resultJson: JSON.stringify(item),
+        createdAt: item.updatedAt,
+        verifyExists: (json) =>
+          this.database.connection.prepare(
+            "SELECT id FROM content_items WHERE id = ?"
+          ).get((JSON.parse(json) as AdminContentItem).id) !== undefined,
+        insert: () => {
+          this.database.connection.prepare(`
+            INSERT INTO content_items(
+              id, kind, title, category, summary, body, source,
+              cover_url, media_url, status, patient_visible, version_valid,
+              media_available, published_at, updated_at, revision, created_by,
+              cover_media_id, media_id, instructions, precautions, disclaimer,
+              method_tags, display_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'draft', 0, 1, 1, NULL, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            item.id,
+            item.kind,
+            item.title,
+            item.category,
+            item.summary,
+            item.body,
+            item.source,
+            item.updatedAt,
+            adminId,
+            item.coverMediaId,
+            item.mediaId,
+            item.instructions,
+            item.precautions,
+            item.disclaimer,
+            methodTagsJson(item.methodTags),
+            item.displayOrder
+          );
         }
-        // 重放前校验目标仍存在：已删除的内容同键重放返回 stale_replay，
-        // 不返回幻影记录（评审 B P2，与患者侧 runWithIdempotency 语义一致）。
-        const target = this.database.connection.prepare(
-          "SELECT id FROM content_items WHERE id = ?"
-        ).get(JSON.parse(replay.result_json).id) as unknown as
-          | { id: string }
-          | undefined;
-        return target === undefined
-          ? ({ kind: "stale_replay" } as const)
-          : {
-              kind: "replayed" as const,
-              item: JSON.parse(replay.result_json) as AdminContentItem
-            };
+      });
+      switch (outcome.kind) {
+        case "created":
+          return { kind: "created" as const, item };
+        case "idempotency_conflict":
+          return { kind: "conflict" as const };
+        case "stale_replay":
+          return { kind: "stale_replay" as const };
+        case "replayed":
+          // 重放返回存储的原内容（原始 id），与患者侧语义一致。
+          return {
+            kind: "replayed" as const,
+            item: JSON.parse(outcome.resultJson) as AdminContentItem
+          };
+        case "date_conflict":
+          // 管理端未启用 uniqueConflictAsDateConflict，结构上不可达；
+          // 归入冲突，不向调用方泄露内部状态。
+          return { kind: "conflict" as const };
       }
-      this.database.connection.prepare(`
-        INSERT INTO content_items(
-          id, kind, title, category, summary, body, source,
-          cover_url, media_url, status, patient_visible, version_valid,
-          media_available, published_at, updated_at, revision, created_by,
-          cover_media_id, media_id, instructions, precautions, disclaimer,
-          method_tags, display_order
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'draft', 0, 1, 1, NULL, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
-      `).run(
-        item.id,
-        item.kind,
-        item.title,
-        item.category,
-        item.summary,
-        item.body,
-        item.source,
-        item.updatedAt,
-        adminId,
-        item.coverMediaId,
-        item.mediaId,
-        item.instructions,
-        item.precautions,
-        item.disclaimer,
-        methodTagsJson(item.methodTags),
-        item.displayOrder
-      );
-      this.database.connection.prepare(
-        "INSERT INTO admin_idempotency(admin_id, scope, idempotency_key, request_hash, result_json, created_at) VALUES (?, ?, ?, ?, ?, ?)"
-      ).run(adminId, scope, key, requestHash, JSON.stringify(item), item.updatedAt);
-      return { kind: "created" as const, item };
     });
   }
 

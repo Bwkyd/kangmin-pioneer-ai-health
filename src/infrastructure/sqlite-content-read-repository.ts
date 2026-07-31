@@ -188,15 +188,18 @@ export class SqliteContentReadRepository implements ContentReadRepository {
 
   async categories(kind: PublicContentKind): Promise<string[]> {
     return this.guard(() => {
+      // 分类统一（评审 A P1-6）：browse 分类清单以管理端维护的
+      // content_categories 为准（启用分类），不再对 content_items 的
+      // 自由文本 category 做 SELECT DISTINCT；general 分类对文章/视频通用。
       const rows = this.database.connection
         .prepare(`
-          SELECT DISTINCT category
-          FROM content_items
-          WHERE kind = ? AND ${PUBLIC_PREDICATE}
-          ORDER BY category ASC
+          SELECT name
+          FROM content_categories
+          WHERE status = 'active' AND kind IN (?, 'general')
+          ORDER BY display_order ASC, name ASC
         `)
-        .all(kind) as unknown as Array<{ category: string }>;
-      return rows.map((row) => row.category);
+        .all(kind) as unknown as Array<{ name: string }>;
+      return rows.map((row) => row.name);
     });
   }
 

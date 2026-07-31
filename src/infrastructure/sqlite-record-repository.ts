@@ -6,6 +6,10 @@ import {
   encryptOptionalFields,
   encryptStoredField
 } from "./encrypted-fields.js";
+import {
+  runIdempotentCreate,
+  type IdempotentCreateOutcome
+} from "./idempotency.js";
 import type {
   ExposureRecord,
   HealthProfile,
@@ -94,11 +98,6 @@ interface ProfileRow {
   revision: number;
   created_at: string;
   updated_at: string;
-}
-
-interface IdempotencyRow {
-  request_hash: string;
-  result_json: string;
 }
 
 /** symptom 投影查询的原始行形状（snake_case），映射为领域形状 MonthSymptomRow。 */
@@ -259,19 +258,23 @@ export class SqliteRecordRepository implements RecordRepository {
     input: CreateSymptomRecordInput
   ): Promise<CreateSymptomRecordOutcome> {
     return this.database.transaction(() => {
-      const outcome = this.runWithIdempotency({
-        patientId: input.patientId,
-        commandScope: "record.symptom.add",
-        idempotencyKey: input.idempotencyKey,
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "idempotency_records",
+        actorColumn: "patient_id",
+        scopeColumn: "command_scope",
+        keyColumn: "idempotency_key",
+        actorId: input.patientId,
+        scope: "record.symptom.add",
+        key: input.idempotencyKey,
         requestHash: input.requestHash,
-        uniquePatientDate: true,
-        result: input.record,
+        resultJson: JSON.stringify(input.record),
         createdAt: input.record.createdAt,
-        verifyExists: (record) =>
+        uniqueConflictAsDateConflict: true,
+        verifyExists: (json) =>
           this.findOwned(
             "symptom_records",
             input.patientId,
-            record.id,
+            (JSON.parse(json) as SymptomRecord).id,
             (row: SymptomRow) => toSymptom(this.encryption, row)
           ) !== null,
         insert: () => {
@@ -315,7 +318,7 @@ export class SqliteRecordRepository implements RecordRepository {
           requestId: input.requestId
         });
       }
-      return outcome;
+      return this.mapCreateOutcome(outcome, input.record);
     });
   }
 
@@ -583,19 +586,23 @@ export class SqliteRecordRepository implements RecordRepository {
     input: CreateExposureRecordInput
   ): Promise<CreateExposureRecordOutcome> {
     return this.database.transaction(() => {
-      const outcome = this.runWithIdempotency({
-        patientId: input.patientId,
-        commandScope: "record.exposure.add",
-        idempotencyKey: input.idempotencyKey,
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "idempotency_records",
+        actorColumn: "patient_id",
+        scopeColumn: "command_scope",
+        keyColumn: "idempotency_key",
+        actorId: input.patientId,
+        scope: "record.exposure.add",
+        key: input.idempotencyKey,
         requestHash: input.requestHash,
-        uniquePatientDate: true,
-        result: input.record,
+        resultJson: JSON.stringify(input.record),
         createdAt: input.record.createdAt,
-        verifyExists: (record) =>
+        uniqueConflictAsDateConflict: true,
+        verifyExists: (json) =>
           this.findOwned(
             "exposure_records",
             input.patientId,
-            record.id,
+            (JSON.parse(json) as ExposureRecord).id,
             (row: ExposureRow) => toExposure(this.encryption, row)
           ) !== null,
         insert: () => {
@@ -637,7 +644,7 @@ export class SqliteRecordRepository implements RecordRepository {
           requestId: input.requestId
         });
       }
-      return outcome;
+      return this.mapCreateOutcome(outcome, input.record);
     });
   }
 
@@ -757,19 +764,22 @@ export class SqliteRecordRepository implements RecordRepository {
     input: CreateMedicationRecordInput
   ): Promise<CreateMedicationRecordOutcome> {
     return this.database.transaction(() => {
-      const outcome = this.runWithIdempotency({
-        patientId: input.patientId,
-        commandScope: "record.medication.add",
-        idempotencyKey: input.idempotencyKey,
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "idempotency_records",
+        actorColumn: "patient_id",
+        scopeColumn: "command_scope",
+        keyColumn: "idempotency_key",
+        actorId: input.patientId,
+        scope: "record.medication.add",
+        key: input.idempotencyKey,
         requestHash: input.requestHash,
-        uniquePatientDate: false,
-        result: input.record,
+        resultJson: JSON.stringify(input.record),
         createdAt: input.record.createdAt,
-        verifyExists: (record) =>
+        verifyExists: (json) =>
           this.findOwned(
             "medication_records",
             input.patientId,
-            record.id,
+            (JSON.parse(json) as MedicationRecord).id,
             (row: MedicationRow) => toMedication(this.encryption, row)
           ) !== null,
         insert: () => {
@@ -804,14 +814,6 @@ export class SqliteRecordRepository implements RecordRepository {
             );
         }
       });
-      if (outcome.kind === "date_conflict") {
-        // 用药记录表没有日期唯一约束，此分支在结构上不可达；
-        // 保留它是为未来加约束时的安全网。
-        throw new DomainError(
-          "internal_error",
-          "用药记录插入意外触发唯一约束"
-        );
-      }
       if (outcome.kind === "created") {
         this.appendVersion({
           recordType: "medication",
@@ -823,7 +825,16 @@ export class SqliteRecordRepository implements RecordRepository {
           requestId: input.requestId
         });
       }
-      return outcome;
+      const mapped = this.mapCreateOutcome(outcome, input.record);
+      if (mapped.kind === "date_conflict") {
+        // 用药记录表没有日期唯一约束，此分支在结构上不可达；
+        // 保留它是为未来加约束时的安全网。
+        throw new DomainError(
+          "internal_error",
+          "用药记录插入意外触发唯一约束"
+        );
+      }
+      return mapped;
     });
   }
 
@@ -1041,66 +1052,30 @@ export class SqliteRecordRepository implements RecordRepository {
     }
   }
 
-  private runWithIdempotency<T>(options: {
-    patientId: string;
-    commandScope: string;
-    idempotencyKey: string;
-    requestHash: string;
-    uniquePatientDate: boolean;
-    result: T;
-    createdAt: string;
-    insert: () => void;
-    /** 重放时校验原记录仍存在；已删除时返回 stale_replay，避免返回幻影记录。 */
-    verifyExists: (record: T) => boolean;
-  }): CreateOutcome<T> {
-    const previous = this.database.connection
-      .prepare(`
-        SELECT request_hash, result_json
-        FROM idempotency_records
-        WHERE patient_id = ? AND command_scope = ? AND idempotency_key = ?
-      `)
-      .get(
-        options.patientId,
-        options.commandScope,
-        options.idempotencyKey
-      ) as unknown as IdempotencyRow | undefined;
-
-    if (previous !== undefined) {
-      if (previous.request_hash !== options.requestHash) {
+  /**
+   * 把公共幂等辅助的归一化结果映射为患者侧领域结果。
+   * 重放分支必须解析存储的原结果（原始记录 id），不能返回本次请求
+   * 携带的新生成记录——与旧实现读取存储行的语义一致。
+   */
+  private mapCreateOutcome<T>(
+    outcome: IdempotentCreateOutcome,
+    record: T
+  ): CreateOutcome<T> {
+    switch (outcome.kind) {
+      case "created":
+        return { kind: "created", record };
+      case "replayed":
+        return {
+          kind: "replayed",
+          record: JSON.parse(outcome.resultJson) as T
+        };
+      case "stale_replay":
+        return { kind: "stale_replay" };
+      case "idempotency_conflict":
         return { kind: "idempotency_conflict" };
-      }
-      const record = JSON.parse(previous.result_json) as T;
-      return options.verifyExists(record)
-        ? { kind: "replayed", record }
-        : { kind: "stale_replay" };
-    }
-
-    try {
-      options.insert();
-    } catch (error) {
-      if (options.uniquePatientDate && isUniqueConstraint(error)) {
+      case "date_conflict":
         return { kind: "date_conflict" };
-      }
-      throw error;
     }
-
-    this.database.connection
-      .prepare(`
-        INSERT INTO idempotency_records(
-          patient_id, command_scope, idempotency_key,
-          request_hash, result_json, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?)
-      `)
-      .run(
-        options.patientId,
-        options.commandScope,
-        options.idempotencyKey,
-        options.requestHash,
-        JSON.stringify(options.result),
-        options.createdAt
-      );
-
-    return { kind: "created", record: options.result };
   }
 
   private findOwned<T, R>(
