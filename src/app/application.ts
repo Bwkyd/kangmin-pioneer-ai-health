@@ -24,6 +24,9 @@ import { BrowseService } from "../modules/browse/browse-service.js";
 import type { AgentRepository } from "../modules/agent/agent-repository.js";
 import { AgentService } from "../modules/agent/agent-service.js";
 import type { AgentQuestion, TriStateAnswer } from "../modules/agent/contracts.js";
+import { ConversationService } from "../modules/agent/conversation-service.js";
+import type { ConversationTurnResult, ConversationTestRunResult } from "../modules/agent/conversation-contracts.js";
+import type { ConfirmedFact } from "../modules/clinical-rules/contracts.js";
 import { sexOf } from "../modules/record/domain.js";
 import type { RecordRepository } from "../modules/record/record-repository.js";
 import { RecordService } from "../modules/record/record-service.js";
@@ -59,12 +62,14 @@ export class KangminApplication {
   private readonly records: RecordService;
   private readonly browse: BrowseService;
   private readonly agent: AgentService;
+  private readonly conversations: ConversationService;
 
   constructor(
     sessionRepository: SessionRepository,
     recordRepository: RecordRepository,
     contentReadRepository: ContentReadRepository,
     agentRepository: AgentRepository,
+    conversations: ConversationService,
     private readonly closeResources: () => void = () => {}
   ) {
     this.sessions = new SessionService(sessionRepository);
@@ -74,6 +79,7 @@ export class KangminApplication {
       agentRepository,
       new RecordSnapshotAdapter(this.records)
     );
+    this.conversations = conversations;
   }
 
   async execute(request: CommandRequest): Promise<CommandResult> {
@@ -161,6 +167,58 @@ export class KangminApplication {
           }
       }
 
+      // 匿名允许的 agent 命令：一次性体验/非交互 exec/反馈/模拟链路。
+      // 已登录患者通过 token 解析身份；无 token 时按匿名处理（不保存）。
+      if (this.isAnonymousAgentCommand(command, input)) {
+        const patientId = await this.resolvePatientOrNull(request.sessionToken);
+        if (command === "agent exec") {
+          return success(
+            command,
+            await this.conversations.execTurn({
+              patientId,
+              message: typeof input.message === "string" ? input.message.trim() : "",
+              conversationId: this.optionalString(input, "conversationId"),
+              saveConsent: input.saveConsent === true
+            }),
+            request.requestId
+          );
+        }
+        if (command === "agent start") {
+          return success(
+            command,
+            await this.conversations.execTurn({
+              patientId,
+              message:
+                typeof input.message === "string" ? input.message.trim() : "",
+              saveConsent: input.saveConsent === true
+            }),
+            request.requestId
+          );
+        }
+        if (command === "agent test run") {
+          return success(
+            command,
+            await this.conversations.testRun({
+              answers: this.answerFacts(input.answers)
+            }),
+            request.requestId
+          );
+        }
+        if (command === "agent feedback") {
+          return success(
+            command,
+            await this.conversations.addFeedback({
+              conversationId: requiredString(input, "conversationId"),
+              rating: this.feedbackRating(input.rating),
+              reason: this.optionalString(input, "reason") ?? null,
+              patientId
+            }),
+            request.requestId
+          );
+        }
+        throw new DomainError("command_invalid", `未知命令：${command}`);
+      }
+
       const patientId = await this.sessions.resolvePatient(request.sessionToken);
 
       switch (command) {
@@ -193,6 +251,21 @@ export class KangminApplication {
           return success(
             command,
             { items: await this.agent.list(patientId) },
+            request.requestId
+          );
+        case "agent conversations list":
+          return success(
+            command,
+            { items: await this.conversations.listForPatient(patientId) },
+            request.requestId
+          );
+        case "agent conversations show":
+          return success(
+            command,
+            await this.conversations.showForPatient(
+              patientId,
+              requiredString(input, "id")
+            ),
             request.requestId
           );
 
@@ -496,5 +569,123 @@ export class KangminApplication {
       );
     }
     return value;
+  }
+
+  /**
+   * 匿名允许的 agent 命令：exec/带 message 的 start/test run/feedback。
+   * agent start 不带 message 时仍走 #131 结构化安全外壳（需要登录）。
+   */
+  private isAnonymousAgentCommand(
+    command: string,
+    input: Record<string, unknown>
+  ): boolean {
+    if (command === "agent exec" || command === "agent test run" || command === "agent feedback") {
+      return true;
+    }
+    if (command === "agent start") {
+      return typeof input.message === "string";
+    }
+    if (
+      command.startsWith("agent ") &&
+      !command.startsWith("agent conversations ") &&
+      command !== "agent continue" &&
+      command !== "agent resume" &&
+      command !== "agent sessions list" &&
+      command !== "agent sessions show"
+    ) {
+      throw new DomainError("command_invalid", `未知命令：${command}`);
+    }
+    return false;
+  }
+
+  /** 无 token 视为匿名（允许一次性体验）；有 token 则必须有效。 */
+  private async resolvePatientOrNull(
+    token: string | undefined
+  ): Promise<string | null> {
+    if (token === undefined || token.trim() === "") {
+      return null;
+    }
+    return this.sessions.resolvePatient(token);
+  }
+
+  private optionalString(
+    input: Record<string, unknown>,
+    key: string
+  ): string | undefined {
+    const value = input[key];
+    if (value === undefined || value === null) {
+      return undefined;
+    }
+    if (typeof value !== "string") {
+      throw new DomainError(
+        "validation_failed",
+        `${key} 必须是字符串`,
+        { details: { field: key } }
+      );
+    }
+    return value.trim() === "" ? undefined : value.trim();
+  }
+
+  private feedbackRating(value: unknown): "helpful" | "unhelpful" {
+    if (value !== "helpful" && value !== "unhelpful") {
+      throw new DomainError(
+        "validation_failed",
+        "rating 必须是 helpful 或 unhelpful",
+        { details: { field: "rating" } }
+      );
+    }
+    return value;
+  }
+
+  /** agent test run 的答案输入：只接受固定 field_code 与三态/值。 */
+  private answerFacts(value: unknown): ConfirmedFact[] {
+    if (!Array.isArray(value)) {
+      throw new DomainError(
+        "validation_failed",
+        "answers 必须是数组",
+        { details: { field: "answers" } }
+      );
+    }
+    const facts: ConfirmedFact[] = [];
+    for (const entry of value) {
+      if (typeof entry !== "object" || entry === null) {
+        throw new DomainError("validation_failed", "answers 元素必须是对象");
+      }
+      const item = entry as Record<string, unknown>;
+      const fieldCode = item.fieldCode;
+      const state = item.state;
+      if (typeof fieldCode !== "string" || fieldCode === "") {
+        throw new DomainError("validation_failed", "answers 缺少 fieldCode");
+      }
+      if (
+        state !== "missing" &&
+        state !== "unknown" &&
+        state !== "yes" &&
+        state !== "no" &&
+        state !== "value"
+      ) {
+        throw new DomainError(
+          "validation_failed",
+          `fieldCode ${fieldCode} 的 state 非法：${String(state)}`
+        );
+      }
+      const fact: ConfirmedFact = {
+        fieldCode,
+        state,
+        source: "patient_confirmation"
+      };
+      if (state === "value") {
+        const factValue = item.value;
+        if (typeof factValue !== "string" && typeof factValue !== "number") {
+          throw new DomainError(
+            "validation_failed",
+            `fieldCode ${fieldCode} 的 value 必须是字符串或数字`
+          );
+        }
+        fact.value = factValue;
+      }
+      facts.push(fact);
+    }
+    return facts;
   }
 }

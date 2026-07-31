@@ -452,3 +452,93 @@ test("Agent 真实 CLI 子进程完成安全会话并跨进程恢复", async () 
     "agent-safety-shell-v1"
   );
 });
+
+test("Agent 对话命令通过真实 CLI：exec/test run/feedback/快捷入口", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-cli-agent-"));
+  const databasePath = join(directory, "agent.sqlite");
+  const environment = { KANGMIN_DB_PATH: databasePath };
+
+  // 非交互 exec：匿名一次性体验，返回结构化状态（不等待确认）。
+  const exec = run([
+    "agent", "exec", "我最近鼻塞", "--json"
+  ], environment);
+  assert.equal(exec.status, 0, exec.stderr);
+  assert.equal(exec.stdout.trim().split("\n").length, 1);
+  const execBody = JSON.parse(exec.stdout) as {
+    ok: boolean;
+    data: {
+      conversationId: string;
+      message: { content: string; decisionId: string | null };
+      verdict: { outcome: string; nextQuestions: Array<{ prompt: string }> };
+    };
+  };
+  assert.equal(execBody.ok, true);
+  assert.ok(execBody.data.conversationId.length > 0);
+  assert.equal(execBody.data.verdict.outcome, "need_more_information");
+  assert.ok(execBody.data.message.decisionId !== null);
+
+  // 续接同一对话（结构化回答：高危阻断）。
+  const blocked = run([
+    "agent", "exec", "急救：是",
+    "--conversation", execBody.data.conversationId,
+    "--json"
+  ], environment);
+  assert.equal(blocked.status, 0, blocked.stderr);
+  const blockedBody = JSON.parse(blocked.stdout) as {
+    data: { closed: boolean; message: { content: string } };
+  };
+  assert.equal(blockedBody.data.closed, true);
+  assert.ok(blockedBody.data.message.content.includes("立即就医"));
+
+  // 快捷入口：kangmin <消息> ≡ agent start --message。
+  const shortcut = run(["我最近鼻塞", "--json"], environment);
+  assert.equal(shortcut.status, 0, shortcut.stderr);
+  const shortcutBody = JSON.parse(shortcut.stdout) as {
+    command: string;
+    data: { conversationId: string };
+  };
+  assert.equal(shortcutBody.command, "agent start");
+  assert.ok(shortcutBody.data.conversationId.length > 0);
+
+  // agent test run：模拟链路（结构化 answers）。
+  const testRun = run([
+    "agent", "test", "run",
+    "--answer", "thirst=yes",
+    "--answer", "sleep_affected=no",
+    "--json"
+  ], environment);
+  assert.equal(testRun.status, 0, testRun.stderr);
+  const testRunBody = JSON.parse(testRun.stdout) as {
+    data: { planBlocked: boolean; explanation: { simulated: boolean } };
+  };
+  assert.equal(testRunBody.data.explanation.simulated, true);
+
+  // feedback：helpful 可记录；非法评分被拒绝。
+  const feedback = run([
+    "agent", "feedback", execBody.data.conversationId,
+    "--rating", "helpful", "--reason", "解释清楚",
+    "--json"
+  ], environment);
+  assert.equal(feedback.status, 0, feedback.stderr);
+  const feedbackBody = JSON.parse(feedback.stdout) as {
+    ok: boolean;
+    data: { rating: string };
+  };
+  assert.equal(feedbackBody.data.rating, "helpful");
+
+  const badRating = run([
+    "agent", "feedback", execBody.data.conversationId,
+    "--rating", "neutral", "--json"
+  ], environment);
+  assert.equal(badRating.status, 7);
+  const badBody = JSON.parse(badRating.stdout) as {
+    error: { code: string };
+  };
+  assert.equal(badBody.error.code, "validation_failed");
+
+  // 匿名不能列出会话。
+  const list = run(["agent", "conversations", "list", "--json"], environment);
+  assert.equal(list.status, 9);
+  const listBody = JSON.parse(list.stdout) as { error: { code: string } };
+  assert.equal(listBody.error.code, "authentication_required");
+});
