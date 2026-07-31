@@ -10,6 +10,7 @@ import {
   requiredString,
   requiredStringArray
 } from "../kernel/validation.js";
+import type { AuditPort } from "../modules/system/audit-ports.js";
 import { AdminAuthService } from "../modules/admin/admin-auth-service.js";
 import type { AdminAccountRepository } from "../modules/admin/admin-account-repository.js";
 import type { ContentAuxRepository } from "../modules/admin/content-aux-repository.js";
@@ -92,6 +93,7 @@ export class KangminAdminApplication {
     syndromeRegistry: SyndromeRegistryPort,
     userRepository: UserReadRepository,
     mediaDirectory: string,
+    audit: AuditPort,
     private readonly closeResources: () => void = () => {},
     private readonly doctorProvider: DoctorCheckProvider = async () => ({
       checks: [],
@@ -99,11 +101,11 @@ export class KangminAdminApplication {
     })
   ) {
     this.sessions = new AdminSessionService(sessionRepository);
-    this.auth = new AdminAuthService(accountRepository, sessionRepository);
-    this.content = new ContentAdminService(contentRepository, auxRepository);
+    this.auth = new AdminAuthService(accountRepository, sessionRepository, audit);
+    this.content = new ContentAdminService(contentRepository, auxRepository, audit);
     this.aux = new ContentAuxService(auxRepository, mediaDirectory);
     this.agent = new AgentAdminService(agentRepository, syndromeRegistry, mediaDirectory);
-    this.users = new UserAdminService(userRepository);
+    this.users = new UserAdminService(userRepository, audit);
   }
 
   async execute(request: AdminCommandRequest): Promise<CommandResult> {
@@ -244,10 +246,12 @@ export class KangminAdminApplication {
             command,
             command.endsWith("unpublish")
               ? await this.content.unpublish(
+                  adminId,
                   requiredString(input, "id"),
                   positiveInteger(input, "expectedRevision")
                 )
               : await this.content.publish(
+                  adminId,
                   requiredString(input, "id"),
                   positiveInteger(input, "expectedRevision")
                 ),
@@ -310,10 +314,12 @@ export class KangminAdminApplication {
             command,
             command.endsWith("unpublish")
               ? await this.content.unpublishVideo(
+                  adminId,
                   requiredString(input, "id"),
                   positiveInteger(input, "expectedRevision")
                 )
               : await this.content.publishVideo(
+                  adminId,
                   requiredString(input, "id"),
                   positiveInteger(input, "expectedRevision")
                 ),
@@ -644,14 +650,14 @@ export class KangminAdminApplication {
           requireOwner(identity);
           return success(
             command,
-            await this.users.sessions(requiredString(input, "id")),
+            await this.users.sessions(adminId, requiredString(input, "id")),
             request.requestId
           );
         case "users records":
           requireOwner(identity);
           return success(
             command,
-            await this.users.records(requiredString(input, "id"), opt(input, "type")),
+            await this.users.records(adminId, requiredString(input, "id"), opt(input, "type")),
             request.requestId
           );
 

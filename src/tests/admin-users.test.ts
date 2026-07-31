@@ -156,6 +156,13 @@ test("users 敏感详情仅 owner 可读，且输出不含备注正文", async (
     );
     assert.deepEqual(exposures.items[0]?.factors, ["pollen"]);
 
+    // 用药投影：正文已加密（0005），管理端只返回非加密列，
+    // 命令必须成功（回归点：旧列名投影曾导致 no such column → internal_error）。
+    const medications = dataOf<{ items: Array<{ id: string; localDate: string; medicationName: string | null; dosage: string | null }> }>(
+      await app.execute({ command: "users records", adminToken: ownerToken, input: { id: target, type: "medication" } })
+    );
+    assert.ok(Array.isArray(medications.items));
+
     // 无效类型与不存在的用户
     const badType = await app.execute({
       command: "users records",

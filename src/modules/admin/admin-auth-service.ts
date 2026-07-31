@@ -7,6 +7,7 @@ import {
 } from "node:crypto";
 
 import { DomainError } from "../../kernel/errors.js";
+import type { AuditPort } from "../system/audit-ports.js";
 import type { AdminAccountRepository } from "./admin-account-repository.js";
 import type { AdminIdentity } from "./admin-session-service.js";
 import type {
@@ -108,7 +109,8 @@ function viewOf(account: AccountLike): AdminAccountView {
 export class AdminAuthService {
   constructor(
     private readonly accounts: AdminAccountRepository,
-    private readonly sessions: AdminSessionRepository
+    private readonly sessions: AdminSessionRepository,
+    private readonly audit: AuditPort
   ) {}
 
   /**
@@ -265,6 +267,14 @@ export class AdminAuthService {
       throw new DomainError("resource_not_found", "管理员不存在");
     }
     const updated = await this.accounts.findById(id);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: id,
+      action: "admin.enable",
+      entityType: "admin_account",
+      entityId: id,
+      details: { role: account.role }
+    });
     return viewOf(updated ?? account);
   }
 
@@ -295,6 +305,14 @@ export class AdminAuthService {
     if (outcome === "not_found") {
       throw new DomainError("resource_not_found", "管理员不存在");
     }
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: id,
+      action: "admin.disable",
+      entityType: "admin_account",
+      entityId: id,
+      details: { role: account.role }
+    });
     return viewOf({ ...account, status: "disabled", updatedAt: timestamp });
   }
 

@@ -38,10 +38,9 @@ interface ContentRow {
 interface PlanRow {
   id: string;
   name: string;
-  published_revision: number;
-  summary: string | null;
+  revision: number;
+  method: string | null;
   steps_json: string | null;
-  disclaimer: string | null;
 }
 
 function toPublicContent(row: ContentRow): PublicContent {
@@ -65,7 +64,7 @@ function toPlanSummary(row: PlanRow): CarePlanSummary {
   return {
     id: row.id,
     name: row.name,
-    publishedRevision: row.published_revision
+    publishedRevision: row.revision
   };
 }
 
@@ -90,10 +89,10 @@ function toPlanDetail(row: PlanRow): CarePlanDetail {
   return {
     id: row.id,
     name: row.name,
-    publishedRevision: row.published_revision,
-    summary: row.summary,
+    publishedRevision: row.revision,
+    summary: row.method,
     steps,
-    disclaimer: row.disclaimer
+    disclaimer: DISCLAIMER
   };
 }
 
@@ -102,7 +101,10 @@ function toPlanDetail(row: PlanRow): CarePlanDetail {
  *
  * 可见性门禁：content_items 只返回 status='published' 且
  * patient_visible/version_valid/media_available 全部就绪的内容；
- * agent_care_plans 只返回 published_revision 非空的内容。
+ * agent_plans（0009，管理端写入的统一方案表）只返回 status='enabled'
+ * 的方案——当前 enable 同时作为患者浏览可见门禁，未来按设计 §17
+ * 双门禁拆分为独立的患者发布指针（agent_care_plans 0007 历史表
+ * 不再读写，保留在迁移账本中）。
  *
  * 读失败（数据库损坏、连接关闭、锁异常）统一映射为 storage_unavailable，
  * 绝不伪装成空列表。
@@ -206,12 +208,9 @@ export class SqliteContentReadRepository implements ContentReadRepository {
     return this.guard(() => {
       const row = this.database.connection
         .prepare(`
-          SELECT p.id, p.name, p.published_revision,
-                 rev.summary, rev.steps_json, rev.disclaimer
-          FROM agent_care_plans p
-          JOIN agent_care_plan_revisions rev
-            ON rev.plan_id = p.id AND rev.revision = p.published_revision
-          WHERE p.id = ? AND p.published_revision IS NOT NULL
+          SELECT id, name, revision, method, steps_json
+          FROM agent_plans
+          WHERE id = ? AND status = 'enabled'
         `)
         .get(id) as unknown as PlanRow | undefined;
       return row === undefined ? null : toPlanDetail(row);
@@ -225,23 +224,19 @@ export class SqliteContentReadRepository implements ContentReadRepository {
   private queryPlans(pattern: string | null, limit: number): CarePlanSummary[] {
     const where =
       pattern === null
-        ? "p.published_revision IS NOT NULL"
-        : `p.published_revision IS NOT NULL
-           AND (p.name LIKE ? ESCAPE '\\' OR rev.summary LIKE ? ESCAPE '\\')`;
+        ? "status = 'enabled'"
+        : `status = 'enabled' AND name LIKE ? ESCAPE '\\'`;
     const statement = this.database.connection.prepare(`
-      SELECT p.id, p.name, p.published_revision,
-             rev.summary, rev.steps_json, rev.disclaimer
-      FROM agent_care_plans p
-      JOIN agent_care_plan_revisions rev
-        ON rev.plan_id = p.id AND rev.revision = p.published_revision
+      SELECT id, name, revision, method, steps_json
+      FROM agent_plans
       WHERE ${where}
-      ORDER BY p.id ASC
+      ORDER BY display_order ASC, id ASC
       LIMIT ?
     `);
     const rows = (
       pattern === null
         ? statement.all(limit)
-        : statement.all(pattern, pattern, limit)
+        : statement.all(pattern, limit)
     ) as unknown as PlanRow[];
     return rows.map(toPlanSummary);
   }

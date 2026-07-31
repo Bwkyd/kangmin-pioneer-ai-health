@@ -14,6 +14,8 @@ import type {
   FeedbackRow
 } from "../modules/agent/conversation-contracts.js";
 import type {
+  CommitTurnInput,
+  CommitTurnOutcome,
   ConversationRepository,
   UpdateSessionOutcome
 } from "../modules/agent/conversation-repository.js";
@@ -164,6 +166,160 @@ export class SqliteConversationRepository implements ConversationRepository {
         return { kind: "version_conflict", currentRevision: current.revision };
       }
       return { kind: "updated", session };
+    });
+  }
+
+  /**
+   * 单事务提交一轮对话的全部写入（评审 B P1-2）：
+   * CAS 会话版本 → 答案 → 候选 → 决策 → 消息 → 会话状态。
+   * 任何一步失败整轮回滚；并发轮次因 CAS 不匹配被拒绝，
+   * 不会产生部分写入或 UNIQUE(session_id, sequence) 冲突。
+   */
+  async commitTurn(input: CommitTurnInput): Promise<CommitTurnOutcome> {
+    return this.database.transaction(() => {
+      const current = this.database.connection
+        .prepare("SELECT revision FROM agent_conversations WHERE id = ?")
+        .get(input.sessionId) as unknown as { revision: number } | undefined;
+      if (current === undefined) {
+        return { kind: "version_conflict", currentRevision: 0 };
+      }
+      if (current.revision !== input.expectedRevision) {
+        return {
+          kind: "version_conflict",
+          currentRevision: current.revision
+        };
+      }
+
+      const session = input.next;
+      const sessionResult = this.database.connection
+        .prepare(`
+          UPDATE agent_conversations
+          SET patient_id = ?, state = ?, save_consent_id = ?,
+              revision = ?, last_sequence = ?, closed_at = ?,
+              retention_until = ?, updated_at = ?
+          WHERE id = ? AND revision = ?
+        `)
+        .run(
+          session.patientId,
+          session.state,
+          session.saveConsentId,
+          session.revision,
+          session.lastSequence,
+          session.closedAt,
+          session.retentionUntil,
+          session.updatedAt,
+          input.sessionId,
+          input.expectedRevision
+        );
+      if (sessionResult.changes !== 1) {
+        return {
+          kind: "version_conflict",
+          currentRevision: current.revision
+        };
+      }
+
+      const upsertAnswer = this.database.connection.prepare(`
+        INSERT INTO agent_confirmed_answers(
+          session_id, field_code, value, fact_value, source,
+          rule_package_version, rule_package_hash, revision, confirmed_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(session_id, field_code) DO UPDATE SET
+          value = excluded.value,
+          fact_value = excluded.fact_value,
+          source = excluded.source,
+          rule_package_version = excluded.rule_package_version,
+          rule_package_hash = excluded.rule_package_hash,
+          revision = excluded.revision,
+          confirmed_at = excluded.confirmed_at
+      `);
+      for (const answer of input.answers) {
+        upsertAnswer.run(
+          answer.sessionId,
+          answer.fieldCode,
+          answer.value,
+          answer.factValue,
+          answer.source,
+          answer.rulePackageVersion,
+          answer.rulePackageHash,
+          answer.revision,
+          answer.confirmedAt
+        );
+      }
+
+      const insertCandidate = this.database.connection.prepare(`
+        INSERT INTO agent_candidates(
+          id, session_id, field_code, proposed_value_encrypted,
+          encryption_key_version, source_message_id, state,
+          created_at, decided_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const candidate of input.candidates) {
+        insertCandidate.run(
+          candidate.id,
+          candidate.sessionId,
+          candidate.fieldCode,
+          serializeEncrypted(candidate.proposedValueEncrypted),
+          candidate.encryptionKeyVersion,
+          candidate.sourceMessageId,
+          candidate.state,
+          candidate.createdAt,
+          candidate.decidedAt
+        );
+      }
+
+      const decision = input.decision;
+      this.database.connection
+        .prepare(`
+          INSERT INTO agent_decisions(
+            id, session_id, decision_sequence, session_revision,
+            input_snapshot_encrypted, input_snapshot_hash,
+            outcome, stage, severity_code, syndrome_code,
+            next_questions_json, matched_rule_ids_json,
+            rule_package_version, rule_package_hash,
+            plan_id, plan_revision, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `)
+        .run(
+          decision.id,
+          decision.sessionId,
+          decision.decisionSequence,
+          decision.sessionRevision,
+          serializeEncrypted(decision.inputSnapshotEncrypted),
+          decision.inputSnapshotHash,
+          decision.outcome,
+          decision.stage,
+          decision.severityCode,
+          decision.syndromeCode,
+          decision.nextQuestionsJson,
+          decision.matchedRuleIdsJson,
+          decision.rulePackageVersion,
+          decision.rulePackageHash,
+          decision.planId,
+          decision.planRevision,
+          decision.createdAt
+        );
+
+      const insertMessage = this.database.connection.prepare(`
+        INSERT INTO agent_messages(
+          id, session_id, sequence, role, decision_id,
+          content_encrypted, content_hash, encryption_key_version, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const message of input.messages) {
+        insertMessage.run(
+          message.id,
+          message.sessionId,
+          message.sequence,
+          message.role,
+          message.decisionId,
+          serializeEncrypted(message.contentEncrypted),
+          message.contentHash,
+          message.contentEncrypted.keyVersion,
+          message.createdAt
+        );
+      }
+
+      return { kind: "committed" };
     });
   }
 

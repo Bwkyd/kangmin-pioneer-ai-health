@@ -297,6 +297,11 @@ export class KangminApplication {
       const patientId = (await this.sessions.resolvePatient(request.sessionToken)).patientId;
 
       switch (command) {
+        // 语义分流（评审 P0-3 收敛，非同一输入双路由）：
+        // 无 --message 的 agent/agent start → 确定性安全会话（#131 结构化
+        // 问答，agent_sessions 表，登录必需）；带 --message → 自由对话管线
+        //（ConversationService，agent_conversations 表，匿名允许），
+        // 由 isAnonymousAgentCommand 的 message 条件唯一分流。
         case "agent":
         case "agent start":
           return success(

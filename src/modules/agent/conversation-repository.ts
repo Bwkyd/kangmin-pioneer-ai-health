@@ -18,6 +18,23 @@ export type UpdateSessionOutcome =
   | { kind: "not_found" }
   | { kind: "version_conflict"; currentRevision: number };
 
+/** 一轮对话的全部写入，单事务提交（评审 B P1-2：轮次原子化）。 */
+export interface CommitTurnInput {
+  sessionId: string;
+  /** 期望会话版本（CAS 乐观锁）：不匹配时整轮拒绝，避免并发部分写入。 */
+  expectedRevision: number;
+  answers: ConfirmedAnswerRow[];
+  candidates: CandidateRow[];
+  decision: DecisionRow;
+  messages: ConversationMessage[];
+  /** 提交后的会话状态（revision=expected+1、lastSequence、state、closedAt）。 */
+  next: ConversationSession;
+}
+
+export type CommitTurnOutcome =
+  | { kind: "committed" }
+  | { kind: "version_conflict"; currentRevision: number };
+
 export interface ConversationRepository {
   createSession(session: ConversationSession): Promise<void>;
   findSession(id: string): Promise<ConversationSession | null>;
@@ -29,6 +46,8 @@ export interface ConversationRepository {
     expectedRevision: number,
     session: ConversationSession
   ): Promise<UpdateSessionOutcome>;
+  /** 单事务提交一轮对话的全部写入（CAS 版本 + 答案/候选/决策/消息/会话状态）。 */
+  commitTurn(input: CommitTurnInput): Promise<CommitTurnOutcome>;
 
   appendMessage(message: ConversationMessage): Promise<void>;
 

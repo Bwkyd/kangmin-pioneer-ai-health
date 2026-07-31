@@ -867,6 +867,40 @@ const MIGRATIONS: Migration[] = [
       addColumn("method_tags", "method_tags TEXT");
       addColumn("display_order", "display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0)");
     }
+  },
+  {
+    // 旧库升级（评审 C P0）：#135 时代的 admin_sessions 无 revoked_at/
+    // revoked_reason 列，新代码 find/revoke 全部查询该列，缺列时
+    // kangmin-admin 整体瘫痪（no such column → internal_error）。
+    // 同时把 admins 表已有行回填到 admin_accounts（占位密码不可登录），
+    // 使升级前签发的 dev admin 会话令牌继续有效（find JOIN admin_accounts）。
+    version: "0010_admin_sessions_upgrade",
+    apply: (connection) => {
+      const sessionColumns = connection
+        .prepare("PRAGMA table_info(admin_sessions)")
+        .all() as unknown as Array<{ name: string }>;
+      if (!sessionColumns.some((column) => column.name === "revoked_at")) {
+        connection.exec("ALTER TABLE admin_sessions ADD COLUMN revoked_at TEXT");
+      }
+      if (!sessionColumns.some((column) => column.name === "revoked_reason")) {
+        connection.exec(
+          "ALTER TABLE admin_sessions ADD COLUMN revoked_reason TEXT"
+        );
+      }
+      connection.exec(`
+        INSERT OR IGNORE INTO admin_accounts(
+          id, username, password_hash, role, status,
+          revision, created_at, updated_at
+        )
+        SELECT id, development_subject, '!dev-session-only', role,
+               CASE WHEN enabled = 1 THEN 'active' ELSE 'disabled' END,
+               1, created_at, created_at
+        FROM admins
+        WHERE NOT EXISTS (
+          SELECT 1 FROM admin_accounts WHERE admin_accounts.id = admins.id
+        );
+      `);
+    }
   }
 ];
 

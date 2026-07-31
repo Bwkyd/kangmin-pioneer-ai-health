@@ -24,7 +24,9 @@ import type { EncryptionPort } from "../../kernel/encryption.js";
 import { parseStructuredAnswers } from "./answer-parser.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type {
+  CandidateRow,
   ConfirmedAnswerRow,
+  ConversationMessage,
   ConversationSession,
   ConversationShowResult,
   ConversationTurnInput,
@@ -170,7 +172,9 @@ export class ConversationService {
         .map((answer) => answer.fieldCode)
     );
 
-    // 1. 确定性结构化回答（模型降级路径）。
+    // 1. 确定性结构化回答（模型降级路径）：先收集，随轮次单事务提交
+    //    （评审 B P1-2 原子化：不再逐条独立事务写库）。
+    const pendingAnswers: ConfirmedAnswerRow[] = [];
     for (const answer of parseStructuredAnswers(message, lastQuestions)) {
       const row: ConfirmedAnswerRow = {
         sessionId: session.id,
@@ -183,15 +187,27 @@ export class ConversationService {
         revision: session.revision,
         confirmedAt: timestamp
       };
-      await this.repository.setConfirmedAnswer(row);
+      pendingAnswers.push(row);
       if (answer.state === "unknown") {
         unknownAnswered.add(answer.fieldCode);
       } else {
         unknownAnswered.delete(answer.fieldCode);
       }
     }
-    const currentAnswers = await this.repository.listConfirmedAnswers(session.id);
-    const facts = answersToFacts(currentAnswers);
+    // 内存合并：已存答案 + 本轮新答案（新值按 field_code 覆盖旧值，
+    // 与 SQL UPSERT 语义一致）。
+    const mergedAnswers = [...confirmedAnswers];
+    for (const answer of pendingAnswers) {
+      const index = mergedAnswers.findIndex(
+        (existing) => existing.fieldCode === answer.fieldCode
+      );
+      if (index >= 0) {
+        mergedAnswers[index] = answer;
+      } else {
+        mergedAnswers.push(answer);
+      }
+    }
+    const facts = answersToFacts(mergedAnswers);
 
     // 2. 模型提取待确认候选（失败只降级，绝不宽松解析）。
     let extractionFailed = false;
@@ -208,13 +224,14 @@ export class ConversationService {
       }
     }
     const proposedViews: ProposedCandidateView[] = [];
+    const pendingCandidates: CandidateRow[] = [];
     for (const candidate of extracted) {
       const encrypted =
         candidate.state === "value" && candidate.value !== undefined
           ? this.encryption.encrypt(String(candidate.value))
           : null;
       const candidateId = randomUUID();
-      await this.repository.addCandidate({
+      pendingCandidates.push({
         id: candidateId,
         sessionId: session.id,
         fieldCode: candidate.fieldCode,
@@ -264,11 +281,13 @@ export class ConversationService {
     const finalOutput =
       escalated ?? validated;
 
-    // 6. 保存决策凭证（输入快照加密 + 哈希）。
+    // 6-8. 决策凭证 + 消息 + 会话状态：构造后单事务提交
+    //      （评审 B P1-2 原子化：任何一步失败整轮回滚；
+    //      并发轮次因 CAS 版本不匹配被拒绝，不产生部分写入）。
     const snapshotJson = canonicalJson(facts);
     const snapshotEncrypted = this.encryption.encrypt(snapshotJson);
     const decisionId = randomUUID();
-    await this.repository.saveDecision({
+    const decision: DecisionRow = {
       id: decisionId,
       sessionId: session.id,
       decisionSequence: session.lastSequence + 1,
@@ -286,12 +305,12 @@ export class ConversationService {
       planId: verdict.planId,
       planRevision: verdict.planRevision,
       createdAt: timestamp
-    });
+    };
 
-    // 7. 消息（密文 + 已校验输出哈希；assistant 绑定已完成 decision）。
     let sequence = session.lastSequence + 1;
+    const messages: ConversationMessage[] = [];
     if (message !== "") {
-      await this.repository.appendMessage({
+      messages.push({
         id: randomUUID(),
         sessionId: session.id,
         sequence,
@@ -303,7 +322,7 @@ export class ConversationService {
       });
       sequence += 1;
     }
-    await this.repository.appendMessage({
+    messages.push({
       id: randomUUID(),
       sessionId: session.id,
       sequence,
@@ -317,7 +336,7 @@ export class ConversationService {
     const notices: Array<{ content: string; contentHash: string }> = [];
     if (extractionFailed && message !== "") {
       const notice = systemNotice("extraction_unavailable", EXTRACTION_UNAVAILABLE_NOTICE);
-      await this.repository.appendMessage({
+      messages.push({
         id: randomUUID(),
         sessionId: session.id,
         sequence,
@@ -331,7 +350,6 @@ export class ConversationService {
       notices.push({ content: notice.content, contentHash: notice.contentHash });
     }
 
-    // 8. 会话状态迁移。
     const closed =
       escalated !== null ||
       verdict.outcome === "blocked" ||
@@ -347,7 +365,24 @@ export class ConversationService {
       closedAt: closed ? timestamp : null,
       updatedAt: timestamp
     };
-    await this.updateSession(session, next);
+
+    const outcome = await this.repository.commitTurn({
+      sessionId: session.id,
+      expectedRevision: session.revision,
+      answers: pendingAnswers,
+      candidates: pendingCandidates,
+      decision,
+      messages,
+      next
+    });
+    if (outcome.kind === "version_conflict") {
+      throw new DomainError("version_conflict", "对话已更新，请重新读取", {
+        details: {
+          expectedRevision: session.revision,
+          currentRevision: outcome.currentRevision
+        }
+      });
+    }
 
     return {
       conversationId: session.id,

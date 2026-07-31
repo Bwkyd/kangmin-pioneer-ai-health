@@ -155,7 +155,7 @@ test("方案：固定证型校验、启用前完整性校验、证型映射", as
       await app.execute({
         command: "agent plan create",
         adminToken: token,
-        input: { name: "肺气虚寒调理方案", syndrome: "feiqi-xuhan" }
+        input: { name: "肺气虚寒调理方案", syndrome: "LUNG_QI_COLD" }
       })
     );
     assert.equal(plan.status, "draft");
@@ -198,7 +198,7 @@ test("方案：固定证型校验、启用前完整性校验、证型映射", as
     const mappings = dataOf<{
       items: Array<{ syndromeId: string; syndromeName: string; hasEnabledPlan: boolean }>;
     }>(await app.execute({ command: "agent plan mappings", adminToken: token }));
-    const feiqi = mappings.items.find((item) => item.syndromeId === "feiqi-xuhan");
+    const feiqi = mappings.items.find((item) => item.syndromeId === "LUNG_QI_COLD");
     assert.ok(feiqi !== undefined);
     assert.equal(feiqi.hasEnabledPlan, true);
 
@@ -224,7 +224,7 @@ test("方案关联视频校验：不存在或未发布的视频不能启用", as
       adminToken: token,
       input: {
         name: "关联视频方案",
-        syndrome: "pixu-weiruo",
+        syndrome: "SPLEEN_QI_DEF",
         method: "日常护理",
         steps: ["步骤一"],
         risks: "风险提示",
@@ -250,7 +250,7 @@ test("方案关联视频校验：不存在或未发布的视频不能启用", as
         adminToken: token,
         input: {
           name: "关联视频方案",
-          syndrome: "pixu-weiruo",
+          syndrome: "SPLEEN_QI_DEF",
           method: "日常护理",
           steps: ["步骤一"],
           risks: "风险提示",

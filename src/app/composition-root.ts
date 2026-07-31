@@ -27,6 +27,7 @@ import { SqliteAgentRepository } from "../infrastructure/sqlite-agent-repository
 import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
 import { SqliteConversationRepository } from "../infrastructure/sqlite-conversation-repository.js";
 import { SqliteEnvironmentCacheRepository } from "../infrastructure/sqlite-environment-cache-repository.js";
+import { SqlitePlanRegistry } from "../infrastructure/sqlite-plan-registry.js";
 import { SqliteRecordRepository } from "../infrastructure/sqlite-record-repository.js";
 import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
@@ -87,10 +88,10 @@ export function createApplication(
   const environmentProvider =
     options.environmentProvider ?? defaultEnvironmentProvider();
 
-  const planRegistry: PlanRegistryPort = options.planRegistry ?? {
-    // 规则包未冻结，没有任何已批准方案；候选方案不得进入正式路径。
-    findApprovedPlan: () => null
-  };
+  // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
+  // 注册表数据源接通统一方案表 agent_plans，供模拟测试与冻结后的正式评估使用。
+  const planRegistry: PlanRegistryPort =
+    options.planRegistry ?? new SqlitePlanRegistry(database);
   const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
   const modelAdapter = new DeepSeekModelAdapter({
     apiKey: process.env.KANGMIN_DEEPSEEK_API_KEY

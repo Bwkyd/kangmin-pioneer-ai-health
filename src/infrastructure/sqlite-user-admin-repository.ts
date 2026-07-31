@@ -179,17 +179,22 @@ export class SqliteUserAdminRepository implements UserReadRepository {
     userId: string,
     limit: number
   ): Promise<MedicationProjectionRow[]> {
+    // 0005 迁移把用药正文列重建为 *_encrypted；管理端组合根不注入
+    // 加密端口，只投影非加密列（id/local_date），正文不落入管理输出。
     const rows = this.database.connection.prepare(`
-      SELECT id, local_date, medication_name, dosage
+      SELECT id, local_date
       FROM medication_records WHERE patient_id = ?
       ORDER BY local_date DESC, id ASC
       LIMIT ?
-    `).all(userId, limit) as unknown as MedicationShape[];
+    `).all(userId, limit) as unknown as Array<{
+      id: string;
+      local_date: string;
+    }>;
     return rows.map((row) => ({
       id: row.id,
       localDate: row.local_date,
-      medicationName: row.medication_name,
-      dosage: row.dosage
+      medicationName: null,
+      dosage: null
     }));
   }
 

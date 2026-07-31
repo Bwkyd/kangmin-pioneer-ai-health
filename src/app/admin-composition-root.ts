@@ -8,6 +8,7 @@ import { SqliteAdminSessionRepository } from "../infrastructure/sqlite-admin-ses
 import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
 import { SqliteContentAdminRepository } from "../infrastructure/sqlite-content-admin-repository.js";
 import { SqliteContentAuxRepository } from "../infrastructure/sqlite-content-aux-repository.js";
+import { SqliteAuditRepository } from "../infrastructure/sqlite-audit-repository.js";
 import { SqliteUserAdminRepository } from "../infrastructure/sqlite-user-admin-repository.js";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
 
@@ -116,6 +117,7 @@ export function createAdminApplication(
   const auxRepository = new SqliteContentAuxRepository(database);
   const agentRepository = new SqliteAgentAdminRepository(database);
   const userRepository = new SqliteUserAdminRepository(database);
+  const auditRepository = new SqliteAuditRepository(database);
   return new KangminAdminApplication(
     sessionRepository,
     accountRepository,
@@ -125,6 +127,7 @@ export function createAdminApplication(
     new BuiltinSyndromeRegistry(),
     userRepository,
     mediaDirectory,
+    auditRepository,
     () => {
       database.close();
     },

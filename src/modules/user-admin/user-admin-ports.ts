@@ -34,7 +34,8 @@ export interface ExposureProjectionRow {
 export interface MedicationProjectionRow {
   id: string;
   localDate: string;
-  medicationName: string;
+  /** 用药正文已加密（0005），管理端组合根不注入加密端口：恒为 null。 */
+  medicationName: string | null;
   dosage: string | null;
 }
 

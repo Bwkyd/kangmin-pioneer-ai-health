@@ -39,14 +39,17 @@ function seedPlans(databasePath: string): void {
   const database = new KangminDatabase(databasePath);
   try {
     database.connection.exec(`
-      INSERT INTO agent_care_plans(id, name, current_revision, enabled_revision, published_revision, revision)
-      VALUES ('plan-published', '花粉季通用护理方案', 1, 1, 1, 1),
-             ('plan-draft', '未发布方案', 1, NULL, NULL, 1);
-      INSERT INTO agent_care_plan_revisions(plan_id, revision, name, summary, steps_json, disclaimer, created_by_admin_id)
-      VALUES ('plan-published', 1, '花粉季通用护理方案', '适用于花粉季的居家护理',
+      INSERT INTO agent_plans(
+        id, name, syndrome, method, steps_json, precautions, risks,
+        contraindications, status, revision, display_order, created_at, updated_at
+      )
+      VALUES ('plan-published', '花粉季通用护理方案', 'LUNG_HEAT', '日常护理',
               '[{"step":1,"title":"生理盐水洗鼻","description":"早晚各一次"},{"step":2,"title":"外出佩戴口罩"}]',
-              '仅供参考，不代替医疗建议', 'admin-1'),
-             ('plan-draft', 1, '未发布方案', '未发布摘要', '[]', NULL, 'admin-1');
+              '注意事项', '风险提示', '禁忌', 'enabled', 1, 0,
+              '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+             ('plan-draft', '未发布方案', 'LUNG_QI_COLD', '日常护理', '[]',
+              '', '', '', 'draft', 1, 1,
+              '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
     `);
   } finally {
     database.close();
@@ -107,7 +110,7 @@ test("通用方案：已发布可见，未发布/草稿不可见，搜索只覆�
     assert.equal(shown.publishedRevision, 1);
     assert.equal(shown.steps.length, 2);
     assert.equal(shown.steps[0]?.title, "生理盐水洗鼻");
-    assert.match(shown.disclaimer ?? "", /仅供参考/u);
+    assert.match(shown.disclaimer ?? "", /本内容仅作健康科普和居家管理参考/u);
 
     const hidden = await application.execute({
       command: "browse plan show",

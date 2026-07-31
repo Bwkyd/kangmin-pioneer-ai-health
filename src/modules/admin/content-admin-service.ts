@@ -1,5 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DomainError } from "../../kernel/errors.js";
+import type { AuditPort } from "../system/audit-ports.js";
 import type { ContentAuxRepository } from "./content-aux-repository.js";
 import type {
   AdminContentItem,
@@ -44,7 +45,8 @@ export type CreateContentInput = Omit<
 export class ContentAdminService {
   constructor(
     private readonly repository: ContentAdminRepository,
-    private readonly aux: ContentAuxRepository
+    private readonly aux: ContentAuxRepository,
+    private readonly audit: AuditPort
   ) {}
 
   // ==== 文章（#135 兼容，扩展媒体/分类校验） ====
@@ -97,12 +99,20 @@ export class ContentAdminService {
     return this.updateItem("article", id, expectedRevision, changes);
   }
 
-  async publish(id: string, expectedRevision: number): Promise<AdminContentItem> {
-    return this.publishItem("article", id, expectedRevision);
+  async publish(
+    adminId: string,
+    id: string,
+    expectedRevision: number
+  ): Promise<AdminContentItem> {
+    return this.publishItem(adminId, "article", id, expectedRevision);
   }
 
-  async unpublish(id: string, expectedRevision: number): Promise<AdminContentItem> {
-    return this.unpublishItem("article", id, expectedRevision);
+  async unpublish(
+    adminId: string,
+    id: string,
+    expectedRevision: number
+  ): Promise<AdminContentItem> {
+    return this.unpublishItem(adminId, "article", id, expectedRevision);
   }
 
   // ==== 视频 ====
@@ -156,17 +166,19 @@ export class ContentAdminService {
   }
 
   async publishVideo(
+    adminId: string,
     id: string,
     expectedRevision: number
   ): Promise<AdminContentItem> {
-    return this.publishItem("video", id, expectedRevision);
+    return this.publishItem(adminId, "video", id, expectedRevision);
   }
 
   async unpublishVideo(
+    adminId: string,
     id: string,
     expectedRevision: number
   ): Promise<AdminContentItem> {
-    return this.unpublishItem("video", id, expectedRevision);
+    return this.unpublishItem(adminId, "video", id, expectedRevision);
   }
 
   // ==== 内部 ====
@@ -232,6 +244,7 @@ export class ContentAdminService {
   }
 
   private async publishItem(
+    adminId: string,
     kind: ContentItemKind,
     id: string,
     expectedRevision: number
@@ -249,7 +262,7 @@ export class ContentAdminService {
       );
     }
     const timestamp = new Date().toISOString();
-    return this.commitItem(
+    const published = await this.commitItem(
       {
         ...current,
         status: "published",
@@ -259,9 +272,20 @@ export class ContentAdminService {
       },
       expectedRevision
     );
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: `content.${kind}.publish`,
+      entityType: "content_item",
+      entityId: id,
+      entityRevision: published.revision,
+      details: { status: "published" }
+    });
+    return published;
   }
 
   private async unpublishItem(
+    adminId: string,
     kind: ContentItemKind,
     id: string,
     expectedRevision: number
@@ -271,7 +295,7 @@ export class ContentAdminService {
     if (current.status !== "published") {
       throw new DomainError("validation_failed", "只有已发布内容可以下架");
     }
-    return this.commitItem(
+    const unpublished = await this.commitItem(
       {
         ...current,
         status: "unpublished",
@@ -280,6 +304,16 @@ export class ContentAdminService {
       },
       expectedRevision
     );
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: `content.${kind}.unpublish`,
+      entityType: "content_item",
+      entityId: id,
+      entityRevision: unpublished.revision,
+      details: { status: "unpublished" }
+    });
+    return unpublished;
   }
 
   /**

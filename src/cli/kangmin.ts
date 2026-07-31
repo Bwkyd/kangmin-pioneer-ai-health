@@ -11,8 +11,8 @@ import { failure, type CommandResult } from "../kernel/result.js";
 const HELP = `抗敏先锋患者 CLI（Agent + Record + Browse + Account MVP）
 
 用法：
-  kangmin                         启动确定性 Agent 安全会话
-  kangmin agent                   对话与智能分析
+  kangmin                         启动交互式对话（体验版，匿名可用）
+  kangmin agent                   确定性安全会话（结构化问答，需登录）
   kangmin record                  管理自己的健康记录
   kangmin browse                  浏览环境与已发布内容
   kangmin account                 管理账号、授权和设置
@@ -43,12 +43,18 @@ browse 命令：
   browse environment forecast [--days N]
   browse environment refresh [--city X]
 
-agent 命令：
-  agent start
+agent 命令（两条管线，路由按输入区分）：
+  agent start                      确定性安全会话（结构化问答，需登录）
+  agent start --message <文本>     自由对话管线（匿名可用，登录后确认可保存）
+  agent exec <文本> [--conversation <id>] [--save-consent]
+                                   非交互自由对话（--json 机器集成）
+  agent conversations list         自由对话会话列表
+  agent conversations show <id>    自由对话会话详情
   agent continue <session-id> --expected-revision <n> --question urgentHelp --answer yes|no|unknown
-  agent resume <session-id>
-  agent sessions list
-  agent sessions show <session-id>
+  agent resume <session-id>        恢复确定性安全会话
+  agent sessions list|show         确定性安全会话列表/详情
+  agent feedback <id> --rating helpful|unhelpful [--reason <文本>]
+  agent test run --answer <field>=<state> 模拟链路（只验证不修改）
 
 account 命令：
   account register --username <用户名> [--nickname <昵称>]
@@ -72,7 +78,8 @@ account 命令：
   密码不会出现在命令行参数、历史或日志中。
 
 当前真实可用：
-  agent 安全会话基础、record 全部命令、browse 已发布文章/视频/方案/环境快照、
+  agent 确定性安全会话 + 自由对话管线（临床规则包为 candidate，正式输出阻断）、
+  record 全部命令、browse 已发布文章/视频/方案/环境快照、
   account 注册/登录/状态/退出/资料/同意/隐私。
 
 临床边界：

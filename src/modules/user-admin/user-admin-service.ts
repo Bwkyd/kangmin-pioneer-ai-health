@@ -1,4 +1,5 @@
 import { DomainError } from "../../kernel/errors.js";
+import type { AuditPort } from "../system/audit-ports.js";
 import type {
   ActivityStats,
   ExposureRecordView,
@@ -40,7 +41,10 @@ function maskTokenHash(tokenHash: string): string {
 }
 
 export class UserAdminService {
-  constructor(private readonly repository: UserReadRepository) {}
+  constructor(
+    private readonly repository: UserReadRepository,
+    private readonly audit: AuditPort
+  ) {}
 
   async list(input: {
     limit?: number | undefined;
@@ -83,9 +87,17 @@ export class UserAdminService {
     };
   }
 
-  async sessions(id: string): Promise<{ items: PatientSessionView[] }> {
+  async sessions(adminId: string, id: string): Promise<{ items: PatientSessionView[] }> {
     await this.requireUser(id);
     const rows = await this.repository.listSessions(id, SESSION_LIMIT);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "users.sessions.read",
+      entityType: "patient",
+      entityId: id,
+      details: { sessionCount: rows.length }
+    });
     return {
       items: rows.map((row) => ({
         sessionId: maskTokenHash(row.tokenHash),
@@ -96,12 +108,13 @@ export class UserAdminService {
     };
   }
 
-  async records(id: string, type?: string): Promise<UserRecordsView> {
+  async records(adminId: string, id: string, type?: string): Promise<UserRecordsView> {
     await this.requireUser(id);
     const recordType = this.recordTypeOf(type);
+    let items: Array<SymptomRecordView | ExposureRecordView | MedicationRecordView>;
     if (recordType === "symptom") {
       const rows = await this.repository.listSymptomRecords(id, RECORD_LIMIT);
-      const items: SymptomRecordView[] = rows.map((row) => ({
+      items = rows.map((row) => ({
         id: row.id,
         localDate: row.localDate,
         nasalCongestion: row.nasalCongestion,
@@ -110,24 +123,30 @@ export class UserAdminService {
         runnyNose: row.runnyNose,
         tnssTotal: row.tnssTotal
       }));
-      return { userId: id, type: recordType, items };
-    }
-    if (recordType === "exposure") {
+    } else if (recordType === "exposure") {
       const rows = await this.repository.listExposureRecords(id, RECORD_LIMIT);
-      const items: ExposureRecordView[] = rows.map((row) => ({
+      items = rows.map((row) => ({
         id: row.id,
         localDate: row.localDate,
         factors: JSON.parse(row.factorsJson) as string[]
       }));
-      return { userId: id, type: recordType, items };
+    } else {
+      const rows = await this.repository.listMedicationRecords(id, RECORD_LIMIT);
+      items = rows.map((row) => ({
+        id: row.id,
+        localDate: row.localDate,
+        medicationName: row.medicationName,
+        dosage: row.dosage
+      }));
     }
-    const rows = await this.repository.listMedicationRecords(id, RECORD_LIMIT);
-    const items: MedicationRecordView[] = rows.map((row) => ({
-      id: row.id,
-      localDate: row.localDate,
-      medicationName: row.medicationName,
-      dosage: row.dosage
-    }));
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "users.records.read",
+      entityType: "patient",
+      entityId: id,
+      details: { recordType, itemCount: items.length }
+    });
     return { userId: id, type: recordType, items };
   }
 
