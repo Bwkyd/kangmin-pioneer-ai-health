@@ -15,6 +15,8 @@ export class KangminDatabase {
       this.connection = new DatabaseSync(path);
       this.connection.exec("PRAGMA foreign_keys = ON");
       this.connection.exec("PRAGMA journal_mode = WAL");
+      // 跨进程并发写时等待锁而非立即失败；见 transaction() 的 BUSY 映射。
+      this.connection.exec("PRAGMA busy_timeout = 3000");
       this.migrate();
     } catch (error) {
       throw new DomainError(
@@ -30,7 +32,35 @@ export class KangminDatabase {
   }
 
   transaction<T>(operation: () => T): T {
-    this.connection.exec("BEGIN IMMEDIATE");
+    this.beginImmediate();
+    try {
+      const result = operation();
+      this.connection.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        this.connection.exec("ROLLBACK");
+      } catch {
+        // Preserve the original domain/storage failure.
+      }
+      if (String(error).includes("database is locked")) {
+        // 跨进程瞬时锁争用：可重试，不应归一化为内部错误。
+        throw new DomainError(
+          "storage_unavailable",
+          "健康记录存储正被其他进程占用，请稍后重试",
+          { retryable: true, cause: error }
+        );
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * 只读事务使用 BEGIN DEFERRED：WAL 模式下不获取任何锁，
+   * 多个并发读取互不阻塞，也不会被写事务持锁拖死。
+   */
+  readOnly<T>(operation: () => T): T {
+    this.connection.exec("BEGIN");
     try {
       const result = operation();
       this.connection.exec("COMMIT");
@@ -42,6 +72,34 @@ export class KangminDatabase {
         // Preserve the original domain/storage failure.
       }
       throw error;
+    }
+  }
+
+  /**
+   * SQLite 文档规定：BEGIN IMMEDIATE 在数据库被占用时立即返回 SQLITE_BUSY，
+   * 不经过 busy handler，因此 PRAGMA busy_timeout 对 BEGIN 本身无效。
+   * 这里做有限重试（约 3 秒）以容忍跨进程瞬时写锁；
+   * 超时直接抛出可重试的 storage_unavailable，避免在 transaction() 的 try 块之外漏出裸 SQLITE_BUSY。
+   */
+  private beginImmediate(): void {
+    const deadline = Date.now() + 3000;
+    for (;;) {
+      try {
+        this.connection.exec("BEGIN IMMEDIATE");
+        return;
+      } catch (error) {
+        if (!String(error).includes("database is locked")) {
+          throw error;
+        }
+        if (Date.now() >= deadline) {
+          throw new DomainError(
+            "storage_unavailable",
+            "健康记录存储正被其他进程占用，请稍后重试",
+            { retryable: true, cause: error }
+          );
+        }
+        Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
+      }
     }
   }
 
@@ -88,6 +146,53 @@ export class KangminDatabase {
         created_at TEXT NOT NULL,
         PRIMARY KEY(patient_id, command_scope, idempotency_key)
       ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS profiles (
+        patient_id TEXT PRIMARY KEY REFERENCES patients(id),
+        display_name TEXT,
+        birth_date TEXT,
+        sex TEXT NOT NULL DEFAULT 'unspecified'
+          CHECK(sex IN ('female', 'male', 'other', 'unspecified')),
+        allergy_history TEXT,
+        known_allergies TEXT,
+        common_triggers TEXT,
+        notes TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS exposure_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        factors_json TEXT NOT NULL,
+        other_description TEXT,
+        notes TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(patient_id, local_date)
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS exposure_records_patient_date
+      ON exposure_records(patient_id, local_date DESC);
+
+      CREATE TABLE IF NOT EXISTS medication_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        medication_name TEXT NOT NULL,
+        dosage TEXT,
+        actual_use TEXT,
+        notes TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS medication_records_patient_date
+      ON medication_records(patient_id, local_date DESC);
     `);
   }
 }

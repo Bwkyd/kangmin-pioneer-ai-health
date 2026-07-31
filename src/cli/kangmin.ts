@@ -11,15 +11,21 @@ const HELP = `抗敏先锋患者 CLI（Patient Record MVP）
 用法：
   kangmin                         启动 Agent（本 MVP 明确返回未实现）
   kangmin agent                   对话与智能分析
-  kangmin record symptom add      新增症状与 TNSS
-  kangmin record symptom list     查询本人症状记录
-  kangmin record symptom show ID  查询本人单条记录
-  kangmin record symptom update ID 更新本人记录
+  kangmin record                  管理自己的健康记录
   kangmin browse                  浏览环境与已发布内容
   kangmin account                 管理账号、授权和设置
 
+record 命令：
+  record symptom add|list|show|update|delete
+  record profile show|update
+  record exposure add|list|show|update|delete
+  record medication add|list|show|update|delete
+  record overview
+  record calendar --month YYYY-MM
+  record trend --from YYYY-MM-DD --to YYYY-MM-DD
+
 当前真实可用：
-  record symptom add|list|show|update
+  record 全部命令（症状、档案、暴露、用药、概览、日历、趋势）
 
 身份：
   通过 KANGMIN_SESSION_TOKEN 传递不透明会话令牌。
@@ -28,6 +34,12 @@ const HELP = `抗敏先锋患者 CLI（Patient Record MVP）
 机器输出：
   添加 --json 后 stdout 只输出一个 JSON 对象。
 `;
+
+/** 值为布尔标志、不需要取值的选项。 */
+const FLAG_OPTIONS = new Set(["--yes"]);
+
+/** 允许重复出现、收集为数组的选项。 */
+const REPEATABLE_OPTIONS = new Set(["--factor"]);
 
 const NUMBER_OPTIONS = new Set([
   "nasalCongestion",
@@ -39,13 +51,30 @@ const NUMBER_OPTIONS = new Set([
 
 const OPTION_NAMES: Record<string, string> = {
   "--local-date": "localDate",
+  "--date": "localDate",
   "--nasal-congestion": "nasalCongestion",
   "--nasal-itching": "nasalItching",
   "--sneezing": "sneezing",
   "--runny-nose": "runnyNose",
   "--notes": "notes",
   "--idempotency-key": "idempotencyKey",
-  "--expected-revision": "expectedRevision"
+  "--expected-revision": "expectedRevision",
+  "--expected-version": "expectedRevision",
+  "--display-name": "displayName",
+  "--birth-date": "birthDate",
+  "--sex": "sex",
+  "--allergy-history": "allergyHistory",
+  "--known-allergies": "knownAllergies",
+  "--common-triggers": "commonTriggers",
+  "--factor": "factors",
+  "--other-description": "otherDescription",
+  "--name": "medicationName",
+  "--dosage": "dosage",
+  "--actual-use": "actualUse",
+  "--month": "month",
+  "--from": "from",
+  "--to": "to",
+  "--yes": "yes"
 };
 
 interface ParsedCommand {
@@ -67,7 +96,7 @@ function parse(argv: string[]): ParsedCommand {
     return { command: "agent", input: {}, json, help: false };
   }
 
-  const [group, resource, action, positional, ...rest] = filtered;
+  const [group, resource, maybeAction, positional, ...rest] = filtered;
   if (group !== "record") {
     if (filtered.length !== 1) {
       return {
@@ -80,26 +109,71 @@ function parse(argv: string[]): ParsedCommand {
     return { command: group ?? "", input: {}, json, help: false };
   }
 
+  /** 只读投影命令是二级命令（record overview/calendar/trend），没有 action。 */
+  const RESOURCE_ONLY = new Set(["overview", "calendar", "trend"]);
+  const action = RESOURCE_ONLY.has(resource ?? "") ? undefined : maybeAction;
+
   const command = [group, resource, action].filter(Boolean).join(" ");
   const input: Record<string, unknown> = {};
-  const optionTokens =
-    action === "show" || action === "update"
-      ? rest
-      : [positional, ...rest].filter((value): value is string => value !== undefined);
+  let optionTokens: string[];
 
-  if ((action === "show" || action === "update") && positional !== undefined) {
-    input.id = positional;
+  if (RESOURCE_ONLY.has(resource ?? "")) {
+    optionTokens = [maybeAction, positional, ...rest].filter(
+      (value): value is string => value !== undefined
+    );
+  } else {
+    const profileScoped = resource === "profile" && action !== "delete";
+    if (
+      (action === "show" || action === "update" || action === "delete") &&
+      !profileScoped
+    ) {
+      if (positional === undefined || positional.startsWith("--")) {
+        input.__parseError = `${resource} ${action} 需要记录 ID`;
+        optionTokens = [];
+      } else {
+        input.id = positional;
+        optionTokens = rest;
+      }
+    } else {
+      optionTokens = [positional, ...rest].filter(
+        (value): value is string => value !== undefined
+      );
+    }
   }
 
-  for (let index = 0; index < optionTokens.length; index += 2) {
-    const option = optionTokens[index];
-    const value = optionTokens[index + 1];
-    const key = option === undefined ? undefined : OPTION_NAMES[option];
-    if (key === undefined || value === undefined) {
-      input.__parseError = `无效或缺少值的参数：${option ?? "(empty)"}`;
+  for (let index = 0; index < optionTokens.length; ) {
+    const token = optionTokens[index];
+    if (token === undefined) {
       break;
     }
-    input[key] = NUMBER_OPTIONS.has(key) ? Number(value) : value;
+    const key = OPTION_NAMES[token];
+
+    if (FLAG_OPTIONS.has(token)) {
+      if (key !== undefined) {
+        input[key] = true;
+      }
+      index += 1;
+      continue;
+    }
+
+    const value = optionTokens[index + 1];
+    if (key === undefined || value === undefined) {
+      input.__parseError = `无效或缺少值的参数：${token}`;
+      break;
+    }
+    if (value.startsWith("--")) {
+      input.__parseError = `${token} 的值不能以 -- 开头：${value}`;
+      break;
+    }
+
+    if (REPEATABLE_OPTIONS.has(token)) {
+      const collected = (input[key] as string[] | undefined) ?? [];
+      collected.push(value);
+      input[key] = collected;
+    } else {
+      input[key] = NUMBER_OPTIONS.has(key) ? Number(value) : value;
+    }
+    index += 2;
   }
 
   return { command, input, json, help: false };
