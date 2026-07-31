@@ -380,3 +380,44 @@ test("症状删除、趋势和参数错误通过真实 CLI 验证", async () => 
   };
   assert.equal(missingIdBody.error.code, "command_invalid");
 });
+
+test("Agent 真实 CLI 子进程完成安全会话并跨进程恢复", async () => {
+  const { environment } = await e2eFixture();
+  const start = run(["agent", "start", "--json"], environment);
+  assert.equal(start.status, 0, start.stderr);
+  assert.equal(start.stdout.trim().split("\n").length, 1);
+  const started = JSON.parse(start.stdout) as {
+    ok: boolean;
+    data: { id: string; revision: number; nextQuestion: { key: string } };
+  };
+  assert.equal(started.data.nextQuestion.key, "urgentHelp");
+
+  const continued = run([
+    "agent", "continue", started.data.id,
+    "--expected-revision", "1",
+    "--question", "urgentHelp",
+    "--answer", "yes",
+    "--json"
+  ], environment);
+  assert.equal(continued.status, 0, continued.stderr);
+  const continuedBody = JSON.parse(continued.stdout) as {
+    data: { status: string; outcome: string; approvedPlanAvailable: boolean };
+  };
+  assert.equal(continuedBody.data.status, "safety_blocked");
+  assert.equal(continuedBody.data.outcome, "urgent_help_required");
+  assert.equal(continuedBody.data.approvedPlanAvailable, false);
+
+  const resumed = run(
+    ["agent", "resume", started.data.id, "--json"],
+    environment
+  );
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const resumedBody = JSON.parse(resumed.stdout) as {
+    data: { revision: number; decisionEvidence: { rulePackVersion: string } };
+  };
+  assert.equal(resumedBody.data.revision, 2);
+  assert.equal(
+    resumedBody.data.decisionEvidence.rulePackVersion,
+    "agent-safety-shell-v1"
+  );
+});

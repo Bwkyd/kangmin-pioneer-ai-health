@@ -19,9 +19,13 @@ import {
 } from "../kernel/validation.js";
 import { SessionService } from "../modules/account/session-service.js";
 import type { SessionRepository } from "../modules/account/session-repository.js";
+import type { AgentRepository } from "../modules/agent/agent-repository.js";
+import { AgentService } from "../modules/agent/agent-service.js";
+import type { AgentQuestion, TriStateAnswer } from "../modules/agent/contracts.js";
 import { sexOf } from "../modules/record/domain.js";
 import type { RecordRepository } from "../modules/record/record-repository.js";
 import { RecordService } from "../modules/record/record-service.js";
+import { RecordSnapshotAdapter } from "./record-snapshot-adapter.js";
 
 export interface CommandRequest {
   command: string;
@@ -51,14 +55,20 @@ function requireConfirmation(input: Record<string, unknown>): void {
 export class KangminApplication {
   readonly sessions: SessionService;
   private readonly records: RecordService;
+  private readonly agent: AgentService;
 
   constructor(
     sessionRepository: SessionRepository,
     recordRepository: RecordRepository,
+    agentRepository: AgentRepository,
     private readonly closeResources: () => void = () => {}
   ) {
     this.sessions = new SessionService(sessionRepository);
     this.records = new RecordService(recordRepository);
+    this.agent = new AgentService(
+      agentRepository,
+      new RecordSnapshotAdapter(this.records)
+    );
   }
 
   async execute(request: CommandRequest): Promise<CommandResult> {
@@ -67,13 +77,6 @@ export class KangminApplication {
 
     try {
       this.rejectClientIdentity(input);
-
-      if (command === "agent") {
-        throw new DomainError(
-          "capability_unavailable",
-          "Agent 尚未进入本次 MVP，实现不会伪造对话或临床结果"
-        );
-      }
 
       if (command === "browse" || command === "account") {
         throw new DomainError(
@@ -85,6 +88,38 @@ export class KangminApplication {
       const patientId = await this.sessions.resolvePatient(request.sessionToken);
 
       switch (command) {
+        case "agent":
+        case "agent start":
+          return success(
+            command,
+            await this.agent.start(patientId),
+            request.requestId
+          );
+        case "agent continue":
+          return success(
+            command,
+            await this.agent.continue(patientId, {
+              id: requiredString(input, "id"),
+              expectedRevision: positiveInteger(input, "expectedRevision"),
+              question: this.agentQuestion(input.question),
+              answer: this.triStateAnswer(input.answer)
+            }),
+            request.requestId
+          );
+        case "agent resume":
+        case "agent sessions show":
+          return success(
+            command,
+            await this.agent.get(patientId, requiredString(input, "id")),
+            request.requestId
+          );
+        case "agent sessions list":
+          return success(
+            command,
+            { items: await this.agent.list(patientId) },
+            request.requestId
+          );
+
         case "record symptom add":
           return success(
             command,
@@ -363,5 +398,27 @@ export class KangminApplication {
         );
       }
     }
+  }
+
+  private triStateAnswer(value: unknown): TriStateAnswer {
+    if (value !== "yes" && value !== "no" && value !== "unknown") {
+      throw new DomainError(
+        "validation_failed",
+        "answer 必须是 yes、no 或 unknown",
+        { details: { field: "answer" } }
+      );
+    }
+    return value;
+  }
+
+  private agentQuestion(value: unknown): AgentQuestion["key"] {
+    if (value !== "urgentHelp") {
+      throw new DomainError(
+        "validation_failed",
+        "question 必须是服务端发布的问题键",
+        { details: { field: "question" } }
+      );
+    }
+    return value;
   }
 }
