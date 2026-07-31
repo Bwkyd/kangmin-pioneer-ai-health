@@ -122,3 +122,63 @@ test("全新库迁移 0010 幂等：无 admins 行时不产生空回填", () => 
     database.close();
   }
 });
+
+test("旧库升级 0012：admin_sessions 外键改指 admin_accounts，新建管理员会话不 FK 违约", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-upgrade-fk-"));
+  const databasePath = join(directory, "legacy.sqlite");
+  createLegacyDatabase(databasePath);
+
+  const database = new KangminDatabase(databasePath);
+  try {
+    // 升级后 admin_sessions 的全部外键目标必须是 admin_accounts（#135
+    // 形态的 FK→admins 已被 0012 重建消除）。
+    const foreignKeys = database.connection
+      .prepare("PRAGMA foreign_key_list(admin_sessions)")
+      .all() as unknown as Array<{ table: string }>;
+    assert.ok(foreignKeys.length > 0, "admin_sessions 应有外键");
+    assert.ok(
+      foreignKeys.every((key) => key.table === "admin_accounts"),
+      "0012 应把 admin_sessions 外键改指 admin_accounts"
+    );
+
+    // 旧会话数据复制保留，升级前令牌继续有效。
+    const legacySession = database.connection
+      .prepare("SELECT token_hash FROM admin_sessions WHERE token_hash = ?")
+      .get("legacy-token-hash");
+    assert.notEqual(legacySession, undefined, "0012 重建不应丢旧会话");
+
+    // 新建 admin_accounts 行 + 新 admin_sessions 行：外键校验已开启，
+    // 旧 FK→admins 形态下新管理员不在 admins 表必然违约，改指后必须通过。
+    const now = "2026-08-01T12:00:00Z";
+    database.connection
+      .prepare(`
+        INSERT INTO admin_accounts(
+          id, username, password_hash, role, status,
+          revision, created_at, updated_at
+        ) VALUES (?, ?, ?, 'admin', 'active', 1, ?, ?)
+      `)
+      .run("admin-new", "new-admin", "x-placeholder", now, now);
+    assert.doesNotThrow(() =>
+      database.connection
+        .prepare(`
+          INSERT INTO admin_sessions(token_hash, admin_id, expires_at, created_at)
+          VALUES (?, ?, ?, ?)
+        `)
+        .run("new-token-hash", "admin-new", "2099-01-01T00:00:00Z", now)
+    );
+
+    // 反向证明外键仍生效（指向 admin_accounts：不存在的管理员被拒绝）。
+    assert.throws(
+      () =>
+        database.connection
+          .prepare(`
+            INSERT INTO admin_sessions(token_hash, admin_id, expires_at, created_at)
+            VALUES (?, ?, ?, ?)
+          `)
+          .run("bogus-token-hash", "no-such-admin", "2099-01-01T00:00:00Z", now),
+      /FOREIGN KEY constraint failed/
+    );
+  } finally {
+    database.close();
+  }
+});

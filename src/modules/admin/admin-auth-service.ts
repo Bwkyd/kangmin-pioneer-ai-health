@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { DomainError } from "../../kernel/errors.js";
 import {
@@ -7,6 +7,7 @@ import {
   PASSWORD_MIN_LENGTH,
   verifyPassword
 } from "../../kernel/credentials.js";
+import { generateToken, hashToken } from "../../kernel/session-tokens.js";
 import type { AuditPort } from "../system/audit-ports.js";
 import type { AdminAccountRepository } from "./admin-account-repository.js";
 import type { AdminIdentity } from "./admin-session-service.js";
@@ -22,10 +23,6 @@ const SESSION_TTL_MS = 12 * 3600_000;
 const DEV_PLACEHOLDER_PREFIX = "!";
 
 const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/u;
-
-function hashToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
-}
 
 export interface AdminAccountView {
   id: string;
@@ -161,7 +158,7 @@ export class AdminAuthService {
       throw new DomainError("authentication_required", "管理员账号已停用");
     }
 
-    const token = randomBytes(32).toString("base64url");
+    const token = generateToken();
     const createdAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + SESSION_TTL_MS).toISOString();
     await this.sessions.createSession({

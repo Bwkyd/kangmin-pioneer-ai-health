@@ -944,6 +944,51 @@ const MIGRATIONS: Migration[] = [
         "ALTER TABLE admin_idempotency_new RENAME TO admin_idempotency"
       );
     }
+  },
+  {
+    // #135 旧库残留（评审 A P1-5 收尾）：0011 只改了 admin_idempotency 的
+    // FK，admin_sessions 的外键仍指向已废弃的 admins 表。升级后新管理员
+    // 只写 admin_accounts（0010 回填的是旧行），再建会话时 FK 违约。
+    // 本迁移用 PRAGMA foreign_key_list 检测：指向 admins（#135 形态）则
+    // 重建 admin_sessions 使 FK 指向 admin_accounts(id)，并保留 0010 补的
+    // revoked 列与 0003 的 admin_sessions_admin 索引；已是 admin_accounts
+    // 形态（全新库）直接跳过，幂等。admins 表本身不 DROP（极旧库可能
+    // 还有其他历史引用）。重建沿用 CREATE new → 复制 → DROP → RENAME，
+    // 与迁移账本同事务，失败自动回滚。
+    version: "0012_admin_sessions_fk",
+    apply: (connection) => {
+      const foreignKeys = connection
+        .prepare("PRAGMA foreign_key_list(admin_sessions)")
+        .all() as unknown as Array<{ table: string }>;
+      if (!foreignKeys.some((key) => key.table === "admins")) {
+        return; // 新库或无表：FK 已指向 admin_accounts，无需重建
+      }
+      connection.exec("DROP TABLE IF EXISTS admin_sessions_new");
+      connection.exec(`
+        CREATE TABLE admin_sessions_new (
+          token_hash TEXT PRIMARY KEY,
+          admin_id TEXT NOT NULL REFERENCES admin_accounts(id),
+          expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          revoked_at TEXT,
+          revoked_reason TEXT
+        ) STRICT;
+      `);
+      connection.exec(`
+        INSERT INTO admin_sessions_new(
+          token_hash, admin_id, expires_at, created_at, revoked_at, revoked_reason
+        )
+        SELECT token_hash, admin_id, expires_at, created_at, revoked_at, revoked_reason
+        FROM admin_sessions;
+        DROP TABLE admin_sessions;
+      `);
+      connection.exec(
+        "ALTER TABLE admin_sessions_new RENAME TO admin_sessions"
+      );
+      connection.exec(
+        "CREATE INDEX IF NOT EXISTS admin_sessions_admin ON admin_sessions(admin_id)"
+      );
+    }
   }
 ];
 
