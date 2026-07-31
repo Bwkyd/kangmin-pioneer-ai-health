@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
+import { seedContent } from "./content-fixture.js";
 
 async function listen(server: ReturnType<typeof createKangminHttpServer>) {
   await new Promise<void>((resolve) => {
@@ -83,6 +84,42 @@ test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", 
       }
     );
     assert.equal(unauthenticated.status, 401);
+  } finally {
+    await close(server);
+    application.close();
+  }
+});
+
+test("Browse 通过无身份 HTTP 命令契约只返回已发布内容", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-browse-http-"));
+  const databasePath = join(directory, "content.sqlite");
+  seedContent(databasePath);
+  const application = createApplication(databasePath);
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
+
+  try {
+    const response = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ command: "browse video list" })
+    });
+    assert.equal(response.status, 200);
+    const body = await response.json() as {
+      data: { items: Array<{ id: string; mediaUrl: string }> };
+    };
+    assert.deepEqual(body.data.items.map((item) => item.id), ["video-public"]);
+    assert.equal(body.data.items[0]?.mediaUrl, "/media/video-public.mp4");
+
+    const hiddenResponse = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        command: "browse video show",
+        input: { id: "video-broken-media" }
+      })
+    });
+    assert.equal(hiddenResponse.status, 404);
   } finally {
     await close(server);
     application.close();

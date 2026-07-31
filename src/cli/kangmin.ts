@@ -24,6 +24,15 @@ record 命令：
   record calendar --month YYYY-MM
   record trend --from YYYY-MM-DD --to YYYY-MM-DD
 
+browse 命令：
+  browse
+  browse article list|categories
+  browse article search <query>
+  browse article show <id>
+  browse video list|categories
+  browse video search <query>
+  browse video show <id>
+
 agent 命令：
   agent start
   agent continue <session-id> --expected-revision <n> --question urgentHelp --answer yes|no|unknown
@@ -32,7 +41,7 @@ agent 命令：
   agent sessions show <session-id>
 
 当前真实可用：
-  agent 安全会话基础和 record 全部命令
+  agent 安全会话基础、record 全部命令、browse 已发布文章/视频
 
 临床边界：
   当前无获批临床规则和方案，Agent 不输出证型、穴位、疗程或调理方案。
@@ -149,6 +158,40 @@ function parse(argv: string[]): ParsedCommand {
   }
 
   const [group, resource, maybeAction, positional, ...rest] = filtered;
+  if (group === "browse") {
+    const input: Record<string, unknown> = {};
+    if (resource === undefined) {
+      return { command: "browse", input, json, help: false };
+    }
+    if (resource !== "article" && resource !== "video") {
+      return { command: filtered.join(" "), input, json, help: false };
+    }
+    if (maybeAction === "list" || maybeAction === "categories") {
+      if (positional !== undefined || rest.length > 0) {
+        input.__parseError = `browse ${resource} ${maybeAction} 不接受额外参数`;
+      }
+      return {
+        command: `browse ${resource} ${maybeAction}`,
+        input,
+        json,
+        help: false
+      };
+    }
+    if (maybeAction === "search" || maybeAction === "show") {
+      if (positional === undefined || rest.length > 0) {
+        input.__parseError = `browse ${resource} ${maybeAction} 需要且只接受一个${maybeAction === "search" ? "搜索词" : "内容 ID"}`;
+      } else {
+        input[maybeAction === "search" ? "query" : "id"] = positional;
+      }
+      return {
+        command: `browse ${resource} ${maybeAction}`,
+        input,
+        json,
+        help: false
+      };
+    }
+    return { command: filtered.join(" "), input, json, help: false };
+  }
   if (group === "agent") {
     const input: Record<string, unknown> = {};
     if (resource === undefined || resource === "start") {

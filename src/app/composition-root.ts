@@ -2,6 +2,7 @@ import { KangminApplication } from "./application.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteRecordRepository } from "../infrastructure/sqlite-record-repository.js";
 import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
+import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
 import { SqliteAgentRepository } from "../infrastructure/sqlite-agent-repository.js";
 
 export function createApplication(databasePath: string): KangminApplication {
@@ -9,6 +10,7 @@ export function createApplication(databasePath: string): KangminApplication {
   return new KangminApplication(
     new SqliteSessionRepository(database),
     new SqliteRecordRepository(database),
+    new SqliteContentReadRepository(database),
     new SqliteAgentRepository(database),
     () => {
       database.close();

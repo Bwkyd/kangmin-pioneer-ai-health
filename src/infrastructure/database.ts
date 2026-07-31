@@ -194,6 +194,28 @@ export class KangminDatabase {
       CREATE INDEX IF NOT EXISTS medication_records_patient_date
       ON medication_records(patient_id, local_date DESC);
 
+      CREATE TABLE IF NOT EXISTS content_items (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        body TEXT,
+        source TEXT NOT NULL,
+        cover_url TEXT,
+        media_url TEXT,
+        status TEXT NOT NULL
+          CHECK(status IN ('draft', 'review', 'published', 'unpublished', 'failed')),
+        patient_visible INTEGER NOT NULL CHECK(patient_visible IN (0, 1)),
+        version_valid INTEGER NOT NULL CHECK(version_valid IN (0, 1)),
+        media_available INTEGER NOT NULL CHECK(media_available IN (0, 1)),
+        published_at TEXT,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS content_items_public_kind_updated
+      ON content_items(kind, status, patient_visible, updated_at DESC);
+
       CREATE TABLE IF NOT EXISTS agent_sessions (
         id TEXT PRIMARY KEY,
         patient_id TEXT NOT NULL REFERENCES patients(id),
