@@ -1,14 +1,17 @@
 import { KangminApplication } from "./application.js";
 import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteRecordRepository } from "../infrastructure/sqlite-record-repository.js";
-import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
-import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
-import { SqliteAgentRepository } from "../infrastructure/sqlite-agent-repository.js";
 import {
   AesGcmEncryption,
   parseEncryptionKeys,
   PlaintextEncryption
 } from "../infrastructure/aes-gcm-encryption.js";
+import { SqliteAccountRepository } from "../infrastructure/sqlite-account-repository.js";
+import { SqliteAgentRepository } from "../infrastructure/sqlite-agent-repository.js";
+import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
+import { SqliteRecordRepository } from "../infrastructure/sqlite-record-repository.js";
+import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
+import { AccountService } from "../modules/account/account-service.js";
+import { SessionService } from "../modules/account/session-service.js";
 import { DomainError } from "../kernel/errors.js";
 import type { EncryptionPort } from "../kernel/encryption.js";
 
@@ -23,11 +26,13 @@ export function createApplication(
 ): KangminApplication {
   const encryption = options.encryption ?? resolveEncryption(process.env);
   const database = new KangminDatabase(databasePath, encryption);
+  const sessions = new SessionService(new SqliteSessionRepository(database));
   return new KangminApplication(
-    new SqliteSessionRepository(database),
+    sessions,
     new SqliteRecordRepository(database, encryption),
     new SqliteContentReadRepository(database),
     new SqliteAgentRepository(database),
+    new AccountService(new SqliteAccountRepository(database), sessions),
     () => {
       database.close();
     }
@@ -44,7 +49,9 @@ export function createApplication(
  * 3. 其余任何环境（含默认）→ 抛 config_missing（退出码 5），
  *    绝不在缺少密钥时明文启动。
  */
-function resolveEncryption(environment: NodeJS.ProcessEnv): EncryptionPort {
+export function resolveEncryption(
+  environment: NodeJS.ProcessEnv
+): EncryptionPort {
   const keys = parseEncryptionKeys(environment.KANGMIN_ENCRYPTION_KEYS);
   if (keys.length > 0) {
     return new AesGcmEncryption(keys);

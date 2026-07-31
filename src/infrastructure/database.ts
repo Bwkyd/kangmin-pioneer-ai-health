@@ -522,6 +522,44 @@ const MIGRATIONS: Migration[] = [
         ALTER TABLE profiles_new RENAME TO profiles;
       `);
     }
+  },
+  {
+    version: "0006_account_sessions_and_consents",
+    apply: (connection) => {
+      connection.exec(`
+        -- 会话来源区分（患者 CLI 设计 §9.3）：development=开发会话、
+        -- mini_program=小程序本地账号会话、cli=CLI 本地账号会话。
+        -- 默认 development 兼容既有开发会话插入代码与存量行；
+        -- revoked_at 用于 logout 撤销（标记而非删除，保留审计线索）。
+        ALTER TABLE patient_sessions
+          ADD COLUMN client_kind TEXT NOT NULL DEFAULT 'development'
+            CHECK(client_kind IN ('development', 'mini_program', 'cli'));
+        ALTER TABLE patient_sessions ADD COLUMN revoked_at TEXT;
+
+        -- 账号资料展示需要脱敏用户名：用户名本身只存 SHA-256 哈希
+        -- （防明文索引），脱敏形态在注册时一次性派生、只作展示用。
+        ALTER TABLE patient_accounts
+          ADD COLUMN username_masked TEXT NOT NULL DEFAULT '';
+
+        -- 同意最小集（患者 CLI 设计 §9.5）：只追加，按患者+类型序号
+        -- 递增；撤回通过追加 withdrawn 决策实现，绝不静默删除旧决策。
+        CREATE TABLE IF NOT EXISTS patient_consents (
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          consent_type TEXT NOT NULL
+            CHECK(consent_type IN ('privacy', 'medical_boundary')),
+          sequence INTEGER NOT NULL CHECK(sequence >= 1),
+          decision TEXT NOT NULL
+            CHECK(decision IN ('granted', 'withdrawn')),
+          policy_version TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(patient_id, consent_type, sequence)
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS patient_consents_latest
+        ON patient_consents(patient_id, consent_type, sequence DESC);
+      `);
+    }
   }
 ];
 

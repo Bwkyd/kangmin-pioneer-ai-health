@@ -7,7 +7,10 @@
  *   未来通过实现同一端口替换为外部身份提供方。
  */
 
-export type PatientAssurance = "verified_phone" | "local_account";
+export type PatientAssurance =
+  | "verified_phone"
+  | "local_account"
+  | "development";
 
 export interface PatientIdentity {
   patientId: string;
