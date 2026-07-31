@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
+import { seedContent } from "./content-fixture.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, "../cli/kangmin.js");
@@ -379,4 +380,75 @@ test("症状删除、趋势和参数错误通过真实 CLI 验证", async () => 
     error: { code: string };
   };
   assert.equal(missingIdBody.error.code, "command_invalid");
+});
+
+test("Browse 真实 CLI 无需身份即可搜索和读取已发布内容", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-browse-cli-"));
+  const databasePath = join(directory, "content.sqlite");
+  seedContent(databasePath);
+  const environment = { KANGMIN_DB_PATH: databasePath };
+
+  const search = run(
+    ["browse", "article", "search", "换季", "--json"],
+    environment
+  );
+  assert.equal(search.status, 0, search.stderr);
+  assert.equal(search.stdout.trim().split("\n").length, 1);
+  const searchBody = JSON.parse(search.stdout) as {
+    data: { items: Array<{ id: string }> };
+  };
+  assert.deepEqual(searchBody.data.items.map((item) => item.id), [
+    "article-public"
+  ]);
+
+  const hidden = run(
+    ["browse", "article", "show", "article-draft", "--json"],
+    environment
+  );
+  assert.equal(hidden.status, 3);
+  const hiddenBody = JSON.parse(hidden.stdout) as {
+    error: { code: string };
+  };
+  assert.equal(hiddenBody.error.code, "resource_not_found");
+});
+
+test("Agent 真实 CLI 子进程完成安全会话并跨进程恢复", async () => {
+  const { environment } = await e2eFixture();
+  const start = run(["agent", "start", "--json"], environment);
+  assert.equal(start.status, 0, start.stderr);
+  assert.equal(start.stdout.trim().split("\n").length, 1);
+  const started = JSON.parse(start.stdout) as {
+    ok: boolean;
+    data: { id: string; revision: number; nextQuestion: { key: string } };
+  };
+  assert.equal(started.data.nextQuestion.key, "urgentHelp");
+
+  const continued = run([
+    "agent", "continue", started.data.id,
+    "--expected-revision", "1",
+    "--question", "urgentHelp",
+    "--answer", "yes",
+    "--json"
+  ], environment);
+  assert.equal(continued.status, 0, continued.stderr);
+  const continuedBody = JSON.parse(continued.stdout) as {
+    data: { status: string; outcome: string; approvedPlanAvailable: boolean };
+  };
+  assert.equal(continuedBody.data.status, "safety_blocked");
+  assert.equal(continuedBody.data.outcome, "urgent_help_required");
+  assert.equal(continuedBody.data.approvedPlanAvailable, false);
+
+  const resumed = run(
+    ["agent", "resume", started.data.id, "--json"],
+    environment
+  );
+  assert.equal(resumed.status, 0, resumed.stderr);
+  const resumedBody = JSON.parse(resumed.stdout) as {
+    data: { revision: number; decisionEvidence: { rulePackVersion: string } };
+  };
+  assert.equal(resumedBody.data.revision, 2);
+  assert.equal(
+    resumedBody.data.decisionEvidence.rulePackVersion,
+    "agent-safety-shell-v1"
+  );
 });

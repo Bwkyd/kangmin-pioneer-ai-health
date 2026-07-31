@@ -197,6 +197,82 @@ const MIGRATIONS: Migration[] = [
         ON admin_sessions(admin_id);
       `);
     }
+  },
+  {
+    // 来自 #131/#133/#135 合并：内容发布、管理员身份与确定性安全循环会话。
+    // 0003 已建 admin_accounts/admin_sessions（账号表）；本迁移补齐
+    // 内容表与 agent 安全外壳表。agent_sessions 是 #131 确定性安全循环的
+    // 精简会话表（结构化提问）；消息驱动的完整对话会话表见 0005。
+    version: "0004_content_admin_agent",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS content_items (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+          title TEXT NOT NULL,
+          category TEXT NOT NULL,
+          summary TEXT NOT NULL,
+          body TEXT,
+          source TEXT NOT NULL,
+          cover_url TEXT,
+          media_url TEXT,
+          status TEXT NOT NULL
+            CHECK(status IN ('draft', 'review', 'published', 'unpublished', 'failed')),
+          patient_visible INTEGER NOT NULL CHECK(patient_visible IN (0, 1)),
+          version_valid INTEGER NOT NULL CHECK(version_valid IN (0, 1)),
+          media_available INTEGER NOT NULL CHECK(media_available IN (0, 1)),
+          revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+          created_by TEXT,
+          published_at TEXT,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS content_items_public_kind_updated
+        ON content_items(kind, status, patient_visible, updated_at DESC);
+
+        -- 管理员独立身份与会话（#133/#135 形态）：与 patient_sessions 分离。
+        CREATE TABLE IF NOT EXISTS admins (
+          id TEXT PRIMARY KEY,
+          development_subject TEXT UNIQUE,
+          role TEXT NOT NULL CHECK(role IN ('owner', 'admin')),
+          enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+          created_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS admin_sessions (
+          token_hash TEXT PRIMARY KEY,
+          admin_id TEXT NOT NULL REFERENCES admins(id),
+          expires_at TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS admin_idempotency (
+          admin_id TEXT NOT NULL REFERENCES admins(id),
+          scope TEXT NOT NULL,
+          idempotency_key TEXT NOT NULL,
+          request_hash TEXT NOT NULL,
+          result_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(admin_id, scope, idempotency_key)
+        ) STRICT;
+
+        -- #131 确定性安全循环会话：结构化 single-question 流程，
+        -- 整体 JSON 快照存 session_json；患者绑定，无匿名会话。
+        CREATE TABLE IF NOT EXISTS agent_sessions (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          status TEXT NOT NULL
+            CHECK(status IN ('awaiting_answer', 'safety_blocked', 'completed')),
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          session_json TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS agent_sessions_patient_updated
+        ON agent_sessions(patient_id, updated_at DESC);
+      `);
+    }
   }
 ];
 
