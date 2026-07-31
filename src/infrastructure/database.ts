@@ -608,6 +608,114 @@ const MIGRATIONS: Migration[] = [
         ) STRICT;
       `);
     }
+  },
+  {
+    // 消息驱动 Agent 完整对话（w4 issue-136）：数据库设计 §4.5 简化。
+    // agent_sessions 表已被 #131 确定性安全循环占用，本迁移使用
+    // agent_conversations 作为对话会话表，子表沿用 §4.5 命名与约束。
+    version: "0008_agent_conversations",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS agent_conversations (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT REFERENCES patients(id),
+          state TEXT NOT NULL
+            CHECK(state IN ('active', 'completed', 'abandoned')),
+          save_consent_id TEXT,
+          rule_package_version TEXT NOT NULL,
+          rule_package_hash TEXT NOT NULL,
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          last_sequence INTEGER NOT NULL CHECK(last_sequence >= 0),
+          closed_at TEXT,
+          retention_until TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS agent_conversations_patient_updated
+        ON agent_conversations(patient_id, updated_at DESC);
+
+        -- 聊天正文只存密文 + 校验哈希；assistant 消息必须绑定已完成 decision。
+        CREATE TABLE IF NOT EXISTS agent_messages (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+          sequence INTEGER NOT NULL CHECK(sequence >= 1),
+          role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system_notice')),
+          decision_id TEXT,
+          content_encrypted TEXT NOT NULL,
+          content_hash TEXT NOT NULL,
+          encryption_key_version TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          UNIQUE(session_id, sequence)
+        ) STRICT;
+
+        -- 患者确认事实（三态 yes/no/unknown + value），unknown 是正式状态。
+        CREATE TABLE IF NOT EXISTS agent_confirmed_answers (
+          session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+          field_code TEXT NOT NULL,
+          value TEXT NOT NULL
+            CHECK(value IN ('missing', 'unknown', 'yes', 'no', 'value')),
+          fact_value TEXT,
+          source TEXT NOT NULL,
+          rule_package_version TEXT NOT NULL,
+          rule_package_hash TEXT NOT NULL,
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          confirmed_at TEXT NOT NULL,
+          PRIMARY KEY(session_id, field_code)
+        ) STRICT;
+
+        -- 模型候选：proposed 阶段绝不进入规则输入；确认后由患者事实取代。
+        CREATE TABLE IF NOT EXISTS agent_candidates (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+          field_code TEXT NOT NULL,
+          proposed_value_encrypted TEXT,
+          encryption_key_version TEXT NOT NULL,
+          source_message_id TEXT,
+          state TEXT NOT NULL
+            CHECK(state IN ('proposed', 'adopted', 'ignored', 'expired')),
+          created_at TEXT NOT NULL,
+          decided_at TEXT
+        ) STRICT;
+
+        -- 决策凭证：输入快照加密 + 哈希；outcome/stage 与 §4.5 组合约束对齐。
+        CREATE TABLE IF NOT EXISTS agent_decisions (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+          decision_sequence INTEGER NOT NULL CHECK(decision_sequence >= 1),
+          session_revision INTEGER NOT NULL CHECK(session_revision >= 1),
+          input_snapshot_encrypted TEXT NOT NULL,
+          input_snapshot_hash TEXT NOT NULL,
+          outcome TEXT NOT NULL
+            CHECK(outcome IN ('blocked', 'need_more_information', 'non_applicable',
+                              'conflict', 'no_match', 'classified')),
+          stage TEXT NOT NULL
+            CHECK(stage IN ('safety', 'applicability', 'severity',
+                            'syndrome', 'plan_safety', 'completed')),
+          severity_code TEXT,
+          syndrome_code TEXT,
+          next_questions_json TEXT NOT NULL,
+          matched_rule_ids_json TEXT NOT NULL,
+          rule_package_version TEXT NOT NULL,
+          rule_package_hash TEXT NOT NULL,
+          plan_id TEXT,
+          plan_revision INTEGER,
+          created_at TEXT NOT NULL,
+          UNIQUE(session_id, decision_sequence)
+        ) STRICT;
+
+        -- 反馈只用于质量分析，不自动修改规则或发布状态。
+        CREATE TABLE IF NOT EXISTS agent_feedback (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+          decision_id TEXT,
+          rating TEXT NOT NULL CHECK(rating IN ('helpful', 'unhelpful')),
+          reason_encrypted TEXT,
+          encryption_key_version TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        ) STRICT;
+      `);
+    }
   }
 ];
 
