@@ -4,15 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createApplication } from "../app/application.js";
+import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
 
-test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", async () => {
-  const directory = mkdtempSync(join(tmpdir(), "kangmin-http-"));
-  const application = createApplication(join(directory, "records.sqlite"));
-  const token = application.sessions.createDevelopmentSession("patient-http").token;
-  const server = createKangminHttpServer(application);
-
+async function listen(server: ReturnType<typeof createKangminHttpServer>) {
   await new Promise<void>((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
   });
@@ -20,12 +15,34 @@ test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", 
   assert.notEqual(address, null);
   assert.equal(typeof address, "object");
   if (address === null || typeof address === "string") {
-    return;
+    assert.fail("HTTP server did not expose a TCP address");
   }
+  return `http://127.0.0.1:${address.port}`;
+}
+
+async function close(server: ReturnType<typeof createKangminHttpServer>) {
+  await new Promise<void>((resolve, reject) => {
+    server.close((error) => {
+      if (error) {
+        reject(error);
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-http-"));
+  const application = createApplication(join(directory, "records.sqlite"));
+  const token =
+    (await application.sessions.createDevelopmentSession("patient-http")).token;
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
 
   try {
     const response = await fetch(
-      `http://127.0.0.1:${address.port}/v1/commands`,
+      `${origin}/v1/commands`,
       {
         method: "POST",
         headers: {
@@ -58,7 +75,7 @@ test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", 
     assert.equal(body.meta.requestId, "http-e2e");
 
     const unauthenticated = await fetch(
-      `http://127.0.0.1:${address.port}/v1/commands`,
+      `${origin}/v1/commands`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -67,15 +84,151 @@ test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", 
     );
     assert.equal(unauthenticated.status, 401);
   } finally {
-    await new Promise<void>((resolve, reject) => {
-      server.close((error) => {
-        if (error) {
-          reject(error);
-        } else {
-          resolve();
-        }
-      });
+    await close(server);
+    application.close();
+  }
+});
+
+test("患者薄壳通过受保护的 HttpOnly 开发会话调用同一命令端点", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-web-http-"));
+  const application = createApplication(join(directory, "records.sqlite"));
+  const server = createKangminHttpServer(application, {
+    appEnvironment: "integration",
+    allowDevelopmentSession: true
+  });
+  const origin = await listen(server);
+
+  try {
+    const page = await fetch(origin);
+    assert.equal(page.status, 200);
+    assert.match(
+      await page.text(),
+      /data-testid="symptom-form"/u
+    );
+    assert.match(
+      page.headers.get("content-security-policy") ?? "",
+      /default-src 'self'/u
+    );
+
+    const session = await fetch(`${origin}/dev/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ subject: "patient-browser" })
     });
+    assert.equal(session.status, 201);
+    const setCookie = session.headers.get("set-cookie");
+    assert.notEqual(setCookie, null);
+    assert.match(setCookie ?? "", /HttpOnly/u);
+    assert.match(setCookie ?? "", /SameSite=Strict/u);
+    const sessionCookie = setCookie?.split(";")[0] ?? "";
+
+    const created = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: {
+        cookie: sessionCookie,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        command: "record symptom add",
+        input: {
+          localDate: "2026-07-31",
+          nasalCongestion: 2,
+          nasalItching: 1,
+          sneezing: 2,
+          runnyNose: 1,
+          idempotencyKey: "web-http-20260731"
+        }
+      })
+    });
+    assert.equal(created.status, 200);
+
+    const listed = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: {
+        cookie: sessionCookie,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ command: "record symptom list" })
+    });
+    const body = await listed.json() as {
+      ok: boolean;
+      data: { items: Array<{ tnssTotal: number }> };
+    };
+    assert.equal(body.ok, true);
+    assert.equal(body.data.items[0]?.tnssTotal, 6);
+  } finally {
+    await close(server);
+    application.close();
+  }
+});
+
+test("生产模式不能启用开发会话", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-prod-http-"));
+  const application = createApplication(join(directory, "records.sqlite"));
+  const server = createKangminHttpServer(application, {
+    appEnvironment: "production",
+    allowDevelopmentSession: true
+  });
+  const origin = await listen(server);
+
+  try {
+    const response = await fetch(`${origin}/dev/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ subject: "patient-browser" })
+    });
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get("set-cookie"), null);
+  } finally {
+    await close(server);
+    application.close();
+  }
+});
+
+test("HTTP 非法 JSON、超大请求和无效 input 返回稳定错误契约", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-contract-http-"));
+  const application = createApplication(join(directory, "records.sqlite"));
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
+
+  try {
+    const invalidJson = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: "{"
+    });
+    assert.equal(invalidJson.status, 400);
+    const invalidBody = await invalidJson.json() as {
+      error: { code: string };
+    };
+    assert.equal(invalidBody.error.code, "invalid_json");
+
+    const tooLarge = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ value: "x".repeat(65 * 1024) })
+    });
+    assert.equal(tooLarge.status, 413);
+    const tooLargeBody = await tooLarge.json() as {
+      error: { code: string };
+    };
+    assert.equal(tooLargeBody.error.code, "payload_too_large");
+
+    const invalidInput = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        command: "record symptom list",
+        input: []
+      })
+    });
+    assert.equal(invalidInput.status, 400);
+    const invalidInputBody = await invalidInput.json() as {
+      error: { code: string };
+    };
+    assert.equal(invalidInputBody.error.code, "command_invalid");
+  } finally {
+    await close(server);
     application.close();
   }
 });

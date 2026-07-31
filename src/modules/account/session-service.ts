@@ -1,25 +1,16 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 
-import { KangminDatabase } from "../../infrastructure/database.js";
 import { DomainError } from "../../kernel/errors.js";
-
-interface PatientRow {
-  id: string;
-}
-
-interface SessionRow {
-  patient_id: string;
-  expires_at: string;
-}
+import type { SessionRepository } from "./session-repository.js";
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
 }
 
 export class SessionService {
-  constructor(private readonly database: KangminDatabase) {}
+  constructor(private readonly repository: SessionRepository) {}
 
-  resolvePatient(token: string | undefined): string {
+  async resolvePatient(token: string | undefined): Promise<string> {
     if (token === undefined || token.trim() === "") {
       throw new DomainError(
         "authentication_required",
@@ -27,27 +18,26 @@ export class SessionService {
       );
     }
 
-    const row = this.database.connection
-      .prepare(`
-        SELECT patient_id, expires_at
-        FROM patient_sessions
-        WHERE token_hash = ?
-      `)
-      .get(hashToken(token)) as unknown as SessionRow | undefined;
-
-    if (row === undefined || Date.parse(row.expires_at) <= Date.now()) {
+    const session = await this.repository.findSession(hashToken(token));
+    const expiresAt =
+      session === null ? Number.NaN : Date.parse(session.expiresAt);
+    if (
+      session === null ||
+      !Number.isFinite(expiresAt) ||
+      expiresAt <= Date.now()
+    ) {
       throw new DomainError(
         "authentication_required",
         "患者登录会话无效或已过期"
       );
     }
-    return row.patient_id;
+    return session.patientId;
   }
 
-  createDevelopmentSession(
+  async createDevelopmentSession(
     developmentSubject: string,
     options: { token?: string; ttlSeconds?: number } = {}
-  ): { patientId: string; token: string; expiresAt: string } {
+  ): Promise<{ patientId: string; token: string; expiresAt: string }> {
     if (!/^[a-zA-Z0-9_-]{1,64}$/u.test(developmentSubject)) {
       throw new DomainError(
         "validation_failed",
@@ -55,36 +45,29 @@ export class SessionService {
       );
     }
 
+    const ttlSeconds = options.ttlSeconds ?? 3600;
+    if (
+      !Number.isInteger(ttlSeconds) ||
+      ttlSeconds < 60 ||
+      ttlSeconds > 24 * 60 * 60
+    ) {
+      throw new DomainError(
+        "validation_failed",
+        "开发测试会话有效期必须在 60 秒到 24 小时之间"
+      );
+    }
+
     const now = new Date();
     const expiresAt = new Date(
-      now.getTime() + (options.ttlSeconds ?? 3600) * 1000
+      now.getTime() + ttlSeconds * 1000
     ).toISOString();
     const token = options.token ?? randomBytes(32).toString("base64url");
-
-    const patientId = this.database.transaction(() => {
-      let patient = this.database.connection
-        .prepare("SELECT id FROM patients WHERE development_subject = ?")
-        .get(developmentSubject) as unknown as PatientRow | undefined;
-
-      if (patient === undefined) {
-        patient = { id: randomUUID() };
-        this.database.connection
-          .prepare(`
-            INSERT INTO patients(id, development_subject, created_at)
-            VALUES (?, ?, ?)
-          `)
-          .run(patient.id, developmentSubject, now.toISOString());
-      }
-
-      this.database.connection
-        .prepare(`
-          INSERT OR REPLACE INTO patient_sessions(
-            token_hash, patient_id, expires_at, created_at
-          ) VALUES (?, ?, ?, ?)
-        `)
-        .run(hashToken(token), patient.id, expiresAt, now.toISOString());
-
-      return patient.id;
+    const patientId = await this.repository.saveDevelopmentSession({
+      developmentSubject,
+      newPatientId: randomUUID(),
+      tokenHash: hashToken(token),
+      expiresAt,
+      createdAt: now.toISOString()
     });
 
     return { patientId, token, expiresAt };

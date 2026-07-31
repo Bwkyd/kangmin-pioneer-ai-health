@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { createApplication } from "../app/application.js";
+import { createApplication } from "../app/composition-root.js";
 import { DomainError } from "../kernel/errors.js";
 
 function option(argv: string[], name: string): string | undefined {
@@ -24,7 +24,8 @@ if (process.env.KANGMIN_ALLOW_DEV_SESSION !== "1") {
     );
     const application = createApplication(databasePath);
     try {
-      const session = application.sessions.createDevelopmentSession(subject);
+      const session =
+        await application.sessions.createDevelopmentSession(subject);
       process.stdout.write(
         `${JSON.stringify({
           ok: true,

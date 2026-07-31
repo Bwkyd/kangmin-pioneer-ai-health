@@ -2,7 +2,7 @@
 
 import { resolve } from "node:path";
 
-import { createApplication } from "../app/application.js";
+import { createApplication } from "../app/composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
 import { failure, type CommandResult } from "../kernel/result.js";
 
@@ -122,10 +122,10 @@ function human(result: CommandResult): string {
   return JSON.stringify(result.data, null, 2);
 }
 
-export function runCli(
+export async function runCli(
   argv: string[],
   environment: NodeJS.ProcessEnv = process.env
-): number {
+): Promise<number> {
   const parsed = parse(argv);
   if (parsed.help) {
     process.stdout.write(HELP);
@@ -163,7 +163,7 @@ export function runCli(
   }
 
   try {
-    const result = application.execute({
+    const result = await application.execute({
       command: parsed.command,
       input: parsed.input,
       sessionToken: environment.KANGMIN_SESSION_TOKEN
@@ -181,4 +181,4 @@ export function runCli(
   }
 }
 
-process.exitCode = runCli(process.argv.slice(2));
+process.exitCode = await runCli(process.argv.slice(2));

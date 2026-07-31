@@ -10,16 +10,17 @@
     "kangmin": "./dist/cli/kangmin.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.json",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "lint": "node scripts/architecture-check.mjs",
-    "test": "npm run build && node --test dist/tests/*.test.js",
+    "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",
     "check": "npm run typecheck && npm run lint && npm test",
     "dev:session": "npm run build --silent && node dist/dev/create-session.js",
     "start:http": "npm run build --silent && node dist/http/server.js"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",
+    "playwright": "^1.60.0",
     "typescript": "^5.9.3"
   }
 }

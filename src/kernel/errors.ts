@@ -1,5 +1,7 @@
 export type ErrorCode =
   | "command_invalid"
+  | "invalid_json"
+  | "payload_too_large"
   | "resource_not_found"
   | "version_conflict"
   | "idempotency_conflict"
@@ -12,6 +14,8 @@ export type ErrorCode =
 
 const EXIT_CODES: Record<ErrorCode, number> = {
   command_invalid: 2,
+  invalid_json: 2,
+  payload_too_large: 2,
   resource_not_found: 3,
   version_conflict: 4,
   idempotency_conflict: 4,
@@ -25,6 +29,8 @@ const EXIT_CODES: Record<ErrorCode, number> = {
 
 const HTTP_STATUS: Record<ErrorCode, number> = {
   command_invalid: 400,
+  invalid_json: 400,
+  payload_too_large: 413,
   resource_not_found: 404,
   version_conflict: 409,
   idempotency_conflict: 409,
