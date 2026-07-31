@@ -10,6 +10,9 @@ import type {
 import { likePatternOf } from "../modules/browse/domain.js";
 
 const DISCLAIMER = "本内容仅作健康科普和居家管理参考，不代替门诊诊断和专业医疗建议。";
+
+/** 方案列表/搜索的返回条数上限（方案数量少，防御性截断）。 */
+const MAX_PLAN_LIST = 100;
 const PUBLIC_PREDICATE = `
   status = 'published'
   AND patient_visible = 1
@@ -122,6 +125,26 @@ export class SqliteContentReadRepository implements ContentReadRepository {
     });
   }
 
+  async listPage(
+    kind: PublicContentKind,
+    limit: number,
+    offset: number
+  ): Promise<PublicContent[]> {
+    return this.guard(() => {
+      const rows = this.database.connection
+        .prepare(`
+          SELECT id, kind, title, category, summary, body, source,
+                 cover_url, media_url, published_at, updated_at
+          FROM content_items
+          WHERE kind = ? AND ${PUBLIC_PREDICATE}
+          ORDER BY updated_at DESC, id ASC
+          LIMIT ? OFFSET ?
+        `)
+        .all(kind, limit, offset) as unknown as ContentRow[];
+      return rows.map(toPublicContent);
+    });
+  }
+
   async find(
     kind: PublicContentKind,
     id: string
@@ -176,7 +199,7 @@ export class SqliteContentReadRepository implements ContentReadRepository {
   }
 
   async listPlans(): Promise<CarePlanSummary[]> {
-    return this.guard(() => this.queryPlans(null, 0));
+    return this.guard(() => this.queryPlans(null, MAX_PLAN_LIST));
   }
 
   async findPlan(id: string): Promise<CarePlanDetail | null> {

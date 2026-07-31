@@ -32,10 +32,14 @@ function integerField(
 
 /** 列表 limit：默认 20，上限 100（超出截断而非报错，见 MAX_LIST_LIMIT）。 */
 export function listLimitOf(input: Record<string, unknown>): number {
-  return Math.min(
-    integerField(input, "limit", DEFAULT_LIST_LIMIT, 1, MAX_LIST_LIMIT),
-    MAX_LIST_LIMIT
+  const value = integerField(
+    input,
+    "limit",
+    DEFAULT_LIST_LIMIT,
+    1,
+    Number.MAX_SAFE_INTEGER
   );
+  return Math.min(value, MAX_LIST_LIMIT);
 }
 
 /** 列表 offset：默认 0，非负。 */

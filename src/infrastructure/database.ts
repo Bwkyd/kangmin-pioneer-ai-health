@@ -263,7 +263,7 @@ const MIGRATIONS: Migration[] = [
         connection.exec("ALTER TABLE content_items ADD COLUMN created_by TEXT");
       }
     }
-  }
+  },
   {
     version: "0005_browse_environment_plans",
     apply: (connection) => {

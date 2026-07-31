@@ -27,12 +27,12 @@ export class EnvironmentService {
     const cacheKey = cacheKeyOf(location);
     const cached = await this.cache.find(this.provider.providerId, cacheKey);
     if (cached !== null) {
-      const expiresAt = Date.parse(cached.expiresAt);
-      if (!Number.isFinite(expiresAt) || expiresAt > this.now().getTime()) {
-        return { ...cached, stale: false };
+      const { expiresAt: _expiresAt, ...rest } = cached;
+      if (Date.parse(cached.expiresAt) > this.now().getTime()) {
+        return { ...rest, stale: false };
       }
       // 过期快照返回 stale 标记，不伪装成刚刚更新。
-      return { ...cached, stale: true };
+      return { ...rest, stale: true };
     }
     return this.fetchAndCache(location, cacheKey);
   }

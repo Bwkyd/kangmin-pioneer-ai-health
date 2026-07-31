@@ -21,9 +21,21 @@ import { SessionService } from "../modules/account/session-service.js";
 import type { SessionRepository } from "../modules/account/session-repository.js";
 import type { ContentReadRepository } from "../modules/browse/content-read-repository.js";
 import { BrowseService } from "../modules/browse/browse-service.js";
+import {
+  listLimitOf,
+  listOffsetOf,
+  resourceIdOf,
+  searchQueryOf
+} from "../modules/browse/domain.js";
 import type { AgentRepository } from "../modules/agent/agent-repository.js";
 import { AgentService } from "../modules/agent/agent-service.js";
 import type { AgentQuestion, TriStateAnswer } from "../modules/agent/contracts.js";
+import { cityOf, forecastDaysOf } from "../modules/environment/domain.js";
+import type {
+  EnvironmentCacheRepository,
+  EnvironmentProviderPort
+} from "../modules/environment/environment-ports.js";
+import { EnvironmentService } from "../modules/environment/environment-service.js";
 import { sexOf } from "../modules/record/domain.js";
 import type { RecordRepository } from "../modules/record/record-repository.js";
 import { RecordService } from "../modules/record/record-service.js";
@@ -59,12 +71,15 @@ export class KangminApplication {
   private readonly records: RecordService;
   private readonly browse: BrowseService;
   private readonly agent: AgentService;
+  private readonly environment: EnvironmentService;
 
   constructor(
     sessionRepository: SessionRepository,
     recordRepository: RecordRepository,
     contentReadRepository: ContentReadRepository,
     agentRepository: AgentRepository,
+    environmentProvider: EnvironmentProviderPort,
+    environmentCache: EnvironmentCacheRepository,
     private readonly closeResources: () => void = () => {}
   ) {
     this.sessions = new SessionService(sessionRepository);
@@ -73,6 +88,10 @@ export class KangminApplication {
     this.agent = new AgentService(
       agentRepository,
       new RecordSnapshotAdapter(this.records)
+    );
+    this.environment = new EnvironmentService(
+      environmentProvider,
+      environmentCache
     );
   }
 
@@ -97,12 +116,19 @@ export class KangminApplication {
             await this.browse.home(),
             request.requestId
           );
-        case "browse article list":
+        case "browse article list": {
+          const limit = listLimitOf(input);
+          const offset = listOffsetOf(input);
           return success(
             command,
-            { items: await this.browse.list("article") },
+            {
+              items: await this.browse.listPage("article", limit, offset),
+              limit,
+              offset
+            },
             request.requestId
           );
+        }
         case "browse article categories":
           return success(
             command,
@@ -115,7 +141,7 @@ export class KangminApplication {
             {
               items: await this.browse.search(
                 "article",
-                requiredString(input, "query")
+                searchQueryOf(input)
               )
             },
             request.requestId
@@ -123,15 +149,22 @@ export class KangminApplication {
         case "browse article show":
           return success(
             command,
-            await this.browse.get("article", requiredString(input, "id")),
+            await this.browse.get("article", resourceIdOf(input)),
             request.requestId
           );
-        case "browse video list":
+        case "browse video list": {
+          const limit = listLimitOf(input);
+          const offset = listOffsetOf(input);
           return success(
             command,
-            { items: await this.browse.list("video") },
+            {
+              items: await this.browse.listPage("video", limit, offset),
+              limit,
+              offset
+            },
             request.requestId
           );
+        }
         case "browse video categories":
           return success(
             command,
@@ -144,7 +177,7 @@ export class KangminApplication {
             {
               items: await this.browse.search(
                 "video",
-                requiredString(input, "query")
+                searchQueryOf(input)
               )
             },
             request.requestId
@@ -152,7 +185,48 @@ export class KangminApplication {
         case "browse video show":
           return success(
             command,
-            await this.browse.get("video", requiredString(input, "id")),
+            await this.browse.get("video", resourceIdOf(input)),
+            request.requestId
+          );
+        case "browse plan list":
+          return success(
+            command,
+            await this.browse.listPlans(),
+            request.requestId
+          );
+        case "browse plan show":
+          return success(
+            command,
+            await this.browse.showPlan(resourceIdOf(input)),
+            request.requestId
+          );
+        case "browse search":
+          return success(
+            command,
+            await this.browse.searchAll(searchQueryOf(input)),
+            request.requestId
+          );
+        case "browse environment current":
+          return success(
+            command,
+            await this.environment.current(cityOf(input)),
+            request.requestId
+          );
+        case "browse environment forecast":
+          return success(
+            command,
+            {
+              items: await this.environment.forecast(
+                cityOf(input),
+                forecastDaysOf(input)
+              )
+            },
+            request.requestId
+          );
+        case "browse environment refresh":
+          return success(
+            command,
+            await this.environment.refresh(cityOf(input)),
             request.requestId
           );
         default:
