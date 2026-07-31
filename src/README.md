@@ -19,6 +19,9 @@ record symptom add
 record symptom list
 record symptom show
 record symptom update
+browse
+browse article list|categories|search|show
+browse video list|categories|search|show
 ```
 
 患者浏览器薄壳使用相同的 Record Application Service，支持：
@@ -29,8 +32,12 @@ record symptom update
 - 版本冲突提示和重新读取；
 - 移动端记录信息层级与中央“＋”入口。
 
-`agent`、`browse` 和 `account` 会明确返回 `capability_unavailable`，不会用
-Mock 结果伪装为业务成功。
+Browse 无需患者登录，仅读取同时满足已发布、患者可见、当前版本有效和
+媒体可用门禁的文章/视频。列表、分类、搜索和详情共用服务端门禁；
+已下架或不可见内容不能通过 ID 绕过。
+
+`agent` 和 `account` 会明确返回 `capability_unavailable`，不会用 Mock 结果伪装为
+业务成功。
 
 ## 本地运行
 
@@ -88,6 +95,8 @@ npm run start:http
 - 每位患者每天只保留一条症状/TNSS 记录。
 - 当前开发会话适配器不是生产身份认证。
 - 浏览器不能读取 HttpOnly 会话令牌，也不能提交权威患者 ID 或 TNSS 总分。
+- 患者可浏览不代表 Agent 可检索；本 Browse 投影不接入 Agent 知识库。
+- 当前未实现管理员内容导入、审核、发布或媒体上传；无已发布数据时返回真实空列表。
 - Record 和 Session 应用服务只依赖端口；SQLite 是当前本地适配器，不是
   已完成的 D1 生产适配器。
 - 当前没有临床规则、证型、方案、知识库或模型调用。

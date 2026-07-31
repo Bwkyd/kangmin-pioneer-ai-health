@@ -24,8 +24,17 @@ record 命令：
   record calendar --month YYYY-MM
   record trend --from YYYY-MM-DD --to YYYY-MM-DD
 
+browse 命令：
+  browse
+  browse article list|categories
+  browse article search <query>
+  browse article show <id>
+  browse video list|categories
+  browse video search <query>
+  browse video show <id>
+
 当前真实可用：
-  record 全部命令（症状、档案、暴露、用药、概览、日历、趋势）
+  record 全部命令；browse 已发布文章/视频的首页、列表、分类、搜索和详情
 
 身份：
   通过 KANGMIN_SESSION_TOKEN 传递不透明会话令牌。
@@ -97,6 +106,40 @@ function parse(argv: string[]): ParsedCommand {
   }
 
   const [group, resource, maybeAction, positional, ...rest] = filtered;
+  if (group === "browse") {
+    const input: Record<string, unknown> = {};
+    if (resource === undefined) {
+      return { command: "browse", input, json, help: false };
+    }
+    if (resource !== "article" && resource !== "video") {
+      return { command: filtered.join(" "), input, json, help: false };
+    }
+    if (maybeAction === "list" || maybeAction === "categories") {
+      if (positional !== undefined || rest.length > 0) {
+        input.__parseError = `browse ${resource} ${maybeAction} 不接受额外参数`;
+      }
+      return {
+        command: `browse ${resource} ${maybeAction}`,
+        input,
+        json,
+        help: false
+      };
+    }
+    if (maybeAction === "search" || maybeAction === "show") {
+      if (positional === undefined || rest.length > 0) {
+        input.__parseError = `browse ${resource} ${maybeAction} 需要且只接受一个${maybeAction === "search" ? "搜索词" : "内容 ID"}`;
+      } else {
+        input[maybeAction === "search" ? "query" : "id"] = positional;
+      }
+      return {
+        command: `browse ${resource} ${maybeAction}`,
+        input,
+        json,
+        help: false
+      };
+    }
+    return { command: filtered.join(" "), input, json, help: false };
+  }
   if (group !== "record") {
     if (filtered.length !== 1) {
       return {

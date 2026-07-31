@@ -19,6 +19,8 @@ import {
 } from "../kernel/validation.js";
 import { SessionService } from "../modules/account/session-service.js";
 import type { SessionRepository } from "../modules/account/session-repository.js";
+import type { ContentReadRepository } from "../modules/browse/content-read-repository.js";
+import { BrowseService } from "../modules/browse/browse-service.js";
 import { sexOf } from "../modules/record/domain.js";
 import type { RecordRepository } from "../modules/record/record-repository.js";
 import { RecordService } from "../modules/record/record-service.js";
@@ -51,14 +53,17 @@ function requireConfirmation(input: Record<string, unknown>): void {
 export class KangminApplication {
   readonly sessions: SessionService;
   private readonly records: RecordService;
+  private readonly browse: BrowseService;
 
   constructor(
     sessionRepository: SessionRepository,
     recordRepository: RecordRepository,
+    contentReadRepository: ContentReadRepository,
     private readonly closeResources: () => void = () => {}
   ) {
     this.sessions = new SessionService(sessionRepository);
     this.records = new RecordService(recordRepository);
+    this.browse = new BrowseService(contentReadRepository);
   }
 
   async execute(request: CommandRequest): Promise<CommandResult> {
@@ -75,11 +80,82 @@ export class KangminApplication {
         );
       }
 
-      if (command === "browse" || command === "account") {
+      if (command === "account") {
         throw new DomainError(
           "capability_unavailable",
           `${command} 尚未进入本次 MVP`
         );
+      }
+
+      switch (command) {
+        case "browse":
+          return success(
+            command,
+            await this.browse.home(),
+            request.requestId
+          );
+        case "browse article list":
+          return success(
+            command,
+            { items: await this.browse.list("article") },
+            request.requestId
+          );
+        case "browse article categories":
+          return success(
+            command,
+            { items: await this.browse.categories("article") },
+            request.requestId
+          );
+        case "browse article search":
+          return success(
+            command,
+            {
+              items: await this.browse.search(
+                "article",
+                requiredString(input, "query")
+              )
+            },
+            request.requestId
+          );
+        case "browse article show":
+          return success(
+            command,
+            await this.browse.get("article", requiredString(input, "id")),
+            request.requestId
+          );
+        case "browse video list":
+          return success(
+            command,
+            { items: await this.browse.list("video") },
+            request.requestId
+          );
+        case "browse video categories":
+          return success(
+            command,
+            { items: await this.browse.categories("video") },
+            request.requestId
+          );
+        case "browse video search":
+          return success(
+            command,
+            {
+              items: await this.browse.search(
+                "video",
+                requiredString(input, "query")
+              )
+            },
+            request.requestId
+          );
+        case "browse video show":
+          return success(
+            command,
+            await this.browse.get("video", requiredString(input, "id")),
+            request.requestId
+          );
+        default:
+          if (command.startsWith("browse ")) {
+            throw new DomainError("command_invalid", `未知命令：${command}`);
+          }
       }
 
       const patientId = await this.sessions.resolvePatient(request.sessionToken);

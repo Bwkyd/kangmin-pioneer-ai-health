@@ -10,6 +10,7 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
+import { seedContent } from "./content-fixture.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, "../cli/kangmin.js");
@@ -379,4 +380,34 @@ test("症状删除、趋势和参数错误通过真实 CLI 验证", async () => 
     error: { code: string };
   };
   assert.equal(missingIdBody.error.code, "command_invalid");
+});
+
+test("Browse 真实 CLI 无需身份即可搜索和读取已发布内容", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-browse-cli-"));
+  const databasePath = join(directory, "content.sqlite");
+  seedContent(databasePath);
+  const environment = { KANGMIN_DB_PATH: databasePath };
+
+  const search = run(
+    ["browse", "article", "search", "换季", "--json"],
+    environment
+  );
+  assert.equal(search.status, 0, search.stderr);
+  assert.equal(search.stdout.trim().split("\n").length, 1);
+  const searchBody = JSON.parse(search.stdout) as {
+    data: { items: Array<{ id: string }> };
+  };
+  assert.deepEqual(searchBody.data.items.map((item) => item.id), [
+    "article-public"
+  ]);
+
+  const hidden = run(
+    ["browse", "article", "show", "article-draft", "--json"],
+    environment
+  );
+  assert.equal(hidden.status, 3);
+  const hiddenBody = JSON.parse(hidden.stdout) as {
+    error: { code: string };
+  };
+  assert.equal(hiddenBody.error.code, "resource_not_found");
 });
