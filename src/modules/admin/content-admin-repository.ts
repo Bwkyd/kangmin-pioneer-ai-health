@@ -27,10 +27,9 @@ export interface AdminContentItem {
 /** 兼容 #135：AdminArticle 即 kind 固定为 article 的内容项。 */
 export type AdminArticle = AdminContentItem;
 
-export interface CreateContentItemOutcome {
-  kind: "created" | "replayed";
-  item: AdminContentItem;
-}
+export type CreateContentItemOutcome =
+  | { kind: "created" | "replayed"; item: AdminContentItem }
+  | { kind: "stale_replay" };
 
 export interface UpdateContentItemOutcome {
   kind: "updated";

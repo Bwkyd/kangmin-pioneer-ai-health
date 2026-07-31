@@ -1,6 +1,7 @@
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { randomUUID } from "node:crypto";
 
 import { DomainError } from "../../kernel/errors.js";
+import { generateToken, hashToken } from "../../kernel/session-tokens.js";
 import type {
   PatientIdentity,
   PatientIdentityPort
@@ -9,10 +10,6 @@ import type {
   SessionRepository,
   SessionSnapshot
 } from "./session-repository.js";
-
-function hashToken(token: string): string {
-  return createHash("sha256").update(token, "utf8").digest("hex");
-}
 
 /** 账号会话默认 7 天；合法范围 60 秒到 30 天。 */
 const ACCOUNT_SESSION_TTL_SECONDS = 7 * 24 * 3600;
@@ -102,7 +99,7 @@ export class SessionService implements PatientIdentityPort {
     const expiresAt = new Date(
       now.getTime() + ttlSeconds * 1000
     ).toISOString();
-    const token = options.token ?? randomBytes(32).toString("base64url");
+    const token = options.token ?? generateToken();
     const patientId = await this.repository.saveDevelopmentSession({
       developmentSubject,
       newPatientId: randomUUID(),
@@ -135,7 +132,7 @@ export class SessionService implements PatientIdentityPort {
     const expiresAt = new Date(
       now.getTime() + ttlSeconds * 1000
     ).toISOString();
-    const token = randomBytes(32).toString("base64url");
+    const token = generateToken();
     await this.repository.saveAccountSession({
       patientId,
       tokenHash: hashToken(token),

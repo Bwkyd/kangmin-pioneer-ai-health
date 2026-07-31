@@ -381,3 +381,11 @@ test("公告状态机与分类停用后禁止新发布", async () => {
     app.close();
   }
 });
+
+// 幂等 stale_replay 路径说明（不可通过公开接口触发，故不写触发测试，仅保证类型编译）：
+// SqliteContentAdminRepository.create() 重放前校验 content_items 目标仍存在，
+// 已删除时返回 { kind: "stale_replay" }（评审 B P2，与患者侧 runWithIdempotency
+// 语义一致，见 record-production.test.ts 的 stale_replay 用例）。但当前管理端没有
+// 内容删除命令：ContentAdminRepository 无 delete 方法，全代码库不存在删除
+// content_items 行的路径，同键重放永远命中 "replayed" 分支。若未来新增内容删除，
+// 需补 "create → delete → 同键重放返回 stale_replay" 的端到端用例。

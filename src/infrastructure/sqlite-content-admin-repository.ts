@@ -80,9 +80,22 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
         "SELECT request_hash, result_json FROM admin_idempotency WHERE admin_id=? AND scope=? AND idempotency_key=?"
       ).get(adminId, scope, key) as unknown as { request_hash: string; result_json: string } | undefined;
       if (replay !== undefined) {
-        return replay.request_hash === requestHash
-          ? { kind: "replayed" as const, item: JSON.parse(replay.result_json) as AdminContentItem }
-          : { kind: "conflict" as const };
+        if (replay.request_hash !== requestHash) {
+          return { kind: "conflict" as const };
+        }
+        // 重放前校验目标仍存在：已删除的内容同键重放返回 stale_replay，
+        // 不返回幻影记录（评审 B P2，与患者侧 runWithIdempotency 语义一致）。
+        const target = this.database.connection.prepare(
+          "SELECT id FROM content_items WHERE id = ?"
+        ).get(JSON.parse(replay.result_json).id) as unknown as
+          | { id: string }
+          | undefined;
+        return target === undefined
+          ? ({ kind: "stale_replay" } as const)
+          : {
+              kind: "replayed" as const,
+              item: JSON.parse(replay.result_json) as AdminContentItem
+            };
       }
       this.database.connection.prepare(`
         INSERT INTO content_items(

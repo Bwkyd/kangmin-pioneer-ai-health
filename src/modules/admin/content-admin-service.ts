@@ -72,6 +72,9 @@ export class ContentAdminService {
     if (outcome.kind === "conflict") {
       throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
     }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError("stale_replay", "相同幂等键对应的内容已不存在");
+    }
     return outcome.item;
   }
 
@@ -137,6 +140,9 @@ export class ContentAdminService {
     );
     if (outcome.kind === "conflict") {
       throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError("stale_replay", "相同幂等键对应的内容已不存在");
     }
     return outcome.item;
   }

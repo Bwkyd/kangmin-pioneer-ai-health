@@ -43,6 +43,9 @@ browse 命令：
   browse environment forecast [--days N]
   browse environment refresh [--city X]
 
+browse 列表分页（article list / video list）：默认 limit 20、上限 100，
+超出上限被截断而非报错；结果含 limit/offset 字段，便于翻页。
+
 agent 命令（两条管线，路由按输入区分）：
   agent start                      确定性安全会话（结构化问答，需登录）
   agent start --message <文本>     自由对话管线（匿名可用，登录后确认可保存）
