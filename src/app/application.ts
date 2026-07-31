@@ -319,6 +319,12 @@ export class KangminApplication {
         throw new DomainError("command_invalid", `未知命令：${command}`);
       }
 
+      // 未知命令先于身份解析返回 command_invalid（与登录状态无关）：
+      // 避免无 token 时未知命令漂移成 authentication_required（exit 9）。
+      if (!this.isKnownCommand(command)) {
+        throw new DomainError("command_invalid", `未知命令：${command}`);
+      }
+
       const patientId = (await this.sessions.resolvePatient(request.sessionToken)).patientId;
 
       switch (command) {
@@ -833,6 +839,25 @@ export class KangminApplication {
       throw new DomainError("command_invalid", `未知命令：${command}`);
     }
     return false;
+  }
+
+  /**
+   * 已知命令判定（身份解析前置）：help/doctor 免登录；agent 的未知子命令
+   * 由 isAnonymousAgentCommand 拦截，browse 的未知子命令由 switch 拦截；
+   * 其余未知命令组在此统一返回 command_invalid。
+   */
+  private isKnownCommand(command: string): boolean {
+    return (
+      command === "help" ||
+      command === "doctor" ||
+      command === "browse" ||
+      command.startsWith("browse ") ||
+      command === "agent" ||
+      command.startsWith("agent ") ||
+      command.startsWith("record ") ||
+      command === "account" ||
+      command.startsWith("account ")
+    );
   }
 
   /** 无 token 视为匿名（允许一次性体验）；有 token 则必须有效。 */

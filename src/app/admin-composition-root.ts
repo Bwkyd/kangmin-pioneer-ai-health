@@ -2,6 +2,7 @@ import { accessSync, constants } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { KangminAdminApplication, type DoctorCheck, type DoctorReport } from "./admin-application.js";
+import { resolveEncryption } from "./composition-root.js";
 import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
 import { SqliteAdminAccountRepository } from "../infrastructure/sqlite-admin-account-repository.js";
 import { SqliteAdminSessionRepository } from "../infrastructure/sqlite-admin-session-repository.js";
@@ -109,13 +110,17 @@ export function createAdminApplication(
   path: string,
   options: { mediaDirectory?: string } = {}
 ): KangminAdminApplication {
-  const database = new KangminDatabase(path);
+  // 与患者端一致的密钥策略（fail-closed）：KANGMIN_ENCRYPTION_KEYS → AES；
+  // local/integration 或显式 KANGMIN_ALLOW_DEV_SESSION=1 → 明文开发降级；
+  // 其余环境 → config_missing。API Key 与旧库回填依赖该端口。
+  const encryption = resolveEncryption(process.env);
+  const database = new KangminDatabase(path, encryption);
   const mediaDirectory = options.mediaDirectory ?? defaultMediaDirectory(path);
   const sessionRepository = new SqliteAdminSessionRepository(database);
   const accountRepository = new SqliteAdminAccountRepository(database);
   const contentRepository = new SqliteContentAdminRepository(database);
   const auxRepository = new SqliteContentAuxRepository(database);
-  const agentRepository = new SqliteAgentAdminRepository(database);
+  const agentRepository = new SqliteAgentAdminRepository(database, encryption);
   const userRepository = new SqliteUserAdminRepository(database);
   const auditRepository = new SqliteAuditRepository(database);
   return new KangminAdminApplication(

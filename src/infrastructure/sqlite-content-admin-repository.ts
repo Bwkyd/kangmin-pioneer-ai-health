@@ -6,7 +6,10 @@ import type {
   ContentItemKind,
   ContentItemStatus,
   CreateContentItemOutcome,
-  UpdateContentItemResult
+  PublishGuardState,
+  PublishMediaState,
+  UpdateContentItemResult,
+  UpdateGuardedResult
 } from "../modules/admin/content-admin-repository.js";
 
 interface Row {
@@ -219,6 +222,99 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
       }
       return { kind: "updated" as const, item };
     });
+  }
+
+  /**
+   * 发布专用更新（外部评审 P1-2）：依赖校验与状态更新在同一事务内。
+   * BEGIN IMMEDIATE 持有写锁期间，并发停用分类/素材/删除都不可能越过
+   * 事务提交生效，消除"校验后到提交间依赖被并发停用"的竞态窗口。
+   */
+  async updateGuarded(
+    item: AdminContentItem,
+    expectedRevision: number,
+    guard: (state: PublishGuardState) => string[]
+  ): Promise<UpdateGuardedResult> {
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT revision FROM content_items WHERE kind = ? AND id = ?"
+      ).get(item.kind, item.id) as unknown as { revision: number } | undefined;
+      if (current === undefined) {
+        return { kind: "not_found" as const };
+      }
+      if (current.revision !== expectedRevision) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      const missing = guard(this.publishGuardStateOf(item));
+      if (missing.length > 0) {
+        return { kind: "validation_failed" as const, missing };
+      }
+      const result = this.database.connection.prepare(`
+        UPDATE content_items SET
+          title = ?, category = ?, summary = ?, body = ?, source = ?,
+          status = ?, patient_visible = ?, published_at = ?, updated_at = ?,
+          revision = ?, cover_media_id = ?, media_id = ?,
+          instructions = ?, precautions = ?, disclaimer = ?,
+          method_tags = ?, display_order = ?,
+          cover_url = (SELECT stored_path FROM content_resource_media WHERE id = cover_media_id),
+          media_url = (SELECT stored_path FROM content_resource_media WHERE id = media_id)
+        WHERE id = ? AND kind = ? AND revision = ?
+      `).run(
+        item.title,
+        item.category,
+        item.summary,
+        item.body,
+        item.source,
+        item.status,
+        item.status === "published" ? 1 : 0,
+        item.publishedAt,
+        item.updatedAt,
+        item.revision,
+        item.coverMediaId,
+        item.mediaId,
+        item.instructions,
+        item.precautions,
+        item.disclaimer,
+        methodTagsJson(item.methodTags),
+        item.displayOrder,
+        item.id,
+        item.kind,
+        expectedRevision
+      );
+      if (result.changes !== 1) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      return { kind: "updated" as const, item };
+    });
+  }
+
+  /** 事务内读取发布依赖状态（分类/封面/视频素材），与提交同连接同锁。 */
+  private publishGuardStateOf(item: AdminContentItem): PublishGuardState {
+    const categoryRow =
+      item.category.trim() === ""
+        ? undefined
+        : (this.database.connection.prepare(
+            "SELECT status, kind FROM content_categories WHERE name = ?"
+          ).get(item.category) as unknown as
+            | { status: "active" | "disabled"; kind: string }
+            | undefined);
+    const mediaState = (mediaId: string | null): PublishMediaState | null => {
+      if (mediaId === null) {
+        return null;
+      }
+      const row = this.database.connection.prepare(
+        "SELECT status, kind FROM content_resource_media WHERE id = ?"
+      ).get(mediaId) as unknown as
+        | { status: string; kind: string }
+        | undefined;
+      return row === undefined
+        ? { found: false }
+        : { found: true, status: row.status, kind: row.kind };
+    };
+    return {
+      category: categoryRow ?? null,
+      coverMedia: mediaState(item.coverMediaId),
+      media: mediaState(item.mediaId)
+    };
   }
 
   private scopeOf(kind: ContentItemKind): string {

@@ -5,7 +5,9 @@ import type { ContentAuxRepository } from "./content-aux-repository.js";
 import type {
   AdminContentItem,
   ContentAdminRepository,
-  ContentItemKind
+  ContentItemKind,
+  PublishGuardState,
+  UpdateGuardedResult
 } from "./content-admin-repository.js";
 
 const hash = (value: unknown): string =>
@@ -265,15 +267,18 @@ export class ContentAdminService {
     if (current.status === "published") {
       throw new DomainError("validation_failed", "内容已经发布");
     }
-    const missing = await this.validateForPublish(current);
-    if (missing.length > 0) {
+    // 静态字段校验（标题/分类/摘要/来源/正文/视频文件）不依赖数据库；
+    // 依赖（分类/素材）状态由仓储在同一事务内快照并校验
+    // （repository.updateGuarded），消除校验与提交之间的并发窗口。
+    const staticMissing = this.staticPublishMissing(current);
+    if (staticMissing.length > 0) {
       throw new DomainError(
         "validation_failed",
-        `发布前校验未通过：${missing.join("、")}`
+        `发布前校验未通过：${staticMissing.join("、")}`
       );
     }
     const timestamp = new Date().toISOString();
-    const published = await this.commitItem(
+    const outcome = await this.repository.updateGuarded(
       {
         ...current,
         status: "published",
@@ -281,8 +286,10 @@ export class ContentAdminService {
         publishedAt: timestamp,
         updatedAt: timestamp
       },
-      expectedRevision
+      expectedRevision,
+      (state) => this.dependencyMissing(current, state)
     );
+    const published = this.guardedOutcome(outcome, expectedRevision);
     await this.audit.record({
       actorKind: "admin",
       actorId: adminId,
@@ -356,29 +363,12 @@ export class ContentAdminService {
   }
 
   /**
-   * 发布前程序校验：标题/分类/摘要/来源非空、文章或公告正文非空、
-   * 视频必须引用可用视频素材、封面素材可用、分类有效（存在时不得停用
-   * 或类型不符）、不引用已停用媒体。
+   * 发布前程序校验（preview 用）：静态字段校验 + 依赖状态校验。
+   * 发布路径的依赖校验由 repository.updateGuarded 在事务内完成
+   * （dependencyMissing），本方法仅供 preview 完整展示缺失清单。
    */
   private async validateForPublish(item: AdminContentItem): Promise<string[]> {
-    const missing: string[] = [];
-    for (const [field, value] of Object.entries({
-      标题: item.title,
-      分类: item.category,
-      摘要: item.summary,
-      来源: item.source
-    })) {
-      if (value.trim() === "") {
-        missing.push(field);
-      }
-    }
-    if (item.body.trim() === "") {
-      missing.push("正文");
-    }
-    if (item.kind === "video" && item.mediaId === null) {
-      missing.push("视频文件");
-    }
-
+    const missing = this.staticPublishMissing(item);
     if (item.category.trim() !== "") {
       const category = await this.aux.findCategoryByName(item.category);
       if (category !== null) {
@@ -413,6 +403,89 @@ export class ContentAdminService {
       }
     }
     return missing;
+  }
+
+  /** 静态字段校验：不依赖数据库，事务内外均可执行。 */
+  private staticPublishMissing(item: AdminContentItem): string[] {
+    const missing: string[] = [];
+    for (const [field, value] of Object.entries({
+      标题: item.title,
+      分类: item.category,
+      摘要: item.summary,
+      来源: item.source
+    })) {
+      if (value.trim() === "") {
+        missing.push(field);
+      }
+    }
+    if (item.body.trim() === "") {
+      missing.push("正文");
+    }
+    if (item.kind === "video" && item.mediaId === null) {
+      missing.push("视频文件");
+    }
+    return missing;
+  }
+
+  /** 依赖校验（纯函数）：状态由仓储在事务内快照，与提交原子。 */
+  private dependencyMissing(
+    item: AdminContentItem,
+    state: PublishGuardState
+  ): string[] {
+    const missing: string[] = [];
+    if (state.category !== null) {
+      if (state.category.status !== "active") {
+        missing.push("分类已停用");
+      } else if (
+        state.category.kind !== "general" &&
+        state.category.kind !== item.kind
+      ) {
+        missing.push("分类类型不符");
+      }
+    }
+    const mediaChecks: Array<{ media: PublishGuardState["media"]; videoFile: boolean }> = [
+      { media: state.coverMedia, videoFile: false },
+      { media: state.media, videoFile: item.kind === "video" }
+    ];
+    for (const { media, videoFile } of mediaChecks) {
+      if (media === null) {
+        continue;
+      }
+      if (!media.found) {
+        missing.push("引用的素材不存在");
+      } else if (media.status !== "ready") {
+        missing.push(
+          media.status === "disabled" ? "引用的素材已停用" : "引用的素材未就绪"
+        );
+      } else if (videoFile && media.kind !== "video") {
+        missing.push("视频文件类型不符");
+      }
+    }
+    return missing;
+  }
+
+  private guardedOutcome(
+    outcome: UpdateGuardedResult,
+    expectedRevision: number
+  ): AdminContentItem {
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "内容不存在");
+    }
+    if (outcome.kind === "version_conflict") {
+      throw new DomainError("version_conflict", "内容已更新，请重新读取", {
+        details: {
+          expectedRevision,
+          currentRevision: outcome.currentRevision
+        }
+      });
+    }
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError(
+        "validation_failed",
+        `发布前校验未通过：${outcome.missing.join("、")}`
+      );
+    }
+    return outcome.item;
   }
 
   private async commitItem(

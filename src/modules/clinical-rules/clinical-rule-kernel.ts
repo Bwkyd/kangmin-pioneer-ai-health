@@ -313,6 +313,9 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       severityCode,
       syndromeCode: null,
       nextQuestions: questions.slice(0, MAX_NEXT_QUESTIONS),
+      // 未截断的全集：供 fail-closed 进展判定使用（截断只影响展示，
+      // 不影响判定，评审 P1 kimi P1-6）。
+      allQuestions: [...questions],
       matchedRuleIds: [],
       message: null,
       planId: null,
@@ -338,6 +341,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       severityCode,
       syndromeCode,
       nextQuestions: [],
+      allQuestions: [],
       matchedRuleIds,
       message,
       planId,

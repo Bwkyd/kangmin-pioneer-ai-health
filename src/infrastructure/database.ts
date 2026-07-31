@@ -891,12 +891,15 @@ const MIGRATIONS: Migration[] = [
           "ALTER TABLE admin_sessions ADD COLUMN revoked_reason TEXT"
         );
       }
+      // development_subject 为 NULL 的行用 'dev-' || id 兜底：username 是
+      // NOT NULL UNIQUE，INSERT OR IGNORE 会静默吞掉违约行导致回填缺失，
+      // 进而使 0012 重建 admin_sessions 时 FK 违约整库回滚（升级变砖）。
       connection.exec(`
         INSERT OR IGNORE INTO admin_accounts(
           id, username, password_hash, role, status,
           revision, created_at, updated_at
         )
-        SELECT id, development_subject, '!dev-session-only', role,
+        SELECT id, COALESCE(development_subject, 'dev-' || id), '!dev-session-only', role,
                CASE WHEN enabled = 1 THEN 'active' ELSE 'disabled' END,
                1, created_at, created_at
         FROM admins
@@ -967,6 +970,20 @@ const MIGRATIONS: Migration[] = [
       if (!foreignKeys.some((key) => key.table === "admins")) {
         return; // 新库或无表：FK 已指向 admin_accounts，无需重建
       }
+      // 复制前检测孤儿会话：admin_id 不在 admin_accounts（0010 回填缺失或
+      // 数据本身损坏）时，复制必然 FK 违约并回滚整库。这里在复制前抛出
+      // 明确错误，说明先跑 0010 或修复数据，而不是留下晦涩的违约回滚。
+      const orphans = connection.prepare(`
+        SELECT admin_id FROM admin_sessions
+        WHERE admin_id NOT IN (SELECT id FROM admin_accounts)
+        ORDER BY admin_id ASC LIMIT 5
+      `).all() as unknown as Array<{ admin_id: string }>;
+      if (orphans.length > 0) {
+        throw new DomainError(
+          "config_missing",
+          `admin_sessions 存在孤儿会话（admin_id 不在 admin_accounts，如 ${orphans.map((row) => row.admin_id).join("、")}）：请先应用 0010 回填迁移或修复数据后再升级`
+        );
+      }
       connection.exec("DROP TABLE IF EXISTS admin_sessions_new");
       connection.exec(`
         CREATE TABLE admin_sessions_new (
@@ -991,6 +1008,39 @@ const MIGRATIONS: Migration[] = [
       );
       connection.exec(
         "CREATE INDEX IF NOT EXISTS admin_sessions_admin ON admin_sessions(admin_id)"
+      );
+    }
+  },
+  {
+    // 模型 API Key 落地加密（外部评审 P1-1）：agent_model_config.api_key
+    // 从明文列迁移为自包含密文 JSON + encryption_key_version（与健康正文
+    // 同格式）。已有明文密钥在同一迁移内用当前密钥加密回填；存在明文但
+    // 未提供加密端口时抛 config_missing（绝不静默丢失或留明文）。
+    // 全新库 api_key 为 NULL，无需回填，迁移直接补列通过。
+    version: "0013_agent_model_api_key_encryption",
+    apply: (connection, encryption) => {
+      // 防御性跳过：0009 未建表（异常/手工库）时无明文可回填，不误伤升级。
+      const table = connection.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'agent_model_config'"
+      ).get();
+      if (table === undefined) {
+        return;
+      }
+      const columns = connection
+        .prepare("PRAGMA table_info(agent_model_config)")
+        .all() as unknown as Array<{ name: string }>;
+      if (
+        !columns.some((column) => column.name === "encryption_key_version")
+      ) {
+        connection.exec(
+          "ALTER TABLE agent_model_config ADD COLUMN encryption_key_version TEXT"
+        );
+      }
+      backfillEncryptedColumn(
+        connection,
+        "agent_model_config", "api_key",
+        "agent_model_config", "api_key", "id",
+        encryption
       );
     }
   }

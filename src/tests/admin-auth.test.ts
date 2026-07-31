@@ -10,6 +10,7 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
+import { KangminDatabase } from "../infrastructure/database.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { AdminAccountView, LoginResult } from "../modules/admin/admin-auth-service.js";
 
@@ -18,6 +19,28 @@ function dataOf<T>(result: CommandResult): T {
     assert.fail(`${result.error.code}: ${result.error.message}`);
   }
   return result.data as T;
+}
+
+/** 读取审计行（外部评审 P1-3 断言：actor=操作者、entity=目标）。 */
+function auditRowsOf(
+  databasePath: string,
+  action: string
+): Array<{ actor_id: string; entity_id: string; details_json: string }> {
+  const database = new KangminDatabase(databasePath);
+  try {
+    return database.connection
+      .prepare(`
+        SELECT actor_id, entity_id, details_json FROM audit_events
+        WHERE action = ? ORDER BY created_at ASC, id ASC
+      `)
+      .all(action) as unknown as Array<{
+      actor_id: string;
+      entity_id: string;
+      details_json: string;
+    }>;
+  } finally {
+    database.close();
+  }
 }
 
 async function fixture(): Promise<{
@@ -114,7 +137,7 @@ test("首个 owner 引导、登录、状态、退出与令牌撤销闭环", asyn
 });
 
 test("owner 创建/停用普通管理员，停用立即撤销会话，普通管理员不能管理 owner", async () => {
-  const { app } = await fixture();
+  const { app, databasePath } = await fixture();
   try {
     dataOf(await app.execute({ command: "auth admins add", input: { ...OWNER } }));
     const ownerLogin = dataOf<LoginResult>(
@@ -204,6 +227,41 @@ test("owner 创建/停用普通管理员，停用立即撤销会话，普通管�
     });
     assert.equal(disableOwner.ok, false);
     if (!disableOwner.ok) assert.equal(disableOwner.error.code, "validation_failed");
+
+    // 审计（外部评审 P1-3）：启停审计的 actor 必须是当前操作者（owner），
+    // entity 必须是目标账号，绝不把目标账号当作操作者。
+    const disableAudits = auditRowsOf(databasePath, "admin.disable");
+    assert.equal(disableAudits.length, 1, "应恰好一条 admin.disable 审计");
+    assert.equal(disableAudits[0]?.actor_id, ownerLogin.adminId);
+    assert.equal(disableAudits[0]?.entity_id, created.id);
+
+    dataOf(
+      await app.execute({
+        command: "auth admins enable",
+        adminToken: ownerLogin.token,
+        input: { id: created.id }
+      })
+    );
+    const enableAudits = auditRowsOf(databasePath, "admin.enable");
+    assert.equal(enableAudits.length, 1, "应恰好一条 admin.enable 审计");
+    assert.equal(enableAudits[0]?.actor_id, ownerLogin.adminId);
+    assert.equal(enableAudits[0]?.entity_id, created.id);
+
+    // 管理员创建与登录审计同样落库（actor=操作者，entity=目标/账号）。
+    const createAudits = auditRowsOf(databasePath, "admin.create");
+    assert.ok(
+      createAudits.some(
+        (row) => row.actor_id === ownerLogin.adminId && row.entity_id === created.id
+      ),
+      "admin.create 审计应记录操作者与目标"
+    );
+    const loginAudits = auditRowsOf(databasePath, "admin.login");
+    assert.ok(
+      loginAudits.some(
+        (row) => row.actor_id === ownerLogin.adminId && row.entity_id === ownerLogin.adminId
+      ),
+      "admin.login 审计应记录登录账号"
+    );
   } finally {
     app.close();
   }

@@ -2,7 +2,6 @@
 
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
-import { createInterface } from "node:readline";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
@@ -39,7 +38,7 @@ agent 命令：
   status
   knowledge     list|show|add <file>|index|enable|disable|search-test <query>
   plan          list|show|create|update|preview|enable|disable|mappings
-  model         show|update|test
+  model         show|update|test（--api-key 为标志，密钥从 stdin 读取）
   test          run|case <case-id>
 
 users 命令：
@@ -54,7 +53,9 @@ auth 命令：
 身份：
   管理员令牌经 KANGMIN_ADMIN_TOKEN 环境变量传入（与患者 KANGMIN_SESSION_TOKEN 分离）。
   auth login 成功后令牌写入本地凭据文件（仅当前用户可读，0600）。
-  密码不进入命令行参数或历史。
+  密码与模型 API Key 不进入命令行参数或历史：
+  --api-key 是标志，密钥值从 stdin 读取（TTY 隐藏回显，管道读首行；
+  空输入表示本次不修改密钥）。
 
 机器输出：
   添加 --json 后 stdout 只输出一个 JSON 对象；进度与诊断进入 stderr。
@@ -94,7 +95,7 @@ _kangmin_admin "\$@"
 `;
 
 /** 值为布尔标志、不需要取值的选项。 */
-const FLAG_OPTIONS = new Set(["--yes"]);
+const FLAG_OPTIONS = new Set(["--yes", "--api-key"]);
 /** 取值为 true/false 的选项。 */
 const BOOLEAN_VALUE_OPTIONS = new Set(["--knowledge-retrieval", "--explanation-enabled"]);
 /** 取值为数字的选项。 */
@@ -138,7 +139,7 @@ const OPTION_NAMES: Record<string, string> = {
   "--retrieval-count": "retrievalCount",
   "--knowledge-retrieval": "knowledgeRetrieval",
   "--explanation-enabled": "explanationEnabled",
-  "--api-key": "apiKey",
+  "--api-key": "apiKeyRequested",
   "--query": "query",
   "--syndrome": "syndrome",
   "--method": "method",
@@ -448,21 +449,26 @@ function clearCredentials(databasePath: string): void {
   }
 }
 
-// ---- 密码读取（隐藏输入；非 TTY 从管道读取一行） ----
+// ---- 敏感输入读取（密码/API Key；隐藏回显；非 TTY 管道读到 EOF 取首行） ----
 
-function readPassword(): Promise<string> {
+/**
+ * 从 stdin 读取敏感输入（密码、API Key）。
+ * - TTY：隐藏回显，提示与回显符只写 stderr（--json 时 stdout 不被污染）；
+ * - 非 TTY：管道/重定向读到 EOF 取第一行；无内容返回 undefined，
+ *   调用方据此明确失败或跳过，绝不悬挂等待（exit 13 修复）。
+ */
+function readSecret(prompt: string): Promise<string | undefined> {
   const stdin = process.stdin;
   if (stdin.isTTY === true) {
     stdin.setRawMode(true);
-    stdin.resume();
-    process.stdout.write("密码: ");
+    process.stderr.write(prompt);
     return new Promise<string>((resolve) => {
       let value = "";
       const finish = (result: string): void => {
         stdin.setRawMode(false);
         stdin.pause();
         stdin.removeListener("data", onData);
-        process.stdout.write("\n");
+        process.stderr.write("\n");
         resolve(result);
       };
       const onData = (chunk: Buffer): void => {
@@ -478,22 +484,30 @@ function readPassword(): Promise<string> {
           if (byte === 127 || byte === 8) {
             if (value.length > 0) {
               value = value.slice(0, -1);
-              process.stdout.write("\b \b");
+              process.stderr.write("\b \b");
             }
             continue;
           }
           value += String.fromCharCode(byte);
-          process.stdout.write("*");
+          process.stderr.write("*");
         }
       };
       stdin.on("data", onData);
+      stdin.resume();
     });
   }
-  const readline = createInterface({ input: stdin });
-  return new Promise<string>((resolve) => {
-    readline.question("", (line) => {
-      readline.close();
-      resolve(line);
+  return new Promise((resolve) => {
+    let data = "";
+    stdin.setEncoding("utf8");
+    stdin.on("data", (chunk: string) => {
+      data += chunk;
+    });
+    stdin.on("end", () => {
+      const firstLine = data.split("\n")[0] ?? "";
+      resolve(firstLine === "" ? undefined : firstLine);
+    });
+    stdin.on("error", () => {
+      resolve(undefined);
     });
   });
 }
@@ -572,7 +586,20 @@ export async function runAdminCli(
     const input = { ...parsed.input };
     // 密码只从 stdin 读取，绝不进入命令行参数。
     if (parsed.command === "auth login" || parsed.command === "auth admins add") {
-      input.password = await readPassword();
+      const password = await readSecret("密码: ");
+      if (password !== undefined) {
+        input.password = password;
+      }
+    }
+    // 模型 API Key 同样只从 stdin 读取（--api-key 是标志，不带值）。
+    if (parsed.command === "agent model update" && input.apiKeyRequested === true) {
+      const apiKey = await readSecret("API Key（输入不回显）: ");
+      delete input.apiKeyRequested;
+      if (apiKey !== undefined) {
+        input.apiKey = apiKey;
+      } else {
+        process.stderr.write("警告: 未从 stdin 读到 API Key（空输入），本次不修改密钥\n");
+      }
     }
 
     const token =

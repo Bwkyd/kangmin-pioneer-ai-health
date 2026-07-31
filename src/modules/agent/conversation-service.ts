@@ -131,6 +131,10 @@ export class ConversationService {
           patientId: input.patientId,
           saveConsentId: randomUUID(),
           retentionUntil: this.boundRetention(timestamp),
+          // 绑定是所有权变更：必须推进 revision，CAS 才会拒绝并发旧请求
+          // （评审 P1 codex #8：保留原 revision 时，旧请求可用相同
+          // expectedRevision 通过 CAS，把已绑定会话写回匿名状态）。
+          revision: session.revision + 1,
           updatedAt: timestamp
         };
         await this.updateSession(session, bound);
@@ -246,12 +250,14 @@ export class ConversationService {
         createdAt: timestamp,
         decidedAt: null
       });
+      // 患者可见视图只暴露 fieldCode/state（评审 P1 codex #9）：
+      // 模型原始 value/justification 只入密文库，绝不透传——否则模型
+      // 可在这些字段输出诊断/药物/疗程文本，绕过 renderValidatedOutput
+      // 的固定输出校验。患者确认流程凭 fieldCode 进行。
       proposedViews.push({
         id: candidateId,
         fieldCode: candidate.fieldCode,
-        state: candidate.state,
-        value: candidate.value,
-        justification: candidate.justification ?? null
+        state: candidate.state
       });
     }
 
@@ -575,7 +581,10 @@ export class ConversationService {
     patientId: string | null
   ): Promise<ConversationSession> {
     if (patientId === null) {
-      const anonymous = await this.repository.findSession(conversationId);
+      // 匿名调用者只能访问匿名会话（评审 P1 codex #7）：用
+      // findAnonymousSession（patient_id IS NULL 过滤），绑定患者后
+      // 原匿名 id 对匿名调用者不可再访问。
+      const anonymous = await this.repository.findAnonymousSession(conversationId);
       if (anonymous === null) {
         throw new DomainError("resource_not_found", "对话不存在");
       }
@@ -615,7 +624,12 @@ export class ConversationService {
     }
   }
 
-  /** 补问只涉及已确认 unknown 的字段 → 无法取得进展 → fail-closed。 */
+  /**
+   * 补问全部待答字段都已确认 unknown → 无法取得进展 → fail-closed。
+   * 进展判定基于未截断的全集（verdict.allQuestions）：截断只影响本轮
+   * 展示数量，患者对已展示的 2 问答 unknown 不代表其余问题无法回答
+   * （评审 P1 kimi P1-6）。
+   */
   private failClosedIfNoProgress(
     verdict: ReturnType<ClinicalRuleKernelPort["evaluate"]>,
     unknownAnswered: ReadonlySet<string>
@@ -623,10 +637,10 @@ export class ConversationService {
     if (verdict.outcome !== "need_more_information") {
       return null;
     }
-    if (verdict.nextQuestions.length === 0) {
+    if (verdict.allQuestions.length === 0) {
       return null;
     }
-    const allUnknown = verdict.nextQuestions.every((question) =>
+    const allUnknown = verdict.allQuestions.every((question) =>
       unknownAnswered.has(question.fieldCode)
     );
     if (!allUnknown) {

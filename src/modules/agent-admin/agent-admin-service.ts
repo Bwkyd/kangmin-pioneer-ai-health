@@ -11,6 +11,7 @@ import {
 import { basename, extname, join } from "node:path";
 
 import { DomainError } from "../../kernel/errors.js";
+import type { AuditPort } from "../system/audit-ports.js";
 import type {
   AgentAdminRepository,
   ChunkInput,
@@ -107,7 +108,8 @@ export class AgentAdminService {
   constructor(
     private readonly repository: AgentAdminRepository,
     private readonly syndromes: SyndromeRegistryPort,
-    private readonly mediaDirectory: string
+    private readonly mediaDirectory: string,
+    private readonly audit: AuditPort
   ) {}
 
   // ==== 状态 ====
@@ -195,8 +197,12 @@ export class AgentAdminService {
 
     const parsed = this.parseSource(extension, buffer);
     const timestamp = now();
+    // 知识源文件同时登记为素材：把注册时生成的 media ID 写入
+    // agent_knowledge_items.source_media_id（顺序写入，先素材后知识，
+    // FK 可满足），使 countMediaReferences 能检测到已启用知识的引用。
+    const sourceMediaId = newId("med");
     await this.repository.registerMedia({
-      id: newId("med"),
+      id: sourceMediaId,
       kind: extension === ".pdf"
         ? "pdf"
         : extension === ".docx" || extension === ".doc"
@@ -219,7 +225,7 @@ export class AgentAdminService {
       name: filename,
       source: input.source?.trim() || null,
       description: input.description?.trim() || null,
-      sourceMediaId: null,
+      sourceMediaId,
       sizeBytes: stats.size,
       mimeType,
       sha256,
@@ -267,7 +273,7 @@ export class AgentAdminService {
     return this.getKnowledge(id);
   }
 
-  async enableKnowledge(id: string): Promise<KnowledgeItem> {
+  async enableKnowledge(adminId: string, id: string): Promise<KnowledgeItem> {
     const item = await this.getKnowledge(id);
     if (item.status === "enabled") {
       return item;
@@ -279,16 +285,34 @@ export class AgentAdminService {
       );
     }
     await this.repository.setKnowledgeStatus(id, "enabled", now());
-    return this.getKnowledge(id);
+    const updated = await this.getKnowledge(id);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.knowledge.enable",
+      entityType: "agent_knowledge_item",
+      entityId: id,
+      details: { name: updated.name }
+    });
+    return updated;
   }
 
-  async disableKnowledge(id: string): Promise<KnowledgeItem> {
+  async disableKnowledge(adminId: string, id: string): Promise<KnowledgeItem> {
     const item = await this.getKnowledge(id);
     if (item.status !== "enabled") {
       throw new DomainError("validation_failed", "只有已启用知识可以停用");
     }
     await this.repository.setKnowledgeStatus(id, "disabled", now());
-    return this.getKnowledge(id);
+    const updated = await this.getKnowledge(id);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.knowledge.disable",
+      entityType: "agent_knowledge_item",
+      entityId: id,
+      details: { name: updated.name }
+    });
+    return updated;
   }
 
   /** 检索测试只命中已启用知识（未启用知识不能被 Agent 检索）。 */
@@ -422,7 +446,11 @@ export class AgentAdminService {
     return this.planOutcome(outcome, expectedRevision);
   }
 
-  async enablePlan(id: string, expectedRevision: number): Promise<AgentPlan> {
+  async enablePlan(
+    adminId: string,
+    id: string,
+    expectedRevision: number
+  ): Promise<AgentPlan> {
     const plan = await this.getPlan(id);
     if (plan.status === "enabled") {
       return plan;
@@ -440,10 +468,24 @@ export class AgentAdminService {
       "enabled",
       now()
     );
-    return this.planOutcome(outcome, expectedRevision);
+    const updated = this.planOutcome(outcome, expectedRevision);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.plan.enable",
+      entityType: "agent_plan",
+      entityId: id,
+      entityRevision: updated.revision,
+      details: { name: updated.name }
+    });
+    return updated;
   }
 
-  async disablePlan(id: string, expectedRevision: number): Promise<AgentPlan> {
+  async disablePlan(
+    adminId: string,
+    id: string,
+    expectedRevision: number
+  ): Promise<AgentPlan> {
     const plan = await this.getPlan(id);
     if (plan.status !== "enabled") {
       throw new DomainError("validation_failed", "只有已启用方案可以停用");
@@ -454,7 +496,17 @@ export class AgentAdminService {
       "disabled",
       now()
     );
-    return this.planOutcome(outcome, expectedRevision);
+    const updated = this.planOutcome(outcome, expectedRevision);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.plan.disable",
+      entityType: "agent_plan",
+      entityId: id,
+      entityRevision: updated.revision,
+      details: { name: updated.name }
+    });
+    return updated;
   }
 
   /** 证型 → 方案映射：显示全部状态方案，标记无已启用方案的证型。 */

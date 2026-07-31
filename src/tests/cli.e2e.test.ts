@@ -548,3 +548,50 @@ test("Agent 对话命令通过真实 CLI：exec/test run/feedback/快捷入口",
   const listBody = JSON.parse(list.stdout) as { error: { code: string } };
   assert.equal(listBody.error.code, "authentication_required");
 });
+
+test("help 免登录、未知命令组 command_invalid（与登录状态无关）、裸词仍进 Agent 管线", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-help-"));
+  const environment = { KANGMIN_DB_PATH: join(directory, "records.sqlite") };
+
+  // 裸 help 无 token：退出 0，输出帮助（外部评审 P1-10）。
+  const help = run(["help"], environment);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /用法：/u);
+
+  // 未知命令组无 token：command_invalid exit 2，绝不漂移成
+  // authentication_required（exit 9）。
+  const unknown = run(["foo", "bar", "--json"], environment);
+  assert.equal(unknown.status, 2);
+  const unknownBody = JSON.parse(unknown.stdout) as {
+    error: { code: string };
+  };
+  assert.equal(unknownBody.error.code, "command_invalid");
+
+  // 已登录状态下的未知命令同样是 command_invalid（与登录无关）。
+  const databasePath = join(directory, "records.sqlite");
+  const bootstrap = createApplication(databasePath);
+  let token = "";
+  try {
+    token = (await bootstrap.sessions.createDevelopmentSession("patient-help")).token;
+  } finally {
+    bootstrap.close();
+  }
+  const unknownLoggedIn = run(
+    ["foo", "bar", "--json"],
+    { KANGMIN_DB_PATH: databasePath, KANGMIN_SESSION_TOKEN: token }
+  );
+  assert.equal(unknownLoggedIn.status, 2);
+
+  // 笔误裸词（如 recrod）按特性进入 Agent 管线，不当作命令报错。
+  const typo = run(
+    ["recrod", "--json"],
+    { KANGMIN_DB_PATH: databasePath, KANGMIN_SESSION_TOKEN: token }
+  );
+  assert.equal(typo.status, 0, typo.stderr);
+  const typoBody = JSON.parse(typo.stdout) as {
+    command: string;
+    data: { message: { content: string } | null };
+  };
+  assert.equal(typoBody.command, "agent start");
+  assert.ok(typeof typoBody.data.message?.content === "string");
+});

@@ -184,6 +184,66 @@ test("匿名会话登录后必须再次确认保存，不能自动绑定", async
   }
 });
 
+test("匿名调用者只能访问匿名会话：绑定患者后原匿名 id 不可再续接", async () => {
+  const { application } = await fixture();
+  try {
+    const first = await exec(application, { message: "我最近鼻塞" });
+    const token =
+      (await application.sessions.createDevelopmentSession("conv-anon-owner")).token;
+    const bound = await exec(
+      application,
+      { message: "", conversationId: first.conversationId, saveConsent: true },
+      token
+    );
+    assert.equal(bound.saved, true);
+
+    // 匿名调用者（未登录）用同一 conversationId 续接 → 会话已绑定患者，
+    // 匿名分支必须走 patient_id IS NULL 过滤（评审 P1 codex #7）。
+    const stale = await application.execute({
+      command: "agent exec",
+      input: { message: "急救：否", conversationId: first.conversationId }
+    });
+    assert.equal(stale.ok, false);
+    if (!stale.ok) {
+      assert.equal(stale.error.code, "resource_not_found");
+    }
+  } finally {
+    application.close();
+  }
+});
+
+test("绑定匿名会话必须推进 revision：绑定只做所有权变更，CAS 生效", async () => {
+  const { application } = await fixture();
+  try {
+    // 一轮内走到 completed（revision 1→2），随后只绑定不产生新轮次，
+    // 便于直接观察绑定本身的 revision 推进（评审 P1 codex #8）。
+    const first = await exec(application, { message: "急救：是" });
+    assert.equal(first.closed, true);
+
+    const token =
+      (await application.sessions.createDevelopmentSession("conv-rev")).token;
+    const bound = await exec(
+      application,
+      { message: "", conversationId: first.conversationId, saveConsent: true },
+      token
+    );
+    assert.equal(bound.saved, true);
+
+    const shown = dataOf<{ session: { revision: number } }>(
+      await application.execute({
+        command: "agent conversations show",
+        input: { id: first.conversationId },
+        sessionToken: token
+      })
+    );
+    // 轮次提交后 revision=2；绑定必须推进到 3。修复前绑定保留原
+    // revision（仍为 2），并发旧请求可用相同 expectedRevision 通过 CAS。
+    assert.equal(shown.session.revision, 3);
+  } finally {
+    application.close();
+  }
+});
+
 test("安全阻断：高危输入直接阻断并结束对话，输出固定文案", async () => {
   const { application } = await fixture();
   try {
@@ -233,9 +293,17 @@ test("unknown 不等于 no：安全字段 unknown 走补问，无法进展时 fa
     assert.equal(unknown.verdict?.stage, "safety");
     assert.equal(unknown.closed, false);
 
+    // 只答 2 问 unknown 不 fail-closed：安全阶段待答全集 7 问，剩余
+    // 问题本可完成分类（评审 P1 kimi P1-6：截断不影响进展判定）。
+    const partial = await exec(application, {
+      message: "高热：不知道",
+      conversationId: first.conversationId
+    });
+    assert.equal(partial.closed, false);
+
     // 全部必要安全字段都确认 unknown → 无法取得进展 → fail-closed 结束。
     const second = await exec(application, {
-      message: "高热：不知道",
+      message: "鼻出血：不知道 剧烈头痛：不知道 皮肤破损：不知道 怀孕：不知道 未满12周岁：不知道",
       conversationId: first.conversationId
     });
     assert.equal(second.closed, true);
@@ -369,8 +437,86 @@ test("模型提取候选：只返回待确认候选，不直接进入规则输�
     assert.equal(turn.proposedCandidates.length, 1);
     assert.equal(turn.proposedCandidates[0]?.fieldCode, "thirst");
     assert.equal(turn.proposedCandidates[0]?.state, "yes");
+    // 评审 P1 codex #9：模型原始 justification 不透传给患者。
+    const view = turn.proposedCandidates[0] ?? {};
+    assert.equal("value" in view, false);
+    assert.equal("justification" in view, false);
+    assert.ok(!JSON.stringify(turn).includes("测试替身"));
     // 候选未确认前不进入规则输入：内核仍处于安全补问阶段。
     assert.equal(turn.verdict?.stage, "safety");
+  } finally {
+    application.close();
+  }
+});
+
+test("模型候选 value/justification 绝不透传：患者只拿到 fieldCode 与 state", async () => {
+  const { application } = await fixture([
+    {
+      match: "体温",
+      candidate: {
+        fieldCode: "fever_temp",
+        state: "value",
+        value: "39.5",
+        justification: "模型推断的体温数值"
+      }
+    }
+  ]);
+  try {
+    const turn = await exec(application, { message: "我最近体温 39.5 度" });
+    assert.equal(turn.proposedCandidates.length, 1);
+    const view = turn.proposedCandidates[0];
+    assert.ok(view !== undefined);
+    assert.equal(view.fieldCode, "fever_temp");
+    assert.equal(view.state, "value");
+    // 返回结构整体不携带模型原始 value/justification 文本：
+    // 模型无法借此绕过 renderValidatedOutput 向患者输出任意文本。
+    assert.equal("value" in view, false);
+    assert.equal("justification" in view, false);
+    const serialized = JSON.stringify(turn);
+    assert.ok(!serialized.includes("39.5"));
+    assert.ok(!serialized.includes("模型推断的体温数值"));
+  } finally {
+    application.close();
+  }
+});
+
+test("fail-closed 基于未截断补问全集：4 问只答 2 问 unknown 不关闭，继续补问", async () => {
+  const { application } = await fixture();
+  try {
+    let turn = await exec(application, {
+      message: "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 未满12周岁：否"
+    });
+    assert.equal(turn.verdict?.stage, "applicability");
+
+    turn = await exec(application, {
+      message: "阵发性喷嚏：是 清水样涕：是 鼻痒：是 鼻塞：是 感冒样表现：否 鼻窦炎样表现：否",
+      conversationId: turn.conversationId
+    });
+    assert.equal(turn.verdict?.outcome, "need_more_information");
+    assert.equal(turn.verdict?.stage, "severity");
+    // 单次最多展示 2 问（截断），但严重度待答全集为 4 问。
+    assert.equal(turn.verdict?.nextQuestions.length, 2);
+
+    // 患者只对本轮展示的 2 问答 unknown：全集尚有 2 问可问 →
+    // 不得 fail-closed（评审 P1 kimi P1-6：截断不影响进展判定）。
+    const partial = await exec(application, {
+      message: "影响睡眠：不知道 影响日常活动：不知道",
+      conversationId: turn.conversationId
+    });
+    assert.equal(partial.closed, false);
+    assert.equal(partial.verdict?.outcome, "need_more_information");
+    assert.equal(partial.verdict?.stage, "severity");
+    assert.ok(partial.message !== null);
+    assert.ok(partial.message.content.includes("为了继续评估"));
+
+    // 剩余 2 问也答 unknown：全集 4 问全部 unknown → fail-closed。
+    const exhausted = await exec(application, {
+      message: "影响工作学习：不知道 难以忍受：不知道",
+      conversationId: turn.conversationId
+    });
+    assert.equal(exhausted.closed, true);
+    assert.ok(exhausted.message !== null);
+    assert.ok(exhausted.message.content.includes("无法继续评估"));
   } finally {
     application.close();
   }

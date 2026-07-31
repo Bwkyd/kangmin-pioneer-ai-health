@@ -1,4 +1,6 @@
 import { KangminDatabase } from "./database.js";
+import { decryptStoredField, encryptStoredField } from "./encrypted-fields.js";
+import type { EncryptionPort } from "../kernel/encryption.js";
 import type {
   AgentAdminRepository,
   ChunkInput,
@@ -56,6 +58,7 @@ interface ModelConfigShape {
   retrieval_count: number;
   explanation_enabled: number;
   api_key: string | null;
+  encryption_key_version: string | null;
   updated_by: string | null;
   updated_at: string | null;
   last_test_status: string | null;
@@ -123,7 +126,10 @@ function toTestCase(row: TestCaseShape): TestCaseRow {
 }
 
 export class SqliteAgentAdminRepository implements AgentAdminRepository {
-  constructor(private readonly database: KangminDatabase) {}
+  constructor(
+    private readonly database: KangminDatabase,
+    private readonly encryption: EncryptionPort
+  ) {}
 
   // ---- 知识 ----
 
@@ -399,34 +405,49 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
     const row = this.database.connection.prepare(`
       SELECT provider, model_name, timeout_seconds, max_output_tokens,
              knowledge_retrieval_enabled, retrieval_count, explanation_enabled,
-             api_key, updated_by, updated_at, last_test_status, last_test_at
+             api_key, encryption_key_version,
+             updated_by, updated_at, last_test_status, last_test_at
       FROM agent_model_config WHERE id = 1
     `).get() as unknown as ModelConfigShape | undefined;
-    return row === undefined
-      ? null
-      : {
-          provider: row.provider,
-          modelName: row.model_name,
-          timeoutSeconds: row.timeout_seconds,
-          maxOutputTokens: row.max_output_tokens,
-          knowledgeRetrievalEnabled: row.knowledge_retrieval_enabled,
-          retrievalCount: row.retrieval_count,
-          explanationEnabled: row.explanation_enabled,
-          apiKey: row.api_key,
-          updatedBy: row.updated_by,
-          updatedAt: row.updated_at,
-          lastTestStatus: row.last_test_status,
-          lastTestAt: row.last_test_at
-        };
+    if (row === undefined) {
+      return null;
+    }
+    // api_key 为密文 JSON + 表级密钥版本（迁移 0013）；解密失败映射为
+    // storage_unavailable，绝不宽松降级。
+    const apiKey = decryptStoredField(
+      this.encryption,
+      row.api_key,
+      row.encryption_key_version,
+      "模型 API Key"
+    );
+    return {
+      provider: row.provider,
+      modelName: row.model_name,
+      timeoutSeconds: row.timeout_seconds,
+      maxOutputTokens: row.max_output_tokens,
+      knowledgeRetrievalEnabled: row.knowledge_retrieval_enabled,
+      retrievalCount: row.retrieval_count,
+      explanationEnabled: row.explanation_enabled,
+      apiKey,
+      updatedBy: row.updated_by,
+      updatedAt: row.updated_at,
+      lastTestStatus: row.last_test_status,
+      lastTestAt: row.last_test_at
+    };
   }
 
   async upsertModelConfig(row: ModelConfigRow): Promise<void> {
+    const encrypted =
+      row.apiKey === null
+        ? { stored: null, keyVersion: null }
+        : encryptStoredField(this.encryption, row.apiKey);
     this.database.connection.prepare(`
       INSERT INTO agent_model_config(
         id, provider, model_name, timeout_seconds, max_output_tokens,
         knowledge_retrieval_enabled, retrieval_count, explanation_enabled,
-        api_key, updated_by, updated_at, last_test_status, last_test_at
-      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        api_key, encryption_key_version,
+        updated_by, updated_at, last_test_status, last_test_at
+      ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(id) DO UPDATE SET
         provider = excluded.provider,
         model_name = excluded.model_name,
@@ -436,6 +457,7 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
         retrieval_count = excluded.retrieval_count,
         explanation_enabled = excluded.explanation_enabled,
         api_key = excluded.api_key,
+        encryption_key_version = excluded.encryption_key_version,
         updated_by = excluded.updated_by,
         updated_at = excluded.updated_at,
         last_test_status = excluded.last_test_status,
@@ -448,7 +470,8 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
       row.knowledgeRetrievalEnabled,
       row.retrievalCount,
       row.explanationEnabled,
-      row.apiKey,
+      encrypted.stored,
+      encrypted.keyVersion,
       row.updatedBy,
       row.updatedAt,
       row.lastTestStatus,

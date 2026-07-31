@@ -59,13 +59,15 @@ export function success<T>(
   data: T,
   requestId?: string
 ): SuccessResult<T> {
+  // requestId 只生成一次：receipt 与 meta 必须一致（跨层关联用同一关联号）。
+  const id = requestId ?? randomUUID();
   return {
     ok: true,
     command,
     status: "completed",
     data,
-    receipt: receipt(requestId),
-    meta: meta(requestId)
+    receipt: receipt(id),
+    meta: meta(id)
   };
 }
 
@@ -76,6 +78,7 @@ export function failure(
 ): FailureResult {
   const error: DomainError = normalizeError(inputError);
   const details = error.details === undefined ? {} : { details: error.details };
+  const id = requestId ?? randomUUID();
 
   return {
     ok: false,
@@ -87,7 +90,7 @@ export function failure(
       retryable: error.retryable,
       ...details
     },
-    receipt: receipt(requestId),
-    meta: meta(requestId)
+    receipt: receipt(id),
+    meta: meta(id)
   };
 }

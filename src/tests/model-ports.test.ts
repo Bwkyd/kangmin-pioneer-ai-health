@@ -186,6 +186,7 @@ function classifiedVerdict(): ClinicalVerdict {
     severityCode: "mild",
     syndromeCode: "LUNG_HEAT",
     nextQuestions: [],
+    allQuestions: [],
     matchedRuleIds: ["SEV-05", "T1"],
     message: null,
     planId: null,

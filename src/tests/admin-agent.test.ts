@@ -9,6 +9,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
+import { KangminDatabase } from "../infrastructure/database.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { KnowledgeItem, AgentPlan, ModelConfigView } from "../modules/agent-admin/contracts.js";
 
@@ -19,10 +20,34 @@ function dataOf<T>(result: CommandResult): T {
   return result.data as T;
 }
 
+/** 读取审计行（外部评审 P1-3：知识/方案启停必须有审计）。 */
+function auditRowsOf(
+  databasePath: string,
+  action: string
+): Array<{ actor_id: string; entity_id: string; entity_revision: number | null }> {
+  const database = new KangminDatabase(databasePath);
+  try {
+    return database.connection
+      .prepare(`
+        SELECT actor_id, entity_id, entity_revision FROM audit_events
+        WHERE action = ? ORDER BY created_at ASC, id ASC
+      `)
+      .all(action) as unknown as Array<{
+      actor_id: string;
+      entity_id: string;
+      entity_revision: number | null;
+    }>;
+  } finally {
+    database.close();
+  }
+}
+
 async function fixture(): Promise<{
   app: ReturnType<typeof createAdminApplication>;
+  databasePath: string;
   mediaDirectory: string;
   token: string;
+  adminId: string;
 }> {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-admin-agent-"));
   const databasePath = join(directory, "agent.sqlite");
@@ -39,11 +64,11 @@ async function fixture(): Promise<{
   if (!category.ok) {
     assert.fail(`${category.error.code}: ${category.error.message}`);
   }
-  return { app, mediaDirectory, token: session.token };
+  return { app, databasePath, mediaDirectory, token: session.token, adminId: session.adminId };
 }
 
 test("知识状态机：add→index→enable→search-test→disable", async () => {
-  const { app, mediaDirectory, token } = await fixture();
+  const { app, databasePath, mediaDirectory, token, adminId } = await fixture();
   try {
     const file = join(mediaDirectory, "鼻炎护理知识.md");
     writeFileSync(
@@ -118,6 +143,16 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
       })
     );
     assert.equal(noHits.items.length, 0);
+
+    // 审计（外部评审 P1-3）：知识启停必须有审计行，actor=操作者。
+    const enableAudits = auditRowsOf(databasePath, "agent.knowledge.enable");
+    assert.equal(enableAudits.length, 1);
+    assert.equal(enableAudits[0]?.actor_id, adminId);
+    assert.equal(enableAudits[0]?.entity_id, added.id);
+    const disableAudits = auditRowsOf(databasePath, "agent.knowledge.disable");
+    assert.equal(disableAudits.length, 1);
+    assert.equal(disableAudits[0]?.actor_id, adminId);
+    assert.equal(disableAudits[0]?.entity_id, added.id);
   } finally {
     app.close();
   }
@@ -149,7 +184,7 @@ test("PDF 知识如实标记解析失败，不伪装成功", async () => {
 });
 
 test("方案：固定证型校验、启用前完整性校验、证型映射", async () => {
-  const { app, token } = await fixture();
+  const { app, databasePath, token, adminId } = await fixture();
   try {
     // 客户不能创建证型：不存在的证型直接拒绝
     const badSyndrome = await app.execute({
@@ -219,6 +254,19 @@ test("方案：固定证型校验、启用前完整性校验、证型映射", as
       })
     );
     assert.equal(disabled.status, "disabled");
+
+    // 审计（外部评审 P1-3）：方案启停必须有审计行，actor=操作者，
+    // entity=目标方案，并携带目标 revision。
+    const enableAudits = auditRowsOf(databasePath, "agent.plan.enable");
+    assert.equal(enableAudits.length, 1);
+    assert.equal(enableAudits[0]?.actor_id, adminId);
+    assert.equal(enableAudits[0]?.entity_id, plan.id);
+    assert.equal(enableAudits[0]?.entity_revision, 3);
+    const disableAudits = auditRowsOf(databasePath, "agent.plan.disable");
+    assert.equal(disableAudits.length, 1);
+    assert.equal(disableAudits[0]?.actor_id, adminId);
+    assert.equal(disableAudits[0]?.entity_id, plan.id);
+    assert.equal(disableAudits[0]?.entity_revision, 4);
   } finally {
     app.close();
   }
@@ -331,7 +379,7 @@ test("方案关联视频校验：不存在或未发布的视频不能启用", as
 });
 
 test("模型设置：不显示完整 API Key；未配置时测试如实报错；模拟测试契约", async () => {
-  const { app, token } = await fixture();
+  const { app, databasePath, token } = await fixture();
   try {
     const initial = dataOf<ModelConfigView>(
       await app.execute({ command: "agent model show", adminToken: token })
@@ -359,6 +407,23 @@ test("模型设置：不显示完整 API Key；未配置时测试如实报错；
     assert.equal(updated.modelName, "gpt-4o-mini");
     assert.equal(updated.apiKeyMasked, "sk-a****7890");
     assert.ok(!updated.apiKeyMasked.includes("abcdef1234"));
+
+    // 加密存储（外部评审 P1-1）：库内不存明文 api_key，且带密钥版本。
+    const stored = new KangminDatabase(databasePath);
+    try {
+      const row = stored.connection
+        .prepare(`
+          SELECT api_key, encryption_key_version FROM agent_model_config WHERE id = 1
+        `)
+        .get() as unknown as { api_key: string; encryption_key_version: string | null };
+      assert.ok(
+        !row.api_key.includes("sk-abcdef1234567890"),
+        "api_key 必须加密存储，库内不得出现明文"
+      );
+      assert.equal(row.encryption_key_version, "plaintext-dev");
+    } finally {
+      stored.close();
+    }
 
     // 已配置模型但无提供方适配器 → capability_unavailable（如实）
     const modelTest = await app.execute({ command: "agent model test", adminToken: token });

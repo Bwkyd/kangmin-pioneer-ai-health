@@ -849,6 +849,11 @@ export async function runCli(
     process.stdout.write(HELP);
     return 0;
   }
+  // 裸 `help` 词：parse 层映射为 help 命令，免登录直接输出（外部评审 P1-10）。
+  if (parsed.command === "help") {
+    process.stdout.write(HELP);
+    return 0;
+  }
 
   // 辅助命令：版本与补全不依赖应用实例，直接输出。
   if (parsed.command === "__version__") {
@@ -889,11 +894,20 @@ export async function runCli(
   }
 
   // 裸 kangmin（TTY 交互终端）：启动对话骨架；非 TTY 回退单轮结构化结果。
+  // createApplication 与主路径一致在 try/catch 内：生产缺密钥时以
+  // config_missing 干净退出（exit 5），不打印堆栈（外部评审 P1-11）。
   if (parsed.interactive === true && !parsed.json && process.stdin.isTTY === true) {
     const databasePath = resolve(
       environment.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
     );
-    const interactiveApp = createApplication(databasePath);
+    let interactiveApp;
+    try {
+      interactiveApp = createApplication(databasePath);
+    } catch (error) {
+      const result = failure("system bootstrap", error);
+      process.stderr.write(`${result.error.code}: ${result.error.message}\n`);
+      return exitCodeForCode(result.error.code);
+    }
     try {
       return await runInteractive(interactiveApp, environment);
     } finally {

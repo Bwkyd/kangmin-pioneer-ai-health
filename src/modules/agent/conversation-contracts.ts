@@ -139,9 +139,12 @@ export interface ConversationTurnInput {
 export interface ProposedCandidateView {
   id: string;
   fieldCode: string;
+  /**
+   * 候选状态（proposed/adopted/ignored/expired）。
+   * 模型原始 value/justification 绝不透传给患者（评审 P1 codex #9）：
+   * 候选以密文完整存库，患者确认流程凭 fieldCode 进行。
+   */
   state: string;
-  value?: string | number | undefined;
-  justification: string | null;
 }
 
 export interface ConversationTurnResult {

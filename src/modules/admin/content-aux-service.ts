@@ -11,6 +11,7 @@ import {
 import { basename, extname, join } from "node:path";
 
 import { DomainError } from "../../kernel/errors.js";
+import type { AuditPort } from "../system/audit-ports.js";
 import type {
   CategoryKind,
   ContentAuxRepository,
@@ -71,7 +72,8 @@ function requireChange(changes: Record<string, unknown>): void {
 export class ContentAuxService {
   constructor(
     private readonly repository: ContentAuxRepository,
-    private readonly mediaDirectory: string
+    private readonly mediaDirectory: string,
+    private readonly audit: AuditPort
   ) {}
 
   // ==== 素材 ====
@@ -395,7 +397,11 @@ export class ContentAuxService {
     return this.messageOutcome(outcome, expectedRevision);
   }
 
-  async publishMessage(id: string, expectedRevision: number): Promise<ContentMessageRow> {
+  async publishMessage(
+    adminId: string,
+    id: string,
+    expectedRevision: number
+  ): Promise<ContentMessageRow> {
     const current = await this.getMessage(id);
     if (current.status === "published") {
       throw new DomainError("validation_failed", "公告已经发布");
@@ -411,10 +417,24 @@ export class ContentAuxService {
       timestamp,
       timestamp
     );
-    return this.messageOutcome(outcome, expectedRevision);
+    const published = this.messageOutcome(outcome, expectedRevision);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "content.message.publish",
+      entityType: "content_message",
+      entityId: id,
+      entityRevision: published.revision,
+      details: { title: published.title }
+    });
+    return published;
   }
 
-  async unpublishMessage(id: string, expectedRevision: number): Promise<ContentMessageRow> {
+  async unpublishMessage(
+    adminId: string,
+    id: string,
+    expectedRevision: number
+  ): Promise<ContentMessageRow> {
     const current = await this.getMessage(id);
     if (current.status !== "published") {
       throw new DomainError("validation_failed", "只有已发布公告可以下架");
@@ -426,7 +446,17 @@ export class ContentAuxService {
       null,
       now()
     );
-    return this.messageOutcome(outcome, expectedRevision);
+    const unpublished = this.messageOutcome(outcome, expectedRevision);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "content.message.unpublish",
+      entityType: "content_message",
+      entityId: id,
+      entityRevision: unpublished.revision,
+      details: { title: unpublished.title }
+    });
+    return unpublished;
   }
 
   private messageOutcome(

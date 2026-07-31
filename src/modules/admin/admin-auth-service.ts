@@ -141,6 +141,15 @@ export class AdminAuthService {
     if (created === null) {
       throw new DomainError("internal_error", "管理员创建后读取失败");
     }
+    // 管理员创建审计：引导（identity 为 null）时操作者即新 owner 本人。
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: identity?.adminId ?? created.id,
+      action: "admin.create",
+      entityType: "admin_account",
+      entityId: created.id,
+      details: { role: created.role }
+    });
     return viewOf(created);
   }
 
@@ -152,9 +161,26 @@ export class AdminAuthService {
       !account.passwordHash.startsWith(DEV_PLACEHOLDER_PREFIX) &&
       (await verifyPassword(password, account.passwordHash));
     if (account === null || !valid) {
+      // 失败审计（actor 为尝试登录的用户名；账号不存在时以用户名作实体）。
+      await this.audit.record({
+        actorKind: "admin",
+        actorId: account?.id ?? username.trim(),
+        action: "admin.login_failed",
+        entityType: "admin_account",
+        entityId: account?.id ?? username.trim(),
+        details: { reason: "invalid_credentials" }
+      });
       throw new DomainError("authentication_required", "账号或密码错误");
     }
     if (account.status !== "active") {
+      await this.audit.record({
+        actorKind: "admin",
+        actorId: account.id,
+        action: "admin.login_failed",
+        entityType: "admin_account",
+        entityId: account.id,
+        details: { reason: "disabled" }
+      });
       throw new DomainError("authentication_required", "管理员账号已停用");
     }
 
@@ -166,6 +192,15 @@ export class AdminAuthService {
       tokenHash: hashToken(token),
       expiresAt,
       createdAt
+    });
+    // 登录成功审计。
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: account.id,
+      action: "admin.login",
+      entityType: "admin_account",
+      entityId: account.id,
+      details: {}
     });
     return {
       adminId: account.id,
@@ -217,7 +252,8 @@ export class AdminAuthService {
     return (await this.accounts.list()).map(viewOf);
   }
 
-  async enableAdmin(id: string): Promise<AdminAccountView> {
+  /** 启用管理员：actorId 为当前操作者（由接口层传入），entityId 为目标。 */
+  async enableAdmin(id: string, actorId: string): Promise<AdminAccountView> {
     const account = await this.accounts.findById(id);
     if (account === null) {
       throw new DomainError("resource_not_found", "管理员不存在");
@@ -236,7 +272,7 @@ export class AdminAuthService {
     const updated = await this.accounts.findById(id);
     await this.audit.record({
       actorKind: "admin",
-      actorId: id,
+      actorId,
       action: "admin.enable",
       entityType: "admin_account",
       entityId: id,
@@ -246,7 +282,7 @@ export class AdminAuthService {
   }
 
   /** 停用管理员：同事务撤销其全部会话；最后一个活跃 owner 不可停用。 */
-  async disableAdmin(id: string): Promise<AdminAccountView> {
+  async disableAdmin(id: string, actorId: string): Promise<AdminAccountView> {
     const account = await this.accounts.findById(id);
     if (account === null) {
       throw new DomainError("resource_not_found", "管理员不存在");
@@ -271,7 +307,7 @@ export class AdminAuthService {
     }
     await this.audit.record({
       actorKind: "admin",
-      actorId: id,
+      actorId,
       action: "admin.disable",
       entityType: "admin_account",
       entityId: id,

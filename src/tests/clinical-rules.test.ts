@@ -102,6 +102,39 @@ test("没有任何事实时：先补问安全字段，单次不超过 2 个", ()
   assert.ok(verdict.nextQuestions.length <= 2);
 });
 
+test("nextQuestions 截断展示但 allQuestions 保留全集（fail-closed 判定依据）", () => {
+  // 严重度阶段待答全集 4 问；展示截断为 2 问（评审 P1 kimi P1-6）。
+  const verdict = kernelWith().evaluate(safeFacts());
+  assert.equal(verdict.outcome, "need_more_information");
+  assert.equal(verdict.stage, "severity");
+  assert.equal(verdict.nextQuestions.length, 2);
+  assert.equal(verdict.allQuestions.length, 4);
+  // 展示集是全集的前缀子集：截断只影响展示，不影响全集。
+  for (const question of verdict.nextQuestions) {
+    assert.ok(verdict.allQuestions.includes(question));
+  }
+  assert.deepEqual(
+    verdict.allQuestions.map((q) => q.fieldCode),
+    ["sleep_affected", "daily_activity_affected", "work_study_affected", "symptoms_intolerable"]
+  );
+});
+
+test("非补问裁决 allQuestions 为空", () => {
+  const blocked = kernelWith().evaluate([fact("pregnancy", "yes")]);
+  assert.equal(blocked.outcome, "blocked");
+  assert.deepEqual(blocked.allQuestions, []);
+
+  const classified = kernelWith().evaluate(
+    factsWith(safeFacts(), [
+      ...mildSeverityFacts(),
+      fact("thirst", "yes"),
+      fact("limbs_not_warm", "no")
+    ])
+  );
+  assert.equal(classified.outcome, "classified");
+  assert.deepEqual(classified.allQuestions, []);
+});
+
 test("低优先级不能覆盖高优先级阻断：安全阻断优先于严重度/证型分类", () => {
   const facts = factsWith(safeFacts(), [
     fact("sleep_affected", "yes"),

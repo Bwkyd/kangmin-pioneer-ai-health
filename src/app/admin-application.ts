@@ -103,8 +103,13 @@ export class KangminAdminApplication {
     this.sessions = new AdminSessionService(sessionRepository);
     this.auth = new AdminAuthService(accountRepository, sessionRepository, audit);
     this.content = new ContentAdminService(contentRepository, auxRepository, audit);
-    this.aux = new ContentAuxService(auxRepository, mediaDirectory);
-    this.agent = new AgentAdminService(agentRepository, syndromeRegistry, mediaDirectory);
+    this.aux = new ContentAuxService(auxRepository, mediaDirectory, audit);
+    this.agent = new AgentAdminService(
+      agentRepository,
+      syndromeRegistry,
+      mediaDirectory,
+      audit
+    );
     this.users = new UserAdminService(userRepository, audit);
   }
 
@@ -178,7 +183,7 @@ export class KangminAdminApplication {
           requireOwner(identity);
           return success(
             command,
-            await this.auth.enableAdmin(requiredString(input, "id")),
+            await this.auth.enableAdmin(requiredString(input, "id"), adminId),
             request.requestId
           );
         case "auth admins disable":
@@ -186,7 +191,7 @@ export class KangminAdminApplication {
           requireConfirmation(input);
           return success(
             command,
-            await this.auth.disableAdmin(requiredString(input, "id")),
+            await this.auth.disableAdmin(requiredString(input, "id"), adminId),
             request.requestId
           );
 
@@ -456,10 +461,12 @@ export class KangminAdminApplication {
             command,
             command.endsWith("unpublish")
               ? await this.aux.unpublishMessage(
+                  adminId,
                   requiredString(input, "id"),
                   positiveInteger(input, "expectedRevision")
                 )
               : await this.aux.publishMessage(
+                  adminId,
                   requiredString(input, "id"),
                   positiveInteger(input, "expectedRevision")
                 ),
@@ -502,14 +509,20 @@ export class KangminAdminApplication {
           requireConfirmation(input);
           return success(
             command,
-            await this.agent.enableKnowledge(requiredString(input, "id")),
+            await this.agent.enableKnowledge(
+              adminId,
+              requiredString(input, "id")
+            ),
             request.requestId
           );
         case "agent knowledge disable":
           requireConfirmation(input);
           return success(
             command,
-            await this.agent.disableKnowledge(requiredString(input, "id")),
+            await this.agent.disableKnowledge(
+              adminId,
+              requiredString(input, "id")
+            ),
             request.requestId
           );
         case "agent knowledge search-test":
@@ -570,6 +583,7 @@ export class KangminAdminApplication {
           return success(
             command,
             await this.agent.enablePlan(
+              adminId,
               requiredString(input, "id"),
               positiveInteger(input, "expectedRevision")
             ),
@@ -580,6 +594,7 @@ export class KangminAdminApplication {
           return success(
             command,
             await this.agent.disablePlan(
+              adminId,
               requiredString(input, "id"),
               positiveInteger(input, "expectedRevision")
             ),

@@ -261,3 +261,61 @@ test("CLI 用户敏感详情权限与知识状态机走真实进程", async () =
   );
   assert.equal(relogin.status, 9);
 });
+
+test("模型 API Key 只从 stdin 读取：--api-key 为标志，argv 携带被拒，空 stdin 不悬挂", async () => {
+  const { databasePath, environment } = await fixture();
+  run(
+    ["auth", "admins", "add", "--username", "owner-key", "--role", "owner", "--json"],
+    environment,
+    "owner-key-secret\n"
+  );
+  run(
+    ["auth", "login", "--username", "owner-key", "--json"],
+    environment,
+    "owner-key-secret\n"
+  );
+
+  // 空 stdin 登录：命令明确失败（exit 9），不悬挂等待。
+  const emptyLogin = run(
+    ["auth", "login", "--username", "owner-key", "--json"],
+    environment,
+    ""
+  );
+  assert.equal(emptyLogin.status, 9);
+
+  // --api-key 是标志：把值放 argv 会被当作非法选项拒绝（exit 2），
+  // 密钥绝不进入命令行参数。
+  const keyInArgv = run(
+    ["agent", "model", "update", "--model-name", "gpt-4o-mini", "--api-key", "sk-in-argv", "--json"],
+    environment
+  );
+  assert.equal(keyInArgv.status, 2);
+  assert.equal(JSON.parse(keyInArgv.stdout).error.code, "command_invalid");
+
+  // 只传 --api-key 且 stdin 为空：密钥不修改（警告进 stderr），stdout 保持纯净。
+  const emptyKey = run(
+    ["agent", "model", "update", "--model-name", "gpt-4o-mini", "--api-key", "--json"],
+    environment,
+    ""
+  );
+  assert.equal(emptyKey.status, 0, emptyKey.stderr);
+  assert.match(emptyKey.stderr, /未从 stdin 读到 API Key/u);
+  assert.equal(emptyKey.stdout.trim().split("\n").length, 1);
+  const emptyBody = JSON.parse(emptyKey.stdout) as { data: { apiKeyMasked: string | null } };
+  assert.equal(emptyBody.data.apiKeyMasked, null);
+
+  // 从 stdin 管道提供密钥：写入成功，输出只显示掩码。
+  const withKey = run(
+    ["agent", "model", "update", "--api-key", "--json"],
+    environment,
+    "sk-stdin-secret-123456\n"
+  );
+  assert.equal(withKey.status, 0, withKey.stderr);
+  const keyBody = JSON.parse(withKey.stdout) as { data: { apiKeyMasked: string } };
+  assert.equal(keyBody.data.apiKeyMasked, "sk-s****3456");
+  assert.ok(!keyBody.data.apiKeyMasked.includes("stdin-secret"));
+
+  // 库内不存明文（外部评审 P1-1）。
+  const { readFileSync } = await import("node:fs");
+  assert.ok(!readFileSync(databasePath, "utf8").includes("sk-stdin-secret-123456"));
+});
