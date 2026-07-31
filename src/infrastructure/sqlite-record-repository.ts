@@ -272,7 +272,7 @@ export class SqliteRecordRepository implements RecordRepository {
             "symptom_records",
             input.patientId,
             record.id,
-            (row) => toSymptom(this.encryption, row)
+            (row: SymptomRow) => toSymptom(this.encryption, row)
           ) !== null,
         insert: () => {
           const notes = encryptOptionalFields(this.encryption, [
@@ -328,7 +328,7 @@ export class SqliteRecordRepository implements RecordRepository {
         ORDER BY local_date DESC, created_at DESC
       `)
       .all(patientId) as unknown as SymptomRow[];
-    return rows.map((row) => toSymptom(this.encryption, row));
+    return rows.map((row: SymptomRow) => toSymptom(this.encryption, row));
   }
 
   async findSymptom(
@@ -339,7 +339,7 @@ export class SqliteRecordRepository implements RecordRepository {
       "symptom_records",
       patientId,
       id,
-      (row) => toSymptom(this.encryption, row)
+      (row: SymptomRow) => toSymptom(this.encryption, row)
     );
   }
 
@@ -351,7 +351,7 @@ export class SqliteRecordRepository implements RecordRepository {
         "symptom_records",
         input.patientId,
         input.id,
-        (row) => toSymptom(this.encryption, row)
+        (row: SymptomRow) => toSymptom(this.encryption, row)
       );
       if (current === null) {
         return { kind: "not_found" };
@@ -363,7 +363,7 @@ export class SqliteRecordRepository implements RecordRepository {
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
-        mapRow: (row) => toSymptom(this.encryption, row),
+        mapRow: (row: SymptomRow) => toSymptom(this.encryption, row),
         applyUpdate: () => {
           const notes = encryptOptionalFields(this.encryption, [input.notes]);
           return this.database.connection
@@ -423,7 +423,7 @@ export class SqliteRecordRepository implements RecordRepository {
         patientId,
         id,
         expectedRevision,
-        mapRow: (row) => toSymptom(this.encryption, row),
+        mapRow: (row: SymptomRow) => toSymptom(this.encryption, row),
         recordType: "symptom",
         requestId
       })
@@ -583,7 +583,7 @@ export class SqliteRecordRepository implements RecordRepository {
             "exposure_records",
             input.patientId,
             record.id,
-            (row) => toExposure(this.encryption, row)
+            (row: ExposureRow) => toExposure(this.encryption, row)
           ) !== null,
         insert: () => {
           const encrypted = encryptOptionalFields(this.encryption, [
@@ -637,7 +637,7 @@ export class SqliteRecordRepository implements RecordRepository {
         ORDER BY local_date DESC, created_at DESC
       `)
       .all(patientId) as unknown as ExposureRow[];
-    return rows.map((row) => toExposure(this.encryption, row));
+    return rows.map((row: ExposureRow) => toExposure(this.encryption, row));
   }
 
   async findExposure(
@@ -648,7 +648,7 @@ export class SqliteRecordRepository implements RecordRepository {
       "exposure_records",
       patientId,
       id,
-      (row) => toExposure(this.encryption, row)
+      (row: ExposureRow) => toExposure(this.encryption, row)
     );
   }
 
@@ -660,7 +660,7 @@ export class SqliteRecordRepository implements RecordRepository {
         "exposure_records",
         input.patientId,
         input.id,
-        (row) => toExposure(this.encryption, row)
+        (row: ExposureRow) => toExposure(this.encryption, row)
       );
       if (current === null) {
         return { kind: "not_found" };
@@ -672,7 +672,7 @@ export class SqliteRecordRepository implements RecordRepository {
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
-        mapRow: (row) => toExposure(this.encryption, row),
+        mapRow: (row: ExposureRow) => toExposure(this.encryption, row),
         applyUpdate: () => {
           const encrypted = encryptOptionalFields(this.encryption, [
             input.otherDescription,
@@ -729,7 +729,7 @@ export class SqliteRecordRepository implements RecordRepository {
         patientId,
         id,
         expectedRevision,
-        mapRow: (row) => toExposure(this.encryption, row),
+        mapRow: (row: ExposureRow) => toExposure(this.encryption, row),
         recordType: "exposure",
         requestId
       })
@@ -753,7 +753,7 @@ export class SqliteRecordRepository implements RecordRepository {
             "medication_records",
             input.patientId,
             record.id,
-            (row) => toMedication(this.encryption, row)
+            (row: MedicationRow) => toMedication(this.encryption, row)
           ) !== null,
         insert: () => {
           const encrypted = encryptOptionalFields(this.encryption, [
@@ -819,7 +819,7 @@ export class SqliteRecordRepository implements RecordRepository {
         ORDER BY local_date DESC, created_at DESC
       `)
       .all(patientId) as unknown as MedicationRow[];
-    return rows.map((row) => toMedication(this.encryption, row));
+    return rows.map((row: MedicationRow) => toMedication(this.encryption, row));
   }
 
   async findMedication(
@@ -830,7 +830,7 @@ export class SqliteRecordRepository implements RecordRepository {
       "medication_records",
       patientId,
       id,
-      (row) => toMedication(this.encryption, row)
+      (row: MedicationRow) => toMedication(this.encryption, row)
     );
   }
 
@@ -842,7 +842,7 @@ export class SqliteRecordRepository implements RecordRepository {
         "medication_records",
         input.patientId,
         input.id,
-        (row) => toMedication(this.encryption, row)
+        (row: MedicationRow) => toMedication(this.encryption, row)
       );
       if (current === null) {
         return { kind: "not_found" };
@@ -854,7 +854,7 @@ export class SqliteRecordRepository implements RecordRepository {
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
-        mapRow: (row) => toMedication(this.encryption, row),
+        mapRow: (row: MedicationRow) => toMedication(this.encryption, row),
         applyUpdate: () => {
           const encrypted = encryptOptionalFields(this.encryption, [
             input.medicationName,
@@ -915,7 +915,7 @@ export class SqliteRecordRepository implements RecordRepository {
         patientId,
         id,
         expectedRevision,
-        mapRow: (row) => toMedication(this.encryption, row),
+        mapRow: (row: MedicationRow) => toMedication(this.encryption, row),
         recordType: "medication",
         requestId
       })

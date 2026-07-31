@@ -55,11 +55,14 @@ export function encryptStoredField(
 /**
  * 加密一行中的若干可空字段：null 字段保持 NULL 不加密，
  * 所有非空字段使用同一密钥版本（同一行共享 encryption_key_version）。
+ * 返回值保留元组形状，调用方按位置取 stored[0..n] 与输入一一对应。
  */
-export function encryptOptionalFields(
+export function encryptOptionalFields<
+  const T extends readonly (string | null)[]
+>(
   encryption: EncryptionPort,
-  values: Array<string | null>
-): { stored: Array<string | null>; keyVersion: string | null } {
+  values: T
+): { stored: { [K in keyof T]: string | null }; keyVersion: string | null } {
   let keyVersion: string | null = null;
   const stored = values.map((value) => {
     if (value === null) {
@@ -68,7 +71,7 @@ export function encryptOptionalFields(
     const result = encryptStoredField(encryption, value);
     keyVersion = result.keyVersion;
     return result.stored;
-  });
+  }) as { [K in keyof T]: string | null };
   return { stored, keyVersion };
 }
 

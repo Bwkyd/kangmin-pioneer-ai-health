@@ -7,6 +7,9 @@ import { chromium } from "playwright";
 
 import { createApplication } from "../dist/app/composition-root.js";
 import { createKangminHttpServer } from "../dist/http/server.js";
+// 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
+process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+
 
 async function listen(server) {
   await new Promise((resolve) => {

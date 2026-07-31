@@ -7,6 +7,7 @@ import test from "node:test";
 import { createApplication } from "../app/composition-root.js";
 import type { CommandResult } from "../kernel/result.js";
 import type {
+
   CalendarProjection,
   ExposureRecord,
   HealthProfile,
@@ -15,6 +16,11 @@ import type {
   SymptomRecord,
   TrendProjection
 } from "../modules/record/contracts.js";
+
+// 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
+// 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption
+//（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
+process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
 function dataOf<T>(result: CommandResult): T {
   if (!result.ok) {
