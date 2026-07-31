@@ -1,12 +1,12 @@
-import {
-  createHash,
-  randomBytes,
-  randomUUID,
-  scryptSync,
-  timingSafeEqual
-} from "node:crypto";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 
 import { DomainError } from "../../kernel/errors.js";
+import {
+  hashPassword,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  verifyPassword
+} from "../../kernel/credentials.js";
 import type { AuditPort } from "../system/audit-ports.js";
 import type { AdminAccountRepository } from "./admin-account-repository.js";
 import type { AdminIdentity } from "./admin-session-service.js";
@@ -25,36 +25,6 @@ const USERNAME_PATTERN = /^[a-zA-Z0-9_.-]{3,32}$/u;
 
 function hashToken(token: string): string {
   return createHash("sha256").update(token, "utf8").digest("hex");
-}
-
-function hashPassword(password: string): string {
-  const salt = randomBytes(16);
-  const derived = scryptSync(password, salt, SCRYPT_KEY_LENGTH);
-  return `scrypt$${salt.toString("base64")}$${derived.toString("base64")}`;
-}
-
-/**
- * 校验密码。stored 格式为 scrypt$<salt-b64>$<hash-b64>；
- * 开发会话占位密码（!dev-session-only）或任何非本格式的存储值一律不通过。
- */
-function verifyPassword(password: string, stored: string): boolean {
-  if (!stored.startsWith("scrypt$")) {
-    return false;
-  }
-  const parts = stored.split("$");
-  if (parts.length !== 3) {
-    return false;
-  }
-  const salt = Buffer.from(parts[1] ?? "", "base64");
-  const expected = Buffer.from(parts[2] ?? "", "base64");
-  if (salt.length === 0 || expected.length === 0) {
-    return false;
-  }
-  const derived = scryptSync(password, salt, expected.length);
-  return (
-    derived.length === expected.length &&
-    timingSafeEqual(derived, expected)
-  );
 }
 
 export interface AdminAccountView {
@@ -162,7 +132,7 @@ export class AdminAuthService {
     const outcome = await this.accounts.create({
       id: randomUUID(),
       username,
-      passwordHash: hashPassword(password),
+      passwordHash: await hashPassword(password),
       role: input.role,
       createdAt: timestamp,
       updatedAt: timestamp
@@ -183,7 +153,7 @@ export class AdminAuthService {
     const valid =
       account !== null &&
       !account.passwordHash.startsWith(DEV_PLACEHOLDER_PREFIX) &&
-      verifyPassword(password, account.passwordHash);
+      (await verifyPassword(password, account.passwordHash));
     if (account === null || !valid) {
       throw new DomainError("authentication_required", "账号或密码错误");
     }

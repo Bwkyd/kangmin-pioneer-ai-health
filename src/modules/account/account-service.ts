@@ -1,7 +1,12 @@
-import { createHash, randomBytes, randomUUID, scrypt as scryptCb, timingSafeEqual } from "node:crypto";
-import { promisify } from "node:util";
+import { createHash, randomUUID } from "node:crypto";
 
 import { DomainError } from "../../kernel/errors.js";
+import {
+  hashPassword,
+  PASSWORD_MAX_LENGTH,
+  PASSWORD_MIN_LENGTH,
+  verifyPassword
+} from "../../kernel/credentials.js";
 import type {
   AccountSnapshot,
   AccountStatus,
@@ -12,24 +17,7 @@ import type {
 import type { AccountRepository } from "./account-repository.js";
 import type { SessionService } from "./session-service.js";
 
-/** scrypt 回调形式有多个重载，promisify 只取最后一个签名，这里显式固定参数形态。 */
-const scryptAsync = promisify(scryptCb) as (
-  password: string,
-  salt: Buffer,
-  keylen: number,
-  options: { N: number; r: number; p: number }
-) => Promise<Buffer>;
-
-/** 密码哈希格式：scrypt:N:r:p:盐:派生密钥（N/r/p 存于值内，便于未来升级参数）。 */
-const SCRYPT_N = 16_384;
-const SCRYPT_R = 8;
-const SCRYPT_P = 1;
-const SCRYPT_KEY_LENGTH = 32;
-const SCRYPT_SALT_LENGTH = 16;
-
 const USERNAME_PATTERN = /^[a-zA-Z0-9_-]{2,32}$/u;
-const PASSWORD_MIN_LENGTH = 8;
-const PASSWORD_MAX_LENGTH = 128;
 const NICKNAME_MAX_LENGTH = 32;
 const POLICY_VERSION_MAX_LENGTH = 32;
 const REQUEST_ID_MAX_LENGTH = 120;
@@ -82,52 +70,6 @@ function maskUsername(username: string): string {
     return `${username[0]}***`;
   }
   return `${username.slice(0, 2)}***${username.slice(-2)}`;
-}
-
-async function hashPassword(password: string): Promise<string> {
-  const salt = randomBytes(SCRYPT_SALT_LENGTH);
-  const key = (await scryptAsync(
-    password,
-    salt,
-    SCRYPT_KEY_LENGTH,
-    { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P }
-  )) as Buffer;
-  return [
-    "scrypt",
-    SCRYPT_N,
-    SCRYPT_R,
-    SCRYPT_P,
-    salt.toString("hex"),
-    key.toString("hex")
-  ].join(":");
-}
-
-async function verifyPassword(
-  password: string,
-  stored: string
-): Promise<boolean> {
-  const [scheme, n, r, p, saltHex, keyHex] = stored.split(":");
-  if (
-    scheme !== "scrypt" ||
-    n === undefined ||
-    r === undefined ||
-    p === undefined ||
-    saltHex === undefined ||
-    keyHex === undefined
-  ) {
-    return false;
-  }
-  const derived = (await scryptAsync(
-    password,
-    Buffer.from(saltHex, "hex"),
-    Number(keyHex.length / 2),
-    { N: Number(n), r: Number(r), p: Number(p) }
-  )) as Buffer;
-  const expected = Buffer.from(keyHex, "hex");
-  return (
-    derived.length === expected.length &&
-    timingSafeEqual(derived, expected)
-  );
 }
 
 function validateUsername(username: string): void {
