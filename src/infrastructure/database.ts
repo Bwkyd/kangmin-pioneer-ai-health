@@ -88,6 +88,53 @@ export class KangminDatabase {
         created_at TEXT NOT NULL,
         PRIMARY KEY(patient_id, command_scope, idempotency_key)
       ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS profiles (
+        patient_id TEXT PRIMARY KEY REFERENCES patients(id),
+        display_name TEXT,
+        birth_date TEXT,
+        sex TEXT NOT NULL DEFAULT 'unspecified'
+          CHECK(sex IN ('female', 'male', 'other', 'unspecified')),
+        allergy_history TEXT,
+        known_allergies TEXT,
+        common_triggers TEXT,
+        notes TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS exposure_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        factors_json TEXT NOT NULL,
+        other_description TEXT,
+        notes TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(patient_id, local_date)
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS exposure_records_patient_date
+      ON exposure_records(patient_id, local_date DESC);
+
+      CREATE TABLE IF NOT EXISTS medication_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        medication_name TEXT NOT NULL,
+        dosage TEXT,
+        actual_use TEXT,
+        notes TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS medication_records_patient_date
+      ON medication_records(patient_id, local_date DESC);
     `);
   }
 }

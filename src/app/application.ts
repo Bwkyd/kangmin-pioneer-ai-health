@@ -7,13 +7,18 @@ import {
 import {
   integerInRange,
   localDate,
+  monthString,
   optionalIntegerInRange,
+  optionalLocalDate,
   optionalString,
+  optionalStringArray,
   positiveInteger,
-  requiredString
+  requiredString,
+  requiredStringArray
 } from "../kernel/validation.js";
 import { SessionService } from "../modules/account/session-service.js";
 import type { SessionRepository } from "../modules/account/session-repository.js";
+import { sexOf } from "../modules/record/domain.js";
 import type { RecordRepository } from "../modules/record/record-repository.js";
 import { RecordService } from "../modules/record/record-service.js";
 
@@ -22,6 +27,24 @@ export interface CommandRequest {
   input?: Record<string, unknown> | undefined;
   sessionToken?: string | undefined;
   requestId?: string | undefined;
+}
+
+function localToday(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+/** 高影响写操作必须显式确认，非交互环境不等待输入。 */
+function requireConfirmation(input: Record<string, unknown>): void {
+  if (input.yes !== true) {
+    throw new DomainError(
+      "confirmation_required",
+      "删除是高影响操作，需要显式确认"
+    );
+  }
 }
 
 export class KangminApplication {
@@ -125,6 +148,207 @@ export class KangminApplication {
             request.requestId
           );
         }
+        case "record symptom delete":
+          requireConfirmation(input);
+          await this.records.deleteSymptom(patientId, {
+            id: requiredString(input, "id"),
+            expectedRevision: positiveInteger(input, "expectedRevision")
+          });
+          return success(
+            command,
+            { id: input.id, deleted: true },
+            request.requestId
+          );
+
+        case "record profile show":
+          return success(
+            command,
+            await this.records.getProfile(patientId),
+            request.requestId
+          );
+        case "record profile update": {
+          const update = {
+            expectedRevision: integerInRange(
+              input,
+              "expectedRevision",
+              0,
+              Number.MAX_SAFE_INTEGER
+            ),
+            displayName: optionalString(input, "displayName"),
+            birthDate: optionalLocalDate(input, "birthDate"),
+            sex: input.sex === undefined ? undefined : sexOf(input.sex),
+            allergyHistory: optionalString(input, "allergyHistory"),
+            knownAllergies: optionalString(input, "knownAllergies"),
+            commonTriggers: optionalString(input, "commonTriggers"),
+            notes: optionalString(input, "notes")
+          };
+
+          if (
+            update.displayName === undefined &&
+            update.birthDate === undefined &&
+            update.sex === undefined &&
+            update.allergyHistory === undefined &&
+            update.knownAllergies === undefined &&
+            update.commonTriggers === undefined &&
+            update.notes === undefined
+          ) {
+            throw new DomainError(
+              "validation_failed",
+              "至少提供一个需要更新的字段"
+            );
+          }
+
+          return success(
+            command,
+            await this.records.updateProfile(patientId, update),
+            request.requestId
+          );
+        }
+
+        case "record exposure add":
+          return success(
+            command,
+            await this.records.createExposure(patientId, {
+              localDate: localDate(input, "localDate"),
+              factors: requiredStringArray(input, "factors"),
+              otherDescription:
+                optionalString(input, "otherDescription") ?? null,
+              notes: optionalString(input, "notes") ?? null,
+              idempotencyKey: requiredString(input, "idempotencyKey")
+            }),
+            request.requestId
+          );
+        case "record exposure list":
+          return success(
+            command,
+            { items: await this.records.listExposures(patientId) },
+            request.requestId
+          );
+        case "record exposure show":
+          return success(
+            command,
+            await this.records.getExposure(
+              patientId,
+              requiredString(input, "id")
+            ),
+            request.requestId
+          );
+        case "record exposure update": {
+          const update = {
+            id: requiredString(input, "id"),
+            expectedRevision: positiveInteger(input, "expectedRevision"),
+            factors: optionalStringArray(input, "factors"),
+            otherDescription: optionalString(input, "otherDescription"),
+            notes: optionalString(input, "notes")
+          };
+          return success(
+            command,
+            await this.records.updateExposure(patientId, update),
+            request.requestId
+          );
+        }
+        case "record exposure delete":
+          requireConfirmation(input);
+          await this.records.deleteExposure(patientId, {
+            id: requiredString(input, "id"),
+            expectedRevision: positiveInteger(input, "expectedRevision")
+          });
+          return success(
+            command,
+            { id: input.id, deleted: true },
+            request.requestId
+          );
+
+        case "record medication add":
+          return success(
+            command,
+            await this.records.createMedication(patientId, {
+              localDate: localDate(input, "localDate"),
+              medicationName: requiredString(input, "medicationName"),
+              dosage: optionalString(input, "dosage") ?? null,
+              actualUse: optionalString(input, "actualUse") ?? null,
+              notes: optionalString(input, "notes") ?? null,
+              idempotencyKey: requiredString(input, "idempotencyKey")
+            }),
+            request.requestId
+          );
+        case "record medication list":
+          return success(
+            command,
+            { items: await this.records.listMedications(patientId) },
+            request.requestId
+          );
+        case "record medication show":
+          return success(
+            command,
+            await this.records.getMedication(
+              patientId,
+              requiredString(input, "id")
+            ),
+            request.requestId
+          );
+        case "record medication update": {
+          const update = {
+            id: requiredString(input, "id"),
+            expectedRevision: positiveInteger(input, "expectedRevision"),
+            medicationName:
+              input.medicationName === undefined ||
+              input.medicationName === null
+                ? undefined
+                : requiredString(input, "medicationName"),
+            dosage: optionalString(input, "dosage"),
+            actualUse: optionalString(input, "actualUse"),
+            notes: optionalString(input, "notes")
+          };
+          return success(
+            command,
+            await this.records.updateMedication(patientId, update),
+            request.requestId
+          );
+        }
+        case "record medication delete":
+          requireConfirmation(input);
+          await this.records.deleteMedication(patientId, {
+            id: requiredString(input, "id"),
+            expectedRevision: positiveInteger(input, "expectedRevision")
+          });
+          return success(
+            command,
+            { id: input.id, deleted: true },
+            request.requestId
+          );
+
+        case "record overview":
+          return success(
+            command,
+            await this.records.getOverview(patientId, localToday()),
+            request.requestId
+          );
+        case "record calendar":
+          return success(
+            command,
+            await this.records.getCalendar(
+              patientId,
+              monthString(input, "month")
+            ),
+            request.requestId
+          );
+        case "record trend": {
+          const from = localDate(input, "from");
+          const to = localDate(input, "to");
+          if (from > to) {
+            throw new DomainError(
+              "validation_failed",
+              "趋势查询的起始日期不能晚于结束日期"
+            );
+          }
+          return success(
+            command,
+            await this.records.getTrend(patientId, from, to),
+            request.requestId
+          );
+        }
+
         default:
           throw new DomainError(
             "command_invalid",

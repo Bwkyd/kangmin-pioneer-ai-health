@@ -92,3 +92,58 @@ export function localDate(input: Record<string, unknown>, key: string): string {
   }
   return value;
 }
+
+export function requiredStringArray(
+  input: Record<string, unknown>,
+  key: string
+): string[] {
+  const value = input[key];
+  if (
+    !Array.isArray(value) ||
+    value.length === 0 ||
+    !value.every((item) => typeof item === "string" && item.trim() !== "")
+  ) {
+    throw new DomainError(
+      "validation_failed",
+      `${key} 必须是非空字符串数组`,
+      { details: { field: key } }
+    );
+  }
+  return value.map((item) => (item as string).trim());
+}
+
+export function optionalStringArray(
+  input: Record<string, unknown>,
+  key: string
+): string[] | undefined {
+  if (input[key] === undefined) {
+    return undefined;
+  }
+  return requiredStringArray(input, key);
+}
+
+export function optionalLocalDate(
+  input: Record<string, unknown>,
+  key: string
+): string | null | undefined {
+  const value = input[key];
+  if (value === undefined) {
+    return undefined;
+  }
+  if (value === null || value === "") {
+    return null;
+  }
+  return localDate(input, key);
+}
+
+export function monthString(input: Record<string, unknown>, key: string): string {
+  const value = requiredString(input, key);
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/u.test(value)) {
+    throw new DomainError(
+      "validation_failed",
+      `${key} 必须使用 YYYY-MM`,
+      { details: { field: key } }
+    );
+  }
+  return value;
+}

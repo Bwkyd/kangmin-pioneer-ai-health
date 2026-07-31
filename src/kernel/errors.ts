@@ -5,6 +5,7 @@ export type ErrorCode =
   | "resource_not_found"
   | "version_conflict"
   | "idempotency_conflict"
+  | "confirmation_required"
   | "capability_unavailable"
   | "validation_failed"
   | "authentication_required"
@@ -19,6 +20,7 @@ const EXIT_CODES: Record<ErrorCode, number> = {
   resource_not_found: 3,
   version_conflict: 4,
   idempotency_conflict: 4,
+  confirmation_required: 5,
   capability_unavailable: 6,
   validation_failed: 7,
   authentication_required: 9,
@@ -34,6 +36,7 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   resource_not_found: 404,
   version_conflict: 409,
   idempotency_conflict: 409,
+  confirmation_required: 409,
   capability_unavailable: 503,
   validation_failed: 422,
   authentication_required: 401,
