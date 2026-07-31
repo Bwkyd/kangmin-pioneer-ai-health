@@ -165,7 +165,7 @@ test("跨患者访问隐藏资源，旧 revision 不能迟到覆盖", async () =
   }
 });
 
-test("客户端不能提交权威患者 ID，未实现能力明确失败", async () => {
+test("客户端不能提交权威患者 ID，未登录 Agent 明确失败", async () => {
   const { application, tokenA } = await fixture();
   try {
     const forged = await application.execute({
@@ -181,7 +181,7 @@ test("客户端不能提交权威患者 ID，未实现能力明确失败", async
     const agent = await application.execute({ command: "agent" });
     assert.equal(agent.ok, false);
     if (!agent.ok) {
-      assert.equal(agent.error.code, "capability_unavailable");
+      assert.equal(agent.error.code, "authentication_required");
     }
   } finally {
     application.close();

@@ -89,6 +89,49 @@ test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", 
   }
 });
 
+test("Agent 通过 HTTP 命令契约执行同一安全状态机", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-agent-http-"));
+  const application = createApplication(join(directory, "agent.sqlite"));
+  const token =
+    (await application.sessions.createDevelopmentSession("agent-http")).token;
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
+  const command = async (body: unknown) => fetch(`${origin}/v1/commands`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${token}`,
+      "content-type": "application/json"
+    },
+    body: JSON.stringify(body)
+  });
+
+  try {
+    const startResponse = await command({ command: "agent start" });
+    assert.equal(startResponse.status, 200);
+    const started = await startResponse.json() as {
+      data: { id: string };
+    };
+    const continueResponse = await command({
+      command: "agent continue",
+      input: {
+        id: started.data.id,
+        expectedRevision: 1,
+        question: "urgentHelp",
+        answer: "unknown"
+      }
+    });
+    assert.equal(continueResponse.status, 200);
+    const continued = await continueResponse.json() as {
+      data: { status: string; outcome: string };
+    };
+    assert.equal(continued.data.status, "safety_blocked");
+    assert.equal(continued.data.outcome, "cannot_confirm_safety");
+  } finally {
+    await close(server);
+    application.close();
+  }
+});
+
 test("患者薄壳通过受保护的 HttpOnly 开发会话调用同一命令端点", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-web-http-"));
   const application = createApplication(join(directory, "records.sqlite"));

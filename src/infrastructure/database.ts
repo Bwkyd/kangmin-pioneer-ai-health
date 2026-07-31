@@ -193,6 +193,20 @@ export class KangminDatabase {
 
       CREATE INDEX IF NOT EXISTS medication_records_patient_date
       ON medication_records(patient_id, local_date DESC);
+
+      CREATE TABLE IF NOT EXISTS agent_sessions (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        status TEXT NOT NULL
+          CHECK(status IN ('awaiting_answer', 'safety_blocked', 'completed')),
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        session_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS agent_sessions_patient_updated
+      ON agent_sessions(patient_id, updated_at DESC);
     `);
   }
 }
