@@ -58,7 +58,8 @@ export class KangminDatabase {
   /**
    * SQLite 文档规定：BEGIN IMMEDIATE 在数据库被占用时立即返回 SQLITE_BUSY，
    * 不经过 busy handler，因此 PRAGMA busy_timeout 对 BEGIN 本身无效。
-   * 这里做有限重试（约 3 秒）以容忍跨进程瞬时写锁，超时后由 transaction() 映射为可重试错误。
+   * 这里做有限重试（约 3 秒）以容忍跨进程瞬时写锁；
+   * 超时直接抛出可重试的 storage_unavailable，避免在 transaction() 的 try 块之外漏出裸 SQLITE_BUSY。
    */
   private beginImmediate(): void {
     const deadline = Date.now() + 3000;
@@ -67,11 +68,15 @@ export class KangminDatabase {
         this.connection.exec("BEGIN IMMEDIATE");
         return;
       } catch (error) {
-        if (
-          !String(error).includes("database is locked") ||
-          Date.now() >= deadline
-        ) {
+        if (!String(error).includes("database is locked")) {
           throw error;
+        }
+        if (Date.now() >= deadline) {
+          throw new DomainError(
+            "storage_unavailable",
+            "健康记录存储正被其他进程占用，请稍后重试",
+            { retryable: true, cause: error }
+          );
         }
         Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 20);
       }

@@ -243,6 +243,43 @@ test("健康档案从未建档到创建再到版本冲突", async () => {
   }
 });
 
+test("健康档案字段可显式清空，未提供的字段保留当前值", async () => {
+  const { application, tokenA } = await fixture();
+  try {
+    const created = await application.execute({
+      command: "record profile update",
+      input: {
+        expectedRevision: 0,
+        displayName: "小王",
+        allergyHistory: "尘螨"
+      },
+      sessionToken: tokenA
+    });
+    const createdData = dataOf<HealthProfile>(created);
+    assert.equal(createdData.allergyHistory, "尘螨");
+
+    const cleared = await application.execute({
+      command: "record profile update",
+      input: { expectedRevision: 1, allergyHistory: null },
+      sessionToken: tokenA
+    });
+    const clearedData = dataOf<HealthProfile>(cleared);
+    assert.equal(clearedData.allergyHistory, null);
+    assert.equal(clearedData.displayName, "小王");
+
+    const partial = await application.execute({
+      command: "record profile update",
+      input: { expectedRevision: 2, notes: "备注" },
+      sessionToken: tokenA
+    });
+    const partialData = dataOf<HealthProfile>(partial);
+    assert.equal(partialData.notes, "备注");
+    assert.equal(partialData.displayName, "小王");
+  } finally {
+    application.close();
+  }
+});
+
 test("健康档案校验：非法性别、非法生日、空更新被拒绝", async () => {
   const { application, tokenA } = await fixture();
   try {

@@ -251,16 +251,33 @@ export class RecordService {
         input.notes !== undefined
     );
     const current = await this.repository.getProfile(patientId);
+    // 显式 null 表示清空字段，只有 undefined 才继承当前值。
     const outcome = await this.repository.updateProfile({
       patientId,
       expectedRevision: input.expectedRevision,
-      displayName: input.displayName ?? current?.displayName ?? null,
-      birthDate: input.birthDate ?? current?.birthDate ?? null,
-      sex: input.sex ?? current?.sex ?? "unspecified",
-      allergyHistory: input.allergyHistory ?? current?.allergyHistory ?? null,
-      knownAllergies: input.knownAllergies ?? current?.knownAllergies ?? null,
-      commonTriggers: input.commonTriggers ?? current?.commonTriggers ?? null,
-      notes: input.notes ?? current?.notes ?? null,
+      displayName:
+        input.displayName === undefined
+          ? (current?.displayName ?? null)
+          : input.displayName,
+      birthDate:
+        input.birthDate === undefined
+          ? (current?.birthDate ?? null)
+          : input.birthDate,
+      sex: input.sex === undefined ? (current?.sex ?? "unspecified") : input.sex,
+      allergyHistory:
+        input.allergyHistory === undefined
+          ? (current?.allergyHistory ?? null)
+          : input.allergyHistory,
+      knownAllergies:
+        input.knownAllergies === undefined
+          ? (current?.knownAllergies ?? null)
+          : input.knownAllergies,
+      commonTriggers:
+        input.commonTriggers === undefined
+          ? (current?.commonTriggers ?? null)
+          : input.commonTriggers,
+      notes:
+        input.notes === undefined ? (current?.notes ?? null) : input.notes,
       updatedAt: now()
     });
     if (outcome.kind === "version_conflict") {
