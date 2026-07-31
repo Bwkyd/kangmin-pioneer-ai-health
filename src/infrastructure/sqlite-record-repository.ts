@@ -1,5 +1,11 @@
 import { DomainError } from "../kernel/errors.js";
+import type { EncryptionPort } from "../kernel/encryption.js";
 import { KangminDatabase } from "./database.js";
+import {
+  decryptStoredField,
+  encryptOptionalFields,
+  encryptStoredField
+} from "./encrypted-fields.js";
 import type {
   ExposureRecord,
   HealthProfile,
@@ -38,7 +44,9 @@ interface SymptomRow {
   sneezing: number;
   runny_nose: number;
   tnss_total: number;
-  notes: string | null;
+  notes_encrypted: string | null;
+  encryption_key_version: string | null;
+  deleted_at: string | null;
   revision: number;
   created_at: string;
   updated_at: string;
@@ -49,8 +57,10 @@ interface ExposureRow {
   patient_id: string;
   local_date: string;
   factors_json: string;
-  other_description: string | null;
-  notes: string | null;
+  other_description_encrypted: string | null;
+  notes_encrypted: string | null;
+  encryption_key_version: string | null;
+  deleted_at: string | null;
   revision: number;
   created_at: string;
   updated_at: string;
@@ -60,10 +70,12 @@ interface MedicationRow {
   id: string;
   patient_id: string;
   local_date: string;
-  medication_name: string;
-  dosage: string | null;
-  actual_use: string | null;
-  notes: string | null;
+  medication_name_encrypted: string;
+  dosage_encrypted: string | null;
+  actual_use_encrypted: string | null;
+  notes_encrypted: string | null;
+  encryption_key_version: string | null;
+  deleted_at: string | null;
   revision: number;
   created_at: string;
   updated_at: string;
@@ -71,13 +83,14 @@ interface MedicationRow {
 
 interface ProfileRow {
   patient_id: string;
-  display_name: string | null;
+  display_name_encrypted: string | null;
   birth_date: string | null;
   sex: Sex;
-  allergy_history: string | null;
-  known_allergies: string | null;
-  common_triggers: string | null;
-  notes: string | null;
+  allergy_history_encrypted: string | null;
+  known_allergies_encrypted: string | null;
+  common_triggers_encrypted: string | null;
+  notes_encrypted: string | null;
+  encryption_key_version: string | null;
   revision: number;
   created_at: string;
   updated_at: string;
@@ -95,7 +108,10 @@ interface ProjectionRow {
   tnss_total: number;
 }
 
-function toSymptom(row: SymptomRow): SymptomRecord {
+function toSymptom(
+  encryption: EncryptionPort,
+  row: SymptomRow
+): SymptomRecord {
   return {
     id: row.id,
     localDate: row.local_date,
@@ -104,49 +120,118 @@ function toSymptom(row: SymptomRow): SymptomRecord {
     sneezing: row.sneezing,
     runnyNose: row.runny_nose,
     tnssTotal: row.tnss_total,
-    notes: row.notes,
+    notes: decryptStoredField(
+      encryption,
+      row.notes_encrypted,
+      row.encryption_key_version,
+      "症状备注"
+    ),
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-function toExposure(row: ExposureRow): ExposureRecord {
+function toExposure(
+  encryption: EncryptionPort,
+  row: ExposureRow
+): ExposureRecord {
   return {
     id: row.id,
     localDate: row.local_date,
     factors: JSON.parse(row.factors_json) as string[],
-    otherDescription: row.other_description,
-    notes: row.notes,
+    otherDescription: decryptStoredField(
+      encryption,
+      row.other_description_encrypted,
+      row.encryption_key_version,
+      "暴露描述"
+    ),
+    notes: decryptStoredField(
+      encryption,
+      row.notes_encrypted,
+      row.encryption_key_version,
+      "暴露备注"
+    ),
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-function toMedication(row: MedicationRow): MedicationRecord {
+function toMedication(
+  encryption: EncryptionPort,
+  row: MedicationRow
+): MedicationRecord {
   return {
     id: row.id,
     localDate: row.local_date,
-    medicationName: row.medication_name,
-    dosage: row.dosage,
-    actualUse: row.actual_use,
-    notes: row.notes,
+    medicationName: decryptStoredField(
+      encryption,
+      row.medication_name_encrypted,
+      row.encryption_key_version,
+      "药品名称"
+    ) ?? "",
+    dosage: decryptStoredField(
+      encryption,
+      row.dosage_encrypted,
+      row.encryption_key_version,
+      "用药剂量"
+    ),
+    actualUse: decryptStoredField(
+      encryption,
+      row.actual_use_encrypted,
+      row.encryption_key_version,
+      "实际用法"
+    ),
+    notes: decryptStoredField(
+      encryption,
+      row.notes_encrypted,
+      row.encryption_key_version,
+      "用药备注"
+    ),
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at
   };
 }
 
-function toProfile(row: ProfileRow): HealthProfile {
+function toProfile(
+  encryption: EncryptionPort,
+  row: ProfileRow
+): HealthProfile {
   return {
-    displayName: row.display_name,
+    displayName: decryptStoredField(
+      encryption,
+      row.display_name_encrypted,
+      row.encryption_key_version,
+      "档案姓名"
+    ),
     birthDate: row.birth_date,
     sex: row.sex,
-    allergyHistory: row.allergy_history,
-    knownAllergies: row.known_allergies,
-    commonTriggers: row.common_triggers,
-    notes: row.notes,
+    allergyHistory: decryptStoredField(
+      encryption,
+      row.allergy_history_encrypted,
+      row.encryption_key_version,
+      "过敏史"
+    ),
+    knownAllergies: decryptStoredField(
+      encryption,
+      row.known_allergies_encrypted,
+      row.encryption_key_version,
+      "已知过敏原"
+    ),
+    commonTriggers: decryptStoredField(
+      encryption,
+      row.common_triggers_encrypted,
+      row.encryption_key_version,
+      "常见诱因"
+    ),
+    notes: decryptStoredField(
+      encryption,
+      row.notes_encrypted,
+      row.encryption_key_version,
+      "档案备注"
+    ),
     revision: row.revision,
     createdAt: row.created_at,
     updatedAt: row.updated_at
@@ -165,7 +250,10 @@ type CreateOutcome<T> =
   | { kind: "date_conflict" };
 
 export class SqliteRecordRepository implements RecordRepository {
-  constructor(private readonly database: KangminDatabase) {}
+  constructor(
+    private readonly database: KangminDatabase,
+    private readonly encryption: EncryptionPort
+  ) {}
 
   async createSymptom(
     input: CreateSymptomRecordInput
@@ -184,16 +272,20 @@ export class SqliteRecordRepository implements RecordRepository {
             "symptom_records",
             input.patientId,
             record.id,
-            toSymptom
+            (row) => toSymptom(this.encryption, row)
           ) !== null,
         insert: () => {
+          const notes = encryptOptionalFields(this.encryption, [
+            input.record.notes
+          ]);
           this.database.connection
             .prepare(`
               INSERT INTO symptom_records(
                 id, patient_id, local_date,
                 nasal_congestion, nasal_itching, sneezing, runny_nose,
-                tnss_total, notes, revision, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                tnss_total, notes_encrypted, encryption_key_version,
+                revision, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `)
             .run(
               input.record.id,
@@ -204,13 +296,25 @@ export class SqliteRecordRepository implements RecordRepository {
               input.record.sneezing,
               input.record.runnyNose,
               input.record.tnssTotal,
-              input.record.notes,
+              notes.stored[0],
+              notes.keyVersion,
               input.record.revision,
               input.record.createdAt,
               input.record.updatedAt
             );
         }
       });
+      if (outcome.kind === "created") {
+        this.appendVersion({
+          recordType: "symptom",
+          recordId: input.record.id,
+          revision: input.record.revision,
+          operation: "create",
+          snapshot: input.record,
+          actorId: input.patientId,
+          requestId: input.requestId
+        });
+      }
       return outcome;
     });
   }
@@ -220,18 +324,23 @@ export class SqliteRecordRepository implements RecordRepository {
       .prepare(`
         SELECT *
         FROM symptom_records
-        WHERE patient_id = ?
+        WHERE patient_id = ? AND deleted_at IS NULL
         ORDER BY local_date DESC, created_at DESC
       `)
       .all(patientId) as unknown as SymptomRow[];
-    return rows.map(toSymptom);
+    return rows.map((row) => toSymptom(this.encryption, row));
   }
 
   async findSymptom(
     patientId: string,
     id: string
   ): Promise<SymptomRecord | null> {
-    return this.findOwned("symptom_records", patientId, id, toSymptom);
+    return this.findOwned(
+      "symptom_records",
+      patientId,
+      id,
+      (row) => toSymptom(this.encryption, row)
+    );
   }
 
   async updateSymptom(
@@ -242,21 +351,22 @@ export class SqliteRecordRepository implements RecordRepository {
         "symptom_records",
         input.patientId,
         input.id,
-        toSymptom
+        (row) => toSymptom(this.encryption, row)
       );
       if (current === null) {
         return { kind: "not_found" };
       }
 
-      return this.commitOwnedUpdate({
+      const outcome = this.commitOwnedUpdate({
         table: "symptom_records",
         patientId: input.patientId,
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
-        mapRow: toSymptom,
-        applyUpdate: () =>
-          this.database.connection
+        mapRow: (row) => toSymptom(this.encryption, row),
+        applyUpdate: () => {
+          const notes = encryptOptionalFields(this.encryption, [input.notes]);
+          return this.database.connection
             .prepare(`
               UPDATE symptom_records
               SET nasal_congestion = ?,
@@ -264,10 +374,12 @@ export class SqliteRecordRepository implements RecordRepository {
                   sneezing = ?,
                   runny_nose = ?,
                   tnss_total = ?,
-                  notes = ?,
+                  notes_encrypted = ?,
+                  encryption_key_version = ?,
                   revision = revision + 1,
                   updated_at = ?
               WHERE id = ? AND patient_id = ? AND revision = ?
+                AND deleted_at IS NULL
             `)
             .run(
               input.nasalCongestion,
@@ -275,23 +387,46 @@ export class SqliteRecordRepository implements RecordRepository {
               input.sneezing,
               input.runnyNose,
               input.tnssTotal,
-              input.notes,
+              notes.stored[0],
+              notes.keyVersion,
               input.updatedAt,
               input.id,
               input.patientId,
               input.expectedRevision
-            )
+            );
+        }
       });
+      if (outcome.kind === "updated") {
+        this.appendVersion({
+          recordType: "symptom",
+          recordId: input.id,
+          revision: outcome.record.revision,
+          operation: "update",
+          snapshot: outcome.record,
+          actorId: input.patientId,
+          requestId: input.requestId
+        });
+      }
+      return outcome;
     });
   }
 
   async deleteSymptom(
     patientId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId: string
   ): Promise<DeleteRecordOutcome> {
     return this.database.transaction(() =>
-      this.deleteOwned("symptom_records", patientId, id, expectedRevision)
+      this.deleteOwned({
+        table: "symptom_records",
+        patientId,
+        id,
+        expectedRevision,
+        mapRow: (row) => toSymptom(this.encryption, row),
+        recordType: "symptom",
+        requestId
+      })
     );
   }
 
@@ -303,7 +438,9 @@ export class SqliteRecordRepository implements RecordRepository {
         WHERE patient_id = ?
       `)
       .get(patientId) as unknown as ProfileRow | undefined;
-    return row === undefined ? null : toProfile(row);
+    return row === undefined
+      ? null
+      : toProfile(this.encryption, row);
   }
 
   async updateProfile(
@@ -322,54 +459,80 @@ export class SqliteRecordRepository implements RecordRepository {
         if (input.expectedRevision !== 0) {
           return { kind: "version_conflict", currentRevision: 0 };
         }
+        const encrypted = encryptOptionalFields(this.encryption, [
+          input.displayName,
+          input.allergyHistory,
+          input.knownAllergies,
+          input.commonTriggers,
+          input.notes
+        ]);
         this.database.connection
           .prepare(`
             INSERT INTO profiles(
-              patient_id, display_name, birth_date, sex,
-              allergy_history, known_allergies, common_triggers, notes,
+              patient_id, display_name_encrypted, birth_date, sex,
+              allergy_history_encrypted, known_allergies_encrypted,
+              common_triggers_encrypted, notes_encrypted,
+              encryption_key_version,
               revision, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
           `)
           .run(
             input.patientId,
-            input.displayName,
+            encrypted.stored[0],
             input.birthDate,
             input.sex,
-            input.allergyHistory,
-            input.knownAllergies,
-            input.commonTriggers,
-            input.notes,
+            encrypted.stored[1],
+            encrypted.stored[2],
+            encrypted.stored[3],
+            encrypted.stored[4],
+            encrypted.keyVersion,
             input.updatedAt,
             input.updatedAt
           );
-        return {
-          kind: "created",
-          record: this.readProfileSync(input.patientId)
-        };
+        const record = this.readProfileSync(input.patientId);
+        this.appendVersion({
+          recordType: "profile",
+          recordId: input.patientId,
+          revision: record.revision,
+          operation: "create",
+          snapshot: record,
+          actorId: input.patientId,
+          requestId: input.requestId
+        });
+        return { kind: "created", record };
       }
 
+      const encrypted = encryptOptionalFields(this.encryption, [
+        input.displayName,
+        input.allergyHistory,
+        input.knownAllergies,
+        input.commonTriggers,
+        input.notes
+      ]);
       const result = this.database.connection
         .prepare(`
           UPDATE profiles
-          SET display_name = ?,
+          SET display_name_encrypted = ?,
               birth_date = ?,
               sex = ?,
-              allergy_history = ?,
-              known_allergies = ?,
-              common_triggers = ?,
-              notes = ?,
+              allergy_history_encrypted = ?,
+              known_allergies_encrypted = ?,
+              common_triggers_encrypted = ?,
+              notes_encrypted = ?,
+              encryption_key_version = ?,
               revision = revision + 1,
               updated_at = ?
           WHERE patient_id = ? AND revision = ?
         `)
         .run(
-          input.displayName,
+          encrypted.stored[0],
           input.birthDate,
           input.sex,
-          input.allergyHistory,
-          input.knownAllergies,
-          input.commonTriggers,
-          input.notes,
+          encrypted.stored[1],
+          encrypted.stored[2],
+          encrypted.stored[3],
+          encrypted.stored[4],
+          encrypted.keyVersion,
           input.updatedAt,
           input.patientId,
           input.expectedRevision
@@ -389,7 +552,17 @@ export class SqliteRecordRepository implements RecordRepository {
         };
       }
 
-      return { kind: "updated", record: this.readProfileSync(input.patientId) };
+      const record = this.readProfileSync(input.patientId);
+      this.appendVersion({
+        recordType: "profile",
+        recordId: input.patientId,
+        revision: record.revision,
+        operation: "update",
+        snapshot: record,
+        actorId: input.patientId,
+        requestId: input.requestId
+      });
+      return { kind: "updated", record };
     });
   }
 
@@ -410,30 +583,47 @@ export class SqliteRecordRepository implements RecordRepository {
             "exposure_records",
             input.patientId,
             record.id,
-            toExposure
+            (row) => toExposure(this.encryption, row)
           ) !== null,
         insert: () => {
+          const encrypted = encryptOptionalFields(this.encryption, [
+            input.record.otherDescription,
+            input.record.notes
+          ]);
           this.database.connection
             .prepare(`
               INSERT INTO exposure_records(
                 id, patient_id, local_date,
-                factors_json, other_description, notes,
+                factors_json, other_description_encrypted, notes_encrypted,
+                encryption_key_version,
                 revision, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `)
             .run(
               input.record.id,
               input.patientId,
               input.record.localDate,
               JSON.stringify(input.record.factors),
-              input.record.otherDescription,
-              input.record.notes,
+              encrypted.stored[0],
+              encrypted.stored[1],
+              encrypted.keyVersion,
               input.record.revision,
               input.record.createdAt,
               input.record.updatedAt
             );
         }
       });
+      if (outcome.kind === "created") {
+        this.appendVersion({
+          recordType: "exposure",
+          recordId: input.record.id,
+          revision: input.record.revision,
+          operation: "create",
+          snapshot: input.record,
+          actorId: input.patientId,
+          requestId: input.requestId
+        });
+      }
       return outcome;
     });
   }
@@ -443,18 +633,23 @@ export class SqliteRecordRepository implements RecordRepository {
       .prepare(`
         SELECT *
         FROM exposure_records
-        WHERE patient_id = ?
+        WHERE patient_id = ? AND deleted_at IS NULL
         ORDER BY local_date DESC, created_at DESC
       `)
       .all(patientId) as unknown as ExposureRow[];
-    return rows.map(toExposure);
+    return rows.map((row) => toExposure(this.encryption, row));
   }
 
   async findExposure(
     patientId: string,
     id: string
   ): Promise<ExposureRecord | null> {
-    return this.findOwned("exposure_records", patientId, id, toExposure);
+    return this.findOwned(
+      "exposure_records",
+      patientId,
+      id,
+      (row) => toExposure(this.encryption, row)
+    );
   }
 
   async updateExposure(
@@ -465,50 +660,79 @@ export class SqliteRecordRepository implements RecordRepository {
         "exposure_records",
         input.patientId,
         input.id,
-        toExposure
+        (row) => toExposure(this.encryption, row)
       );
       if (current === null) {
         return { kind: "not_found" };
       }
 
-      return this.commitOwnedUpdate({
+      const outcome = this.commitOwnedUpdate({
         table: "exposure_records",
         patientId: input.patientId,
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
-        mapRow: toExposure,
-        applyUpdate: () =>
-          this.database.connection
+        mapRow: (row) => toExposure(this.encryption, row),
+        applyUpdate: () => {
+          const encrypted = encryptOptionalFields(this.encryption, [
+            input.otherDescription,
+            input.notes
+          ]);
+          return this.database.connection
             .prepare(`
               UPDATE exposure_records
               SET factors_json = ?,
-                  other_description = ?,
-                  notes = ?,
+                  other_description_encrypted = ?,
+                  notes_encrypted = ?,
+                  encryption_key_version = ?,
                   revision = revision + 1,
                   updated_at = ?
               WHERE id = ? AND patient_id = ? AND revision = ?
+                AND deleted_at IS NULL
             `)
             .run(
               JSON.stringify(input.factors),
-              input.otherDescription,
-              input.notes,
+              encrypted.stored[0],
+              encrypted.stored[1],
+              encrypted.keyVersion,
               input.updatedAt,
               input.id,
               input.patientId,
               input.expectedRevision
-            )
+            );
+        }
       });
+      if (outcome.kind === "updated") {
+        this.appendVersion({
+          recordType: "exposure",
+          recordId: input.id,
+          revision: outcome.record.revision,
+          operation: "update",
+          snapshot: outcome.record,
+          actorId: input.patientId,
+          requestId: input.requestId
+        });
+      }
+      return outcome;
     });
   }
 
   async deleteExposure(
     patientId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId: string
   ): Promise<DeleteRecordOutcome> {
     return this.database.transaction(() =>
-      this.deleteOwned("exposure_records", patientId, id, expectedRevision)
+      this.deleteOwned({
+        table: "exposure_records",
+        patientId,
+        id,
+        expectedRevision,
+        mapRow: (row) => toExposure(this.encryption, row),
+        recordType: "exposure",
+        requestId
+      })
     );
   }
 
@@ -529,25 +753,34 @@ export class SqliteRecordRepository implements RecordRepository {
             "medication_records",
             input.patientId,
             record.id,
-            toMedication
+            (row) => toMedication(this.encryption, row)
           ) !== null,
         insert: () => {
+          const encrypted = encryptOptionalFields(this.encryption, [
+            input.record.medicationName,
+            input.record.dosage,
+            input.record.actualUse,
+            input.record.notes
+          ]);
           this.database.connection
             .prepare(`
               INSERT INTO medication_records(
                 id, patient_id, local_date,
-                medication_name, dosage, actual_use, notes,
+                medication_name_encrypted, dosage_encrypted,
+                actual_use_encrypted, notes_encrypted,
+                encryption_key_version,
                 revision, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             `)
             .run(
               input.record.id,
               input.patientId,
               input.record.localDate,
-              input.record.medicationName,
-              input.record.dosage,
-              input.record.actualUse,
-              input.record.notes,
+              encrypted.stored[0],
+              encrypted.stored[1],
+              encrypted.stored[2],
+              encrypted.stored[3],
+              encrypted.keyVersion,
               input.record.revision,
               input.record.createdAt,
               input.record.updatedAt
@@ -562,6 +795,17 @@ export class SqliteRecordRepository implements RecordRepository {
           "用药记录插入意外触发唯一约束"
         );
       }
+      if (outcome.kind === "created") {
+        this.appendVersion({
+          recordType: "medication",
+          recordId: input.record.id,
+          revision: input.record.revision,
+          operation: "create",
+          snapshot: input.record,
+          actorId: input.patientId,
+          requestId: input.requestId
+        });
+      }
       return outcome;
     });
   }
@@ -571,18 +815,23 @@ export class SqliteRecordRepository implements RecordRepository {
       .prepare(`
         SELECT *
         FROM medication_records
-        WHERE patient_id = ?
+        WHERE patient_id = ? AND deleted_at IS NULL
         ORDER BY local_date DESC, created_at DESC
       `)
       .all(patientId) as unknown as MedicationRow[];
-    return rows.map(toMedication);
+    return rows.map((row) => toMedication(this.encryption, row));
   }
 
   async findMedication(
     patientId: string,
     id: string
   ): Promise<MedicationRecord | null> {
-    return this.findOwned("medication_records", patientId, id, toMedication);
+    return this.findOwned(
+      "medication_records",
+      patientId,
+      id,
+      (row) => toMedication(this.encryption, row)
+    );
   }
 
   async updateMedication(
@@ -593,52 +842,83 @@ export class SqliteRecordRepository implements RecordRepository {
         "medication_records",
         input.patientId,
         input.id,
-        toMedication
+        (row) => toMedication(this.encryption, row)
       );
       if (current === null) {
         return { kind: "not_found" };
       }
 
-      return this.commitOwnedUpdate({
+      const outcome = this.commitOwnedUpdate({
         table: "medication_records",
         patientId: input.patientId,
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
-        mapRow: toMedication,
-        applyUpdate: () =>
-          this.database.connection
+        mapRow: (row) => toMedication(this.encryption, row),
+        applyUpdate: () => {
+          const encrypted = encryptOptionalFields(this.encryption, [
+            input.medicationName,
+            input.dosage,
+            input.actualUse,
+            input.notes
+          ]);
+          return this.database.connection
             .prepare(`
               UPDATE medication_records
-              SET medication_name = ?,
-                  dosage = ?,
-                  actual_use = ?,
-                  notes = ?,
+              SET medication_name_encrypted = ?,
+                  dosage_encrypted = ?,
+                  actual_use_encrypted = ?,
+                  notes_encrypted = ?,
+                  encryption_key_version = ?,
                   revision = revision + 1,
                   updated_at = ?
               WHERE id = ? AND patient_id = ? AND revision = ?
+                AND deleted_at IS NULL
             `)
             .run(
-              input.medicationName,
-              input.dosage,
-              input.actualUse,
-              input.notes,
+              encrypted.stored[0],
+              encrypted.stored[1],
+              encrypted.stored[2],
+              encrypted.stored[3],
+              encrypted.keyVersion,
               input.updatedAt,
               input.id,
               input.patientId,
               input.expectedRevision
-            )
+            );
+        }
       });
+      if (outcome.kind === "updated") {
+        this.appendVersion({
+          recordType: "medication",
+          recordId: input.id,
+          revision: outcome.record.revision,
+          operation: "update",
+          snapshot: outcome.record,
+          actorId: input.patientId,
+          requestId: input.requestId
+        });
+      }
+      return outcome;
     });
   }
 
   async deleteMedication(
     patientId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId: string
   ): Promise<DeleteRecordOutcome> {
     return this.database.transaction(() =>
-      this.deleteOwned("medication_records", patientId, id, expectedRevision)
+      this.deleteOwned({
+        table: "medication_records",
+        patientId,
+        id,
+        expectedRevision,
+        mapRow: (row) => toMedication(this.encryption, row),
+        recordType: "medication",
+        requestId
+      })
     );
   }
 
@@ -652,7 +932,7 @@ export class SqliteRecordRepository implements RecordRepository {
           .prepare(`
             SELECT local_date
             FROM symptom_records
-            WHERE patient_id = ?
+            WHERE patient_id = ? AND deleted_at IS NULL
             GROUP BY local_date
             ORDER BY local_date DESC
           `)
@@ -664,6 +944,7 @@ export class SqliteRecordRepository implements RecordRepository {
           SELECT COUNT(*) AS count
           FROM symptom_records
           WHERE patient_id = ? AND local_date LIKE ?
+            AND deleted_at IS NULL
         `)
         .get(patientId, `${monthPrefix}%`) as unknown as { count: number };
 
@@ -789,7 +1070,7 @@ export class SqliteRecordRepository implements RecordRepository {
       .prepare(`
         SELECT *
         FROM ${table}
-        WHERE id = ? AND patient_id = ?
+        WHERE id = ? AND patient_id = ? AND deleted_at IS NULL
       `)
       .get(id, patientId) as unknown as R | undefined;
     return row === undefined ? null : mapRow(row);
@@ -834,44 +1115,107 @@ export class SqliteRecordRepository implements RecordRepository {
     return { kind: "updated", record: updated };
   }
 
-  private deleteOwned(
-    table: string,
-    patientId: string,
-    id: string,
-    expectedRevision: number
-  ): DeleteRecordOutcome {
-    const current = this.database.connection
-      .prepare(`
-        SELECT revision
-        FROM ${table}
-        WHERE id = ? AND patient_id = ?
-      `)
-      .get(id, patientId) as unknown as { revision: number } | undefined;
-    if (current === undefined) {
+  private deleteOwned<T, R>(options: {
+    table: string;
+    patientId: string;
+    id: string;
+    expectedRevision: number;
+    mapRow: (row: R) => T;
+    recordType: "symptom" | "exposure" | "medication";
+    requestId: string;
+  }): DeleteRecordOutcome {
+    const current = this.findOwned(
+      options.table,
+      options.patientId,
+      options.id,
+      options.mapRow
+    );
+    if (current === null) {
       return { kind: "not_found" };
     }
 
+    // 软删除：只打时间戳不物理删除；同日唯一约束由部分唯一索引
+    // （WHERE deleted_at IS NULL）保证，删除后同日可重建。
     const result = this.database.connection
       .prepare(`
-        DELETE FROM ${table}
+        UPDATE ${options.table}
+        SET deleted_at = ?
         WHERE id = ? AND patient_id = ? AND revision = ?
+          AND deleted_at IS NULL
       `)
-      .run(id, patientId, expectedRevision);
+      .run(
+        new Date().toISOString(),
+        options.id,
+        options.patientId,
+        options.expectedRevision
+      );
 
     if (result.changes !== 1) {
       const latest = this.database.connection
         .prepare(`
           SELECT revision
-          FROM ${table}
+          FROM ${options.table}
           WHERE id = ? AND patient_id = ?
         `)
-        .get(id, patientId) as unknown as { revision: number } | undefined;
+        .get(options.id, options.patientId) as unknown as
+        | { revision: number }
+        | undefined;
+      const revision = (current as { revision: number }).revision;
       return {
         kind: "version_conflict",
-        currentRevision: latest?.revision ?? current.revision
+        currentRevision: latest?.revision ?? revision
       };
     }
+
+    const revision = (current as { revision: number }).revision;
+    // 删除凭证 revision 取被删 revision + 1：PK(record_type, record_id,
+    // revision) 不允许与同 revision 的 create/update 凭证重号，且
+    // 账本按 revision 单调递增可完整回放。
+    this.appendVersion({
+      recordType: options.recordType,
+      recordId: options.id,
+      revision: revision + 1,
+      operation: "delete",
+      snapshot: current,
+      actorId: options.patientId,
+      requestId: options.requestId
+    });
     return { kind: "deleted" };
+  }
+
+  /** 追加一次写操作的患者记录版本凭证（与写操作同一事务）。 */
+  private appendVersion(options: {
+    recordType: "symptom" | "profile" | "exposure" | "medication";
+    recordId: string;
+    revision: number;
+    operation: "create" | "update" | "delete";
+    snapshot: unknown;
+    actorId: string;
+    requestId: string;
+  }): void {
+    const { stored, keyVersion } = encryptStoredField(
+      this.encryption,
+      JSON.stringify(options.snapshot)
+    );
+    this.database.connection
+      .prepare(`
+        INSERT INTO patient_record_versions(
+          record_type, record_id, revision, operation,
+          encrypted_snapshot, encryption_key_version,
+          actor_kind, actor_id, request_id, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'patient', ?, ?, ?)
+      `)
+      .run(
+        options.recordType,
+        options.recordId,
+        options.revision,
+        options.operation,
+        stored,
+        keyVersion,
+        options.actorId,
+        options.requestId,
+        new Date().toISOString()
+      );
   }
 
   private readProfileSync(patientId: string): HealthProfile {
@@ -885,7 +1229,7 @@ export class SqliteRecordRepository implements RecordRepository {
     if (row === undefined) {
       throw new Error("profile row missing after write");
     }
-    return toProfile(row);
+    return toProfile(this.encryption, row);
   }
 
   private latestProjectionRow(
@@ -896,7 +1240,7 @@ export class SqliteRecordRepository implements RecordRepository {
       .prepare(`
         SELECT id, local_date, tnss_total
         FROM ${table}
-        WHERE patient_id = ?
+        WHERE patient_id = ? AND deleted_at IS NULL
         ORDER BY local_date DESC, created_at DESC
         LIMIT 1
       `)
@@ -909,7 +1253,7 @@ export class SqliteRecordRepository implements RecordRepository {
       .prepare(`
         SELECT local_date
         FROM ${table}
-        WHERE patient_id = ?
+        WHERE patient_id = ? AND deleted_at IS NULL
         ORDER BY local_date DESC, created_at DESC
         LIMIT 1
       `)
@@ -928,6 +1272,7 @@ export class SqliteRecordRepository implements RecordRepository {
           SELECT DISTINCT local_date
           FROM ${table}
           WHERE patient_id = ? AND local_date LIKE ?
+            AND deleted_at IS NULL
         `)
         .all(patientId, `${month}%`) as unknown as Array<{
         local_date: string;
@@ -945,6 +1290,7 @@ export class SqliteRecordRepository implements RecordRepository {
         SELECT id, local_date, tnss_total
         FROM ${table}
         WHERE patient_id = ? AND local_date LIKE ?
+          AND deleted_at IS NULL
         ORDER BY local_date ASC, created_at ASC
       `)
       .all(patientId, `${month}%`) as unknown as ProjectionRow[];
@@ -962,6 +1308,7 @@ export class SqliteRecordRepository implements RecordRepository {
         SELECT id, local_date, tnss_total
         FROM ${table}
         WHERE patient_id = ? AND local_date >= ? AND local_date <= ?
+          AND deleted_at IS NULL
         ORDER BY local_date ASC, created_at ASC
       `)
       .all(patientId, from, to) as unknown as ProjectionRow[];

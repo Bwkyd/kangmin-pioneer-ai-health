@@ -3,11 +3,61 @@ import { dirname } from "node:path";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { DomainError } from "../kernel/errors.js";
+import type { EncryptionPort } from "../kernel/encryption.js";
+import { encryptStoredField } from "./encrypted-fields.js";
 
-/** 一个版本化迁移：version 单调递增，apply 在同一事务内执行。 */
+/**
+ * 一个版本化迁移：version 单调递增，apply 在同一事务内执行。
+ * 加密类迁移需要 encryption 端口对旧明文数据做加密回填；
+ * 非加密迁移忽略该参数。
+ */
 interface Migration {
   version: string;
-  apply: (connection: DatabaseSync) => void;
+  apply: (
+    connection: DatabaseSync,
+    encryption: EncryptionPort | undefined
+  ) => void;
+}
+
+/**
+ * 把旧表的明文列加密回填到重建表的目标密文列。
+ * 目标列与 encryption_key_version 由同一 UPDATE 写入；
+ * 存在待回填明文但未提供加密端口时抛 config_missing，绝不静默丢失数据。
+ */
+function backfillEncryptedColumn(
+  connection: DatabaseSync,
+  sourceTable: string,
+  sourceColumn: string,
+  targetTable: string,
+  targetColumn: string,
+  idColumn: string,
+  encryption: EncryptionPort | undefined
+): void {
+  const rows = connection
+    .prepare(
+      `SELECT ${idColumn} AS id, ${sourceColumn} AS value
+       FROM ${sourceTable}
+       WHERE ${sourceColumn} IS NOT NULL`
+    )
+    .all() as unknown as Array<{ id: string; value: string }>;
+  if (rows.length === 0) {
+    return;
+  }
+  if (encryption === undefined) {
+    throw new DomainError(
+      "config_missing",
+      `检测到未加密的旧数据（${sourceTable}.${sourceColumn}），但未提供加密端口，无法安全迁移`
+    );
+  }
+  const update = connection.prepare(
+    `UPDATE ${targetTable}
+     SET ${targetColumn} = ?, encryption_key_version = ?
+     WHERE ${idColumn} = ?`
+  );
+  for (const row of rows) {
+    const { stored, keyVersion } = encryptStoredField(encryption, row.value);
+    update.run(stored, keyVersion, row.id);
+  }
 }
 
 const MIGRATIONS: Migration[] = [
@@ -197,13 +247,222 @@ const MIGRATIONS: Migration[] = [
         ON admin_sessions(admin_id);
       `);
     }
+  },
+  {
+    version: "0004_record_encryption_soft_delete",
+    apply: (connection, encryption) => {
+      // 健康正文字段落地认证加密（数据库设计 §4.2）：原明文列替换为
+      // *_encrypted 自包含密文 JSON + 表级 encryption_key_version；
+      // birth_date/sex/factors_json 保持明文。
+      // 删除语义改为软删除（deleted_at），同日唯一约束改为
+      // 部分唯一索引（WHERE deleted_at IS NULL），删除后同日可重建。
+      // 旧明文数据在重建期间用当前密钥加密回填。
+      connection.exec(`
+        CREATE TABLE symptom_records_new (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          local_date TEXT NOT NULL,
+          nasal_congestion INTEGER NOT NULL CHECK(nasal_congestion BETWEEN 0 AND 3),
+          nasal_itching INTEGER NOT NULL CHECK(nasal_itching BETWEEN 0 AND 3),
+          sneezing INTEGER NOT NULL CHECK(sneezing BETWEEN 0 AND 3),
+          runny_nose INTEGER NOT NULL CHECK(runny_nose BETWEEN 0 AND 3),
+          tnss_total INTEGER NOT NULL CHECK(tnss_total BETWEEN 0 AND 12),
+          notes_encrypted TEXT,
+          encryption_key_version TEXT,
+          deleted_at TEXT,
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        INSERT INTO symptom_records_new(
+          id, patient_id, local_date,
+          nasal_congestion, nasal_itching, sneezing, runny_nose,
+          tnss_total, revision, created_at, updated_at
+        )
+        SELECT id, patient_id, local_date,
+          nasal_congestion, nasal_itching, sneezing, runny_nose,
+          tnss_total, revision, created_at, updated_at
+        FROM symptom_records;
+      `);
+      backfillEncryptedColumn(
+        connection,
+        "symptom_records", "notes",
+        "symptom_records_new", "notes_encrypted", "id",
+        encryption
+      );
+      connection.exec(`
+        DROP TABLE symptom_records;
+        ALTER TABLE symptom_records_new RENAME TO symptom_records;
+
+        CREATE INDEX symptom_records_patient_date
+        ON symptom_records(patient_id, local_date DESC);
+        CREATE UNIQUE INDEX symptom_records_patient_date_active
+        ON symptom_records(patient_id, local_date) WHERE deleted_at IS NULL;
+
+        CREATE TABLE exposure_records_new (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          local_date TEXT NOT NULL,
+          factors_json TEXT NOT NULL,
+          other_description_encrypted TEXT,
+          notes_encrypted TEXT,
+          encryption_key_version TEXT,
+          deleted_at TEXT,
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        INSERT INTO exposure_records_new(
+          id, patient_id, local_date, factors_json,
+          revision, created_at, updated_at
+        )
+        SELECT id, patient_id, local_date, factors_json,
+          revision, created_at, updated_at
+        FROM exposure_records;
+      `);
+      backfillEncryptedColumn(
+        connection,
+        "exposure_records", "other_description",
+        "exposure_records_new", "other_description_encrypted", "id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "exposure_records", "notes",
+        "exposure_records_new", "notes_encrypted", "id",
+        encryption
+      );
+      connection.exec(`
+        DROP TABLE exposure_records;
+        ALTER TABLE exposure_records_new RENAME TO exposure_records;
+
+        CREATE INDEX exposure_records_patient_date
+        ON exposure_records(patient_id, local_date DESC);
+        CREATE UNIQUE INDEX exposure_records_patient_date_active
+        ON exposure_records(patient_id, local_date) WHERE deleted_at IS NULL;
+
+        CREATE TABLE medication_records_new (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          local_date TEXT NOT NULL,
+          medication_name_encrypted TEXT NOT NULL,
+          dosage_encrypted TEXT,
+          actual_use_encrypted TEXT,
+          notes_encrypted TEXT,
+          encryption_key_version TEXT,
+          deleted_at TEXT,
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        INSERT INTO medication_records_new(
+          id, patient_id, local_date,
+          revision, created_at, updated_at
+        )
+        SELECT id, patient_id, local_date,
+          revision, created_at, updated_at
+        FROM medication_records;
+      `);
+      backfillEncryptedColumn(
+        connection,
+        "medication_records", "medication_name",
+        "medication_records_new", "medication_name_encrypted", "id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "medication_records", "dosage",
+        "medication_records_new", "dosage_encrypted", "id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "medication_records", "actual_use",
+        "medication_records_new", "actual_use_encrypted", "id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "medication_records", "notes",
+        "medication_records_new", "notes_encrypted", "id",
+        encryption
+      );
+      connection.exec(`
+        DROP TABLE medication_records;
+        ALTER TABLE medication_records_new RENAME TO medication_records;
+
+        CREATE INDEX medication_records_patient_date
+        ON medication_records(patient_id, local_date DESC);
+
+        CREATE TABLE profiles_new (
+          patient_id TEXT PRIMARY KEY REFERENCES patients(id),
+          display_name_encrypted TEXT,
+          birth_date TEXT,
+          sex TEXT NOT NULL DEFAULT 'unspecified'
+            CHECK(sex IN ('female', 'male', 'other', 'unspecified')),
+          allergy_history_encrypted TEXT,
+          known_allergies_encrypted TEXT,
+          common_triggers_encrypted TEXT,
+          notes_encrypted TEXT,
+          encryption_key_version TEXT,
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        INSERT INTO profiles_new(
+          patient_id, birth_date, sex,
+          revision, created_at, updated_at
+        )
+        SELECT patient_id, birth_date, sex,
+          revision, created_at, updated_at
+        FROM profiles;
+      `);
+      backfillEncryptedColumn(
+        connection,
+        "profiles", "display_name",
+        "profiles_new", "display_name_encrypted", "patient_id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "profiles", "allergy_history",
+        "profiles_new", "allergy_history_encrypted", "patient_id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "profiles", "known_allergies",
+        "profiles_new", "known_allergies_encrypted", "patient_id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "profiles", "common_triggers",
+        "profiles_new", "common_triggers_encrypted", "patient_id",
+        encryption
+      );
+      backfillEncryptedColumn(
+        connection,
+        "profiles", "notes",
+        "profiles_new", "notes_encrypted", "patient_id",
+        encryption
+      );
+      connection.exec(`
+        DROP TABLE profiles;
+        ALTER TABLE profiles_new RENAME TO profiles;
+      `);
+    }
   }
 ];
 
 export class KangminDatabase {
   readonly connection: DatabaseSync;
 
-  constructor(path: string) {
+  constructor(path: string, private readonly encryption?: EncryptionPort) {
     try {
       if (path !== ":memory:") {
         mkdirSync(dirname(path), { recursive: true });
@@ -324,7 +583,7 @@ export class KangminDatabase {
         continue;
       }
       this.transaction(() => {
-        migration.apply(this.connection);
+        migration.apply(this.connection, this.encryption);
         this.connection
           .prepare(
             "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)"

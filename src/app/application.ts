@@ -88,19 +88,23 @@ export class KangminApplication {
         case "record symptom add":
           return success(
             command,
-            await this.records.createSymptom(patientId, {
-              localDate: localDateNotAfterToday(
-                input,
-                "localDate",
-                localToday()
-              ),
-              nasalCongestion: integerInRange(input, "nasalCongestion", 0, 3),
-              nasalItching: integerInRange(input, "nasalItching", 0, 3),
-              sneezing: integerInRange(input, "sneezing", 0, 3),
-              runnyNose: integerInRange(input, "runnyNose", 0, 3),
-              notes: optionalString(input, "notes") ?? null,
-              idempotencyKey: requiredString(input, "idempotencyKey")
-            }),
+            await this.records.createSymptom(
+              patientId,
+              {
+                localDate: localDateNotAfterToday(
+                  input,
+                  "localDate",
+                  localToday()
+                ),
+                nasalCongestion: integerInRange(input, "nasalCongestion", 0, 3),
+                nasalItching: integerInRange(input, "nasalItching", 0, 3),
+                sneezing: integerInRange(input, "sneezing", 0, 3),
+                runnyNose: integerInRange(input, "runnyNose", 0, 3),
+                notes: optionalString(input, "notes") ?? null,
+                idempotencyKey: requiredString(input, "idempotencyKey")
+              },
+              request.requestId
+            ),
             request.requestId
           );
         case "record symptom list":
@@ -136,16 +140,20 @@ export class KangminApplication {
 
           return success(
             command,
-            await this.records.updateSymptom(patientId, update),
+            await this.records.updateSymptom(patientId, update, request.requestId),
             request.requestId
           );
         }
         case "record symptom delete":
           requireConfirmation(input);
-          await this.records.deleteSymptom(patientId, {
-            id: requiredString(input, "id"),
-            expectedRevision: positiveInteger(input, "expectedRevision")
-          });
+          await this.records.deleteSymptom(
+            patientId,
+            {
+              id: requiredString(input, "id"),
+              expectedRevision: positiveInteger(input, "expectedRevision")
+            },
+            request.requestId
+          );
           return success(
             command,
             { id: input.id, deleted: true },
@@ -181,7 +189,7 @@ export class KangminApplication {
 
           return success(
             command,
-            await this.records.updateProfile(patientId, update),
+            await this.records.updateProfile(patientId, update, request.requestId),
             request.requestId
           );
         }
@@ -189,18 +197,22 @@ export class KangminApplication {
         case "record exposure add":
           return success(
             command,
-            await this.records.createExposure(patientId, {
-              localDate: localDateNotAfterToday(
-                input,
-                "localDate",
-                localToday()
-              ),
-              factors: requiredStringArray(input, "factors"),
-              otherDescription:
-                optionalString(input, "otherDescription") ?? null,
-              notes: optionalString(input, "notes") ?? null,
-              idempotencyKey: requiredString(input, "idempotencyKey")
-            }),
+            await this.records.createExposure(
+              patientId,
+              {
+                localDate: localDateNotAfterToday(
+                  input,
+                  "localDate",
+                  localToday()
+                ),
+                factors: requiredStringArray(input, "factors"),
+                otherDescription:
+                  optionalString(input, "otherDescription") ?? null,
+                notes: optionalString(input, "notes") ?? null,
+                idempotencyKey: requiredString(input, "idempotencyKey")
+              },
+              request.requestId
+            ),
             request.requestId
           );
         case "record exposure list":
@@ -228,16 +240,20 @@ export class KangminApplication {
           };
           return success(
             command,
-            await this.records.updateExposure(patientId, update),
+            await this.records.updateExposure(patientId, update, request.requestId),
             request.requestId
           );
         }
         case "record exposure delete":
           requireConfirmation(input);
-          await this.records.deleteExposure(patientId, {
-            id: requiredString(input, "id"),
-            expectedRevision: positiveInteger(input, "expectedRevision")
-          });
+          await this.records.deleteExposure(
+            patientId,
+            {
+              id: requiredString(input, "id"),
+              expectedRevision: positiveInteger(input, "expectedRevision")
+            },
+            request.requestId
+          );
           return success(
             command,
             { id: input.id, deleted: true },
@@ -247,18 +263,22 @@ export class KangminApplication {
         case "record medication add":
           return success(
             command,
-            await this.records.createMedication(patientId, {
-              localDate: localDateNotAfterToday(
-                input,
-                "localDate",
-                localToday()
-              ),
-              medicationName: requiredString(input, "medicationName"),
-              dosage: optionalString(input, "dosage") ?? null,
-              actualUse: optionalString(input, "actualUse") ?? null,
-              notes: optionalString(input, "notes") ?? null,
-              idempotencyKey: requiredString(input, "idempotencyKey")
-            }),
+            await this.records.createMedication(
+              patientId,
+              {
+                localDate: localDateNotAfterToday(
+                  input,
+                  "localDate",
+                  localToday()
+                ),
+                medicationName: requiredString(input, "medicationName"),
+                dosage: optionalString(input, "dosage") ?? null,
+                actualUse: optionalString(input, "actualUse") ?? null,
+                notes: optionalString(input, "notes") ?? null,
+                idempotencyKey: requiredString(input, "idempotencyKey")
+              },
+              request.requestId
+            ),
             request.requestId
           );
         case "record medication list":
@@ -291,16 +311,20 @@ export class KangminApplication {
           };
           return success(
             command,
-            await this.records.updateMedication(patientId, update),
+            await this.records.updateMedication(patientId, update, request.requestId),
             request.requestId
           );
         }
         case "record medication delete":
           requireConfirmation(input);
-          await this.records.deleteMedication(patientId, {
-            id: requiredString(input, "id"),
-            expectedRevision: positiveInteger(input, "expectedRevision")
-          });
+          await this.records.deleteMedication(
+            patientId,
+            {
+              id: requiredString(input, "id"),
+              expectedRevision: positiveInteger(input, "expectedRevision")
+            },
+            request.requestId
+          );
           return success(
             command,
             { id: input.id, deleted: true },
