@@ -27,12 +27,20 @@ record 命令：
 
 browse 命令：
   browse
-  browse article list|categories
+  browse article list [--limit N] [--offset N]
+  browse article categories
   browse article search <query>
   browse article show <id>
-  browse video list|categories
+  browse video list [--limit N] [--offset N]
+  browse video categories
   browse video search <query>
   browse video show <id>
+  browse plan list
+  browse plan show <id>
+  browse search <query>
+  browse environment current [--city X]
+  browse environment forecast [--days N]
+  browse environment refresh [--city X]
 
 agent 命令：
   agent start
@@ -63,7 +71,7 @@ account 命令：
   密码不会出现在命令行参数、历史或日志中。
 
 当前真实可用：
-  agent 安全会话基础、record 全部命令、browse 已发布文章/视频、
+  agent 安全会话基础、record 全部命令、browse 已发布文章/视频/方案/环境快照、
   account 注册/登录/状态/退出/资料/同意/隐私。
 
 临床边界：
@@ -88,7 +96,10 @@ const NUMBER_OPTIONS = new Set([
   "nasalItching",
   "sneezing",
   "runnyNose",
-  "expectedRevision"
+  "expectedRevision",
+  "limit",
+  "offset",
+  "days"
 ]);
 
 const OPTION_NAMES: Record<string, string> = {
@@ -118,6 +129,10 @@ const OPTION_NAMES: Record<string, string> = {
   "--month": "month",
   "--from": "from",
   "--to": "to",
+  "--limit": "limit",
+  "--offset": "offset",
+  "--city": "city",
+  "--days": "days",
   "--yes": "yes",
   "--username": "username",
   "--nickname": "nickname",
@@ -224,6 +239,141 @@ function parseAccount(filtered: string[], json: boolean): ParsedCommand {
   return { command, input, json, help: false };
 }
 
+/** 收集首个 -- 之前的裸词为查询词，之后的 token 全部视为选项。 */
+function collectBareQuery(
+  tokens: string[]
+): { query: string; optionTokens: string[] } {
+  const queryParts: string[] = [];
+  const optionTokens: string[] = [];
+  let seenOption = false;
+  for (const token of tokens) {
+    if (token.startsWith("--")) {
+      seenOption = true;
+      optionTokens.push(token);
+    } else if (seenOption) {
+      optionTokens.push(token);
+    } else {
+      queryParts.push(token);
+    }
+  }
+  return { query: queryParts.join(" "), optionTokens };
+}
+
+function parseBrowse(
+  filtered: string[],
+  resource: string | undefined,
+  maybeAction: string | undefined,
+  positional: string | undefined,
+  rest: string[],
+  json: boolean
+): ParsedCommand {
+  const input: Record<string, unknown> = {};
+  if (resource === undefined) {
+    return { command: "browse", input, json, help: false };
+  }
+
+  // browse search <query>：跨文章/视频/通用方案。
+  if (resource === "search") {
+    const { query, optionTokens } = collectBareQuery(
+      [maybeAction, positional, ...rest].filter(
+        (value): value is string => value !== undefined
+      )
+    );
+    if (query === "") {
+      input.__parseError = "browse search 需要搜索词";
+    } else {
+      input.query = query;
+    }
+    parseOptions(input, optionTokens);
+    return { command: "browse search", input, json, help: false };
+  }
+
+  // browse environment current|forecast|refresh。
+  if (resource === "environment") {
+    if (maybeAction === "current" || maybeAction === "refresh" || maybeAction === "forecast") {
+      const optionTokens = [positional, ...rest].filter(
+        (value): value is string => value !== undefined
+      );
+      // 位置参数直接跟在 action 后（如 `current 上海`）不是合法用法；
+      // 选项值（--city 成都）属于 rest，不受此检查影响。
+      if (positional !== undefined && !positional.startsWith("--")) {
+        input.__parseError = `browse environment ${maybeAction} 只接受选项参数（--city/--days）`;
+      } else {
+        parseOptions(input, optionTokens);
+      }
+      return {
+        command: `browse environment ${maybeAction}`,
+        input,
+        json,
+        help: false
+      };
+    }
+    return { command: filtered.join(" "), input, json, help: false };
+  }
+
+  // browse plan list|show。
+  if (resource === "plan") {
+    if (maybeAction === "list") {
+      if (positional !== undefined || rest.length > 0) {
+        input.__parseError = "browse plan list 不接受额外参数";
+      }
+      return { command: "browse plan list", input, json, help: false };
+    }
+    if (maybeAction === "show") {
+      if (positional === undefined || positional.startsWith("--") || rest.length > 0) {
+        input.__parseError = "browse plan show 需要且只接受一个方案 ID";
+      } else {
+        input.id = positional;
+      }
+      return { command: "browse plan show", input, json, help: false };
+    }
+    return { command: filtered.join(" "), input, json, help: false };
+  }
+
+  if (resource !== "article" && resource !== "video") {
+    return { command: filtered.join(" "), input, json, help: false };
+  }
+  if (maybeAction === "list") {
+    parseOptions(
+      input,
+      [positional, ...rest].filter(
+        (value): value is string => value !== undefined
+      )
+    );
+    return {
+      command: `browse ${resource} list`,
+      input,
+      json,
+      help: false
+    };
+  }
+  if (maybeAction === "categories") {
+    if (positional !== undefined || rest.length > 0) {
+      input.__parseError = `browse ${resource} categories 不接受额外参数`;
+    }
+    return {
+      command: `browse ${resource} categories`,
+      input,
+      json,
+      help: false
+    };
+  }
+  if (maybeAction === "search" || maybeAction === "show") {
+    if (positional === undefined || rest.length > 0) {
+      input.__parseError = `browse ${resource} ${maybeAction} 需要且只接受一个${maybeAction === "search" ? "搜索词" : "内容 ID"}`;
+    } else {
+      input[maybeAction === "search" ? "query" : "id"] = positional;
+    }
+    return {
+      command: `browse ${resource} ${maybeAction}`,
+      input,
+      json,
+      help: false
+    };
+  }
+  return { command: filtered.join(" "), input, json, help: false };
+}
+
 function parse(argv: string[]): ParsedCommand {
   const json = argv.includes("--json");
   const filtered = argv.filter((value) => value !== "--json");
@@ -241,38 +391,7 @@ function parse(argv: string[]): ParsedCommand {
     return parseAccount(filtered, json);
   }
   if (group === "browse") {
-    const input: Record<string, unknown> = {};
-    if (resource === undefined) {
-      return { command: "browse", input, json, help: false };
-    }
-    if (resource !== "article" && resource !== "video") {
-      return { command: filtered.join(" "), input, json, help: false };
-    }
-    if (maybeAction === "list" || maybeAction === "categories") {
-      if (positional !== undefined || rest.length > 0) {
-        input.__parseError = `browse ${resource} ${maybeAction} 不接受额外参数`;
-      }
-      return {
-        command: `browse ${resource} ${maybeAction}`,
-        input,
-        json,
-        help: false
-      };
-    }
-    if (maybeAction === "search" || maybeAction === "show") {
-      if (positional === undefined || rest.length > 0) {
-        input.__parseError = `browse ${resource} ${maybeAction} 需要且只接受一个${maybeAction === "search" ? "搜索词" : "内容 ID"}`;
-      } else {
-        input[maybeAction === "search" ? "query" : "id"] = positional;
-      }
-      return {
-        command: `browse ${resource} ${maybeAction}`,
-        input,
-        json,
-        help: false
-      };
-    }
-    return { command: filtered.join(" "), input, json, help: false };
+    return parseBrowse(filtered, resource, maybeAction, positional, rest, json);
   }
   if (group === "agent") {
     const input: Record<string, unknown> = {};

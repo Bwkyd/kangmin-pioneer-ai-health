@@ -10,14 +10,32 @@ import { SqliteAgentRepository } from "../infrastructure/sqlite-agent-repository
 import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
 import { SqliteRecordRepository } from "../infrastructure/sqlite-record-repository.js";
 import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
+import { SqliteEnvironmentCacheRepository } from "../infrastructure/sqlite-environment-cache-repository.js";
+import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
 import { AccountService } from "../modules/account/account-service.js";
 import { SessionService } from "../modules/account/session-service.js";
+import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
 import { DomainError } from "../kernel/errors.js";
 import type { EncryptionPort } from "../kernel/encryption.js";
 
 export interface ApplicationOptions {
   /** 显式注入加密端口；未提供时按环境解析（见 resolveEncryption）。 */
   encryption?: EncryptionPort;
+  /** 环境 Provider 注入点（测试用）；默认使用测试替身适配器。 */
+  environmentProvider?: EnvironmentProviderPort | undefined;
+}
+
+/**
+ * 默认环境 Provider：测试替身适配器（本 MVP 唯一适配器）。
+ * 支持用 KANGMIN_ENV_PROVIDER_MODE=fixed|unavailable|timeout
+ * 控制故障模式，便于 CLI 级联调与端到端测试。
+ */
+function defaultEnvironmentProvider(): EnvironmentProviderPort {
+  const mode = process.env.KANGMIN_ENV_PROVIDER_MODE;
+  if (mode === "unavailable" || mode === "timeout") {
+    return new TestEnvironmentProvider({ mode });
+  }
+  return new TestEnvironmentProvider();
 }
 
 export function createApplication(
@@ -27,12 +45,16 @@ export function createApplication(
   const encryption = options.encryption ?? resolveEncryption(process.env);
   const database = new KangminDatabase(databasePath, encryption);
   const sessions = new SessionService(new SqliteSessionRepository(database));
+  const environmentProvider =
+    options.environmentProvider ?? defaultEnvironmentProvider();
   return new KangminApplication(
     sessions,
     new SqliteRecordRepository(database, encryption),
     new SqliteContentReadRepository(database),
     new SqliteAgentRepository(database),
     new AccountService(new SqliteAccountRepository(database), sessions),
+    environmentProvider,
+    new SqliteEnvironmentCacheRepository(database),
     () => {
       database.close();
     }

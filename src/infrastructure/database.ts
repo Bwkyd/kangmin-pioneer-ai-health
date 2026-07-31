@@ -560,6 +560,54 @@ const MIGRATIONS: Migration[] = [
         ON patient_consents(patient_id, consent_type, sequence DESC);
       `);
     }
+  },
+  {
+    version: "0007_browse_environment_plans",
+    apply: (connection) => {
+      connection.exec(`
+        -- 患者端 browse 增量（issue-136 w3-browse）：
+        -- 通用护理方案只读（published_revision 非空才可见）与
+        -- 环境快照缓存（架构 §19 EnvironmentProviderPort）。
+        -- 内容资源由 0004 的 content_items 承载，本迁移不重复建表。
+
+        CREATE TABLE IF NOT EXISTS agent_care_plans (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          current_revision INTEGER NOT NULL CHECK(current_revision >= 1),
+          enabled_revision INTEGER,
+          published_revision INTEGER,
+          revision INTEGER NOT NULL CHECK(revision >= 1)
+        ) STRICT;
+
+        -- 方案修订内容承载：plan show/search 的只读正文来源。
+        CREATE TABLE IF NOT EXISTS agent_care_plan_revisions (
+          plan_id TEXT NOT NULL REFERENCES agent_care_plans(id),
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          name TEXT NOT NULL,
+          summary TEXT,
+          steps_json TEXT,
+          disclaimer TEXT,
+          created_by_admin_id TEXT,
+          PRIMARY KEY(plan_id, revision)
+        ) STRICT;
+
+        -- 环境快照缓存：过期快照返回 stale 标记而不是“刚刚更新”。
+        CREATE TABLE IF NOT EXISTS environment_snapshots (
+          id TEXT PRIMARY KEY,
+          provider TEXT NOT NULL,
+          cache_key TEXT NOT NULL,
+          city TEXT NOT NULL,
+          weather_json TEXT NOT NULL,
+          air_quality_json TEXT NOT NULL,
+          pollen_risk_json TEXT NOT NULL,
+          observed_at TEXT NOT NULL,
+          fetched_at TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          source_label TEXT NOT NULL,
+          UNIQUE(provider, cache_key)
+        ) STRICT;
+      `);
+    }
   }
 ];
 
