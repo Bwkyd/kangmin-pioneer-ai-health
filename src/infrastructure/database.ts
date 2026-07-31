@@ -1,0 +1,93 @@
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { DatabaseSync } from "node:sqlite";
+
+import { DomainError } from "../kernel/errors.js";
+
+export class KangminDatabase {
+  readonly connection: DatabaseSync;
+
+  constructor(path: string) {
+    try {
+      if (path !== ":memory:") {
+        mkdirSync(dirname(path), { recursive: true });
+      }
+      this.connection = new DatabaseSync(path);
+      this.connection.exec("PRAGMA foreign_keys = ON");
+      this.connection.exec("PRAGMA journal_mode = WAL");
+      this.migrate();
+    } catch (error) {
+      throw new DomainError(
+        "storage_unavailable",
+        "健康记录存储不可用",
+        { retryable: true, cause: error }
+      );
+    }
+  }
+
+  close(): void {
+    this.connection.close();
+  }
+
+  transaction<T>(operation: () => T): T {
+    this.connection.exec("BEGIN IMMEDIATE");
+    try {
+      const result = operation();
+      this.connection.exec("COMMIT");
+      return result;
+    } catch (error) {
+      try {
+        this.connection.exec("ROLLBACK");
+      } catch {
+        // Preserve the original domain/storage failure.
+      }
+      throw error;
+    }
+  }
+
+  private migrate(): void {
+    this.connection.exec(`
+      CREATE TABLE IF NOT EXISTS patients (
+        id TEXT PRIMARY KEY,
+        development_subject TEXT UNIQUE,
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS patient_sessions (
+        token_hash TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      ) STRICT;
+
+      CREATE TABLE IF NOT EXISTS symptom_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        nasal_congestion INTEGER NOT NULL CHECK(nasal_congestion BETWEEN 0 AND 3),
+        nasal_itching INTEGER NOT NULL CHECK(nasal_itching BETWEEN 0 AND 3),
+        sneezing INTEGER NOT NULL CHECK(sneezing BETWEEN 0 AND 3),
+        runny_nose INTEGER NOT NULL CHECK(runny_nose BETWEEN 0 AND 3),
+        tnss_total INTEGER NOT NULL CHECK(tnss_total BETWEEN 0 AND 12),
+        notes TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(patient_id, local_date)
+      ) STRICT;
+
+      CREATE INDEX IF NOT EXISTS symptom_records_patient_date
+      ON symptom_records(patient_id, local_date DESC);
+
+      CREATE TABLE IF NOT EXISTS idempotency_records (
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        command_scope TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(patient_id, command_scope, idempotency_key)
+      ) STRICT;
+    `);
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "name": "@kangmin/patient-core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "bin": {
+    "kangmin": "./dist/cli/kangmin.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "lint": "node scripts/architecture-check.mjs",
+    "test": "npm run build && node --test dist/tests/*.test.js",
+    "check": "npm run typecheck && npm run lint && npm test",
+    "dev:session": "npm run build --silent && node dist/dev/create-session.js",
+    "start:http": "npm run build --silent && node dist/http/server.js"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}
