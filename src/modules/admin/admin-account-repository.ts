@@ -40,4 +40,13 @@ export interface AdminAccountRepository {
     updatedAt: string,
     reason: string
   ): Promise<"updated" | "not_found">;
+  /**
+   * 事务内守卫停用：owner 且活跃 owner 数 <= 1 时拒绝（last_owner），
+   * 避免跨进程 check-then-act 并发击穿（评审 B P2）。
+   */
+  disableAdminIfNotLastOwner(
+    id: string,
+    updatedAt: string,
+    reason: string
+  ): Promise<"updated" | "not_found" | "last_owner">;
 }

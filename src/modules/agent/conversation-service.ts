@@ -461,9 +461,10 @@ export class ConversationService {
     if (input.rating !== "helpful" && input.rating !== "unhelpful") {
       throw new DomainError("validation_failed", "反馈评分必须是 helpful 或 unhelpful");
     }
+    // 匿名反馈只允许命中匿名会话，不得写已绑定患者的会话（评审 B P2）。
     const session =
       input.patientId === null
-        ? await this.repository.findSession(input.conversationId)
+        ? await this.repository.findAnonymousSession(input.conversationId)
         : await this.repository.findPatientSession(
             input.patientId,
             input.conversationId

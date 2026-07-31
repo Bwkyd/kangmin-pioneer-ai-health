@@ -75,7 +75,8 @@ export class UserAdminService {
     return {
       ...this.toSummary(row),
       accountStatus: row.accountStatus,
-      nickname: row.nickname,
+      // 详情视图同样脱敏（评审 B P2：昵称可能含手机号）。
+      nickname: maskIdentifier(row.nickname ?? ""),
       recentSession:
         recent === null
           ? null

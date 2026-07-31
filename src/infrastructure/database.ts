@@ -919,6 +919,11 @@ export class KangminDatabase {
       this.connection.exec("PRAGMA busy_timeout = 3000");
       this.migrate();
     } catch (error) {
+      // DomainError（如迁移回填缺密钥的 config_missing）原样透传，
+      // 不得重包为 storage_unavailable 误导排障（评审 B P2）。
+      if (error instanceof DomainError) {
+        throw error;
+      }
       throw new DomainError(
         "storage_unavailable",
         "健康记录存储不可用",

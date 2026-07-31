@@ -320,15 +320,19 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   async listSymptoms(patientId: string): Promise<SymptomRecord[]> {
-    const rows = this.database.connection
-      .prepare(`
-        SELECT *
-        FROM symptom_records
-        WHERE patient_id = ? AND deleted_at IS NULL
-        ORDER BY local_date DESC, created_at DESC
-      `)
-      .all(patientId) as unknown as SymptomRow[];
-    return rows.map((row: SymptomRow) => toSymptom(this.encryption, row));
+    return this.guardRead(() => {
+      const rows = this.database.connection
+        .prepare(`
+          SELECT *
+          FROM symptom_records
+          WHERE patient_id = ? AND deleted_at IS NULL
+          ORDER BY local_date DESC, created_at DESC
+        `)
+        .all(patientId) as unknown as SymptomRow[];
+      return rows.map((row: SymptomRow) =>
+        toSymptom(this.encryption, row)
+      );
+    });
   }
 
   async findSymptom(
@@ -466,29 +470,38 @@ export class SqliteRecordRepository implements RecordRepository {
           input.commonTriggers,
           input.notes
         ]);
-        this.database.connection
-          .prepare(`
-            INSERT INTO profiles(
-              patient_id, display_name_encrypted, birth_date, sex,
-              allergy_history_encrypted, known_allergies_encrypted,
-              common_triggers_encrypted, notes_encrypted,
-              encryption_key_version,
-              revision, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-          `)
-          .run(
-            input.patientId,
-            encrypted.stored[0],
-            input.birthDate,
-            input.sex,
-            encrypted.stored[1],
-            encrypted.stored[2],
-            encrypted.stored[3],
-            encrypted.stored[4],
-            encrypted.keyVersion,
-            input.updatedAt,
-            input.updatedAt
-          );
+        try {
+          this.database.connection
+            .prepare(`
+              INSERT INTO profiles(
+                patient_id, display_name_encrypted, birth_date, sex,
+                allergy_history_encrypted, known_allergies_encrypted,
+                common_triggers_encrypted, notes_encrypted,
+                encryption_key_version,
+                revision, created_at, updated_at
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
+            `)
+            .run(
+              input.patientId,
+              encrypted.stored[0],
+              input.birthDate,
+              input.sex,
+              encrypted.stored[1],
+              encrypted.stored[2],
+              encrypted.stored[3],
+              encrypted.stored[4],
+              encrypted.keyVersion,
+              input.updatedAt,
+              input.updatedAt
+            );
+        } catch (error) {
+          // 并发创建竞态：另一进程已建档案，裸 UNIQUE 映射为
+          // version_conflict（评审 B P2），不归为 internal_error。
+          if (isUniqueConstraint(error)) {
+            return { kind: "version_conflict", currentRevision: 1 };
+          }
+          throw error;
+        }
         const record = this.readProfileSync(input.patientId);
         this.appendVersion({
           recordType: "profile",
@@ -629,15 +642,19 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   async listExposures(patientId: string): Promise<ExposureRecord[]> {
-    const rows = this.database.connection
-      .prepare(`
-        SELECT *
-        FROM exposure_records
-        WHERE patient_id = ? AND deleted_at IS NULL
-        ORDER BY local_date DESC, created_at DESC
-      `)
-      .all(patientId) as unknown as ExposureRow[];
-    return rows.map((row: ExposureRow) => toExposure(this.encryption, row));
+    return this.guardRead(() => {
+      const rows = this.database.connection
+        .prepare(`
+          SELECT *
+          FROM exposure_records
+          WHERE patient_id = ? AND deleted_at IS NULL
+          ORDER BY local_date DESC, created_at DESC
+        `)
+        .all(patientId) as unknown as ExposureRow[];
+      return rows.map((row: ExposureRow) =>
+        toExposure(this.encryption, row)
+      );
+    });
   }
 
   async findExposure(
@@ -811,15 +828,19 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   async listMedications(patientId: string): Promise<MedicationRecord[]> {
-    const rows = this.database.connection
-      .prepare(`
-        SELECT *
-        FROM medication_records
-        WHERE patient_id = ? AND deleted_at IS NULL
-        ORDER BY local_date DESC, created_at DESC
-      `)
-      .all(patientId) as unknown as MedicationRow[];
-    return rows.map((row: MedicationRow) => toMedication(this.encryption, row));
+    return this.guardRead(() => {
+      const rows = this.database.connection
+        .prepare(`
+          SELECT *
+          FROM medication_records
+          WHERE patient_id = ? AND deleted_at IS NULL
+          ORDER BY local_date DESC, created_at DESC
+        `)
+        .all(patientId) as unknown as MedicationRow[];
+      return rows.map((row: MedicationRow) =>
+        toMedication(this.encryption, row)
+      );
+    });
   }
 
   async findMedication(
@@ -926,64 +947,68 @@ export class SqliteRecordRepository implements RecordRepository {
     patientId: string,
     monthPrefix: string
   ): Promise<OverviewSourceData> {
-    return this.database.readOnly(() => {
-      const symptomDates = (
-        this.database.connection
+    return this.guardRead(() =>
+      this.database.readOnly(() => {
+        const symptomDates = (
+          this.database.connection
+            .prepare(`
+              SELECT local_date
+              FROM symptom_records
+              WHERE patient_id = ? AND deleted_at IS NULL
+              GROUP BY local_date
+              ORDER BY local_date DESC
+            `)
+            .all(patientId) as unknown as Array<{ local_date: string }>
+        ).map((row) => row.local_date);
+
+        const monthRow = this.database.connection
           .prepare(`
-            SELECT local_date
+            SELECT COUNT(*) AS count
             FROM symptom_records
-            WHERE patient_id = ? AND deleted_at IS NULL
-            GROUP BY local_date
-            ORDER BY local_date DESC
+            WHERE patient_id = ? AND local_date LIKE ?
+              AND deleted_at IS NULL
           `)
-          .all(patientId) as unknown as Array<{ local_date: string }>
-      ).map((row) => row.local_date);
+          .get(patientId, `${monthPrefix}%`) as unknown as { count: number };
 
-      const monthRow = this.database.connection
-        .prepare(`
-          SELECT COUNT(*) AS count
-          FROM symptom_records
-          WHERE patient_id = ? AND local_date LIKE ?
-            AND deleted_at IS NULL
-        `)
-        .get(patientId, `${monthPrefix}%`) as unknown as { count: number };
+        const lastSymptom = this.latestProjectionRow("symptom_records", patientId);
+        const lastExposure = this.latestDate("exposure_records", patientId);
+        const lastMedication = this.latestDate("medication_records", patientId);
 
-      const lastSymptom = this.latestProjectionRow("symptom_records", patientId);
-      const lastExposure = this.latestDate("exposure_records", patientId);
-      const lastMedication = this.latestDate("medication_records", patientId);
-
-      return {
-        symptomDates,
-        monthRecordCount: monthRow.count,
-        lastTnss: lastSymptom?.tnssTotal ?? null,
-        latestExposureDate: lastExposure,
-        latestMedicationDate: lastMedication
-      };
-    });
+        return {
+          symptomDates,
+          monthRecordCount: monthRow.count,
+          lastTnss: lastSymptom?.tnssTotal ?? null,
+          latestExposureDate: lastExposure,
+          latestMedicationDate: lastMedication
+        };
+      })
+    );
   }
 
   async readMonth(
     patientId: string,
     month: string
   ): Promise<MonthSourceData> {
-    return this.database.readOnly(() => {
-      const symptoms = this.projectionRowsInMonth(
-        "symptom_records",
-        patientId,
-        month
-      );
-      const exposureDates = this.datesInMonth(
-        "exposure_records",
-        patientId,
-        month
-      );
-      const medicationDates = this.datesInMonth(
-        "medication_records",
-        patientId,
-        month
-      );
-      return { symptoms, exposureDates, medicationDates };
-    });
+    return this.guardRead(() =>
+      this.database.readOnly(() => {
+        const symptoms = this.projectionRowsInMonth(
+          "symptom_records",
+          patientId,
+          month
+        );
+        const exposureDates = this.datesInMonth(
+          "exposure_records",
+          patientId,
+          month
+        );
+        const medicationDates = this.datesInMonth(
+          "medication_records",
+          patientId,
+          month
+        );
+        return { symptoms, exposureDates, medicationDates };
+      })
+    );
   }
 
   async readTrend(
@@ -991,11 +1016,29 @@ export class SqliteRecordRepository implements RecordRepository {
     from: string,
     to: string
   ): Promise<TrendSourceData> {
-    return this.database.readOnly(() => {
-      return {
-        items: this.projectionRows("symptom_records", patientId, from, to)
-      };
-    });
+    return this.guardRead(() =>
+      this.database.readOnly(() => {
+        return {
+          items: this.projectionRows("symptom_records", patientId, from, to)
+        };
+      })
+    );
+  }
+
+  /** 读失败统一映射 storage_unavailable（retryable），绝不伪装成空数据。 */
+  private guardRead<T>(operation: () => T): T {
+    try {
+      return operation();
+    } catch (error) {
+      if (error instanceof DomainError) {
+        throw error;
+      }
+      throw new DomainError(
+        "storage_unavailable",
+        "健康记录读取失败，请稍后重试",
+        { retryable: true, cause: error }
+      );
+    }
   }
 
   private runWithIdempotency<T>(options: {

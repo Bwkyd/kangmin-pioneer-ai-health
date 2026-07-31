@@ -287,21 +287,18 @@ export class AdminAuthService {
     if (account.status === "disabled") {
       throw new DomainError("validation_failed", "该管理员已停用");
     }
-    if (
-      account.role === "owner" &&
-      (await this.accounts.countActiveOwners()) <= 1
-    ) {
+    const timestamp = new Date().toISOString();
+    const outcome = await this.accounts.disableAdminIfNotLastOwner(
+      id,
+      timestamp,
+      "admin_disabled"
+    );
+    if (outcome === "last_owner") {
       throw new DomainError(
         "validation_failed",
         "不能停用最后一个活跃的主管理员"
       );
     }
-    const timestamp = new Date().toISOString();
-    const outcome = await this.accounts.disableAndRevokeSessions(
-      id,
-      timestamp,
-      "admin_disabled"
-    );
     if (outcome === "not_found") {
       throw new DomainError("resource_not_found", "管理员不存在");
     }

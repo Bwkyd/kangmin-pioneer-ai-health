@@ -4,6 +4,7 @@ import type {
   AdminAccountRow,
   CreateAdminAccountOutcome
 } from "../modules/admin/admin-account-repository.js";
+import type { AdminRole, AdminStatus } from "../modules/admin/admin-session-repository.js";
 
 interface AccountRow {
   id: string;
@@ -137,6 +138,50 @@ export class SqliteAdminAccountRepository implements AdminAccountRepository {
     reason: string
   ): Promise<"updated" | "not_found"> {
     return this.database.transaction(() => {
+      const result = this.database.connection.prepare(`
+        UPDATE admin_accounts
+        SET status = 'disabled', updated_at = ?, revision = revision + 1
+        WHERE id = ? AND status = 'active'
+      `).run(updatedAt, id);
+      if (result.changes !== 1) {
+        return "not_found";
+      }
+      this.database.connection.prepare(`
+        UPDATE admin_sessions SET revoked_at = ?, revoked_reason = ?
+        WHERE admin_id = ? AND revoked_at IS NULL
+      `).run(updatedAt, reason, id);
+      this.syncDevEnabledFlag(id, 0);
+      return "updated";
+    });
+  }
+
+  /**
+   * 事务内守卫停用（评审 B P2）：count 与 disable 在同一 BEGIN IMMEDIATE
+   * 事务内执行，跨进程并发双双停用最后一个 owner 的击穿路径被关闭。
+   */
+  async disableAdminIfNotLastOwner(
+    id: string,
+    updatedAt: string,
+    reason: string
+  ): Promise<"updated" | "not_found" | "last_owner"> {
+    return this.database.transaction(() => {
+      const account = this.database.connection.prepare(`
+        SELECT role, status FROM admin_accounts WHERE id = ?
+      `).get(id) as unknown as
+        | { role: AdminRole; status: AdminStatus }
+        | undefined;
+      if (account === undefined || account.status !== "active") {
+        return "not_found";
+      }
+      if (account.role === "owner") {
+        const count = this.database.connection.prepare(`
+          SELECT COUNT(*) AS count FROM admin_accounts
+          WHERE role = 'owner' AND status = 'active'
+        `).get() as unknown as { count: number };
+        if (count.count <= 1) {
+          return "last_owner";
+        }
+      }
       const result = this.database.connection.prepare(`
         UPDATE admin_accounts
         SET status = 'disabled', updated_at = ?, revision = revision + 1
