@@ -1,5 +1,8 @@
 import { KangminDatabase } from "./database.js";
-import type { AdminSessionRepository } from "../modules/admin/admin-session-repository.js";
+import type {
+  AdminSessionRepository,
+  AdminSessionWithAccount
+} from "../modules/admin/admin-session-repository.js";
 
 export class SqliteAdminSessionRepository implements AdminSessionRepository {
   constructor(private readonly database: KangminDatabase) {}
@@ -9,9 +12,37 @@ export class SqliteAdminSessionRepository implements AdminSessionRepository {
       SELECT sessions.admin_id, sessions.expires_at
       FROM admin_sessions AS sessions
       JOIN admin_accounts ON admin_accounts.id = sessions.admin_id
-      WHERE sessions.token_hash = ? AND admin_accounts.status = 'active'
+      WHERE sessions.token_hash = ?
+        AND admin_accounts.status = 'active'
+        AND sessions.revoked_at IS NULL
     `).get(tokenHash) as unknown as { admin_id: string; expires_at: string } | undefined;
     return row === undefined ? null : { adminId: row.admin_id, expiresAt: row.expires_at };
+  }
+
+  async findWithAccount(tokenHash: string): Promise<AdminSessionWithAccount | null> {
+    const row = this.database.connection.prepare(`
+      SELECT sessions.admin_id, admin_accounts.role, admin_accounts.username,
+             sessions.expires_at, admin_accounts.status
+      FROM admin_sessions AS sessions
+      JOIN admin_accounts ON admin_accounts.id = sessions.admin_id
+      WHERE sessions.token_hash = ?
+        AND sessions.revoked_at IS NULL
+    `).get(tokenHash) as unknown as {
+      admin_id: string;
+      role: "owner" | "admin";
+      username: string;
+      expires_at: string;
+      status: "active" | "disabled";
+    } | undefined;
+    return row === undefined
+      ? null
+      : {
+          adminId: row.admin_id,
+          role: row.role,
+          username: row.username,
+          expiresAt: row.expires_at,
+          status: row.status
+        };
   }
 
   async save(input: {
@@ -50,5 +81,33 @@ export class SqliteAdminSessionRepository implements AdminSessionRepository {
       `).run(input.tokenHash, adminId, input.expiresAt, input.createdAt);
       return adminId;
     });
+  }
+
+  async createSession(input: {
+    adminId: string; tokenHash: string; expiresAt: string; createdAt: string;
+  }): Promise<void> {
+    this.database.connection.prepare(`
+      INSERT INTO admin_sessions(token_hash, admin_id, expires_at, created_at)
+      VALUES (?, ?, ?, ?)
+    `).run(input.tokenHash, input.adminId, input.expiresAt, input.createdAt);
+  }
+
+  async revoke(tokenHash: string, revokedAt: string, reason: string): Promise<void> {
+    this.database.connection.prepare(`
+      UPDATE admin_sessions SET revoked_at = ?, revoked_reason = ?
+      WHERE token_hash = ?
+    `).run(revokedAt, reason, tokenHash);
+  }
+
+  async revokeAllForAdmin(
+    adminId: string,
+    revokedAt: string,
+    reason: string
+  ): Promise<number> {
+    const result = this.database.connection.prepare(`
+      UPDATE admin_sessions SET revoked_at = ?, revoked_reason = ?
+      WHERE admin_id = ? AND revoked_at IS NULL
+    `).run(revokedAt, reason, adminId);
+    return Number(result.changes);
   }
 }

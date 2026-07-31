@@ -1,60 +1,363 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DomainError } from "../../kernel/errors.js";
-import type { AdminArticle, ContentAdminRepository } from "./content-admin-repository.js";
+import type { ContentAuxRepository } from "./content-aux-repository.js";
+import type {
+  AdminContentItem,
+  ContentAdminRepository,
+  ContentItemKind
+} from "./content-admin-repository.js";
 
-const hash = (value: unknown): string => createHash("sha256").update(JSON.stringify(value)).digest("hex");
+const hash = (value: unknown): string =>
+  createHash("sha256").update(JSON.stringify(value)).digest("hex");
 
+export interface PreviewView extends AdminContentItem {
+  validation: { ok: boolean; missing: string[] };
+  patientVisible: boolean;
+}
+
+type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
+
+export type ContentItemChanges = OptionalOf<
+  Pick<
+    AdminContentItem,
+    | "title"
+    | "category"
+    | "summary"
+    | "body"
+    | "source"
+    | "coverMediaId"
+    | "mediaId"
+    | "instructions"
+    | "precautions"
+    | "disclaimer"
+    | "methodTags"
+    | "displayOrder"
+  >
+>;
+
+export type CreateContentInput = Omit<
+  AdminContentItem,
+  "id" | "kind" | "status" | "revision" | "publishedAt" | "updatedAt"
+> & { idempotencyKey: string };
+
+/** 内部修订指针语义：update 只改当前修订，published_revision 指针不动。 */
 export class ContentAdminService {
-  constructor(private readonly repository: ContentAdminRepository) {}
+  constructor(
+    private readonly repository: ContentAdminRepository,
+    private readonly aux: ContentAuxRepository
+  ) {}
 
-  async create(adminId: string, input: Omit<AdminArticle, "id" | "status" | "revision" | "publishedAt" | "updatedAt"> & { idempotencyKey: string }) {
+  // ==== 文章（#135 兼容，扩展媒体/分类校验） ====
+
+  async create(adminId: string, input: CreateContentInput) {
     const timestamp = new Date().toISOString();
-    const request = { title: input.title, category: input.category, summary: input.summary, body: input.body, source: input.source };
-    const outcome = await this.repository.create(adminId, {
-      id: randomUUID(), ...request, status: "draft", revision: 1,
-      publishedAt: null, updatedAt: timestamp
-    }, input.idempotencyKey, hash(request));
-    if (outcome.kind === "conflict") throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
-    return outcome.article;
+    const request = this.businessFields(input);
+    const item: AdminContentItem = {
+      id: randomUUID(),
+      kind: "article",
+      ...request,
+      status: "draft",
+      revision: 1,
+      publishedAt: null,
+      updatedAt: timestamp
+    };
+    const outcome = await this.repository.create(
+      adminId,
+      item,
+      input.idempotencyKey,
+      hash(request)
+    );
+    if (outcome.kind === "conflict") {
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    return outcome.item;
   }
 
-  list() { return this.repository.list(); }
-  async get(id: string) {
-    const article = await this.repository.find(id);
-    if (article === null) throw new DomainError("resource_not_found", "文章不存在");
-    return article;
+  async list(status?: "draft" | "published" | "unpublished") {
+    return this.repository.list("article", status);
   }
 
-  async update(id: string, expectedRevision: number, changes: Partial<Pick<AdminArticle, "title" | "category" | "summary" | "body" | "source">>) {
-    const current = await this.get(id);
-    if (Object.keys(changes).length === 0) throw new DomainError("validation_failed", "至少提供一个需要更新的字段");
-    return this.commit({ ...current, ...changes, revision: current.revision + 1, updatedAt: new Date().toISOString() }, expectedRevision);
+  async get(id: string): Promise<AdminContentItem> {
+    const item = await this.repository.find("article", id);
+    if (item === null) {
+      throw new DomainError("resource_not_found", "文章不存在");
+    }
+    return item;
   }
 
-  async publish(id: string, expectedRevision: number) {
-    const current = await this.get(id);
+  async preview(id: string): Promise<PreviewView> {
+    return this.previewOf("article", id);
+  }
+
+  async update(
+    id: string,
+    expectedRevision: number,
+    changes: ContentItemChanges
+  ): Promise<AdminContentItem> {
+    return this.updateItem("article", id, expectedRevision, changes);
+  }
+
+  async publish(id: string, expectedRevision: number): Promise<AdminContentItem> {
+    return this.publishItem("article", id, expectedRevision);
+  }
+
+  async unpublish(id: string, expectedRevision: number): Promise<AdminContentItem> {
+    return this.unpublishItem("article", id, expectedRevision);
+  }
+
+  // ==== 视频 ====
+
+  async createVideo(adminId: string, input: CreateContentInput) {
+    const timestamp = new Date().toISOString();
+    const request = this.businessFields(input);
+    const item: AdminContentItem = {
+      id: randomUUID(),
+      kind: "video",
+      ...request,
+      status: "draft",
+      revision: 1,
+      publishedAt: null,
+      updatedAt: timestamp
+    };
+    const outcome = await this.repository.create(
+      adminId,
+      item,
+      input.idempotencyKey,
+      hash(request)
+    );
+    if (outcome.kind === "conflict") {
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    return outcome.item;
+  }
+
+  async listVideos(status?: "draft" | "published" | "unpublished") {
+    return this.repository.list("video", status);
+  }
+
+  async getVideo(id: string): Promise<AdminContentItem> {
+    const item = await this.repository.find("video", id);
+    if (item === null) {
+      throw new DomainError("resource_not_found", "视频不存在");
+    }
+    return item;
+  }
+
+  async previewVideo(id: string): Promise<PreviewView> {
+    return this.previewOf("video", id);
+  }
+
+  async updateVideo(
+    id: string,
+    expectedRevision: number,
+    changes: ContentItemChanges
+  ): Promise<AdminContentItem> {
+    return this.updateItem("video", id, expectedRevision, changes);
+  }
+
+  async publishVideo(
+    id: string,
+    expectedRevision: number
+  ): Promise<AdminContentItem> {
+    return this.publishItem("video", id, expectedRevision);
+  }
+
+  async unpublishVideo(
+    id: string,
+    expectedRevision: number
+  ): Promise<AdminContentItem> {
+    return this.unpublishItem("video", id, expectedRevision);
+  }
+
+  // ==== 内部 ====
+
+  private businessFields(input: CreateContentInput) {
+    return {
+      title: input.title,
+      category: input.category,
+      summary: input.summary,
+      body: input.body,
+      source: input.source,
+      coverMediaId: input.coverMediaId,
+      mediaId: input.mediaId,
+      instructions: input.instructions,
+      precautions: input.precautions,
+      disclaimer: input.disclaimer,
+      methodTags: [...input.methodTags],
+      displayOrder: input.displayOrder
+    };
+  }
+
+  private async previewOf(
+    kind: ContentItemKind,
+    id: string
+  ): Promise<PreviewView> {
+    const item =
+      kind === "article" ? await this.get(id) : await this.getVideo(id);
+    const missing = await this.validateForPublish(item);
+    return {
+      ...item,
+      validation: { ok: missing.length === 0, missing },
+      patientVisible: item.status === "published"
+    };
+  }
+
+  private async updateItem(
+    kind: ContentItemKind,
+    id: string,
+    expectedRevision: number,
+    changes: ContentItemChanges
+  ): Promise<AdminContentItem> {
+    const current =
+      kind === "article" ? await this.get(id) : await this.getVideo(id);
+    if (Object.keys(changes).length === 0) {
+      throw new DomainError("validation_failed", "至少提供一个需要更新的字段");
+    }
+    // 显式 undefined 表示未提供（继承当前值），不能覆盖现有字段。
+    const provided: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(changes)) {
+      if (value !== undefined) {
+        provided[key] = value;
+      }
+    }
+    return this.commitItem(
+      {
+        ...current,
+        ...(provided as Partial<AdminContentItem>),
+        revision: current.revision + 1,
+        updatedAt: new Date().toISOString()
+      },
+      expectedRevision
+    );
+  }
+
+  private async publishItem(
+    kind: ContentItemKind,
+    id: string,
+    expectedRevision: number
+  ): Promise<AdminContentItem> {
+    const current =
+      kind === "article" ? await this.get(id) : await this.getVideo(id);
     if (current.status === "published") {
-      throw new DomainError("validation_failed", "文章已经发布");
+      throw new DomainError("validation_failed", "内容已经发布");
     }
-    for (const [field, value] of Object.entries({ title: current.title, category: current.category, summary: current.summary, body: current.body, source: current.source })) {
-      if (value.trim() === "") throw new DomainError("validation_failed", `发布前 ${field} 不能为空`);
+    const missing = await this.validateForPublish(current);
+    if (missing.length > 0) {
+      throw new DomainError(
+        "validation_failed",
+        `发布前校验未通过：${missing.join("、")}`
+      );
     }
     const timestamp = new Date().toISOString();
-    return this.commit({ ...current, status: "published", revision: current.revision + 1, publishedAt: timestamp, updatedAt: timestamp }, expectedRevision);
+    return this.commitItem(
+      {
+        ...current,
+        status: "published",
+        revision: current.revision + 1,
+        publishedAt: timestamp,
+        updatedAt: timestamp
+      },
+      expectedRevision
+    );
   }
 
-  async unpublish(id: string, expectedRevision: number) {
-    const current = await this.get(id);
+  private async unpublishItem(
+    kind: ContentItemKind,
+    id: string,
+    expectedRevision: number
+  ): Promise<AdminContentItem> {
+    const current =
+      kind === "article" ? await this.get(id) : await this.getVideo(id);
     if (current.status !== "published") {
-      throw new DomainError("validation_failed", "只有已发布文章可以下架");
+      throw new DomainError("validation_failed", "只有已发布内容可以下架");
     }
-    return this.commit({ ...current, status: "unpublished", revision: current.revision + 1, updatedAt: new Date().toISOString() }, expectedRevision);
+    return this.commitItem(
+      {
+        ...current,
+        status: "unpublished",
+        revision: current.revision + 1,
+        updatedAt: new Date().toISOString()
+      },
+      expectedRevision
+    );
   }
 
-  private async commit(article: AdminArticle, expectedRevision: number) {
-    const outcome = await this.repository.update(article, expectedRevision);
-    if (outcome.kind === "not_found") throw new DomainError("resource_not_found", "文章不存在");
-    if (outcome.kind === "version_conflict") throw new DomainError("version_conflict", "文章已更新，请重新读取", { details: { expectedRevision, currentRevision: outcome.currentRevision } });
-    return outcome.article;
+  /**
+   * 发布前程序校验：标题/分类/摘要/来源非空、文章或公告正文非空、
+   * 视频必须引用可用视频素材、封面素材可用、分类有效（存在时不得停用
+   * 或类型不符）、不引用已停用媒体。
+   */
+  private async validateForPublish(item: AdminContentItem): Promise<string[]> {
+    const missing: string[] = [];
+    for (const [field, value] of Object.entries({
+      标题: item.title,
+      分类: item.category,
+      摘要: item.summary,
+      来源: item.source
+    })) {
+      if (value.trim() === "") {
+        missing.push(field);
+      }
+    }
+    if (item.body.trim() === "") {
+      missing.push("正文");
+    }
+    if (item.kind === "video" && item.mediaId === null) {
+      missing.push("视频文件");
+    }
+
+    if (item.category.trim() !== "") {
+      const category = await this.aux.findCategoryByName(item.category);
+      if (category !== null) {
+        if (category.status !== "active") {
+          missing.push("分类已停用");
+        } else if (
+          category.kind !== "general" &&
+          category.kind !== item.kind
+        ) {
+          missing.push("分类类型不符");
+        }
+      }
+    }
+
+    for (const mediaId of [item.coverMediaId, item.mediaId]) {
+      if (mediaId === null) {
+        continue;
+      }
+      const media = await this.aux.findMedia(mediaId);
+      if (media === null) {
+        missing.push("引用的素材不存在");
+      } else if (media.status !== "ready") {
+        missing.push(
+          media.status === "disabled" ? "引用的素材已停用" : "引用的素材未就绪"
+        );
+      } else if (
+        item.kind === "video" &&
+        media.id === item.mediaId &&
+        media.kind !== "video"
+      ) {
+        missing.push("视频文件类型不符");
+      }
+    }
+    return missing;
+  }
+
+  private async commitItem(
+    item: AdminContentItem,
+    expectedRevision: number
+  ): Promise<AdminContentItem> {
+    const outcome = await this.repository.update(item, expectedRevision);
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "内容不存在");
+    }
+    if (outcome.kind === "version_conflict") {
+      throw new DomainError("version_conflict", "内容已更新，请重新读取", {
+        details: {
+          expectedRevision,
+          currentRevision: outcome.currentRevision
+        }
+      });
+    }
+    return outcome.item;
   }
 }

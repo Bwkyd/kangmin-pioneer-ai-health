@@ -263,6 +263,157 @@ const MIGRATIONS: Migration[] = [
         connection.exec("ALTER TABLE content_items ADD COLUMN created_by TEXT");
       }
     }
+  },
+  {
+    version: "0005_admin_console",
+    apply: (connection) => {
+      connection.exec(`
+        -- 管理端（w5）新增：内容分类、素材库、站内公告、知识库、调理方案、
+        -- 模型设置与模拟测试用例。content_items（文章/视频）继续作为
+        -- 患者 browse 的读取来源，这里只补充管理端写入所需的结构。
+        CREATE TABLE IF NOT EXISTS content_categories (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL UNIQUE,
+          kind TEXT NOT NULL CHECK(kind IN ('article', 'video', 'message', 'general')),
+          description TEXT,
+          display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0),
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS content_categories_kind_order
+        ON content_categories(kind, display_order, name);
+
+        CREATE TABLE IF NOT EXISTS content_resource_media (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('image', 'video', 'word', 'pdf', 'markdown')),
+          filename TEXT NOT NULL,
+          stored_path TEXT NOT NULL,
+          size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+          mime_type TEXT,
+          sha256 TEXT,
+          status TEXT NOT NULL DEFAULT 'processing'
+            CHECK(status IN ('processing', 'ready', 'failed', 'disabled')),
+          failure_reason TEXT,
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS content_resource_media_created
+        ON content_resource_media(created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS content_messages (
+          id TEXT PRIMARY KEY,
+          title TEXT NOT NULL,
+          body TEXT NOT NULL,
+          summary TEXT,
+          category_id TEXT REFERENCES content_categories(id),
+          status TEXT NOT NULL CHECK(status IN ('draft', 'published', 'unpublished')),
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          published_at TEXT,
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS content_messages_status_created
+        ON content_messages(status, created_at DESC);
+
+        CREATE TABLE IF NOT EXISTS agent_knowledge_items (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          source TEXT,
+          description TEXT,
+          source_media_id TEXT REFERENCES content_resource_media(id),
+          size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+          mime_type TEXT,
+          sha256 TEXT,
+          status TEXT NOT NULL CHECK(status IN ('draft', 'processing', 'indexed', 'enabled', 'disabled', 'index_failed')),
+          parse_error TEXT,
+          chunk_count INTEGER NOT NULL DEFAULT 0 CHECK(chunk_count >= 0),
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS agent_knowledge_items_status
+        ON agent_knowledge_items(status);
+
+        CREATE TABLE IF NOT EXISTS agent_knowledge_chunks (
+          knowledge_id TEXT NOT NULL REFERENCES agent_knowledge_items(id) ON DELETE CASCADE,
+          chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+          chunk_text TEXT NOT NULL,
+          PRIMARY KEY(knowledge_id, chunk_index)
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS agent_plans (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          syndrome TEXT NOT NULL,
+          method TEXT NOT NULL,
+          steps_json TEXT NOT NULL,
+          precautions TEXT NOT NULL,
+          risks TEXT NOT NULL,
+          contraindications TEXT NOT NULL,
+          applicable_age TEXT,
+          video_resource_id TEXT REFERENCES content_items(id),
+          display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0),
+          status TEXT NOT NULL CHECK(status IN ('draft', 'enabled', 'disabled')),
+          revision INTEGER NOT NULL CHECK(revision >= 1),
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS agent_plans_syndrome_status
+        ON agent_plans(syndrome, status);
+
+        CREATE TABLE IF NOT EXISTS agent_model_config (
+          id INTEGER PRIMARY KEY CHECK(id = 1),
+          provider TEXT NOT NULL DEFAULT 'openai-compatible',
+          model_name TEXT NOT NULL DEFAULT '',
+          timeout_seconds INTEGER NOT NULL DEFAULT 30 CHECK(timeout_seconds BETWEEN 1 AND 300),
+          max_output_tokens INTEGER NOT NULL DEFAULT 1024 CHECK(max_output_tokens BETWEEN 128 AND 32768),
+          knowledge_retrieval_enabled INTEGER NOT NULL DEFAULT 0 CHECK(knowledge_retrieval_enabled IN (0, 1)),
+          retrieval_count INTEGER NOT NULL DEFAULT 3 CHECK(retrieval_count BETWEEN 1 AND 20),
+          explanation_enabled INTEGER NOT NULL DEFAULT 1 CHECK(explanation_enabled IN (0, 1)),
+          api_key TEXT,
+          updated_by TEXT,
+          updated_at TEXT,
+          last_test_status TEXT,
+          last_test_at TEXT
+        ) STRICT;
+
+        CREATE TABLE IF NOT EXISTS agent_test_cases (
+          id TEXT PRIMARY KEY,
+          input_text TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('completed', 'failed')),
+          result_json TEXT NOT NULL,
+          created_by TEXT,
+          created_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS agent_test_cases_created
+        ON agent_test_cases(created_at DESC);
+      `);
+      // content_items 的视频/媒体字段：媒体引用列带 FK，旧库缺列时无损补齐。
+      const contentColumns = connection.prepare("PRAGMA table_info(content_items)").all() as unknown as Array<{ name: string }>;
+      const addColumn = (name: string, definition: string): void => {
+        if (!contentColumns.some((column) => column.name === name)) {
+          connection.exec(`ALTER TABLE content_items ADD COLUMN ${definition}`);
+        }
+      };
+      addColumn("media_id", "media_id TEXT REFERENCES content_resource_media(id)");
+      addColumn("cover_media_id", "cover_media_id TEXT REFERENCES content_resource_media(id)");
+      addColumn("instructions", "instructions TEXT");
+      addColumn("precautions", "precautions TEXT");
+      addColumn("disclaimer", "disclaimer TEXT");
+      addColumn("method_tags", "method_tags TEXT");
+      addColumn("display_order", "display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0)");
+    }
   }
 ];
 

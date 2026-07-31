@@ -1,22 +1,44 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { DomainError } from "../../kernel/errors.js";
-import type { AdminSessionRepository } from "./admin-session-repository.js";
+import type {
+  AdminRole,
+  AdminSessionRepository
+} from "./admin-session-repository.js";
 
 const hash = (value: string): string =>
   createHash("sha256").update(value, "utf8").digest("hex");
+
+export interface AdminIdentity {
+  adminId: string;
+  role: AdminRole;
+  username: string;
+}
 
 export class AdminSessionService {
   constructor(private readonly repository: AdminSessionRepository) {}
 
   async resolve(token: string | undefined): Promise<string> {
+    const identity = await this.resolveIdentity(token);
+    return identity.adminId;
+  }
+
+  /** 解析服务端可信管理员身份（角色/用户名），供权限判断与展示。 */
+  async resolveIdentity(token: string | undefined): Promise<AdminIdentity> {
     if (token === undefined || token.trim() === "") {
       throw new DomainError("authentication_required", "需要管理员登录会话");
     }
-    const session = await this.repository.find(hash(token));
+    const session = await this.repository.findWithAccount(hash(token));
     if (session === null || Date.parse(session.expiresAt) <= Date.now()) {
       throw new DomainError("authentication_required", "管理员会话无效或已过期");
     }
-    return session.adminId;
+    if (session.status !== "active") {
+      throw new DomainError("authentication_required", "管理员账号已停用");
+    }
+    return {
+      adminId: session.adminId,
+      role: session.role,
+      username: session.username
+    };
   }
 
   async createDevelopmentSession(subject: string) {
