@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 import {
@@ -8,11 +8,20 @@ import {
 } from "../app/application.js";
 import { createApplication } from "../app/composition-root.js";
 import {
+  type KangminAdminApplication
+} from "../app/admin-application.js";
+import { createAdminApplication } from "../app/admin-composition-root.js";
+import {
   DomainError,
   exitCodeForCode,
   httpStatusForCode
 } from "../kernel/errors.js";
 import { failure, success } from "../kernel/result.js";
+import {
+  COMMAND_PROTOCOL_VERSION,
+  COMMAND_SCHEMA_VERSION,
+  type CommandServiceMeta
+} from "../kernel/protocol.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
 const SESSION_COOKIE = "kangmin_session";
@@ -23,6 +32,8 @@ export interface HttpServerOptions {
   appEnvironment?: AppEnvironment;
   allowDevelopmentSession?: boolean;
   webRoot?: URL;
+  adminApplication?: KangminAdminApplication | undefined;
+  serviceVersion?: string | undefined;
 }
 
 async function readJson(request: IncomingMessage): Promise<unknown> {
@@ -88,6 +99,13 @@ function sessionToken(request: IncomingMessage): string | undefined {
     return authorization.slice("Bearer ".length);
   }
   return cookie(request, SESSION_COOKIE);
+}
+
+function bearerToken(request: IncomingMessage): string | undefined {
+  const authorization = request.headers.authorization;
+  return authorization?.startsWith("Bearer ")
+    ? authorization.slice("Bearer ".length)
+    : undefined;
 }
 
 function json(
@@ -160,12 +178,24 @@ export function createKangminHttpServer(
     (environment === "local" || environment === "integration");
   const webRoot =
     options.webRoot ?? new URL("../web/", import.meta.url);
+  const serviceMeta: CommandServiceMeta = {
+    service: "kangmin-command-service",
+    serviceVersion: options.serviceVersion ?? "0.1.0",
+    protocolVersion: COMMAND_PROTOCOL_VERSION,
+    schemaVersion: COMMAND_SCHEMA_VERSION,
+    audiences: ["patient", "admin"]
+  };
 
   return createServer(async (request, response) => {
     const requestUrl = new URL(
       request.url ?? "/",
       "http://127.0.0.1"
     );
+
+    if (request.method === "GET" && requestUrl.pathname === "/v1/meta") {
+      json(response, 200, serviceMeta);
+      return;
+    }
 
     if (request.method === "GET" && requestUrl.pathname === "/health") {
       json(response, 200, { ok: true, status: "ready" });
@@ -246,10 +276,11 @@ export function createKangminHttpServer(
       return;
     }
 
-    if (
-      request.method !== "POST" ||
-      requestUrl.pathname !== "/v1/commands"
-    ) {
+    const patientCommandRoute =
+      requestUrl.pathname === "/v1/commands" ||
+      requestUrl.pathname === "/v1/patient/commands";
+    const adminCommandRoute = requestUrl.pathname === "/v1/admin/commands";
+    if (request.method !== "POST" || (!patientCommandRoute && !adminCommandRoute)) {
       routeNotFound(response);
       return;
     }
@@ -262,9 +293,19 @@ export function createKangminHttpServer(
           "请求必须包含 command 字符串"
         );
       }
+      const versionedCommandRoute = requestUrl.pathname !== "/v1/commands";
       if (
-        body.input !== undefined &&
-        !isRecord(body.input)
+        versionedCommandRoute &&
+        body.schemaVersion !== COMMAND_SCHEMA_VERSION
+      ) {
+        throw new DomainError(
+          "protocol_incompatible",
+          `命令 schemaVersion 必须是 ${COMMAND_SCHEMA_VERSION}`
+        );
+      }
+      if (
+        (versionedCommandRoute && !isRecord(body.input)) ||
+        (body.input !== undefined && !isRecord(body.input))
       ) {
         throw new DomainError(
           "command_invalid",
@@ -272,12 +313,13 @@ export function createKangminHttpServer(
         );
       }
       if (
-        body.requestId !== undefined &&
-        (
-          typeof body.requestId !== "string" ||
-          body.requestId.trim() === "" ||
-          body.requestId.length > 120
-        )
+        (versionedCommandRoute && body.requestId === undefined) ||
+        (body.requestId !== undefined &&
+          (
+            typeof body.requestId !== "string" ||
+            body.requestId.trim() === "" ||
+            body.requestId.length > 120
+          ))
       ) {
         throw new DomainError(
           "command_invalid",
@@ -285,15 +327,27 @@ export function createKangminHttpServer(
         );
       }
 
-      const result = await application.execute({
-        command: body.command,
-        input: body.input ?? {},
-        sessionToken: sessionToken(request),
-        requestId:
-          typeof body.requestId === "string"
-            ? body.requestId
-            : undefined
-      });
+      const requestId =
+        typeof body.requestId === "string" ? body.requestId : undefined;
+      const result = adminCommandRoute
+        ? options.adminApplication === undefined
+          ? failure(
+              body.command,
+              new DomainError("capability_unavailable", "管理命令服务未配置"),
+              requestId
+            )
+          : await options.adminApplication.execute({
+              command: body.command,
+              input: body.input ?? {},
+              adminToken: bearerToken(request),
+              requestId
+            })
+        : await application.execute({
+            command: body.command,
+            input: body.input ?? {},
+            sessionToken: sessionToken(request),
+            requestId
+          });
       json(
         response,
         result.ok ? 200 : httpStatusForCode(result.error.code),
@@ -320,9 +374,17 @@ async function main(): Promise<void> {
     process.env.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
   );
   let application;
+  let adminApplication;
   try {
     application = createApplication(databasePath);
+    adminApplication = createAdminApplication(databasePath, {
+      mediaDirectory: resolve(
+        process.env.KANGMIN_ADMIN_MEDIA_DIR ??
+          join(dirname(databasePath), "admin-media")
+      )
+    });
   } catch (error) {
+    application?.close();
     // 启动前置条件缺失（如生产缺加密密钥的 config_missing）走友好
     // 消息 + 对应退出码，不抛未捕获堆栈；非领域错误原样透传。
     if (error instanceof DomainError) {
@@ -335,7 +397,8 @@ async function main(): Promise<void> {
   const server = createKangminHttpServer(application, {
     appEnvironment: appEnvironment(process.env.KANGMIN_APP_ENV),
     allowDevelopmentSession:
-      process.env.KANGMIN_ALLOW_DEV_SESSION === "1"
+      process.env.KANGMIN_ALLOW_DEV_SESSION === "1",
+    adminApplication
   });
   const port = Number(process.env.PORT ?? "8787");
 
@@ -351,6 +414,7 @@ async function main(): Promise<void> {
   const shutdown = (): void => {
     server.close(() => {
       application.close();
+      adminApplication.close();
     });
   };
   process.on("SIGINT", shutdown);

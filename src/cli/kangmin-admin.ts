@@ -4,6 +4,10 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:
 import { dirname, join, resolve } from "node:path";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
+import {
+  createRemoteCommandClient,
+  remoteCommandBaseUrl
+} from "../app/remote-command-composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
 import { failure, type CommandResult } from "../kernel/result.js";
 
@@ -53,6 +57,7 @@ auth 命令：
 身份：
   管理员令牌经 KANGMIN_ADMIN_TOKEN 环境变量传入（与患者 KANGMIN_SESSION_TOKEN 分离）。
   auth login 成功后令牌写入本地凭据文件（仅当前用户可读，0600）。
+  凭据绑定签发环境（本地库或服务地址），不会跨环境复用。
   密码与模型 API Key 不进入命令行参数或历史：
   --api-key 是标志，密钥值从 stdin 读取（TTY 隐藏回显，管道读首行；
   空输入表示本次不修改密钥）。
@@ -410,6 +415,53 @@ interface Credentials {
   token: string;
   username: string;
   expiresAt: string;
+  /**
+   * 签发该令牌的服务地址（远程模式）；本地模式为空。
+   * 令牌只在其签发环境下使用，避免把本地或 A 环境的令牌发给 B 服务。
+   */
+  baseUrl?: string | undefined;
+}
+
+interface AdminCommandExecutor {
+  execute(input: {
+    command: string;
+    input?: Record<string, unknown> | undefined;
+    requestId?: string | undefined;
+  }): Promise<CommandResult>;
+  close(): void;
+}
+
+function createAdminExecutor(
+  environment: NodeJS.ProcessEnv,
+  databasePath: string,
+  mediaDirectory: string,
+  token: string | undefined
+): AdminCommandExecutor {
+  const baseUrl = remoteCommandBaseUrl(environment);
+  if (baseUrl !== undefined) {
+    const client = createRemoteCommandClient(environment, "admin", token);
+    return {
+      execute: (input) => client.execute(input),
+      close: () => {}
+    };
+  }
+  if (
+    environment.KANGMIN_APP_ENV === "staging" ||
+    environment.KANGMIN_APP_ENV === "production"
+  ) {
+    throw new DomainError(
+      "config_missing",
+      "staging/production CLI 必须配置 KANGMIN_API_BASE_URL，禁止回退本地数据库"
+    );
+  }
+  const application = createAdminApplication(databasePath, { mediaDirectory });
+  return {
+    execute: (input) => application.execute({
+      ...input,
+      adminToken: token
+    }),
+    close: () => application.close()
+  };
 }
 
 function credentialsPath(databasePath: string): string {
@@ -427,7 +479,14 @@ function readCredentials(databasePath: string): Credentials | null {
       typeof parsed.username === "string" &&
       typeof parsed.expiresAt === "string"
     ) {
-      return { token: parsed.token, username: parsed.username, expiresAt: parsed.expiresAt };
+      return {
+        token: parsed.token,
+        username: parsed.username,
+        expiresAt: parsed.expiresAt,
+        baseUrl: typeof parsed.baseUrl === "string" && parsed.baseUrl !== ""
+          ? parsed.baseUrl
+          : undefined
+      };
     }
     return null;
   } catch {
@@ -573,9 +632,24 @@ export async function runAdminCli(
       join(dirname(databasePath), "admin-media")
   );
 
-  let application;
+  const baseUrl = remoteCommandBaseUrl(environment);
+  // 凭据文件中的令牌只在其签发环境下使用：远程模式要求凭据记录的
+  // baseUrl 与当前服务地址精确一致；本地模式只接受本地签发的凭据。
+  // 环境变量 KANGMIN_ADMIN_TOKEN 由调用方显式提供，不受此限制。
+  const stored = readCredentials(databasePath);
+  const storedMatchesEnvironment =
+    stored !== null && (stored.baseUrl ?? "") === (baseUrl ?? "");
+  const token =
+    environment.KANGMIN_ADMIN_TOKEN ??
+    (storedMatchesEnvironment ? stored.token : undefined);
+  let executor: AdminCommandExecutor;
   try {
-    application = createAdminApplication(databasePath, { mediaDirectory });
+    executor = createAdminExecutor(
+      environment,
+      databasePath,
+      mediaDirectory,
+      token
+    );
   } catch (error) {
     const result = failure("system bootstrap", error);
     if (parsed.json) {
@@ -606,12 +680,9 @@ export async function runAdminCli(
       }
     }
 
-    const token =
-      environment.KANGMIN_ADMIN_TOKEN ?? readCredentials(databasePath)?.token;
-    const result = await application.execute({
+    const result = await executor.execute({
       command: parsed.command,
-      input,
-      adminToken: token
+      input
     });
 
     if (result.ok && parsed.command === "auth login") {
@@ -619,7 +690,8 @@ export async function runAdminCli(
       writeCredentials(databasePath, {
         token: data.token,
         username: data.username,
-        expiresAt: data.expiresAt
+        expiresAt: data.expiresAt,
+        baseUrl
       });
       // 令牌绝不进入任何输出。
       delete (result.data as Record<string, unknown>).token;
@@ -642,7 +714,7 @@ export async function runAdminCli(
     }
     return result.ok ? 0 : exitCodeForCode(result.error.code);
   } finally {
-    application.close();
+    executor.close();
   }
 }
 

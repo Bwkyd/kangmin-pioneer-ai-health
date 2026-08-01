@@ -38,6 +38,8 @@ export type ErrorCode =
   | "provider_timeout"
   | "location_unavailable"
   | "projection_pending"
+  | "protocol_incompatible"
+  | "service_unavailable"
   | "batch_partial_failure"
   | "internal_error";
 
@@ -63,6 +65,8 @@ const EXIT_CODES: Record<ErrorCode, number> = {
   provider_timeout: 6,
   location_unavailable: 6,
   projection_pending: 6,
+  protocol_incompatible: 5,
+  service_unavailable: 6,
   batch_partial_failure: 10,
   internal_error: 1
 };
@@ -89,6 +93,8 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   provider_timeout: 503,
   location_unavailable: 503,
   projection_pending: 202,
+  protocol_incompatible: 426,
+  service_unavailable: 503,
   batch_partial_failure: 409,
   internal_error: 500
 };

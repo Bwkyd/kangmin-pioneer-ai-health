@@ -6,6 +6,10 @@ import { resolve } from "node:path";
 import { createInterface as createPasswordInterface } from "node:readline";
 
 import { createApplication, runPatientDoctor } from "../app/composition-root.js";
+import {
+  createRemoteCommandClient,
+  remoteCommandBaseUrl
+} from "../app/remote-command-composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
 import { failure, success, type CommandResult } from "../kernel/result.js";
 
@@ -235,6 +239,52 @@ interface ParsedCommand {
   help: boolean;
   /** 裸 kangmin 无参数且非 --json：启动交互式对话骨架。 */
   interactive?: boolean;
+}
+
+interface PatientCommandExecutor {
+  execute(input: {
+    command: string;
+    input?: Record<string, unknown> | undefined;
+    requestId?: string | undefined;
+  }): Promise<CommandResult>;
+  close(): void;
+}
+
+function createPatientExecutor(
+  environment: NodeJS.ProcessEnv
+): PatientCommandExecutor {
+  const baseUrl = remoteCommandBaseUrl(environment);
+  if (baseUrl !== undefined) {
+    const client = createRemoteCommandClient(
+      environment,
+      "patient",
+      environment.KANGMIN_SESSION_TOKEN
+    );
+    return {
+      execute: (input) => client.execute(input),
+      close: () => {}
+    };
+  }
+  if (
+    environment.KANGMIN_APP_ENV === "staging" ||
+    environment.KANGMIN_APP_ENV === "production"
+  ) {
+    throw new DomainError(
+      "config_missing",
+      "staging/production CLI 必须配置 KANGMIN_API_BASE_URL，禁止回退本地数据库"
+    );
+  }
+  const databasePath = resolve(
+    environment.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
+  );
+  const application = createApplication(databasePath);
+  return {
+    execute: (input) => application.execute({
+      ...input,
+      sessionToken: environment.KANGMIN_SESSION_TOKEN
+    }),
+    close: () => application.close()
+  };
 }
 
 function parseOptions(
@@ -772,8 +822,7 @@ async function readPassword(): Promise<string | undefined> {
 
 /** 交互式对话骨架：裸 kangmin 进入，逐行一问一答。 */
 async function runInteractive(
-  application: ReturnType<typeof createApplication>,
-  environment: NodeJS.ProcessEnv
+  executor: PatientCommandExecutor
 ): Promise<number> {
   const output = process.stdout;
   output.write("抗敏先锋鼻健康助手（体验版）\n");
@@ -797,10 +846,9 @@ async function runInteractive(
       if (trimmed === "退出" || trimmed === "exit" || trimmed === "quit") {
         break;
       }
-      const result = await application.execute({
+      const result = await executor.execute({
         command: "agent exec",
-        input: { message: trimmed, conversationId },
-        sessionToken: environment.KANGMIN_SESSION_TOKEN
+        input: { message: trimmed, conversationId }
       });
       if (!result.ok) {
         output.write(`${result.error.code}: ${result.error.message}\n`);
@@ -822,10 +870,9 @@ async function runInteractive(
       if (data.saveConfirmationRequired === true) {
         const answer = await readline.question("是否保存本次对话并绑定到您的账号？(y/n) > ");
         if (answer.trim().toLowerCase() === "y" || answer.trim().toLowerCase() === "yes") {
-          await application.execute({
+          await executor.execute({
             command: "agent exec",
-            input: { message: "", conversationId, saveConsent: true },
-            sessionToken: environment.KANGMIN_SESSION_TOKEN
+            input: { message: "", conversationId, saveConsent: true }
           });
           output.write("本次对话已保存并绑定。\n");
         }
@@ -881,6 +928,37 @@ export async function runCli(
   // doctor 不依赖应用实例：即使加密密钥缺失（createApplication 会抛
   // config_missing）也要输出结构化检查报告，而不是整体启动失败。
   if (parsed.command === "doctor") {
+    const baseUrl = remoteCommandBaseUrl(environment);
+    if (baseUrl !== undefined) {
+      let executor: PatientCommandExecutor;
+      try {
+        executor = createPatientExecutor(environment);
+      } catch (error) {
+        const result = failure("system bootstrap", error);
+        if (parsed.json) {
+          process.stdout.write(`${JSON.stringify(result)}\n`);
+        } else {
+          process.stderr.write(`${result.error.code}: ${result.error.message}\n`);
+        }
+        return exitCodeForCode(result.error.code);
+      }
+      try {
+        const result = await executor.execute({ command: "doctor" });
+        if (parsed.json) {
+          process.stdout.write(`${JSON.stringify(result)}\n`);
+        } else if (result.ok) {
+          process.stdout.write(`${human(result)}\n`);
+        } else {
+          process.stderr.write(`${human(result)}\n`);
+        }
+        if (!result.ok) {
+          return exitCodeForCode(result.error.code);
+        }
+        return (result.data as { healthy: boolean }).healthy ? 0 : 6;
+      } finally {
+        executor.close();
+      }
+    }
     const databasePath = resolve(
       environment.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
     );
@@ -898,21 +976,18 @@ export async function runCli(
   // createApplication 与主路径一致在 try/catch 内：生产缺密钥时以
   // config_missing 干净退出（exit 5），不打印堆栈（外部评审 P1-11）。
   if (parsed.interactive === true && !parsed.json && process.stdin.isTTY === true) {
-    const databasePath = resolve(
-      environment.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
-    );
-    let interactiveApp;
+    let executor: PatientCommandExecutor;
     try {
-      interactiveApp = createApplication(databasePath);
+      executor = createPatientExecutor(environment);
     } catch (error) {
       const result = failure("system bootstrap", error);
       process.stderr.write(`${result.error.code}: ${result.error.message}\n`);
       return exitCodeForCode(result.error.code);
     }
     try {
-      return await runInteractive(interactiveApp, environment);
+      return await runInteractive(executor);
     } finally {
-      interactiveApp.close();
+      executor.close();
     }
   }
 
@@ -938,13 +1013,9 @@ export async function runCli(
     }
   }
 
-  const databasePath = resolve(
-    environment.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
-  );
-
-  let application;
+  let executor: PatientCommandExecutor;
   try {
-    application = createApplication(databasePath);
+    executor = createPatientExecutor(environment);
   } catch (error) {
     const result = failure("system bootstrap", error);
     if (parsed.json) {
@@ -956,10 +1027,9 @@ export async function runCli(
   }
 
   try {
-    const result = await application.execute({
+    const result = await executor.execute({
       command: parsed.command,
-      input: parsed.input,
-      sessionToken: environment.KANGMIN_SESSION_TOKEN
+      input: parsed.input
     });
     if (parsed.command === "account login" && result.ok) {
       const data = result.data as { token?: unknown };
@@ -988,7 +1058,7 @@ export async function runCli(
     }
     return result.ok ? 0 : exitCodeForCode(result.error.code);
   } finally {
-    application.close();
+    executor.close();
   }
 }
 
