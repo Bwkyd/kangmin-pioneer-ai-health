@@ -1,30 +1,326 @@
 import { KangminDatabase } from "./database.js";
-import type { AdminArticle, ContentAdminRepository } from "../modules/admin/content-admin-repository.js";
+import { runIdempotentCreate } from "./idempotency.js";
+import type {
+  AdminContentItem,
+  ContentAdminRepository,
+  ContentItemKind,
+  ContentItemStatus,
+  CreateContentItemOutcome,
+  PublishGuardState,
+  PublishMediaState,
+  UpdateContentItemResult,
+  UpdateGuardedResult
+} from "../modules/admin/content-admin-repository.js";
 
-interface Row { id: string; title: string; category: string; summary: string; body: string; source: string; status: AdminArticle["status"]; revision: number; published_at: string | null; updated_at: string; }
-const map = (row: Row): AdminArticle => ({ ...row, publishedAt: row.published_at, updatedAt: row.updated_at });
+interface Row {
+  id: string;
+  kind: ContentItemKind;
+  title: string;
+  category: string;
+  summary: string;
+  body: string;
+  source: string;
+  status: ContentItemStatus;
+  revision: number;
+  published_at: string | null;
+  updated_at: string;
+  cover_media_id: string | null;
+  media_id: string | null;
+  instructions: string | null;
+  precautions: string | null;
+  disclaimer: string | null;
+  method_tags: string | null;
+  display_order: number;
+}
+
+const COLUMNS = `
+  id, kind, title, category, summary, body, source, status, revision,
+  published_at, updated_at, cover_media_id, media_id,
+  instructions, precautions, disclaimer, method_tags, display_order
+`;
+
+function map(row: Row): AdminContentItem {
+  return {
+    id: row.id,
+    kind: row.kind,
+    title: row.title,
+    category: row.category,
+    summary: row.summary,
+    body: row.body,
+    source: row.source,
+    status: row.status,
+    revision: row.revision,
+    publishedAt: row.published_at,
+    updatedAt: row.updated_at,
+    coverMediaId: row.cover_media_id,
+    mediaId: row.media_id,
+    instructions: row.instructions ?? "",
+    precautions: row.precautions ?? "",
+    disclaimer: row.disclaimer ?? "",
+    methodTags:
+      row.method_tags === null || row.method_tags === ""
+        ? []
+        : (JSON.parse(row.method_tags) as string[]),
+    displayOrder: row.display_order
+  };
+}
+
+function methodTagsJson(tags: readonly string[]): string {
+  return JSON.stringify(tags);
+}
 
 export class SqliteContentAdminRepository implements ContentAdminRepository {
   constructor(private readonly database: KangminDatabase) {}
-  async create(adminId: string, article: AdminArticle, key: string, requestHash: string) {
+
+  async create(
+    adminId: string,
+    item: AdminContentItem,
+    key: string,
+    requestHash: string
+  ): Promise<CreateContentItemOutcome | { kind: "conflict" }> {
     return this.database.transaction(() => {
-      const replay = this.database.connection.prepare("SELECT request_hash, result_json FROM admin_idempotency WHERE admin_id=? AND scope='content.article.create' AND idempotency_key=?").get(adminId, key) as unknown as { request_hash: string; result_json: string } | undefined;
-      if (replay !== undefined) return replay.request_hash === requestHash ? { kind: "replayed" as const, article: JSON.parse(replay.result_json) as AdminArticle } : { kind: "conflict" as const };
-      this.database.connection.prepare(`INSERT INTO content_items(id,kind,title,category,summary,body,source,cover_url,media_url,status,patient_visible,version_valid,media_available,published_at,updated_at,revision,created_by) VALUES (?,'article',?,?,?,?,?,NULL,NULL,'draft',0,1,1,NULL,?,1,?)`).run(article.id, article.title, article.category, article.summary, article.body, article.source, article.updatedAt, adminId);
-      this.database.connection.prepare("INSERT INTO admin_idempotency(admin_id,scope,idempotency_key,request_hash,result_json,created_at) VALUES (?,'content.article.create',?,?,?,?)").run(adminId, key, requestHash, JSON.stringify(article), article.updatedAt);
-      return { kind: "created" as const, article };
+      const scope = this.scopeOf(item.kind);
+      // 幂等归一（评审 A P1-4 收缩版）：查重/重放/冲突/写入语义与患者侧
+      // 共用 runIdempotentCreate（表名与主键列参数化，物理表不合并）。
+      // 重放前校验目标仍存在：已删除的内容同键重放返回 stale_replay，
+      // 不返回幻影记录（评审 B P2，与患者侧语义一致）。
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "admin_idempotency",
+        actorColumn: "admin_id",
+        scopeColumn: "scope",
+        keyColumn: "idempotency_key",
+        actorId: adminId,
+        scope,
+        key,
+        requestHash,
+        resultJson: JSON.stringify(item),
+        createdAt: item.updatedAt,
+        verifyExists: (json) =>
+          this.database.connection.prepare(
+            "SELECT id FROM content_items WHERE id = ?"
+          ).get((JSON.parse(json) as AdminContentItem).id) !== undefined,
+        insert: () => {
+          this.database.connection.prepare(`
+            INSERT INTO content_items(
+              id, kind, title, category, summary, body, source,
+              cover_url, media_url, status, patient_visible, version_valid,
+              media_available, published_at, updated_at, revision, created_by,
+              cover_media_id, media_id, instructions, precautions, disclaimer,
+              method_tags, display_order
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, NULL, NULL, 'draft', 0, 1, 1, NULL, ?, 1, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            item.id,
+            item.kind,
+            item.title,
+            item.category,
+            item.summary,
+            item.body,
+            item.source,
+            item.updatedAt,
+            adminId,
+            item.coverMediaId,
+            item.mediaId,
+            item.instructions,
+            item.precautions,
+            item.disclaimer,
+            methodTagsJson(item.methodTags),
+            item.displayOrder
+          );
+        }
+      });
+      switch (outcome.kind) {
+        case "created":
+          return { kind: "created" as const, item };
+        case "idempotency_conflict":
+          return { kind: "conflict" as const };
+        case "stale_replay":
+          return { kind: "stale_replay" as const };
+        case "replayed":
+          // 重放返回存储的原内容（原始 id），与患者侧语义一致。
+          return {
+            kind: "replayed" as const,
+            item: JSON.parse(outcome.resultJson) as AdminContentItem
+          };
+        case "date_conflict":
+          // 管理端未启用 uniqueConflictAsDateConflict，结构上不可达；
+          // 归入冲突，不向调用方泄露内部状态。
+          return { kind: "conflict" as const };
+      }
     });
   }
-  async list() { return (this.database.connection.prepare("SELECT id,title,category,summary,body,source,status,revision,published_at,updated_at FROM content_items WHERE kind='article' ORDER BY updated_at DESC").all() as unknown as Row[]).map(map); }
-  async find(id: string) { const row = this.database.connection.prepare("SELECT id,title,category,summary,body,source,status,revision,published_at,updated_at FROM content_items WHERE kind='article' AND id=?").get(id) as unknown as Row | undefined; return row === undefined ? null : map(row); }
-  async update(article: AdminArticle, expectedRevision: number) {
+
+  async list(
+    kind: ContentItemKind,
+    status?: ContentItemStatus
+  ): Promise<AdminContentItem[]> {
+    const rows = this.database.connection.prepare(`
+      SELECT ${COLUMNS} FROM content_items
+      WHERE kind = ? ${status === undefined ? "" : "AND status = ?"}
+      ORDER BY updated_at DESC, id ASC
+    `).all(...(status === undefined ? [kind] : [kind, status])) as unknown as Row[];
+    return rows.map(map);
+  }
+
+  async find(
+    kind: ContentItemKind,
+    id: string
+  ): Promise<AdminContentItem | null> {
+    const row = this.database.connection.prepare(`
+      SELECT ${COLUMNS} FROM content_items WHERE kind = ? AND id = ?
+    `).get(kind, id) as unknown as Row | undefined;
+    return row === undefined ? null : map(row);
+  }
+
+  async update(
+    item: AdminContentItem,
+    expectedRevision: number
+  ): Promise<UpdateContentItemResult> {
     return this.database.transaction(() => {
-      const current = this.database.connection.prepare("SELECT revision FROM content_items WHERE kind='article' AND id=?").get(article.id) as unknown as { revision: number } | undefined;
-      if (current === undefined) return { kind: "not_found" as const };
-      if (current.revision !== expectedRevision) return { kind: "version_conflict" as const, currentRevision: current.revision };
-      const result = this.database.connection.prepare(`UPDATE content_items SET title=?,category=?,summary=?,body=?,source=?,status=?,patient_visible=?,published_at=?,updated_at=?,revision=? WHERE id=? AND kind='article' AND revision=?`).run(article.title,article.category,article.summary,article.body,article.source,article.status,article.status === "published" ? 1 : 0,article.publishedAt,article.updatedAt,article.revision,article.id,expectedRevision);
-      if (result.changes !== 1) return { kind: "version_conflict" as const, currentRevision: current.revision };
-      return { kind: "updated" as const, article };
+      const current = this.database.connection.prepare(
+        "SELECT revision FROM content_items WHERE kind = ? AND id = ?"
+      ).get(item.kind, item.id) as unknown as { revision: number } | undefined;
+      if (current === undefined) {
+        return { kind: "not_found" as const };
+      }
+      if (current.revision !== expectedRevision) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      const result = this.database.connection.prepare(`
+        UPDATE content_items SET
+          title = ?, category = ?, summary = ?, body = ?, source = ?,
+          status = ?, patient_visible = ?, published_at = ?, updated_at = ?,
+          revision = ?, cover_media_id = ?, media_id = ?,
+          instructions = ?, precautions = ?, disclaimer = ?,
+          method_tags = ?, display_order = ?,
+          cover_url = (SELECT stored_path FROM content_resource_media WHERE id = cover_media_id),
+          media_url = (SELECT stored_path FROM content_resource_media WHERE id = media_id)
+        WHERE id = ? AND kind = ? AND revision = ?
+      `).run(
+        item.title,
+        item.category,
+        item.summary,
+        item.body,
+        item.source,
+        item.status,
+        item.status === "published" ? 1 : 0,
+        item.publishedAt,
+        item.updatedAt,
+        item.revision,
+        item.coverMediaId,
+        item.mediaId,
+        item.instructions,
+        item.precautions,
+        item.disclaimer,
+        methodTagsJson(item.methodTags),
+        item.displayOrder,
+        item.id,
+        item.kind,
+        expectedRevision
+      );
+      if (result.changes !== 1) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      return { kind: "updated" as const, item };
     });
+  }
+
+  /**
+   * 发布专用更新（外部评审 P1-2）：依赖校验与状态更新在同一事务内。
+   * BEGIN IMMEDIATE 持有写锁期间，并发停用分类/素材/删除都不可能越过
+   * 事务提交生效，消除"校验后到提交间依赖被并发停用"的竞态窗口。
+   */
+  async updateGuarded(
+    item: AdminContentItem,
+    expectedRevision: number,
+    guard: (state: PublishGuardState) => string[]
+  ): Promise<UpdateGuardedResult> {
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT revision FROM content_items WHERE kind = ? AND id = ?"
+      ).get(item.kind, item.id) as unknown as { revision: number } | undefined;
+      if (current === undefined) {
+        return { kind: "not_found" as const };
+      }
+      if (current.revision !== expectedRevision) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      const missing = guard(this.publishGuardStateOf(item));
+      if (missing.length > 0) {
+        return { kind: "validation_failed" as const, missing };
+      }
+      const result = this.database.connection.prepare(`
+        UPDATE content_items SET
+          title = ?, category = ?, summary = ?, body = ?, source = ?,
+          status = ?, patient_visible = ?, published_at = ?, updated_at = ?,
+          revision = ?, cover_media_id = ?, media_id = ?,
+          instructions = ?, precautions = ?, disclaimer = ?,
+          method_tags = ?, display_order = ?,
+          cover_url = (SELECT stored_path FROM content_resource_media WHERE id = cover_media_id),
+          media_url = (SELECT stored_path FROM content_resource_media WHERE id = media_id)
+        WHERE id = ? AND kind = ? AND revision = ?
+      `).run(
+        item.title,
+        item.category,
+        item.summary,
+        item.body,
+        item.source,
+        item.status,
+        item.status === "published" ? 1 : 0,
+        item.publishedAt,
+        item.updatedAt,
+        item.revision,
+        item.coverMediaId,
+        item.mediaId,
+        item.instructions,
+        item.precautions,
+        item.disclaimer,
+        methodTagsJson(item.methodTags),
+        item.displayOrder,
+        item.id,
+        item.kind,
+        expectedRevision
+      );
+      if (result.changes !== 1) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      return { kind: "updated" as const, item };
+    });
+  }
+
+  /** 事务内读取发布依赖状态（分类/封面/视频素材），与提交同连接同锁。 */
+  private publishGuardStateOf(item: AdminContentItem): PublishGuardState {
+    const categoryRow =
+      item.category.trim() === ""
+        ? undefined
+        : (this.database.connection.prepare(
+            "SELECT status, kind FROM content_categories WHERE name = ?"
+          ).get(item.category) as unknown as
+            | { status: "active" | "disabled"; kind: string }
+            | undefined);
+    const mediaState = (mediaId: string | null): PublishMediaState | null => {
+      if (mediaId === null) {
+        return null;
+      }
+      const row = this.database.connection.prepare(
+        "SELECT status, kind FROM content_resource_media WHERE id = ?"
+      ).get(mediaId) as unknown as
+        | { status: string; kind: string }
+        | undefined;
+      return row === undefined
+        ? { found: false }
+        : { found: true, status: row.status, kind: row.kind };
+    };
+    return {
+      category: categoryRow ?? null,
+      coverMedia: mediaState(item.coverMediaId),
+      media: mediaState(item.mediaId)
+    };
+  }
+
+  private scopeOf(kind: ContentItemKind): string {
+    // 兼容 #135 的既有幂等作用域：文章保持 content.article.create。
+    return kind === "article"
+      ? "content.article.create"
+      : `content.${kind}.create`;
   }
 }

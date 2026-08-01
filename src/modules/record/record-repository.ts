@@ -11,6 +11,8 @@ export interface CreateSymptomRecordInput {
   idempotencyKey: string;
   requestHash: string;
   record: SymptomRecord;
+  /** 命令级请求 ID，写入 patient_record_versions.request_id。 */
+  requestId: string;
 }
 
 export type CreateSymptomRecordOutcome =
@@ -31,6 +33,8 @@ export interface UpdateSymptomRecordInput {
   tnssTotal: number;
   notes: string | null;
   updatedAt: string;
+  /** 命令级请求 ID，写入 patient_record_versions.request_id。 */
+  requestId: string;
 }
 
 export type UpdateSymptomRecordOutcome =
@@ -54,6 +58,8 @@ export interface UpdateProfileRecordInput {
   commonTriggers: string | null;
   notes: string | null;
   updatedAt: string;
+  /** 命令级请求 ID，写入 patient_record_versions.request_id。 */
+  requestId: string;
 }
 
 export type UpdateProfileRecordOutcome =
@@ -66,6 +72,8 @@ export interface CreateExposureRecordInput {
   idempotencyKey: string;
   requestHash: string;
   record: ExposureRecord;
+  /** 命令级请求 ID，写入 patient_record_versions.request_id。 */
+  requestId: string;
 }
 
 export type CreateExposureRecordOutcome =
@@ -83,6 +91,8 @@ export interface UpdateExposureRecordInput {
   otherDescription: string | null;
   notes: string | null;
   updatedAt: string;
+  /** 命令级请求 ID，写入 patient_record_versions.request_id。 */
+  requestId: string;
 }
 
 export type UpdateExposureRecordOutcome =
@@ -95,6 +105,8 @@ export interface CreateMedicationRecordInput {
   idempotencyKey: string;
   requestHash: string;
   record: MedicationRecord;
+  /** 命令级请求 ID，写入 patient_record_versions.request_id。 */
+  requestId: string;
 }
 
 export type CreateMedicationRecordOutcome =
@@ -112,6 +124,8 @@ export interface UpdateMedicationRecordInput {
   actualUse: string | null;
   notes: string | null;
   updatedAt: string;
+  /** 命令级请求 ID，写入 patient_record_versions.request_id。 */
+  requestId: string;
 }
 
 export type UpdateMedicationRecordOutcome =
@@ -157,7 +171,8 @@ export interface RecordRepository {
   deleteSymptom(
     patientId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId: string
   ): Promise<DeleteRecordOutcome>;
 
   getProfile(patientId: string): Promise<HealthProfile | null>;
@@ -176,7 +191,8 @@ export interface RecordRepository {
   deleteExposure(
     patientId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId: string
   ): Promise<DeleteRecordOutcome>;
 
   createMedication(
@@ -193,7 +209,8 @@ export interface RecordRepository {
   deleteMedication(
     patientId: string,
     id: string,
-    expectedRevision: number
+    expectedRevision: number,
+    requestId: string
   ): Promise<DeleteRecordOutcome>;
 
   readOverview(patientId: string, monthPrefix: string): Promise<OverviewSourceData>;

@@ -7,7 +7,11 @@ import {
   type KangminApplication
 } from "../app/application.js";
 import { createApplication } from "../app/composition-root.js";
-import { DomainError, httpStatusForCode } from "../kernel/errors.js";
+import {
+  DomainError,
+  exitCodeForCode,
+  httpStatusForCode
+} from "../kernel/errors.js";
 import { failure, success } from "../kernel/result.js";
 
 const MAX_BODY_BYTES = 64 * 1024;
@@ -315,7 +319,19 @@ async function main(): Promise<void> {
   const databasePath = resolve(
     process.env.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
   );
-  const application = createApplication(databasePath);
+  let application;
+  try {
+    application = createApplication(databasePath);
+  } catch (error) {
+    // 启动前置条件缺失（如生产缺加密密钥的 config_missing）走友好
+    // 消息 + 对应退出码，不抛未捕获堆栈；非领域错误原样透传。
+    if (error instanceof DomainError) {
+      process.stderr.write(`${error.code}: ${error.message}\n`);
+      process.exitCode = exitCodeForCode(error.code);
+      return;
+    }
+    throw error;
+  }
   const server = createKangminHttpServer(application, {
     appEnvironment: appEnvironment(process.env.KANGMIN_APP_ENV),
     allowDevelopmentSession:

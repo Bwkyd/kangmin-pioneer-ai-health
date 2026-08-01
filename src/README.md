@@ -1,140 +1,387 @@
-# 抗敏先锋 CLI-first 新实现
+# 抗敏先锋 CLI-first 新实现（交付文档）
 
-这里是与 `legacy/` 隔离的新应用核心。Patient Record 已形成完整
-命令组，Agent 已建立确定性安全会话的首个纵向闭环。当前仍不能
-宣称完整产品、生产身份、D1 数据层或正式医疗闭环已经完成。
+与 `legacy/` 隔离的新应用核心，通过两个 CLI 交付：患者端 `kangmin`
+与 管理端 `kangmin-admin`。本地 SQLite 生产化（版本化迁移账本、加密、
+幂等与版本控制、审计、fail-closed 密钥语义），当前为 CLI 阶段交付，
+浏览器薄壳（legacy 样式前端）为后续任务。
 
-## 当前能力
+## 产品概述
 
-患者公开命令固定为四组：
-
-```text
-agent / record / browse / account
-```
-
-本 MVP 真实实现：
+### kangmin（患者 CLI，四组命令）
 
 ```text
-agent start
-agent continue
-agent resume
-agent sessions list/show
-record symptom add/list/show/update/delete
-record profile show/update
-record exposure add/list/show/update/delete
-record medication add/list/show/update/delete
-record overview/calendar/trend
-browse
-browse article list|categories|search|show
-browse video list|categories|search|show
+agent    确定性安全会话（结构化问答）+ 自由对话管线
+record   管理自己的健康记录（症状/TNSS、档案、暴露、用药）
+browse   浏览环境与已发布内容（文章、视频、通用方案、环境快照）
+account  管理账号、授权和设置（注册/登录/同意/隐私）
 ```
 
-Agent 当前仅实现安全会话基础：三态回答、`unknown` fail closed、
-决策凭证、Record 只读快照、患者隔离与 SQLite 恢复。当前没有获批的
-临床规则或方案，因此不输出证型、穴位、疗程或调理方案。
+辅助命令：`--version`、`doctor`（数据库/存储/密钥配置检查）、
+`completion zsh`。
 
-患者浏览器薄壳使用相同的 Record Application Service，支持：
+### kangmin-admin（管理 CLI，四组命令）
 
-- 新增、读取和修改症状/TNSS；
-- HttpOnly 开发会话；
-- 页面刷新和服务重启恢复；
-- 版本冲突提示和重新读取；
-- 移动端记录信息层级与中央“＋”入口。
+```text
+content  管理文章、视频、素材和公告（编辑、预览、发布、下架）
+agent    管理知识库、调理方案、模型和模拟测试
+users    只读查看患者用户、会话和健康记录（脱敏）
+auth     登录并管理普通管理员账号
+```
 
-Browse 无需患者登录，仅读取同时满足已发布、患者可见、当前版本有效和
-媒体可用门禁的文章/视频。列表、分类、搜索和详情共用服务端门禁；
-已下架或不可见内容不能通过 ID 绕过。
+辅助命令：`help`、`doctor`、`--version`、`completion zsh`。
 
-`account` 会明确返回 `capability_unavailable`，不会用 Mock 结果伪装为业务成功。
-
-## 本地运行
+## 快速开始
 
 需要 Node.js 22.13 或更新版本。
 
 ```bash
 cd "/Users/chenqiqiang/work/抗敏先锋AI鼻健康管理系统/src"
 npm ci
-npm run check
+npm run check        # typecheck + 架构门禁 + 142 单元测试 + 浏览器 e2e
 ```
 
-### 本地管理文章
+`npm run check` 全绿后，`dist/cli/kangmin.js` 与 `dist/cli/kangmin-admin.js`
+即为可执行入口（也可 `npm link` 后用 `kangmin` / `kangmin-admin` 直跑）。
 
-`kangmin-admin` 与患者 CLI 使用不同的会话和环境变量。当前只允许在
-local/integration 环境建立开发管理员会话：
+### 密钥配置（fail-closed 语义）
+
+| 环境变量 | 说明 |
+| --- | --- |
+| `KANGMIN_ENCRYPTION_KEYS` | AES-256-GCM 密钥链 `"v1:<base64>,v2:<base64>"`，首个为当前版本；配置后健康正文加密落库 |
+| `KANGMIN_APP_ENV` | `local` / `integration` / `staging` / `production`，默认 `production` |
+| `KANGMIN_ALLOW_DEV_SESSION` | 开发降级开关（`1` 启用），显式 `staging`/`production` 时失效 |
+| `KANGMIN_DB_PATH` | 数据库文件路径，默认 `src/.local/kangmin-mvp.sqlite` |
+| `KANGMIN_SESSION_TOKEN` | 患者会话令牌（CLI 不接收 `patient_id`/`user_id`） |
+| `KANGMIN_ADMIN_TOKEN` | 管理员令牌（与患者令牌分离；登录后也可写入本地凭据文件） |
+| `KANGMIN_DEEPSEEK_API_KEY` | 模型 API 密钥；未配置时自由对话降级为结构化问答 |
+| `KANGMIN_ENV_PROVIDER_MODE` | 测试替身故障模式 `fixed`/`unavailable`/`timeout`（仅测试） |
+| `KANGMIN_ADMIN_MEDIA_DIR` | 管理端素材目录，默认与数据库同目录的 `admin-media` |
+
+加密策略（组合根强制，测试锁定）：
+
+1. 配置了 `KANGMIN_ENCRYPTION_KEYS` → AES-256-GCM，健康正文加密落库；
+2. 未配置密钥，且 `KANGMIN_APP_ENV` 为 `local`/`integration`，或显式
+   `KANGMIN_ALLOW_DEV_SESSION=1`（且非 `staging`/`production`）→
+   明文开发降级（`plaintext-dev` 版本，生产语义下读取会被拒绝）；
+3. 其余任何环境（含默认）→ 启动失败 `config_missing`（退出码 5），
+   绝不在缺少密钥时明文启动。检测到旧明文数据但无密钥时同样拒绝启动。
+
+### 建立本地开发会话
+
+患者会话：
+
+```bash
+KANGMIN_ALLOW_DEV_SESSION=1 npm run dev:session -- --subject patient-a
+# 输出 sessionToken；放入环境变量，不要写入命令参数、仓库或日志
+export KANGMIN_SESSION_TOKEN="<opaque token>"
+```
+
+管理会话：
 
 ```bash
 KANGMIN_APP_ENV=local \
 KANGMIN_ALLOW_DEV_ADMIN_SESSION=1 \
 npm run dev:admin-session -- --subject owner-a
-
+# 或正式引导：auth admins add --role owner（密码从 stdin）+ auth login
 export KANGMIN_ADMIN_TOKEN="<opaque admin token>"
-node dist/cli/kangmin-admin.js content article create \
-  --title "换季鼻健康" \
-  --category "鼻健康" \
-  --summary "科普摘要" \
-  --body "已审核科普正文" \
-  --source "已审核来源" \
-  --idempotency-key article-demo-1 \
-  --json
 ```
 
-文章创建后是草稿。发布/下架必须提供当前 revision 和 `--yes`；发布后
-患者 Browse 立即可见，下架后列表、搜索和详情立即不可见。
+开发会话不是生产认证。生产模式即使设置开关也拒绝创建开发会话。
 
-开发管理员会话不是生产认证。生产模式即使设置开关也拒绝创建开发管理员会话。
+## 命令手册
 
-建立仅限本地开发的测试会话：
+### kangmin（患者）
 
-```bash
-KANGMIN_ALLOW_DEV_SESSION=1 npm run dev:session -- --subject patient-a
+```text
+kangmin                         启动交互式对话（体验版，匿名可用）
+kangmin agent                   确定性安全会话（结构化问答，需登录）
+kangmin record                  管理自己的健康记录
+kangmin browse                  浏览环境与已发布内容
+kangmin account                 管理账号、授权和设置
+
+辅助命令：
+  kangmin --version
+  kangmin doctor
+  kangmin completion zsh
 ```
 
-将返回的 `sessionToken` 放入环境变量，不要写入命令参数、仓库或日志：
+record 命令：
 
-```bash
-export KANGMIN_SESSION_TOKEN="<opaque token>"
-node dist/cli/kangmin.js record symptom add \
-  --local-date 2026-07-31 \
-  --nasal-congestion 2 \
-  --nasal-itching 1 \
-  --sneezing 3 \
-  --runny-nose 2 \
-  --idempotency-key demo-20260731 \
-  --json
+```text
+record symptom add|list|show|update|delete
+record profile show|update
+record exposure add|list|show|update|delete
+record medication add|list|show|update|delete
+record overview
+record calendar --month YYYY-MM
+record trend --from YYYY-MM-DD --to YYYY-MM-DD
 ```
 
-默认数据库为 `src/.local/kangmin-mvp.sqlite`。可使用
-`KANGMIN_DB_PATH` 指向隔离的测试 SQLite 文件。
+browse 命令：
 
-启动仅限本地的患者浏览器薄壳：
-
-```bash
-KANGMIN_APP_ENV=local \
-KANGMIN_ALLOW_DEV_SESSION=1 \
-npm run start:http
+```text
+browse
+browse article list [--limit N] [--offset N]
+browse article categories
+browse article search <query>
+browse article show <id>
+browse video list [--limit N] [--offset N]
+browse video categories
+browse video search <query>
+browse video show <id>
+browse plan list
+browse plan show <id>
+browse search <query>
+browse environment current [--city X]
+browse environment forecast [--days N]
+browse environment refresh [--city X]
 ```
 
-然后访问 `http://127.0.0.1:8787/`。患者页面先尝试使用已有 HttpOnly
-会话；只有未登录且服务端明确允许 local/integration 开发会话时，才创建
-本地测试会话。
+列表分页（article list / video list）：默认 limit 20、上限 100，超出上限被
+截断而非报错；结果含 limit/offset 字段，便于翻页。
 
-默认 `KANGMIN_APP_ENV` 是 `production`。即使误设
-`KANGMIN_ALLOW_DEV_SESSION=1`，生产模式也不会开放 `/dev/session`。
+agent 命令（两条管线，路由按输入区分）：
+
+```text
+agent start                      确定性安全会话（结构化问答，需登录）
+agent start --message <文本>     自由对话管线（匿名可用，登录后确认可保存）
+agent exec <文本> [--conversation <id>] [--save-consent]
+                                 非交互自由对话（--json 机器集成）
+agent conversations list         自由对话会话列表
+agent conversations show <id>    自由对话会话详情
+agent continue <session-id> --expected-revision <n> --question urgentHelp --answer yes|no|unknown
+agent resume <session-id>        恢复确定性安全会话
+agent sessions list|show         确定性安全会话列表/详情
+agent feedback <id> --rating helpful|unhelpful [--reason <文本>]
+agent test run --answer <field>=<state> 模拟链路（只验证不修改）
+```
+
+account 命令：
+
+```text
+account register --username <用户名> [--nickname <昵称>]
+account login --username <用户名>
+account status
+account logout
+account profile show
+account profile update [--nickname <昵称>] --expected-revision <n>
+account consent show
+account consent update --type privacy|medical_boundary
+    --decision granted|withdrawn --policy-version <版本> --request-id <ID>
+account privacy
+account data export|deletion-request|request-status|deactivate
+    （本版本明确未实现）
+account reminder|notification
+    （本版本明确未实现）
+```
+
+### kangmin-admin（管理）
+
+```text
+kangmin-admin <命令组> <子命令> [选项]
+
+辅助命令：
+  kangmin-admin help
+  kangmin-admin doctor
+  kangmin-admin --version
+  kangmin-admin completion zsh
+```
+
+content 命令：
+
+```text
+content article  list|show|create|update|preview|publish|unpublish
+content video    list|show|create|update|preview|publish|unpublish
+content media    list|show|upload <file>|disable|delete
+content category list|show|create|update|disable
+content message  list|show|create|update|publish|unpublish
+```
+
+agent 命令：
+
+```text
+agent status
+agent knowledge list|show|add <file>|index|enable|disable|search-test <query>
+agent plan      list|show|create|update|preview|enable|disable|mappings
+agent model     show|update|test
+agent test      run|case <case-id>
+```
+
+users 命令：
+
+```text
+users list|show|sessions|records|activity
+```
+
+auth 命令：
+
+```text
+auth login --username <u>      密码从 stdin 读取（隐藏输入）
+auth status|whoami             当前登录状态与身份
+auth admins list|add|enable|disable
+auth logout                    撤销当前会话
+```
+
+发布/下架/删除/停用/启用等高影响操作需要 `--yes` 显式确认。
+
+## JSON 契约
+
+两个 CLI 加 `--json` 后 stdout 只输出一个 JSON 对象。所有响应共享
+`receipt`（操作凭证）与 `meta`（schema 版本/请求关联）字段。
+
+成功响应：
+
+```json
+{
+  "ok": true,
+  "command": "record symptom add",
+  "status": "completed",
+  "data": {
+    "id": "4c1d4f9a-...",
+    "localDate": "2026-07-31",
+    "nasalCongestion": 2,
+    "nasalItching": 1,
+    "sneezing": 3,
+    "runnyNose": 2,
+    "tnssTotal": 8,
+    "revision": 1
+  },
+  "receipt": {
+    "operationId": "c3a1f0b0-...",
+    "requestId": "a2e0d7c5-..."
+  },
+  "meta": {
+    "schemaVersion": "1",
+    "requestId": "a2e0d7c5-...",
+    "timestamp": "2026-07-31T10:00:00.000Z"
+  }
+}
+```
+
+失败响应：
+
+```json
+{
+  "ok": false,
+  "command": "record symptom add",
+  "status": "failed",
+  "error": {
+    "code": "version_conflict",
+    "message": "记录已被其他操作更新，请刷新后重试",
+    "retryable": true
+  },
+  "receipt": {
+    "operationId": "c3a1f0b0-...",
+    "requestId": "a2e0d7c5-..."
+  },
+  "meta": {
+    "schemaVersion": "1",
+    "requestId": "a2e0d7c5-...",
+    "timestamp": "2026-07-31T10:00:00.000Z"
+  }
+}
+```
+
+`doctor` 的 `data` 为 `{ "checks": [{ "name", "status", "message" }], "healthy" }`，
+healthy 时退出码 0，否则 6。
+
+### 退出码表（0–10 全表）
+
+| 退出码 | 语义 | 错误码 |
+| --- | --- | --- |
+| 0 | 成功 | — |
+| 1 | 内部错误 | `internal_error` |
+| 2 | 命令/输入错误 | `command_invalid`、`invalid_json`、`payload_too_large` |
+| 3 | 资源不存在 | `resource_not_found` |
+| 4 | 状态/版本/幂等冲突 | `version_conflict`、`date_conflict`、`idempotency_conflict`、`stale_replay` |
+| 5 | 前置条件缺失（同意/确认/必填配置/正式内容） | `confirmation_required`、`config_missing`、`more_information_required` |
+| 6 | 外部数据源未配置或不可用 | `capability_unavailable`、`storage_unavailable`、`provider_unavailable`、`provider_timeout`、`location_unavailable`、`projection_pending` |
+| 7 | 输入校验失败 | `validation_failed` |
+| 8 | 安全规则阻断 | `safety_blocked` |
+| 9 | 未登录或权限不足 | `authentication_required`、`permission_denied` |
+| 10 | 批量操作部分失败 | `batch_partial_failure` |
+
+错误响应中的 `error.retryable` 表示该错误是否可安全重试（如存储瞬时占用为
+true，版本冲突/校验失败为 false）。
+
+### 错误码清单
+
+患者端与管理端共享同一套错误码（见 `src/kernel/errors.ts`），共 23 个：
+
+```text
+command_invalid / invalid_json / payload_too_large
+resource_not_found
+version_conflict / date_conflict / idempotency_conflict / stale_replay
+confirmation_required / config_missing / more_information_required
+capability_unavailable / storage_unavailable
+provider_unavailable / provider_timeout / location_unavailable / projection_pending
+validation_failed / safety_blocked
+authentication_required / permission_denied
+batch_partial_failure / internal_error
+```
 
 ## 安全边界
 
-- Record 命令不接受 `patient_id` 或 `user_id`，身份从不透明会话解析。
-- TNSS 总分由四项 0–3 分在服务端计算。
-- 创建要求幂等键；更新要求 `expectedRevision`。
-- 每位患者每天只保留一条症状/TNSS 记录。
-- 当前开发会话适配器不是生产身份认证。
-- Agent 只通过 Record Application Service 的只读投影获取快照，不直接读写 Record repository。
-- Agent 的 `unknown` 不当作安全；安全无法确认时终止后续流程。
-- 未获批的临床内容不会进入 Agent 输出。
-- 浏览器不能读取 HttpOnly 会话令牌，也不能提交权威患者 ID 或 TNSS 总分。
-- 患者可浏览不代表 Agent 可检索；本 Browse 投影不接入 Agent 知识库。
-- 当前未实现管理员内容导入、审核、发布或媒体上传；无已发布数据时返回真实空列表。
-- Record 和 Session 应用服务只依赖端口；SQLite 是当前本地适配器，不是
-  已完成的 D1 生产适配器。
-- 当前没有获批的临床规则、证型、方案、知识库或模型调用。
-- 新代码不得导入 `legacy/` 业务模块。
+- **密码不进 argv**：register/login（患者）与 auth login/admins add（管理）
+  的密码从 stdin 读取，交互终端隐藏回显；密码不会出现在命令行参数、历史
+  或日志中，非交互未提供时明确失败且不阻塞等待。
+- **身份服务端解析**：CLI 不接受 `patient_id`/`user_id`/`admin_id`/`role`；
+  患者身份从 `KANGMIN_SESSION_TOKEN`、管理员身份从 `KANGMIN_ADMIN_TOKEN`
+  或本地凭据文件解析。客户端提交身份字段返回 `permission_denied`。
+- **健康正文加密**：症状、档案、暴露、用药正文经 AES-256-GCM 加密落库
+  （库内不存明文）；无密钥且非开发环境时启动失败（fail-closed）。
+- **输出不含敏感信息**：患者 `account login` 的 human 模式（无 `--json`）
+  把会话令牌只写入 stderr（stdout 显示固定提示，不含令牌）；
+  `--json` 模式保留 `data.token` 供机器集成读取后写入
+  `KANGMIN_SESSION_TOKEN`（脚本勿把该输出落日志）；管理端 `auth login`
+  成功后令牌写入 0600 凭据文件并从响应中删除；users 只读投影对手机号
+  等标识脱敏（保留前 3 后 4），绝不返回完整手机号或用户名；健康正文
+  只经加密落库，不进日志与脱敏视图。
+- **临床红线**：临床规则包为 candidate，正式患者输出在临床冻结前硬阻断
+  （Agent 不输出证型、穴位、疗程或调理方案）；`unknown`、冲突、无命中
+  和信息不足不会被猜测补齐。
+- **读取失败与空数据区分**：存储/模型不可用映射为 `storage_unavailable` /
+  `provider_unavailable`（retryable 语义），绝不伪装成空数据。
+
+## 数据库
+
+- 单文件 SQLite（默认 `src/.local/kangmin-mvp.sqlite`），WAL 模式、
+  外键开启、busy 重试。
+- 版本化迁移账本 `schema_migrations`，当前 12 个迁移：
+
+```text
+0001_patient_record_baseline      患者、会话、症状/TNSS、幂等、档案
+0002_system_ledger                系统表（版本凭证/审计事件）
+0003_identity                     患者账号表
+0004_origin_main_tables           内容/管理员/幂等/agent 会话原始表
+0005_record_encryption_soft_delete 健康记录加密化 + 软删除
+0006_account_sessions_and_consents 本地账号会话与同意记录
+0007_browse_environment_plans     浏览内容/环境缓存/方案
+0008_agent_conversations          自由对话会话与轮次
+0009_admin_console                管理控制台表（文章/视频/素材/分类/知识/方案/模型）
+0010_admin_sessions_upgrade       管理员会话表升级
+0011_admin_idempotency_fk         管理员幂等表外键归位
+0012_admin_sessions_fk            旧库管理员会话外键改指 admin_accounts
+```
+
+- **升级路径**：旧库打开时自动按序执行未应用迁移（IF NOT EXISTS 无损
+  升级）；加密类迁移对旧明文数据做加密回填，检测到待回填明文但无密钥时
+  抛 `config_missing`，绝不静默丢失数据（legacy-upgrade 测试锁定）。
+- 创建要求幂等键（`--idempotency-key`），同键重放返回原结果（含删除后
+  重放的 `stale_replay`）；更新要求 `expectedRevision`。
+
+## 已知限制
+
+- **Agent 正式输出在临床冻结前阻断**：规则包为 candidate，只能用于
+  模拟测试（`agent test run`），正式患者输出为固定阻断文案。
+- **环境数据接口为测试替身**：`browse environment` 使用
+  TestEnvironmentProvider（`KANGMIN_ENV_PROVIDER_MODE` 控制故障模式），
+  未接入真实供应商。
+- **幂等表合并待后续**：患者侧 `idempotency_records` 与管理侧
+  `admin_idempotency` 两张表语义已统一（公共 runIdempotentCreate），
+  物理合并为 `command_idempotency` 留待迁移 0013 独立发布。
+- **account 数据导出/删除/停用与提醒通知明确未实现**（返回
+  `capability_unavailable`，不伪造成功）。
+- **开发会话不是生产身份**：dev:session / dev:admin-session 仅限本地
+  开发，生产模式拒绝。
+- 新代码不得导入 `legacy/` 业务模块（架构门禁强制）。

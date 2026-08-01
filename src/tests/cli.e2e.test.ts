@@ -12,6 +12,12 @@ import test from "node:test";
 import { createApplication } from "../app/composition-root.js";
 import { seedContent } from "./content-fixture.js";
 
+// 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
+// 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption
+//（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
+process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+
+
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, "../cli/kangmin.js");
 
@@ -451,4 +457,145 @@ test("Agent 真实 CLI 子进程完成安全会话并跨进程恢复", async () 
     resumedBody.data.decisionEvidence.rulePackVersion,
     "agent-safety-shell-v1"
   );
+});
+
+test("Agent 对话命令通过真实 CLI：exec/feedback/快捷入口；患者侧 test run 关闭", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-cli-agent-"));
+  const databasePath = join(directory, "agent.sqlite");
+  const environment = { KANGMIN_DB_PATH: databasePath };
+
+  // 非交互 exec：匿名一次性体验，返回结构化状态（不等待确认）。
+  const exec = run([
+    "agent", "exec", "我最近鼻塞", "--json"
+  ], environment);
+  assert.equal(exec.status, 0, exec.stderr);
+  assert.equal(exec.stdout.trim().split("\n").length, 1);
+  const execBody = JSON.parse(exec.stdout) as {
+    ok: boolean;
+    data: {
+      conversationId: string;
+      message: { content: string; decisionId: string | null };
+      verdict: { outcome: string; nextQuestions: Array<{ prompt: string }> };
+    };
+  };
+  assert.equal(execBody.ok, true);
+  assert.ok(execBody.data.conversationId.length > 0);
+  assert.equal(execBody.data.verdict.outcome, "need_more_information");
+  assert.ok(execBody.data.message.decisionId !== null);
+
+  // 续接同一对话（结构化回答：高危阻断）。
+  const blocked = run([
+    "agent", "exec", "急救：是",
+    "--conversation", execBody.data.conversationId,
+    "--json"
+  ], environment);
+  assert.equal(blocked.status, 0, blocked.stderr);
+  const blockedBody = JSON.parse(blocked.stdout) as {
+    data: { closed: boolean; message: { content: string } };
+  };
+  assert.equal(blockedBody.data.closed, true);
+  assert.ok(blockedBody.data.message.content.includes("立即就医"));
+
+  // 快捷入口：kangmin <消息> ≡ agent start --message。
+  const shortcut = run(["我最近鼻塞", "--json"], environment);
+  assert.equal(shortcut.status, 0, shortcut.stderr);
+  const shortcutBody = JSON.parse(shortcut.stdout) as {
+    command: string;
+    data: { conversationId: string };
+  };
+  assert.equal(shortcutBody.command, "agent start");
+  assert.ok(shortcutBody.data.conversationId.length > 0);
+
+  // 患者侧 agent test run：评审 R2 P0——模拟链路属于管理端，患者侧返回
+  // capability_unavailable（exit 6），绝不输出完整 ClinicalVerdict。
+  const testRun = run([
+    "agent", "test", "run",
+    "--answer", "thirst=yes",
+    "--answer", "sleep_affected=no",
+    "--json"
+  ], environment);
+  assert.equal(testRun.status, 6, testRun.stderr);
+  const testRunBody = JSON.parse(testRun.stdout) as {
+    ok: boolean;
+    error: { code: string; message: string };
+  };
+  assert.equal(testRunBody.ok, false);
+  assert.equal(testRunBody.error.code, "capability_unavailable");
+  assert.match(testRunBody.error.message, /kangmin-admin/u);
+
+  // feedback：helpful 可记录；非法评分被拒绝。
+  const feedback = run([
+    "agent", "feedback", execBody.data.conversationId,
+    "--rating", "helpful", "--reason", "解释清楚",
+    "--json"
+  ], environment);
+  assert.equal(feedback.status, 0, feedback.stderr);
+  const feedbackBody = JSON.parse(feedback.stdout) as {
+    ok: boolean;
+    data: { rating: string };
+  };
+  assert.equal(feedbackBody.data.rating, "helpful");
+
+  const badRating = run([
+    "agent", "feedback", execBody.data.conversationId,
+    "--rating", "neutral", "--json"
+  ], environment);
+  assert.equal(badRating.status, 7);
+  const badBody = JSON.parse(badRating.stdout) as {
+    error: { code: string };
+  };
+  assert.equal(badBody.error.code, "validation_failed");
+
+  // 匿名不能列出会话。
+  const list = run(["agent", "conversations", "list", "--json"], environment);
+  assert.equal(list.status, 9);
+  const listBody = JSON.parse(list.stdout) as { error: { code: string } };
+  assert.equal(listBody.error.code, "authentication_required");
+});
+
+test("help 免登录、未知命令组 command_invalid（与登录状态无关）、裸词仍进 Agent 管线", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-help-"));
+  const environment = { KANGMIN_DB_PATH: join(directory, "records.sqlite") };
+
+  // 裸 help 无 token：退出 0，输出帮助（外部评审 P1-10）。
+  const help = run(["help"], environment);
+  assert.equal(help.status, 0, help.stderr);
+  assert.match(help.stdout, /用法：/u);
+
+  // 未知命令组无 token：command_invalid exit 2，绝不漂移成
+  // authentication_required（exit 9）。
+  const unknown = run(["foo", "bar", "--json"], environment);
+  assert.equal(unknown.status, 2);
+  const unknownBody = JSON.parse(unknown.stdout) as {
+    error: { code: string };
+  };
+  assert.equal(unknownBody.error.code, "command_invalid");
+
+  // 已登录状态下的未知命令同样是 command_invalid（与登录无关）。
+  const databasePath = join(directory, "records.sqlite");
+  const bootstrap = createApplication(databasePath);
+  let token = "";
+  try {
+    token = (await bootstrap.sessions.createDevelopmentSession("patient-help")).token;
+  } finally {
+    bootstrap.close();
+  }
+  const unknownLoggedIn = run(
+    ["foo", "bar", "--json"],
+    { KANGMIN_DB_PATH: databasePath, KANGMIN_SESSION_TOKEN: token }
+  );
+  assert.equal(unknownLoggedIn.status, 2);
+
+  // 笔误裸词（如 recrod）按特性进入 Agent 管线，不当作命令报错。
+  const typo = run(
+    ["recrod", "--json"],
+    { KANGMIN_DB_PATH: databasePath, KANGMIN_SESSION_TOKEN: token }
+  );
+  assert.equal(typo.status, 0, typo.stderr);
+  const typoBody = JSON.parse(typo.stdout) as {
+    command: string;
+    data: { message: { content: string } | null };
+  };
+  assert.equal(typoBody.command, "agent start");
+  assert.ok(typeof typoBody.data.message?.content === "string");
 });

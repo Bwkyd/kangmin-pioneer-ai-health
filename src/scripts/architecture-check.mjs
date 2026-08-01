@@ -35,6 +35,26 @@ async function walk(directory) {
     }
 
     if (
+      file.startsWith("modules/") &&
+      /from\s+["'][^"']*\.\.\/(?!kernel\/)/u.test(source)
+    ) {
+      // 跨模块导入只允许公开契约面（contracts.ts / domain.ts / *-ports.ts）。
+      const crossModule = /from\s+["'](\.\.\/[a-z0-9-]+\/)([^"']+)["']/gu;
+      for (const match of source.matchAll(crossModule)) {
+        const [, directory, target] = match;
+        const targetFile = target.replace(/\.js$/u, ".ts");
+        if (
+          directory !== "../kernel/" &&
+          !/(?:contracts|domain|-ports)\.ts$/u.test(targetFile)
+        ) {
+          violations.push(
+            `${file} imports ${directory}${target} outside the public contract surface`
+          );
+        }
+      }
+    }
+
+    if (
       file === "app/application.ts" &&
       /from\s+["'][^"']*infrastructure\//u.test(source)
     ) {

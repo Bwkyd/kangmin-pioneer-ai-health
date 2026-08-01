@@ -10,11 +10,18 @@ import { createApplication } from "../app/composition-root.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { AdminArticle } from "../modules/admin/content-admin-repository.js";
 
+// 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
+// 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption
+//（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
+process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+
+
 const here=dirname(fileURLToPath(import.meta.url));
 const adminCli=join(here,"../cli/kangmin-admin.js");
 const adminSessionCli=join(here,"../dev/create-admin-session.js");
 function dataOf<T>(result:CommandResult):T { if(!result.ok) assert.fail(`${result.error.code}: ${result.error.message}`); return result.data as T; }
-async function fixture(){const directory=mkdtempSync(join(tmpdir(),"kangmin-admin-"));const databasePath=join(directory,"content.sqlite");const admin=createAdminApplication(databasePath);const session=await admin.sessions.createDevelopmentSession("owner-a");return{databasePath,admin,token:session.token};}
+async function fixture(){const directory=mkdtempSync(join(tmpdir(),"kangmin-admin-"));const databasePath=join(directory,"content.sqlite");const admin=createAdminApplication(databasePath);const session=await admin.sessions.createDevelopmentSession("owner-a");// 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories。
+for(const name of ["鼻健康","科普"]){const result=await admin.execute({command:"content category create",adminToken:session.token,input:{name,kind:"article"}});if(!result.ok)assert.fail(`${result.error.code}: ${result.error.message}`);}return{databasePath,admin,token:session.token};}
 
 test("管理员文章从草稿到发布再下架，与 Browse 共用真实门禁",async()=>{
   const {databasePath,admin,token}=await fixture();

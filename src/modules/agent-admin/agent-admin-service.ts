@@ -1,0 +1,1050 @@
+import {
+  createHash,
+  randomUUID
+} from "node:crypto";
+import {
+  copyFileSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync
+} from "node:fs";
+import { basename, extname, join } from "node:path";
+
+import { DomainError } from "../../kernel/errors.js";
+import type { AuditPort } from "../system/audit-ports.js";
+import type {
+  AgentAdminRepository,
+  ChunkInput,
+  KnowledgeRow,
+  ModelConfigRow,
+  PlanRow,
+  UpdatePlanResult
+} from "./agent-admin-ports.js";
+import type {
+  AgentPlan,
+  AgentStatusSummary,
+  KnowledgeHit,
+  KnowledgeItem,
+  ModelConfigView,
+  PlanMapping,
+  PlanPreview,
+  TestCaseView
+} from "./contracts.js";
+import type {
+  KnowledgeStatus,
+  PlanStatus,
+  SyndromeMeta
+} from "./domain.js";
+import type { SyndromeRegistryPort } from "./agent-admin-ports.js";
+
+type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
+
+const KNOWLEDGE_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".pdf", ".docx"]);
+/** 骨架分块：每块约 1200 字符，按段落切分。 */
+const CHUNK_TARGET_LENGTH = 1200;
+
+const MODEL_DEFAULTS = {
+  provider: "openai-compatible",
+  modelName: "",
+  timeoutSeconds: 30,
+  maxOutputTokens: 1024,
+  knowledgeRetrievalEnabled: false,
+  retrievalCount: 3,
+  explanationEnabled: true
+};
+
+function newId(prefix: string): string {
+  return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
+}
+
+function now(): string {
+  return new Date().toISOString();
+}
+
+/** 骨架分块：段落切分后合并到目标长度，空文本返回空数组。 */
+function chunkText(text: string): ChunkInput[] {
+  const paragraphs = text
+    .split(/\n\s*\n/u)
+    .map((paragraph) => paragraph.trim())
+    .filter((paragraph) => paragraph !== "");
+  const chunks: ChunkInput[] = [];
+  let buffer = "";
+  for (const paragraph of paragraphs) {
+    if (buffer !== "" && buffer.length + paragraph.length > CHUNK_TARGET_LENGTH) {
+      chunks.push({ index: chunks.length, text: buffer });
+      buffer = "";
+    }
+    buffer = buffer === "" ? paragraph : `${buffer}\n${paragraph}`;
+  }
+  if (buffer !== "") {
+    chunks.push({ index: chunks.length, text: buffer });
+  }
+  return chunks;
+}
+
+/** 检索命中片段：命中位置前后各取上下文（骨架实现）。 */
+function snippetOf(chunkText: string, query: string): string {
+  const position = chunkText.toLowerCase().indexOf(query.toLowerCase());
+  if (position < 0) {
+    return chunkText.slice(0, 80);
+  }
+  const start = Math.max(0, position - 20);
+  return start === 0
+    ? chunkText.slice(0, 80)
+    : `…${chunkText.slice(start, start + 80)}`;
+}
+
+function maskApiKey(key: string | null): string | null {
+  if (key === null || key === "") {
+    return null;
+  }
+  if (key.length <= 8) {
+    return "****";
+  }
+  return `${key.slice(0, 4)}****${key.slice(-4)}`;
+}
+
+export class AgentAdminService {
+  constructor(
+    private readonly repository: AgentAdminRepository,
+    private readonly syndromes: SyndromeRegistryPort,
+    private readonly mediaDirectory: string,
+    private readonly audit: AuditPort
+  ) {}
+
+  // ==== 状态 ====
+
+  async status(): Promise<AgentStatusSummary> {
+    const [config, enabledKnowledge, failedKnowledge, enabledPlans, syndromes, lastCases] =
+      await Promise.all([
+        this.repository.getModelConfig(),
+        this.repository.listKnowledge("enabled"),
+        this.repository.listKnowledge("index_failed"),
+        this.repository.listPlans("enabled"),
+        this.syndromes.list(),
+        this.repository.listTestCases(1)
+      ]);
+    const enabledSyndromes = new Set(enabledPlans.map((plan) => plan.syndrome));
+    return {
+      model: {
+        provider: config?.provider ?? MODEL_DEFAULTS.provider,
+        modelName: config?.modelName ?? "",
+        configured: (config?.modelName ?? "") !== "",
+        lastTestStatus: config?.lastTestStatus ?? null,
+        lastTestAt: config?.lastTestAt ?? null
+      },
+      enabledKnowledgeCount: enabledKnowledge.length,
+      indexFailedCount: failedKnowledge.length,
+      enabledPlanCount: enabledPlans.length,
+      syndromesWithoutEnabledPlan: syndromes.filter(
+        (syndrome) => !enabledSyndromes.has(syndrome.id)
+      ),
+      lastTestCaseStatus:
+        lastCases[0] === undefined ? null : this.toTestCaseView(lastCases[0])
+    };
+  }
+
+  // ==== 知识库 ====
+
+  /**
+   * 添加知识源文件：注册元数据 + 复制源文件 + 骨架解析分块。
+   * 解析失败（PDF/Word 无解析器）如实标记 index_failed，不伪装成功。
+   *
+   * 事务与卫生残留批 P1-4：素材登记与知识创建在仓储同一事务内
+   * （createKnowledgeSource），任一失败整体回滚，不留孤儿素材行；
+   * 失败或重放时已复制的文件在本方法内清理。幂等键为文件内容指纹
+   * （sha256）：同文件重试走重放返回原知识，不重复创建。
+   */
+  async addKnowledge(
+    adminId: string,
+    filePath: string,
+    input: { source?: string | undefined; description?: string | undefined } = {}
+  ): Promise<KnowledgeItem> {
+    let stats;
+    try {
+      stats = statSync(filePath);
+    } catch (error) {
+      throw new DomainError("validation_failed", "知识文件不存在或不可读", {
+        cause: error
+      });
+    }
+    if (!stats.isFile()) {
+      throw new DomainError("validation_failed", "知识路径必须是文件");
+    }
+    const extension = extname(filePath).toLowerCase();
+    if (!KNOWLEDGE_EXTENSIONS.has(extension)) {
+      throw new DomainError(
+        "validation_failed",
+        `不支持的知识文件类型：${extension}（支持 .md/.txt/.pdf/.docx）`
+      );
+    }
+
+    const buffer = readFileSync(filePath);
+    // 确定性幂等键：文件内容指纹。同文件重试 → 同键 → 重放返回原知识。
+    const sha256 = createHash("sha256").update(buffer).digest("hex");
+    const mimeType = extension === ".pdf"
+      ? "application/pdf"
+      : extension === ".docx" || extension === ".doc"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "text/markdown";
+
+    const parsed = this.parseSource(extension, buffer);
+    const timestamp = now();
+    const id = newId("kno");
+    const sourceMediaId = newId("med");
+    const filename = basename(filePath);
+    const targetDirectory = join(this.mediaDirectory, id);
+    const targetPath = join(targetDirectory, filename);
+    try {
+      mkdirSync(targetDirectory, { recursive: true });
+      copyFileSync(filePath, targetPath);
+    } catch (error) {
+      throw new DomainError("validation_failed", "知识源文件复制失败", {
+        cause: error
+      });
+    }
+
+    const row: KnowledgeRow = {
+      id,
+      name: filename,
+      source: input.source?.trim() || null,
+      description: input.description?.trim() || null,
+      sourceMediaId,
+      sizeBytes: stats.size,
+      mimeType,
+      sha256,
+      status: parsed.kind === "parsed" ? "processing" : "index_failed",
+      parseError: parsed.kind === "parsed" ? null : parsed.error,
+      chunkCount: parsed.kind === "parsed" ? parsed.chunks.length : 0,
+      createdBy: adminId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+
+    const removeCopiedFile = (): void => {
+      try {
+        rmSync(targetDirectory, { recursive: true, force: true });
+      } catch {
+        // 忽略：清理失败不遮蔽原始错误。
+      }
+    };
+
+    let outcome;
+    try {
+      outcome = await this.repository.createKnowledgeSource({
+        adminId,
+        // 知识源文件同时登记为素材：source_media_id 写入知识行
+        // （同一事务内先素材后知识，FK 可满足），使 countMediaReferences
+        // 能检测到已启用知识的引用。
+        media: {
+          id: sourceMediaId,
+          kind: extension === ".pdf"
+            ? "pdf"
+            : extension === ".docx" || extension === ".doc"
+              ? "word"
+              : "markdown",
+          filename,
+          storedPath: targetPath,
+          sizeBytes: stats.size,
+          mimeType,
+          sha256,
+          status: "ready",
+          failureReason: null,
+          createdBy: adminId,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        },
+        knowledge: {
+          ...row,
+          chunks: parsed.kind === "parsed" ? parsed.chunks : []
+        },
+        idempotencyKey: sha256,
+        requestHash: sha256
+      });
+    } catch (error) {
+      // 事务失败（回滚，无孤儿素材行）：清理已复制的文件后抛出。
+      removeCopiedFile();
+      throw error;
+    }
+    if (outcome.kind === "conflict") {
+      removeCopiedFile();
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      removeCopiedFile();
+      throw new DomainError("stale_replay", "相同幂等键对应的知识已不存在");
+    }
+    if (outcome.kind === "replayed") {
+      // 重放：原知识与其文件副本已存在，本次复制的副本多余，清理。
+      removeCopiedFile();
+    }
+    return outcome.item;
+  }
+
+  async listKnowledge(status?: string): Promise<KnowledgeItem[]> {
+    return this.repository.listKnowledge(this.knowledgeStatusOf(status));
+  }
+
+  async getKnowledge(id: string): Promise<KnowledgeItem> {
+    const item = await this.repository.findKnowledge(id);
+    if (item === null) {
+      throw new DomainError("resource_not_found", "知识不存在");
+    }
+    return item;
+  }
+
+  async indexKnowledge(id: string): Promise<KnowledgeItem> {
+    const item = await this.getKnowledge(id);
+    if (item.status !== "processing") {
+      if (item.status === "index_failed") {
+        throw new DomainError(
+          "validation_failed",
+          `知识解析失败，不能建立索引：${item.parseError ?? "未知原因"}`
+        );
+      }
+      throw new DomainError("validation_failed", "知识已建立索引，无需重复索引");
+    }
+    if (item.chunkCount === 0) {
+      throw new DomainError("validation_failed", "知识没有可索引的正文分块");
+    }
+    await this.repository.setKnowledgeStatus(id, "indexed", now());
+    return this.getKnowledge(id);
+  }
+
+  async enableKnowledge(
+    adminId: string,
+    id: string,
+    requestId?: string
+  ): Promise<KnowledgeItem> {
+    const item = await this.getKnowledge(id);
+    if (item.status === "enabled") {
+      return item;
+    }
+    if (item.status !== "indexed" && item.status !== "disabled") {
+      throw new DomainError(
+        "validation_failed",
+        "只有已建立索引的知识可以启用"
+      );
+    }
+    // 状态更新与来源素材状态校验在同一事务（setKnowledgeStatusGuarded，
+    // 与 setPlanStatusGuarded 同类事务变式）：并发停用素材时，本事务
+    // 重读素材状态并拒绝，不产生"已启用但源素材已停用"的中间状态。
+    const outcome = await this.repository.setKnowledgeStatusGuarded(
+      id,
+      "enabled",
+      now(),
+      (knowledge, media) => this.knowledgeEnableMissing(knowledge, media)
+    );
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "知识不存在");
+    }
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError("validation_failed", outcome.missing.join("、"));
+    }
+    const updated = outcome.knowledge;
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.knowledge.enable",
+      entityType: "agent_knowledge_item",
+      entityId: id,
+      requestId,
+      details: { name: updated.name }
+    });
+    return updated;
+  }
+
+  async disableKnowledge(
+    adminId: string,
+    id: string,
+    requestId?: string
+  ): Promise<KnowledgeItem> {
+    const item = await this.getKnowledge(id);
+    if (item.status !== "enabled") {
+      throw new DomainError("validation_failed", "只有已启用知识可以停用");
+    }
+    // 与启用同走事务守卫：停用只要求事务内重读状态仍为 enabled
+    //（状态谓词 CAS，防止并发启用/停用交错）。
+    const outcome = await this.repository.setKnowledgeStatusGuarded(
+      id,
+      "disabled",
+      now(),
+      (knowledge) =>
+        knowledge.status === "enabled"
+          ? []
+          : ["知识状态已变化，请重新读取"]
+    );
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "知识不存在");
+    }
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError("validation_failed", outcome.missing.join("、"));
+    }
+    const updated = outcome.knowledge;
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.knowledge.disable",
+      entityType: "agent_knowledge_item",
+      entityId: id,
+      requestId,
+      details: { name: updated.name }
+    });
+    return updated;
+  }
+
+  /** 检索测试只命中已启用知识（未启用知识不能被 Agent 检索）。 */
+  async searchKnowledge(query: string): Promise<KnowledgeHit[]> {
+    const rows = await this.repository.searchChunks(query, true);
+    return rows.map((row) => ({
+      knowledgeId: row.knowledgeId,
+      name: row.name,
+      chunkIndex: row.chunkIndex,
+      snippet: snippetOf(row.chunkText, query),
+      source: row.source,
+      enabled: true
+    }));
+  }
+
+  // ==== 调理方案 ====
+
+  async createPlan(
+    adminId: string,
+    input: {
+      name: string;
+      syndrome: string;
+    } & OptionalOf<{
+      method: string;
+      steps: string[];
+      precautions: string;
+      risks: string;
+      contraindications: string;
+      applicableAge: string;
+      videoResourceId: string;
+      displayOrder: number;
+    }>,
+    idempotencyKey: string
+  ): Promise<AgentPlan> {
+    const name = input.name.trim();
+    if (name === "") {
+      throw new DomainError("validation_failed", "方案名称不能为空");
+    }
+    await this.requireSyndrome(input.syndrome);
+    if (input.videoResourceId !== undefined && input.videoResourceId !== null) {
+      await this.requireVideoResource(input.videoResourceId);
+    }
+    const timestamp = now();
+    const plan: AgentPlan = {
+      id: newId("plan"),
+      name,
+      syndrome: input.syndrome,
+      method: input.method?.trim() ?? "",
+      steps: (input.steps ?? []).map((step) => step.trim()).filter((step) => step !== ""),
+      precautions: input.precautions?.trim() ?? "",
+      risks: input.risks?.trim() ?? "",
+      contraindications: input.contraindications?.trim() ?? "",
+      applicableAge: input.applicableAge?.trim() || null,
+      videoResourceId: input.videoResourceId ?? null,
+      displayOrder: input.displayOrder ?? 0,
+      status: "draft",
+      revision: 1,
+      createdBy: adminId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    // 幂等创建（事务与卫生残留批 P2-7）：确定性键同内容重试 → 重放
+    // 返回原方案；requestHash 取业务字段稳定哈希，重试内容一致时相同。
+    const requestHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          name,
+          syndrome: input.syndrome,
+          method: input.method?.trim() ?? "",
+          steps: (input.steps ?? []).map((step) => step.trim()),
+          precautions: input.precautions?.trim() ?? "",
+          risks: input.risks?.trim() ?? "",
+          contraindications: input.contraindications?.trim() ?? "",
+          applicableAge: input.applicableAge?.trim() || null,
+          videoResourceId: input.videoResourceId ?? null,
+          displayOrder: input.displayOrder ?? 0
+        }),
+        "utf8"
+      )
+      .digest("hex");
+    const outcome = await this.repository.createPlanIdempotent(
+      adminId,
+      this.toPlanRow(plan),
+      idempotencyKey,
+      requestHash
+    );
+    if (outcome.kind === "conflict") {
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError("stale_replay", "相同幂等键对应的方案已不存在");
+    }
+    return outcome.item;
+  }
+
+  async listPlans(status?: string): Promise<AgentPlan[]> {
+    return this.repository.listPlans(this.planStatusOf(status));
+  }
+
+  async getPlan(id: string): Promise<AgentPlan> {
+    const plan = await this.repository.findPlan(id);
+    if (plan === null) {
+      throw new DomainError("resource_not_found", "调理方案不存在");
+    }
+    return plan;
+  }
+
+  async previewPlan(id: string): Promise<PlanPreview> {
+    const plan = await this.getPlan(id);
+    const missing = await this.validatePlanForEnable(plan);
+    return { ...plan, validation: { ok: missing.length === 0, missing } };
+  }
+
+  async updatePlan(
+    id: string,
+    expectedRevision: number,
+    changes: OptionalOf<{
+      name: string;
+      syndrome: string;
+      method: string;
+      steps: string[];
+      precautions: string;
+      risks: string;
+      contraindications: string;
+      applicableAge: string | null;
+      videoResourceId: string | null;
+      displayOrder: number;
+    }>
+  ): Promise<AgentPlan> {
+    if (Object.keys(changes).length === 0) {
+      throw new DomainError("validation_failed", "至少提供一个需要更新的字段");
+    }
+    if (changes.syndrome !== undefined) {
+      await this.requireSyndrome(changes.syndrome);
+    }
+    if (changes.videoResourceId !== undefined && changes.videoResourceId !== null) {
+      await this.requireVideoResource(changes.videoResourceId);
+    }
+    const current = await this.getPlan(id);
+    const next: AgentPlan = {
+      ...current,
+      name: changes.name ?? current.name,
+      syndrome: changes.syndrome ?? current.syndrome,
+      method: changes.method ?? current.method,
+      steps: changes.steps ?? current.steps,
+      precautions: changes.precautions ?? current.precautions,
+      risks: changes.risks ?? current.risks,
+      contraindications: changes.contraindications ?? current.contraindications,
+      applicableAge:
+        changes.applicableAge === undefined
+          ? current.applicableAge
+          : changes.applicableAge,
+      videoResourceId:
+        changes.videoResourceId === undefined
+          ? current.videoResourceId
+          : changes.videoResourceId,
+      displayOrder: changes.displayOrder ?? current.displayOrder,
+      revision: current.revision + 1,
+      updatedAt: now()
+    };
+    const outcome = await this.repository.updatePlan(next, expectedRevision);
+    return this.planOutcome(outcome, expectedRevision);
+  }
+
+  async enablePlan(
+    adminId: string,
+    id: string,
+    expectedRevision: number,
+    requestId?: string
+  ): Promise<AgentPlan> {
+    const plan = await this.getPlan(id);
+    if (plan.status === "enabled") {
+      return plan;
+    }
+    // 固定证型注册表是常量（非数据库状态），无并发窗口，事务外校验；
+    // 方案内容与视频发布状态等数据库依赖在事务内重读校验
+    // （repository.setPlanStatusGuarded，评审 C 事务变式）：并发进程
+    // 在另一事务下架视频时，本事务校验拒绝，不产生"已启用但依赖已
+    // 下架"的中间状态。
+    const syndromeMissing =
+      (await this.syndromes.find(plan.syndrome)) === null
+        ? ["适用证型无效"]
+        : [];
+    const outcome = await this.repository.setPlanStatusGuarded(
+      id,
+      expectedRevision,
+      "enabled",
+      now(),
+      (current, video) => this.planEnableMissing(current, video)
+    );
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError(
+        "validation_failed",
+        `启用前校验未通过：${[...syndromeMissing, ...outcome.missing].join("、")}`
+      );
+    }
+    const updated = this.planOutcome(outcome, expectedRevision);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.plan.enable",
+      entityType: "agent_plan",
+      entityId: id,
+      entityRevision: updated.revision,
+      requestId,
+      details: { name: updated.name }
+    });
+    return updated;
+  }
+
+  async disablePlan(
+    adminId: string,
+    id: string,
+    expectedRevision: number,
+    requestId?: string
+  ): Promise<AgentPlan> {
+    const plan = await this.getPlan(id);
+    if (plan.status !== "enabled") {
+      throw new DomainError("validation_failed", "只有已启用方案可以停用");
+    }
+    const outcome = await this.repository.setPlanStatus(
+      id,
+      expectedRevision,
+      "disabled",
+      now()
+    );
+    const updated = this.planOutcome(outcome, expectedRevision);
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.plan.disable",
+      entityType: "agent_plan",
+      entityId: id,
+      entityRevision: updated.revision,
+      requestId,
+      details: { name: updated.name }
+    });
+    return updated;
+  }
+
+  /** 证型 → 方案映射：显示全部状态方案，标记无已启用方案的证型。 */
+  async mappings(): Promise<PlanMapping[]> {
+    const [syndromes, plans] = await Promise.all([
+      this.syndromes.list(),
+      this.repository.listPlans()
+    ]);
+    return syndromes.map((syndrome) => {
+      const syndromePlans = plans.filter(
+        (plan) => plan.syndrome === syndrome.id
+      );
+      return {
+        syndromeId: syndrome.id,
+        syndromeName: syndrome.name,
+        hasEnabledPlan: syndromePlans.some((plan) => plan.status === "enabled"),
+        plans: syndromePlans.map((plan) => ({
+          id: plan.id,
+          name: plan.name,
+          status: plan.status
+        }))
+      };
+    });
+  }
+
+  // ==== 模型设置 ====
+
+  async showModelConfig(): Promise<ModelConfigView> {
+    const config = await this.repository.getModelConfig();
+    return this.toModelView(config);
+  }
+
+  async updateModelConfig(
+    adminId: string,
+    changes: OptionalOf<{
+      provider: string;
+      modelName: string;
+      timeoutSeconds: number;
+      maxOutputTokens: number;
+      knowledgeRetrievalEnabled: boolean;
+      retrievalCount: number;
+      explanationEnabled: boolean;
+      apiKey: string;
+    }>
+  ): Promise<ModelConfigView> {
+    if (Object.keys(changes).length === 0) {
+      throw new DomainError("validation_failed", "至少提供一个需要更新的字段");
+    }
+    if (changes.timeoutSeconds !== undefined) {
+      this.intInRange(changes.timeoutSeconds, "timeoutSeconds", 1, 300);
+    }
+    if (changes.maxOutputTokens !== undefined) {
+      this.intInRange(changes.maxOutputTokens, "maxOutputTokens", 128, 32768);
+    }
+    if (changes.retrievalCount !== undefined) {
+      this.intInRange(changes.retrievalCount, "retrievalCount", 1, 20);
+    }
+    const current = await this.repository.getModelConfig();
+    const next: ModelConfigRow = {
+      provider:
+        changes.provider?.trim() || (current?.provider ?? MODEL_DEFAULTS.provider),
+      modelName:
+        changes.modelName?.trim() ?? current?.modelName ?? "",
+      timeoutSeconds:
+        changes.timeoutSeconds ?? current?.timeoutSeconds ?? MODEL_DEFAULTS.timeoutSeconds,
+      maxOutputTokens:
+        changes.maxOutputTokens ?? current?.maxOutputTokens ?? MODEL_DEFAULTS.maxOutputTokens,
+      knowledgeRetrievalEnabled:
+        changes.knowledgeRetrievalEnabled === undefined
+          ? current?.knowledgeRetrievalEnabled ?? 0
+          : changes.knowledgeRetrievalEnabled
+            ? 1
+            : 0,
+      retrievalCount:
+        changes.retrievalCount ?? current?.retrievalCount ?? MODEL_DEFAULTS.retrievalCount,
+      explanationEnabled:
+        changes.explanationEnabled === undefined
+          ? current?.explanationEnabled ?? 1
+          : changes.explanationEnabled
+            ? 1
+            : 0,
+      apiKey: changes.apiKey ?? current?.apiKey ?? null,
+      updatedBy: adminId,
+      updatedAt: now(),
+      lastTestStatus: current?.lastTestStatus ?? null,
+      lastTestAt: current?.lastTestAt ?? null
+    };
+    // 单行 CAS（事务与卫生残留批 P2-8）：以最近一次快照的 updated_at
+    // 作谓词，并发覆盖被仓储拒绝 → version_conflict（与内容/方案的
+    // expectedRevision 语义一致）。
+    const outcome = await this.repository.upsertModelConfig(
+      next,
+      current?.updatedAt ?? null
+    );
+    if (outcome === "conflict") {
+      throw new DomainError(
+        "version_conflict",
+        "模型配置已被其他管理员更新，请重新读取"
+      );
+    }
+    return this.toModelView(next);
+  }
+
+  /** 模型连接测试：无真实提供方适配器，如实返回不可用并记录尝试。 */
+  async testModel(adminId: string): Promise<ModelConfigView> {
+    const config = await this.repository.getModelConfig();
+    if ((config?.modelName ?? "") === "") {
+      throw new DomainError(
+        "config_missing",
+        "尚未配置模型名称，无法测试连接"
+      );
+    }
+    const timestamp = now();
+    const outcome = await this.repository.upsertModelConfig({
+      provider: config?.provider ?? MODEL_DEFAULTS.provider,
+      modelName: config?.modelName ?? "",
+      timeoutSeconds: config?.timeoutSeconds ?? MODEL_DEFAULTS.timeoutSeconds,
+      maxOutputTokens: config?.maxOutputTokens ?? MODEL_DEFAULTS.maxOutputTokens,
+      knowledgeRetrievalEnabled: config?.knowledgeRetrievalEnabled ?? 0,
+      retrievalCount: config?.retrievalCount ?? MODEL_DEFAULTS.retrievalCount,
+      explanationEnabled: config?.explanationEnabled ?? 1,
+      apiKey: config?.apiKey ?? null,
+      updatedBy: adminId,
+      updatedAt: timestamp,
+      lastTestStatus: "capability_unavailable",
+      lastTestAt: timestamp
+    }, config?.updatedAt ?? null);
+    if (outcome === "conflict") {
+      throw new DomainError(
+        "version_conflict",
+        "模型配置已被其他管理员更新，请重新读取"
+      );
+    }
+    throw new DomainError(
+      "capability_unavailable",
+      "模型提供方适配器尚未接入（骨架阶段），无法验证真实连接"
+    );
+  }
+
+  // ==== 模拟测试 ====
+
+  /**
+   * 全链路模拟测试：输入 → 安全规则 → 证型 → 方案 → 知识 → AI 解释。
+   * w4-agent 规则内核（证型输出）尚未集成，正式输出阻断语义由 w4 实现；
+   * 本命令如实返回 capability_unavailable，不伪造测试结果。
+   */
+  async runTest(): Promise<never> {
+    throw new DomainError(
+      "capability_unavailable",
+      "规则引擎契约尚未接入（等待 w4-agent 规则内核集成），模拟测试暂不可用"
+    );
+  }
+
+  async getTestCase(id: string): Promise<TestCaseView> {
+    const row = await this.repository.findTestCase(id);
+    if (row === null) {
+      throw new DomainError("resource_not_found", "测试用例不存在");
+    }
+    return this.toTestCaseView(row);
+  }
+
+  // ==== 内部 ====
+
+  private intInRange(
+    value: number,
+    key: string,
+    min: number,
+    max: number
+  ): void {
+    if (!Number.isInteger(value) || value < min || value > max) {
+      throw new DomainError(
+        "validation_failed",
+        `${key} 必须是 ${min} 到 ${max} 的整数`
+      );
+    }
+  }
+
+  private parseSource(
+    extension: string,
+    buffer: Buffer
+  ): { kind: "parsed"; chunks: ChunkInput[] } | { kind: "failed"; error: string } {
+    if (extension === ".pdf" || extension === ".docx" || extension === ".doc") {
+      return {
+        kind: "failed",
+        error: "PDF/Word 正文解析尚未实现（骨架阶段），等待真实解析器接入"
+      };
+    }
+    const text = buffer.toString("utf8");
+    if (text.trim() === "") {
+      return { kind: "failed", error: "知识文件正文为空" };
+    }
+    return { kind: "parsed", chunks: chunkText(text) };
+  }
+
+  private async requireSyndrome(syndrome: string): Promise<SyndromeMeta> {
+    const found = await this.syndromes.find(syndrome);
+    if (found === null) {
+      throw new DomainError(
+        "validation_failed",
+        `证型不在固定证型列表：${syndrome}（不能新建或修改证型）`
+      );
+    }
+    return found;
+  }
+
+  /** 方案引用视频必须存在（外键约束 + 服务层校验），发布状态在启用时校验。 */
+  private async requireVideoResource(videoResourceId: string): Promise<void> {
+    const video = await this.repository.findVideoResource(videoResourceId);
+    if (video === null) {
+      throw new DomainError("validation_failed", "关联视频不存在");
+    }
+  }
+
+  /**
+   * 启用前程序校验（预览路径）：证型存在、名称与调理方法非空、
+   * 至少一个有效步骤、风险/注意事项/禁忌完整、关联视频存在且已发布。
+   * 预览只读展示，允许事务外快照；启用路径改走 planEnableMissing
+   * （repository.setPlanStatusGuarded 在事务内重读视频发布状态）。
+   */
+  private async validatePlanForEnable(plan: AgentPlan): Promise<string[]> {
+    const missing: string[] = [];
+    const syndrome = await this.syndromes.find(plan.syndrome);
+    if (syndrome === null) {
+      missing.push("适用证型无效");
+    }
+    missing.push(...this.planContentMissing(plan));
+    if (plan.videoResourceId !== null) {
+      const video = await this.repository.findVideoResource(plan.videoResourceId);
+      if (video === null) {
+        missing.push("关联视频不存在");
+      } else if (video.status !== "published") {
+        missing.push("关联视频未发布");
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * 启用前校验的事务内变体（评审 C 事务变式）：只含数据库依赖项，
+   * 由仓储在 BEGIN IMMEDIATE 内以重读的方案行与视频发布状态调用；
+   * 固定证型注册表为常量，在 enablePlan 中事务外校验。
+   */
+  private planEnableMissing(
+    plan: AgentPlan,
+    video: { id: string; status: string } | null
+  ): string[] {
+    const missing = this.planContentMissing(plan);
+    if (plan.videoResourceId !== null) {
+      if (video === null) {
+        missing.push("关联视频不存在");
+      } else if (video.status !== "published") {
+        missing.push("关联视频未发布");
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * 知识启用前校验的事务内变体：只含数据库依赖项，由仓储在
+   * BEGIN IMMEDIATE 内以重读的知识行与素材状态调用；并发停用素材、
+   * 并发启用都在事务内被拒绝，不产生"已启用但源素材已停用"中间状态。
+   */
+  private knowledgeEnableMissing(
+    knowledge: KnowledgeRow,
+    media: { id: string; status: string } | null
+  ): string[] {
+    const missing: string[] = [];
+    if (knowledge.status === "enabled") {
+      missing.push("知识已启用");
+    } else if (
+      knowledge.status !== "indexed" &&
+      knowledge.status !== "disabled"
+    ) {
+      missing.push("知识状态不允许启用");
+    }
+    if (knowledge.sourceMediaId !== null) {
+      if (media === null) {
+        missing.push("知识源素材不存在");
+      } else if (media.status === "disabled") {
+        missing.push("知识源素材已停用");
+      }
+    }
+    return missing;
+  }
+
+  /** 方案自身内容完整性（与数据库状态无关，事务内外共用）。 */
+  private planContentMissing(plan: AgentPlan): string[] {
+    const missing: string[] = [];
+    if (plan.name.trim() === "") {
+      missing.push("方案名称");
+    }
+    if (plan.method.trim() === "") {
+      missing.push("调理方法");
+    }
+    if (plan.steps.length === 0) {
+      missing.push("操作步骤");
+    }
+    if (plan.risks.trim() === "") {
+      missing.push("风险提示");
+    }
+    if (plan.precautions.trim() === "") {
+      missing.push("注意事项");
+    }
+    if (plan.contraindications.trim() === "") {
+      missing.push("禁忌");
+    }
+    return missing;
+  }
+
+  private planOutcome(
+    outcome: UpdatePlanResult,
+    expectedRevision: number
+  ): AgentPlan {
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "调理方案不存在");
+    }
+    if (outcome.kind === "version_conflict") {
+      throw new DomainError("version_conflict", "方案已更新，请重新读取", {
+        details: {
+          expectedRevision,
+          currentRevision: outcome.currentRevision
+        }
+      });
+    }
+    return outcome.plan;
+  }
+
+  private toPlanRow(plan: AgentPlan): PlanRow {
+    return {
+      id: plan.id,
+      name: plan.name,
+      syndrome: plan.syndrome,
+      method: plan.method,
+      stepsJson: JSON.stringify(plan.steps),
+      precautions: plan.precautions,
+      risks: plan.risks,
+      contraindications: plan.contraindications,
+      applicableAge: plan.applicableAge,
+      videoResourceId: plan.videoResourceId,
+      displayOrder: plan.displayOrder,
+      status: plan.status,
+      revision: plan.revision,
+      createdBy: plan.createdBy,
+      createdAt: plan.createdAt,
+      updatedAt: plan.updatedAt
+    };
+  }
+
+  private toModelView(config: ModelConfigRow | null): ModelConfigView {
+    return {
+      provider: config?.provider ?? MODEL_DEFAULTS.provider,
+      modelName: config?.modelName ?? "",
+      timeoutSeconds: config?.timeoutSeconds ?? MODEL_DEFAULTS.timeoutSeconds,
+      maxOutputTokens: config?.maxOutputTokens ?? MODEL_DEFAULTS.maxOutputTokens,
+      knowledgeRetrievalEnabled:
+        (config?.knowledgeRetrievalEnabled ?? 0) === 1,
+      retrievalCount: config?.retrievalCount ?? MODEL_DEFAULTS.retrievalCount,
+      explanationEnabled: (config?.explanationEnabled ?? 1) === 1,
+      apiKeyMasked: maskApiKey(config?.apiKey ?? null),
+      updatedBy: config?.updatedBy ?? null,
+      updatedAt: config?.updatedAt ?? null,
+      lastTestStatus: config?.lastTestStatus ?? null,
+      lastTestAt: config?.lastTestAt ?? null
+    };
+  }
+
+  private toTestCaseView(row: {
+    id: string;
+    inputText: string;
+    status: "completed" | "failed";
+    resultJson: string;
+    createdBy: string | null;
+    createdAt: string;
+  }): TestCaseView {
+    return {
+      id: row.id,
+      inputText: row.inputText,
+      status: row.status,
+      result: JSON.parse(row.resultJson),
+      createdBy: row.createdBy,
+      createdAt: row.createdAt
+    };
+  }
+
+  private knowledgeStatusOf(value: string | undefined): KnowledgeStatus | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    const statuses: KnowledgeStatus[] = [
+      "draft",
+      "processing",
+      "indexed",
+      "enabled",
+      "disabled",
+      "index_failed"
+    ];
+    if (!statuses.includes(value as KnowledgeStatus)) {
+      throw new DomainError(
+        "validation_failed",
+        "知识状态必须是 draft、processing、indexed、enabled、disabled 或 index_failed"
+      );
+    }
+    return value as KnowledgeStatus;
+  }
+
+  private planStatusOf(value: string | undefined): PlanStatus | undefined {
+    if (value === undefined) {
+      return undefined;
+    }
+    if (value !== "draft" && value !== "enabled" && value !== "disabled") {
+      throw new DomainError(
+        "validation_failed",
+        "方案状态必须是 draft、enabled 或 disabled"
+      );
+    }
+    return value;
+  }
+}

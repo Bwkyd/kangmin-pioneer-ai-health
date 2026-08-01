@@ -70,7 +70,8 @@ export class RecordService {
 
   async createSymptom(
     patientId: string,
-    input: CreateSymptomInput
+    input: CreateSymptomInput,
+    requestId?: string
   ): Promise<SymptomRecord> {
     // 幂等键哈希白名单：必须与 record 的业务字段一致。
     // 新增业务字段时必须同步加入，否则同键重放会被误判为冲突。
@@ -104,7 +105,8 @@ export class RecordService {
       patientId,
       idempotencyKey: input.idempotencyKey,
       requestHash,
-      record
+      record,
+      requestId: requestId ?? randomUUID()
     });
 
     if (outcome.kind === "idempotency_conflict") {
@@ -148,7 +150,8 @@ export class RecordService {
 
   async updateSymptom(
     patientId: string,
-    input: UpdateSymptomInput
+    input: UpdateSymptomInput,
+    requestId?: string
   ): Promise<SymptomRecord> {
     requireUpdateFields(
       input.nasalCongestion !== undefined ||
@@ -182,7 +185,8 @@ export class RecordService {
         next.nasalItching +
         next.sneezing +
         next.runnyNose,
-      updatedAt: now()
+      updatedAt: now(),
+      requestId: requestId ?? randomUUID()
     });
 
     if (outcome.kind === "not_found") {
@@ -208,13 +212,20 @@ export class RecordService {
 
   async deleteSymptom(
     patientId: string,
-    input: DeleteRecordInput
+    input: DeleteRecordInput,
+    requestId?: string
   ): Promise<void> {
     await this.runDelete(
       patientId,
       input,
-      (id, expectedRevision) =>
-        this.repository.deleteSymptom(patientId, id, expectedRevision)
+      requestId,
+      (id, expectedRevision, resolvedRequestId) =>
+        this.repository.deleteSymptom(
+          patientId,
+          id,
+          expectedRevision,
+          resolvedRequestId
+        )
     );
   }
 
@@ -239,7 +250,8 @@ export class RecordService {
 
   async updateProfile(
     patientId: string,
-    input: UpdateProfileInput
+    input: UpdateProfileInput,
+    requestId?: string
   ): Promise<HealthProfile> {
     requireUpdateFields(
       input.displayName !== undefined ||
@@ -278,7 +290,8 @@ export class RecordService {
           : input.commonTriggers,
       notes:
         input.notes === undefined ? (current?.notes ?? null) : input.notes,
-      updatedAt: now()
+      updatedAt: now(),
+      requestId: requestId ?? randomUUID()
     });
     if (outcome.kind === "version_conflict") {
       throw new DomainError(
@@ -297,7 +310,8 @@ export class RecordService {
 
   async createExposure(
     patientId: string,
-    input: CreateExposureInput
+    input: CreateExposureInput,
+    requestId?: string
   ): Promise<ExposureRecord> {
     validateFactors(input.factors, input.otherDescription);
     // 幂等键哈希白名单：必须与 record 的业务字段一致。
@@ -322,7 +336,8 @@ export class RecordService {
       patientId,
       idempotencyKey: input.idempotencyKey,
       requestHash,
-      record
+      record,
+      requestId: requestId ?? randomUUID()
     });
     if (outcome.kind === "idempotency_conflict") {
       throw new DomainError(
@@ -362,7 +377,8 @@ export class RecordService {
 
   async updateExposure(
     patientId: string,
-    input: UpdateExposureInput
+    input: UpdateExposureInput,
+    requestId?: string
   ): Promise<ExposureRecord> {
     requireUpdateFields(
       input.factors !== undefined ||
@@ -390,7 +406,8 @@ export class RecordService {
       factors,
       otherDescription,
       notes,
-      updatedAt: now()
+      updatedAt: now(),
+      requestId: requestId ?? randomUUID()
     });
     if (outcome.kind === "not_found") {
       throw new DomainError("resource_not_found", "暴露记录不存在");
@@ -412,19 +429,27 @@ export class RecordService {
 
   async deleteExposure(
     patientId: string,
-    input: DeleteRecordInput
+    input: DeleteRecordInput,
+    requestId?: string
   ): Promise<void> {
     await this.runDelete(
       patientId,
       input,
-      (id, expectedRevision) =>
-        this.repository.deleteExposure(patientId, id, expectedRevision)
+      requestId,
+      (id, expectedRevision, resolvedRequestId) =>
+        this.repository.deleteExposure(
+          patientId,
+          id,
+          expectedRevision,
+          resolvedRequestId
+        )
     );
   }
 
   async createMedication(
     patientId: string,
-    input: CreateMedicationInput
+    input: CreateMedicationInput,
+    requestId?: string
   ): Promise<MedicationRecord> {
     // 幂等键哈希白名单：必须与 record 的业务字段一致。
     const requestHash = stableHash({
@@ -450,7 +475,8 @@ export class RecordService {
       patientId,
       idempotencyKey: input.idempotencyKey,
       requestHash,
-      record
+      record,
+      requestId: requestId ?? randomUUID()
     });
     if (outcome.kind === "idempotency_conflict") {
       throw new DomainError(
@@ -484,7 +510,8 @@ export class RecordService {
 
   async updateMedication(
     patientId: string,
-    input: UpdateMedicationInput
+    input: UpdateMedicationInput,
+    requestId?: string
   ): Promise<MedicationRecord> {
     requireUpdateFields(
       input.medicationName !== undefined ||
@@ -511,7 +538,8 @@ export class RecordService {
       dosage,
       actualUse,
       notes,
-      updatedAt: now()
+      updatedAt: now(),
+      requestId: requestId ?? randomUUID()
     });
     if (outcome.kind === "not_found") {
       throw new DomainError("resource_not_found", "用药记录不存在");
@@ -533,13 +561,20 @@ export class RecordService {
 
   async deleteMedication(
     patientId: string,
-    input: DeleteRecordInput
+    input: DeleteRecordInput,
+    requestId?: string
   ): Promise<void> {
     await this.runDelete(
       patientId,
       input,
-      (id, expectedRevision) =>
-        this.repository.deleteMedication(patientId, id, expectedRevision)
+      requestId,
+      (id, expectedRevision, resolvedRequestId) =>
+        this.repository.deleteMedication(
+          patientId,
+          id,
+          expectedRevision,
+          resolvedRequestId
+        )
     );
   }
 
@@ -633,12 +668,18 @@ export class RecordService {
   private async runDelete(
     patientId: string,
     input: DeleteRecordInput,
+    requestId: string | undefined,
     deleteRecord: (
       id: string,
-      expectedRevision: number
+      expectedRevision: number,
+      requestId: string
     ) => Promise<DeleteRecordOutcome>
   ): Promise<void> {
-    const outcome = await deleteRecord(input.id, input.expectedRevision);
+    const outcome = await deleteRecord(
+      input.id,
+      input.expectedRevision,
+      requestId ?? randomUUID()
+    );
     if (outcome.kind === "not_found") {
       throw new DomainError("resource_not_found", "记录不存在");
     }
