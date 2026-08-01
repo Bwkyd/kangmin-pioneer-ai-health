@@ -1,8 +1,8 @@
 name: CI
 
 on:
+  # 所有 PR 都跑 quality：堆叠 PR 的 base 不是 main，同样需要合并前检查。
   pull_request:
-    branches: [main]
   push:
     branches: [main]
 
