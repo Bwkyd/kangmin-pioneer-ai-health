@@ -945,4 +945,99 @@ if (databaseUrl === undefined) {
     assert.deepEqual(await planOpenReadRepo.searchPlans("草稿", 10), []);
     assert.deepEqual(await planOpenReadRepo.searchPlans("%", 10), []);
   });
+
+  // ---- 远程上传会话（upload-init / confirm / cleanup-orphans 的仓储语义） ----
+
+  test("aux.findMediaBySha256：ready 优先于 processing，processing 优先于 failed", async () => {
+    await auxRepo.createMediaDraft(ADMIN_ID, makeMedia("m-sha-failed", {
+      sha256: "sha-dup",
+      status: "failed",
+      createdAt: "2026-01-01T00:00:00.000Z"
+    }));
+    await auxRepo.createMediaDraft(ADMIN_ID, makeMedia("m-sha-processing", {
+      sha256: "sha-dup",
+      status: "processing",
+      createdAt: "2026-01-02T00:00:00.000Z"
+    }));
+    // 无 ready 行：取 processing（中断重试重发票据的那一行）。
+    const processing = await auxRepo.findMediaBySha256("sha-dup");
+    assert.equal(processing?.id, "m-sha-processing");
+
+    await auxRepo.createMediaDraft(ADMIN_ID, makeMedia("m-sha-ready", {
+      sha256: "sha-dup",
+      status: "ready",
+      createdAt: "2026-01-03T00:00:00.000Z"
+    }));
+    // 有 ready 行：无论创建先后都优先（重复上传重放 completed）。
+    const ready = await auxRepo.findMediaBySha256("sha-dup");
+    assert.equal(ready?.id, "m-sha-ready");
+    assert.equal(await auxRepo.findMediaBySha256("sha-missing"), null);
+  });
+
+  test("aux.createMediaDraft：processing 直入，不写 admin_idempotency", async () => {
+    const media = makeMedia("m-draft-1", { status: "processing" });
+    await auxRepo.createMediaDraft(ADMIN_ID, media);
+    assert.deepEqual(await auxRepo.findMedia("m-draft-1"), media);
+    const { rows } = await db.query<{ n: number }>(
+      "SELECT COUNT(*)::int AS n FROM admin_idempotency"
+    );
+    assert.equal(rows[0]?.n, 0);
+  });
+
+  test("aux.transitionMediaStatus：CAS 命中 updated；谓词不命中 version_conflict；缺失 not_found", async () => {
+    await auxRepo.createMediaDraft(ADMIN_ID, makeMedia("m-cas-1", { status: "processing" }));
+    const updated = await auxRepo.transitionMediaStatus("m-cas-1", "processing", {
+      status: "ready",
+      failureReason: null,
+      updatedAt: "2026-01-02T00:00:00.000Z"
+    });
+    assert.equal(updated, "updated");
+    const row = await auxRepo.findMedia("m-cas-1");
+    assert.equal(row?.status, "ready");
+    assert.equal(row?.failureReason, null);
+    assert.equal(row?.updatedAt, "2026-01-02T00:00:00.000Z");
+
+    // 已转 ready：再以 processing 作谓词 → version_conflict，状态不被覆盖。
+    const conflict = await auxRepo.transitionMediaStatus("m-cas-1", "processing", {
+      status: "failed",
+      failureReason: "上传内容校验失败",
+      updatedAt: T0
+    });
+    assert.equal(conflict, "version_conflict");
+    assert.equal((await auxRepo.findMedia("m-cas-1"))?.status, "ready");
+
+    assert.equal(
+      await auxRepo.transitionMediaStatus("m-missing", "processing", {
+        status: "ready",
+        failureReason: null,
+        updatedAt: T0
+      }),
+      "not_found"
+    );
+  });
+
+  test("aux.listStaleProcessingMedia + deleteMediaRow：阈值过滤与物理删除", async () => {
+    await auxRepo.createMediaDraft(ADMIN_ID, makeMedia("m-stale", {
+      status: "processing",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    }));
+    await auxRepo.createMediaDraft(ADMIN_ID, makeMedia("m-fresh", {
+      status: "processing",
+      updatedAt: "2026-01-03T00:00:00.000Z"
+    }));
+    // ready 行即使更旧也不在孤儿清理范围。
+    await auxRepo.createMediaDraft(ADMIN_ID, makeMedia("m-ready-old", {
+      status: "ready",
+      updatedAt: "2026-01-01T00:00:00.000Z"
+    }));
+    const stale = await auxRepo.listStaleProcessingMedia("2026-01-02T00:00:00.000Z");
+    assert.deepEqual(stale.map((row) => row.id), ["m-stale"]);
+
+    await auxRepo.deleteMediaRow("m-stale");
+    assert.equal(await auxRepo.findMedia("m-stale"), null);
+    assert.deepEqual(
+      (await auxRepo.listStaleProcessingMedia("2026-01-02T00:00:00.000Z")).map((row) => row.id),
+      []
+    );
+  });
 }

@@ -8,6 +8,28 @@ import type {
   PlanStatus,
   SyndromeMeta
 } from "./domain.js";
+// MediaKind 唯一来源是 media-validation，避免多处定义发散。
+import type { MediaKind } from "../admin/media-validation.js";
+
+/**
+ * 素材行（content_resource_media）只读投影：与 content-aux 的
+ * ContentMediaRow 同构，在此独立声明以保持模块契约面
+ * （跨模块导入只走 contracts/domain/-ports/media-validation）。
+ */
+export interface KnowledgeSourceMediaRow {
+  id: string;
+  kind: MediaKind;
+  filename: string;
+  storedPath: string;
+  sizeBytes: number;
+  mimeType: string | null;
+  sha256: string | null;
+  status: "processing" | "ready" | "failed" | "disabled";
+  failureReason: string | null;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
 
 export interface KnowledgeRow {
   id: string;
@@ -117,7 +139,7 @@ export interface AgentAdminRepository {
     adminId: string;
     media: {
       id: string;
-      kind: "image" | "video" | "word" | "pdf" | "markdown";
+      kind: MediaKind;
       filename: string;
       storedPath: string;
       sizeBytes: number;
@@ -135,6 +157,24 @@ export interface AgentAdminRepository {
   }): Promise<IdempotentCreateResult<KnowledgeRow>>;
   listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]>;
   findKnowledge(id: string): Promise<KnowledgeRow | null>;
+  /**
+   * 素材读取（agent knowledge add-from-media）：校验媒体行存在且
+   * status=ready，并解析对象键（storedPath）读取已上传字节。
+   */
+  findMedia(id: string): Promise<KnowledgeSourceMediaRow | null>;
+  /**
+   * 从已就绪素材创建知识（远程上传路径）：知识行 + 分块 + 幂等行同一
+   * 事务；媒体行已在库（不重复插入，source_media_id 指向既有素材）。
+   * 幂等键为素材 sha256（与 createKnowledgeSource 同 scope 同键：
+   * 同一文件经本地上传或远程上传添加知识，重复提交都重放原知识）。
+   */
+  createKnowledgeFromMedia(
+    adminId: string,
+    mediaId: string,
+    knowledge: KnowledgeRow & { chunks: ChunkInput[] },
+    idempotencyKey: string,
+    requestHash: string
+  ): Promise<IdempotentCreateResult<KnowledgeRow>>;
   setKnowledgeStatus(
     id: string,
     status: KnowledgeStatus,
@@ -170,7 +210,7 @@ export interface AgentAdminRepository {
   // ---- 素材登记（共享表，知识源文件与 content 素材同源） ----
   registerMedia(input: {
     id: string;
-    kind: "image" | "video" | "word" | "pdf" | "markdown";
+    kind: MediaKind;
     filename: string;
     storedPath: string;
     sizeBytes: number;

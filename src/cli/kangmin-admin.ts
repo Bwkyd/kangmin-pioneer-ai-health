@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 
-import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { createHash } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import {
   createRemoteCommandClient,
-  remoteCommandBaseUrl
+  remoteCommandBaseUrl,
+  remoteTimeout
 } from "../app/remote-command-composition-root.js";
 import { DomainError, exitCodeForCode } from "../kernel/errors.js";
 import { failure, type CommandResult } from "../kernel/result.js";
+import {
+  assertKnowledgeExtension,
+  assertSizeWithinLimit,
+  DEFAULT_MEDIA_MAX_BYTES
+} from "../modules/admin/media-validation.js";
 
 /** 与 package.json version 保持同步（主线程集成时统一）。 */
 const VERSION = "0.1.0";
@@ -35,12 +42,15 @@ content 命令：
   article       list|show|create|update|preview|publish|unpublish
   video         list|show|create|update|preview|publish|unpublish
   media         list|show|upload <file>|disable|delete
+                upload-init --filename <f> --size-bytes <n> --sha256 <hex> [--kind <k>]
+                upload-confirm --media <id> --sha256 <hex>
+                cleanup-orphans [--older-than <分钟>] --yes
   category      list|show|create|update|disable
   message       list|show|create|update|publish|unpublish
 
 agent 命令：
   status
-  knowledge     list|show|add <file>|index|enable|disable|search-test <query>
+  knowledge     list|show|add <file>|add-from-media --media <id>|index|enable|disable|search-test <query>
   plan          list|show|create|update|preview|enable|disable|mappings
   model         show|update|test（--api-key 为标志，密钥从 stdin 读取）
   test          run|case <case-id>
@@ -110,7 +120,9 @@ const NUMBER_OPTIONS = new Set([
   "timeout",
   "maxOutput",
   "retrievalCount",
-  "limit"
+  "limit",
+  "sizeBytes",
+  "olderThanMinutes"
 ]);
 /** 允许重复出现、收集为数组的选项。 */
 const REPEATABLE_OPTIONS = new Set(["--step", "--method-tag"]);
@@ -158,6 +170,10 @@ const OPTION_NAMES: Record<string, string> = {
   "--limit": "limit",
   "--idempotency-key": "idempotencyKey",
   "--file": "file",
+  "--filename": "filename",
+  "--size-bytes": "sizeBytes",
+  "--sha256": "sha256",
+  "--older-than": "olderThanMinutes",
   "--yes": "yes"
 };
 
@@ -204,6 +220,9 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   // ---- content media ----
   "content media list": { positional: null, required: false },
   "content media upload": { positional: "file", required: true },
+  "content media upload-init": { positional: null, required: false },
+  "content media upload-confirm": { positional: null, required: false },
+  "content media cleanup-orphans": { positional: null, required: false },
   "content media show": { positional: "id", required: true },
   "content media disable": { positional: "id", required: true },
   "content media delete": { positional: "id", required: true },
@@ -220,6 +239,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   "agent knowledge list": { positional: null, required: false },
   "agent knowledge show": { positional: "id", required: true },
   "agent knowledge add": { positional: "file", required: true },
+  "agent knowledge add-from-media": { positional: null, required: false },
   "agent knowledge index": { positional: "id", required: true },
   "agent knowledge enable": { positional: "id", required: true },
   "agent knowledge disable": { positional: "id", required: true },
@@ -575,10 +595,163 @@ function readSecret(prompt: string): Promise<string | undefined> {
   });
 }
 
+// ---- 远程上传编排（仅远程模式：init → 预签名直传 → confirm） ----
+
+/**
+ * 远程模式下 `content media upload <file>` 与 `agent knowledge add <file>`
+ * 在 CLI 本地编排三步（命令契约不变，体感与本地一致）：
+ * 1. content media upload-init 申请预签名直传票据（重复上传直接重放）；
+ * 2. HTTP PUT 直传对象存储（不经过命令服务，服务端不接收客户端路径）；
+ * 3. content media upload-confirm 校验和确认（服务端完成魔数双校验）。
+ * agent knowledge add 在 confirm 就绪后追加 add-from-media 建知识。
+ * 本地模式不经过此路径，行为一字不改。
+ */
+interface RemoteUploadTicketView {
+  url: string;
+  method: string;
+  headers: Record<string, string>;
+}
+
+interface RemoteUploadInitData {
+  status: "completed" | "uploading";
+  media?: { id: string } | undefined;
+  mediaId?: string | undefined;
+  ticket?: RemoteUploadTicketView | undefined;
+}
+
+const DEFAULT_PUT_TIMEOUT_MS = 15_000;
+
+async function orchestrateRemoteUpload(
+  executor: AdminCommandExecutor,
+  command: "content media upload" | "agent knowledge add",
+  input: Record<string, unknown>,
+  environment: NodeJS.ProcessEnv
+): Promise<CommandResult> {
+  const file = input.file as string;
+  let sizeBytes: number;
+  try {
+    const stats = statSync(file);
+    if (!stats.isFile()) {
+      return failure(
+        command,
+        new DomainError("validation_failed", "素材路径必须是文件")
+      );
+    }
+    sizeBytes = stats.size;
+  } catch (error) {
+    if (error instanceof DomainError) {
+      return failure(command, error);
+    }
+    return failure(
+      command,
+      new DomainError("validation_failed", "素材文件不存在或不可读", {
+        cause: error
+      })
+    );
+  }
+  try {
+    // 大小与知识扩展名预检：与服务端 init/add-from-media 同规则，快速失败。
+    assertSizeWithinLimit(sizeBytes, DEFAULT_MEDIA_MAX_BYTES, "素材文件");
+    if (command === "agent knowledge add") {
+      assertKnowledgeExtension(file);
+    }
+  } catch (error) {
+    return failure(command, error);
+  }
+
+  const body = readFileSync(file);
+  const sha256 = createHash("sha256").update(body).digest("hex");
+
+  const init = await executor.execute({
+    command: "content media upload-init",
+    input: {
+      filename: basename(file),
+      // kind 仅 media upload 显式 --kind 时传递；知识上传由扩展名决定。
+      ...(command === "content media upload" && input.kind !== undefined
+        ? { kind: input.kind }
+        : {}),
+      sizeBytes,
+      sha256
+    }
+  });
+  if (!init.ok) {
+    return { ...init, command };
+  }
+
+  const initData = init.data as RemoteUploadInitData;
+  let mediaId: string;
+  if (initData.status === "completed") {
+    // 重复上传重放：素材已就绪，无需直传。
+    mediaId = (initData.media as { id: string }).id;
+    if (command === "content media upload") {
+      // 输出形状与本地 upload 的素材视图一致。
+      return { ...init, command, data: initData.media };
+    }
+  } else {
+    mediaId = initData.mediaId as string;
+    const ticket = initData.ticket as RemoteUploadTicketView;
+    process.stderr.write(`直传 ${sizeBytes} 字节到对象存储…\n`);
+    let response: Response;
+    try {
+      response = await fetch(ticket.url, {
+        method: ticket.method,
+        headers: ticket.headers,
+        body,
+        signal: AbortSignal.timeout(
+          remoteTimeout(environment) ?? DEFAULT_PUT_TIMEOUT_MS
+        )
+      });
+    } catch (error) {
+      return failure(
+        command,
+        new DomainError("service_unavailable", "直传失败：无法连接对象存储", {
+          retryable: true,
+          cause: error
+        })
+      );
+    }
+    if (!response.ok) {
+      // 不泄露票据 URL（含签名参数），只报告状态码。
+      return failure(
+        command,
+        new DomainError(
+          "service_unavailable",
+          `直传失败（HTTP ${response.status}）`,
+          { retryable: true }
+        )
+      );
+    }
+
+    const confirm = await executor.execute({
+      command: "content media upload-confirm",
+      input: { mediaId, sha256 }
+    });
+    if (!confirm.ok) {
+      return { ...confirm, command };
+    }
+    if (command === "content media upload") {
+      const confirmed = confirm.data as { media: unknown };
+      return { ...confirm, command, data: confirmed.media };
+    }
+  }
+
+  // agent knowledge add：素材就绪后从素材创建知识（与本地 add 同幂等键）。
+  const added = await executor.execute({
+    command: "agent knowledge add-from-media",
+    input: {
+      mediaId,
+      ...(input.source !== undefined ? { source: input.source } : {}),
+      ...(input.description !== undefined
+        ? { description: input.description }
+        : {})
+    }
+  });
+  return { ...added, command };
+}
+
 // ---- 输出 ----
 
-function human(result: CommandResult): string {
-  if (!result.ok) {
+function human(result: CommandResult): string {  if (!result.ok) {
     return `${result.error.code}: ${result.error.message}`;
   }
   if (
@@ -680,10 +853,21 @@ export async function runAdminCli(
       }
     }
 
-    const result = await executor.execute({
-      command: parsed.command,
-      input
-    });
+    const remoteUpload =
+      baseUrl !== undefined &&
+      (parsed.command === "content media upload" ||
+        parsed.command === "agent knowledge add");
+    const result = remoteUpload
+      ? await orchestrateRemoteUpload(
+          executor,
+          parsed.command as "content media upload" | "agent knowledge add",
+          input,
+          environment
+        )
+      : await executor.execute({
+          command: parsed.command,
+          input
+        });
 
     if (result.ok && parsed.command === "auth login") {
       const data = result.data as { token: string; username: string; expiresAt: string };

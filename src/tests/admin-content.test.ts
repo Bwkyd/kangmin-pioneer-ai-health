@@ -12,6 +12,7 @@ import test from "node:test";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
+import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import type { CommandResult } from "../kernel/result.js";
 import { ContentAuxService } from "../modules/admin/content-aux-service.js";
 import type {
@@ -207,7 +208,13 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
   const { app, databasePath, mediaDirectory, token } = await fixture();
   try {
     const videoFile = join(mediaDirectory, "demo.mp4");
-    writeFileSync(videoFile, "fake-video-bytes");
+    // ISO BMFF（ftyp 盒）魔数：内容魔数嗅探（类型伪装防线）识别为 video。
+    writeFileSync(
+      videoFile,
+      Buffer.from([
+        0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32
+      ])
+    );
 
     const media = dataOf<ContentMediaRow>(
       await app.execute({
@@ -704,7 +711,11 @@ test("content media upload 同文件重传 → 重放；show/list 输出不含 s
   const { app, mediaDirectory, token } = await fixture();
   try {
     const file = join(mediaDirectory, "replay.png");
-    writeFileSync(file, "same-bytes");
+    // PNG 魔数：内容魔数嗅探（类型伪装防线）识别为 image。
+    writeFileSync(
+      file,
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+    );
     const first = dataOf<{ id: string; filename: string; storedPath?: unknown }>(
       await app.execute({ command: "content media upload", adminToken: token, input: { file } })
     );
@@ -746,7 +757,11 @@ test("uploadMedia 注册失败时清理已复制的文件，不留孤儿副本�
   const directory = mkdtempSync(join(tmpdir(), "kangmin-upload-cleanup-"));
   const mediaDirectory = join(directory, "admin-media");
   const file = join(directory, "source.png");
-  writeFileSync(file, "bytes");
+  // PNG 魔数：内容魔数嗅探（类型伪装防线）识别为 image。
+  writeFileSync(
+    file,
+    Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])
+  );
   const failingRepository = {
     createMediaIdempotent: async (): Promise<never> => {
       throw new Error("boom");
@@ -754,7 +769,7 @@ test("uploadMedia 注册失败时清理已复制的文件，不留孤儿副本�
   } as unknown as ContentAuxRepository;
   const service = new ContentAuxService(
     failingRepository,
-    mediaDirectory,
+    new LocalFilesystemObjectStorage(mediaDirectory),
     { record: async () => {} }
   );
   await assert.rejects(

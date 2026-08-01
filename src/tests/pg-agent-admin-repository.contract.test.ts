@@ -1008,3 +1008,71 @@ test(
     assert.equal(await repo.findVideoResource(uid("missing")), null);
   }
 );
+
+// ==================== 远程上传：from-media 知识创建 ====================
+
+test(
+  "add-from-media：findMedia 读取素材行；createKnowledgeFromMedia 同事务插知识+分块+幂等行",
+  { skip: SKIP },
+  async () => {
+    const repo = agentAdmin();
+    const adminId = uid("admin");
+    await ensureAdmin(adminId);
+    const media = makeMedia(uid("med"));
+    await repo.registerMedia(media);
+
+    // findMedia：与 content-aux findMedia 同形状。
+    const found = await repo.findMedia(media.id);
+    assert.ok(found !== null);
+    assert.equal(found.filename, media.filename);
+    assert.equal(found.storedPath, media.storedPath);
+    assert.equal(found.status, "ready");
+    assert.equal(await repo.findMedia(uid("missing")), null);
+
+    const knowledge = makeKnowledge(uid("kno"));
+    const created = await repo.createKnowledgeFromMedia(
+      adminId,
+      media.id,
+      knowledge,
+      "sha-remote-1",
+      "sha-remote-1"
+    );
+    assert.equal(created.kind, "created");
+    if (created.kind === "created") {
+      assert.equal(created.item.id, knowledge.id);
+    }
+
+    // 媒体行已在库，不重复插入；知识行 source_media_id 以 mediaId 为准。
+    const { rows: mediaRows } = await database().query<{ n: number }>(
+      "SELECT COUNT(*)::int AS n FROM content_resource_media WHERE id = $1",
+      [media.id]
+    );
+    assert.equal(mediaRows[0]?.n, 1);
+    const stored = await repo.findKnowledge(knowledge.id);
+    assert.equal(stored?.sourceMediaId, media.id);
+    assert.equal(stored?.chunkCount, knowledge.chunks.length);
+
+    // 幂等重放：同 scope 同键同 hash → replayed 返回原知识（不重复创建）。
+    const replayed = await repo.createKnowledgeFromMedia(
+      adminId,
+      media.id,
+      makeKnowledge(uid("kno-other")),
+      "sha-remote-1",
+      "sha-remote-1"
+    );
+    assert.equal(replayed.kind, "replayed");
+    if (replayed.kind === "replayed") {
+      assert.equal(replayed.item.id, knowledge.id);
+    }
+
+    // 同键异 hash → conflict（与 createKnowledgeSource 同语义）。
+    const conflict = await repo.createKnowledgeFromMedia(
+      adminId,
+      media.id,
+      knowledge,
+      "sha-remote-1",
+      "different-hash"
+    );
+    assert.equal(conflict.kind, "conflict");
+  }
+);

@@ -10,6 +10,10 @@ import {
 } from "../infrastructure/remote-command-client.js";
 import { DomainError } from "../kernel/errors.js";
 
+// CLI 远程上传编排的 PUT 直传复用同一超时配置（cli 层不得直接导入
+// infrastructure，经本组合根透出）。
+export { remoteTimeout };
+
 export function remoteCommandBaseUrl(
   environment: NodeJS.ProcessEnv
 ): string | undefined {

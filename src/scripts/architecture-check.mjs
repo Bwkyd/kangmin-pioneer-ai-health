@@ -39,13 +39,15 @@ async function walk(directory) {
       /from\s+["'][^"']*\.\.\/(?!kernel\/)/u.test(source)
     ) {
       // 跨模块导入只允许公开契约面（contracts.ts / domain.ts / *-ports.ts）。
+      // media-validation.ts 是素材/知识双链路共用的类型与大小校验唯一来源
+      // （对象存储接入，issue-141），视同公开契约面。
       const crossModule = /from\s+["'](\.\.\/[a-z0-9-]+\/)([^"']+)["']/gu;
       for (const match of source.matchAll(crossModule)) {
         const [, directory, target] = match;
         const targetFile = target.replace(/\.js$/u, ".ts");
         if (
           directory !== "../kernel/" &&
-          !/(?:contracts|domain|-ports)\.ts$/u.test(targetFile)
+          !/(?:contracts|domain|-ports|media-validation)\.ts$/u.test(targetFile)
         ) {
           violations.push(
             `${file} imports ${directory}${target} outside the public contract surface`

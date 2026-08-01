@@ -4,6 +4,14 @@ import { dirname, join } from "node:path";
 import { KangminAdminApplication, type DoctorCheck, type DoctorReport } from "./admin-application.js";
 import { resolveDatabaseUrl, resolveEncryption } from "./composition-root.js";
 import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
+import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
+import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import { DomainError } from "../kernel/errors.js";
+import type {
+  ObjectHead,
+  ObjectStoragePort,
+  ObjectUploadTicket
+} from "../modules/system/object-storage-ports.js";
 import {
   KangminPgDatabase,
   appliedPgMigrationVersions
@@ -28,8 +36,118 @@ function defaultMediaDirectory(databasePath: string): string {
   return join(dirname(databasePath), "admin-media");
 }
 
-/** 素材目录检查（SQLite 与 PostgreSQL doctor 共用；固定文案，不输出绝对路径）。 */
-function mediaStorageCheck(mediaDirectory: string): DoctorCheck {
+/**
+ * 本地存储延迟创建：LocalFilesystemObjectStorage 构造即创建根目录，若
+ * 组合根启动时就实例化，素材目录会被提前创建，doctor 的"目录缺失或不可
+ * 读写即 failed"语义失效（既有 CLI 契约：未引导环境 doctor 不健康）。
+ * 首次实际读写时才创建目录，保持既有 doctor 行为。
+ */
+class LazyLocalObjectStorage implements ObjectStoragePort {
+  private inner: ObjectStoragePort | undefined;
+
+  constructor(private readonly rootDirectory: string) {}
+
+  private storage(): ObjectStoragePort {
+    this.inner ??= new LocalFilesystemObjectStorage(this.rootDirectory);
+    return this.inner;
+  }
+
+  putObject(input: {
+    key: string;
+    body: Buffer;
+    contentType?: string | undefined;
+  }): Promise<void> {
+    return this.storage().putObject(input);
+  }
+
+  getObject(key: string): Promise<Buffer> {
+    return this.storage().getObject(key);
+  }
+
+  headObject(key: string): Promise<ObjectHead | null> {
+    return this.storage().headObject(key);
+  }
+
+  deleteObject(key: string): Promise<void> {
+    return this.storage().deleteObject(key);
+  }
+
+  createUploadTicket(input: {
+    key: string;
+    contentType: string;
+    sizeBytes: number;
+    sha256: string;
+  }): Promise<ObjectUploadTicket> {
+    return this.storage().createUploadTicket(input);
+  }
+
+  verifyObject(input: {
+    key: string;
+    sha256: string;
+    sizeBytes: number;
+  }): Promise<boolean> {
+    return this.storage().verifyObject(input);
+  }
+}
+
+/**
+ * 对象存储选择：显式注入优先（测试/远程编排）；否则 KANGMIN_S3_BUCKET
+ * 存在 → S3 兼容后端（缺访问凭证抛 config_missing）；否则本地文件系统
+ * （mediaDirectory 照旧解析，语义与改造前一致）。
+ */
+function resolveObjectStorage(
+  options: { objectStorage?: ObjectStoragePort | undefined },
+  mediaDirectory: string
+): ObjectStoragePort {
+  if (options.objectStorage !== undefined) {
+    return options.objectStorage;
+  }
+  const bucket = process.env.KANGMIN_S3_BUCKET;
+  if (bucket !== undefined && bucket.trim() !== "") {
+    const accessKeyId = process.env.KANGMIN_S3_ACCESS_KEY_ID ?? "";
+    const secretAccessKey = process.env.KANGMIN_S3_SECRET_ACCESS_KEY ?? "";
+    if (accessKeyId === "" || secretAccessKey === "") {
+      throw new DomainError(
+        "config_missing",
+        "已配置 KANGMIN_S3_BUCKET，但缺少 KANGMIN_S3_ACCESS_KEY_ID / KANGMIN_S3_SECRET_ACCESS_KEY"
+      );
+    }
+    return new S3ObjectStorage({
+      bucket,
+      endpoint: process.env.KANGMIN_S3_ENDPOINT || undefined,
+      region: process.env.KANGMIN_S3_REGION || "us-east-1",
+      accessKeyId,
+      secretAccessKey
+    });
+  }
+  return new LazyLocalObjectStorage(mediaDirectory);
+}
+
+/**
+ * 素材存储探针（SQLite 与 PostgreSQL doctor 共用；固定文案，不输出绝对路径，
+ * 不泄露桶名/端点等细节）。本地后端保持目录 R_OK/W_OK 检查；S3 后端用
+ * headObject 探测——正常返回（含 null，对象无需存在）即证明桶与凭证可用。
+ */
+async function mediaStorageCheck(
+  storage: ObjectStoragePort,
+  mediaDirectory: string
+): Promise<DoctorCheck> {
+  if (storage instanceof S3ObjectStorage) {
+    try {
+      await storage.headObject("__doctor_probe__");
+      return {
+        name: "media-storage",
+        status: "ok",
+        message: "素材对象存储可用"
+      };
+    } catch {
+      return {
+        name: "media-storage",
+        status: "failed",
+        message: "素材对象存储不可用（检查桶与凭证配置）"
+      };
+    }
+  }
   const status: DoctorCheck["status"] = (() => {
     try {
       accessSync(mediaDirectory, constants.R_OK | constants.W_OK);
@@ -118,11 +236,12 @@ interface ModelConfigRow {
 /** PostgreSQL 后端 doctor：检查集与 SQLite 版一致，探针走 PG。 */
 async function pgDoctorChecks(
   database: KangminPgDatabase,
+  storage: ObjectStoragePort,
   mediaDirectory: string
 ): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [
     databaseMigrationsCheck(await appliedPgMigrationVersions(database)),
-    mediaStorageCheck(mediaDirectory)
+    await mediaStorageCheck(storage, mediaDirectory)
   ];
 
   const accounts = await database.query<CountRow>(
@@ -149,13 +268,14 @@ async function pgDoctorChecks(
 }
 
 /** doctor 只检查连接状态，不修改任何配置。 */
-function doctorChecks(
+async function doctorChecks(
   database: KangminDatabase,
+  storage: ObjectStoragePort,
   mediaDirectory: string
-): DoctorReport {
+): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [
     databaseMigrationsCheck(appliedMigrationVersions(database)),
-    mediaStorageCheck(mediaDirectory)
+    await mediaStorageCheck(storage, mediaDirectory)
   ];
 
   const accounts = database.connection.prepare(
@@ -183,13 +303,18 @@ function doctorChecks(
 
 export function createAdminApplication(
   path: string,
-  options: { mediaDirectory?: string; databaseUrl?: string | undefined } = {}
+  options: {
+    mediaDirectory?: string;
+    databaseUrl?: string | undefined;
+    objectStorage?: ObjectStoragePort | undefined;
+  } = {}
 ): KangminAdminApplication {
   // 与患者端一致的密钥策略（fail-closed）：KANGMIN_ENCRYPTION_KEYS → AES；
   // local/integration 或显式 KANGMIN_ALLOW_DEV_SESSION=1 → 明文开发降级；
   // 其余环境 → config_missing。API Key 与旧库回填依赖该端口。
   const encryption = resolveEncryption(process.env);
   const mediaDirectory = options.mediaDirectory ?? defaultMediaDirectory(path);
+  const objectStorage = resolveObjectStorage(options, mediaDirectory);
 
   const databaseUrl = resolveDatabaseUrl(options);
   if (databaseUrl !== undefined) {
@@ -202,12 +327,12 @@ export function createAdminApplication(
       new PgAgentAdminRepository(database, encryption),
       new BuiltinSyndromeRegistry(),
       new PgUserAdminRepository(database),
-      mediaDirectory,
+      objectStorage,
       new PgAuditRepository(database),
       () => {
         void database.close();
       },
-      () => pgDoctorChecks(database, mediaDirectory)
+      () => pgDoctorChecks(database, objectStorage, mediaDirectory)
     );
   }
 
@@ -227,11 +352,11 @@ export function createAdminApplication(
     agentRepository,
     new BuiltinSyndromeRegistry(),
     userRepository,
-    mediaDirectory,
+    objectStorage,
     auditRepository,
     () => {
       database.close();
     },
-    () => Promise.resolve(doctorChecks(database, mediaDirectory))
+    () => doctorChecks(database, objectStorage, mediaDirectory)
   );
 }

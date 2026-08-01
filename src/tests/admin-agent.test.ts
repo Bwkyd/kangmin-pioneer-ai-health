@@ -11,6 +11,7 @@ import test from "node:test";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
 import type { CommandResult } from "../kernel/result.js";
@@ -341,7 +342,13 @@ test("方案关联视频校验：不存在或未发布的视频不能启用", as
 
     // 已发布视频可通过启用校验
     const mediaFile = join(mediaDirectory, "plan-video.mp4");
-    writeFileSync(mediaFile, "video-bytes");
+    // ISO BMFF（ftyp 盒）魔数：内容魔数嗅探（类型伪装防线）识别为 video。
+    writeFileSync(
+      mediaFile,
+      Buffer.from([
+        0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32
+      ])
+    );
     const media = dataOf<{ id: string }>(
       await app.execute({
         command: "content media upload",
@@ -387,7 +394,13 @@ test("方案启用走事务路径：启用前视频被下架 → enablePlan 拒�
   const { app, mediaDirectory, token } = await fixture();
   try {
     const mediaFile = join(mediaDirectory, "unpublish-video.mp4");
-    writeFileSync(mediaFile, "video-bytes");
+    // ISO BMFF（ftyp 盒）魔数：内容魔数嗅探（类型伪装防线）识别为 video。
+    writeFileSync(
+      mediaFile,
+      Buffer.from([
+        0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32
+      ])
+    );
     const media = dataOf<{ id: string }>(
       await app.execute({
         command: "content media upload",
@@ -822,7 +835,7 @@ test("addKnowledge 事务失败时清理已复制的知识文件（不留孤儿�
   const service = new AgentAdminService(
     failingRepository,
     new BuiltinSyndromeRegistry(),
-    mediaDirectory,
+    new LocalFilesystemObjectStorage(mediaDirectory),
     { record: async () => {} }
   );
   await assert.rejects(

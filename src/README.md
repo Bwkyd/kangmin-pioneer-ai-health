@@ -81,6 +81,13 @@ export KANGMIN_SESSION_TOKEN="<opaque patient token>"
 | `KANGMIN_DEEPSEEK_API_KEY` | 模型 API 密钥；未配置时自由对话降级为结构化问答 |
 | `KANGMIN_ENV_PROVIDER_MODE` | 测试替身故障模式 `fixed`/`unavailable`/`timeout`（仅测试） |
 | `KANGMIN_ADMIN_MEDIA_DIR` | 管理端素材目录，默认与数据库同目录的 `admin-media` |
+| `KANGMIN_S3_BUCKET` | S3 兼容对象存储桶名；配置后管理端素材/知识文件改用 S3 后端（缺省为本地文件系统后端） |
+| `KANGMIN_S3_ENDPOINT` | S3 兼容端点地址（如 MinIO）；缺省走 AWS 默认端点 |
+| `KANGMIN_S3_REGION` | S3 区域，默认 `us-east-1` |
+| `KANGMIN_S3_ACCESS_KEY_ID` | S3 访问密钥 ID；配置 `KANGMIN_S3_BUCKET` 时必填，缺失 `config_missing` |
+| `KANGMIN_S3_SECRET_ACCESS_KEY` | S3 访问密钥；配置 `KANGMIN_S3_BUCKET` 时必填，缺失 `config_missing` |
+| `KANGMIN_MEDIA_MAX_BYTES` | 素材文件大小上限（字节），默认 200MB；超限 `validation_failed` |
+| `KANGMIN_KNOWLEDGE_MAX_BYTES` | 知识源文件大小上限（字节），默认 50MB；超限 `validation_failed` |
 
 加密策略（组合根强制，测试锁定）：
 
@@ -371,8 +378,8 @@ batch_partial_failure / internal_error
 ## 本地/集成数据库
 
 以下 SQLite 能力只描述当前本地和集成运行模式，不是生产存储验收结论。
-对象存储适配器仍属于后续阶段；PostgreSQL 适配器已实现（见下节），
-生产组合根强制 PostgreSQL 的门禁在运维发布阶段完成。
+PostgreSQL 适配器已实现（见下节）；对象存储两种后端见"对象存储与上传"
+一节，生产组合根的存储门禁在运维发布阶段完成。
 
 - 单文件 SQLite（默认 `src/.local/kangmin-mvp.sqlite`），WAL 模式、
   外键开启、busy 重试。
@@ -421,6 +428,37 @@ batch_partial_failure / internal_error
 - 契约测试需 `KANGMIN_TEST_DATABASE_URL` 指向可建库的 PostgreSQL
   （CI 由 postgres:16 service 提供）；测试在服务器上自建一次性
   隔离库并在结束后删除，未配置时自动 skip。
+
+## 对象存储与上传
+
+管理端素材与知识源文件统一走对象存储端口（`modules/system/object-storage-ports.ts`），
+对象键约定 `<med_id>/<原始文件名>`，两种后端一致：
+
+- **本地文件系统后端（默认）**：未配置 `KANGMIN_S3_BUCKET` 时启用，服务端
+  直写到素材目录（`KANGMIN_ADMIN_MEDIA_DIR`），语义与改造前一致；
+  不支持远程直传——远程模式调用 `upload-init` 返回 `capability_unavailable`。
+- **S3 兼容后端**：配置 `KANGMIN_S3_BUCKET`（及访问密钥）后启用，
+  支持预签名直传；`KANGMIN_S3_ENDPOINT` 可指向 MinIO 等兼容实现。
+
+远程模式下 `content media upload <file>` 与 `agent knowledge add <file>`
+由 CLI 在本地编排三步，命令契约与本地模式一致：
+
+1. `content media upload-init`：申请预签名直传票据（扩展名白名单 +
+   大小上限 + sha256 形状校验）；同指纹素材已就绪时直接重放，不发新票据；
+2. HTTP PUT 直传对象存储：CLI 携带票据签名头直传字节，不经过命令服务，
+   服务端不接收客户端本地路径；失败映射可重试的 `service_unavailable`；
+3. `content media upload-confirm`：服务端校验对象存在、大小与 sha256
+   一致，并读取真实字节做魔数嗅探（类型双校验第二步）；任一失败即标记
+   failed、删除对象并返回 `validation_failed`。
+
+`agent knowledge add` 在确认就绪后追加 `agent knowledge add-from-media`
+创建知识（与本地 add 同幂等键，同文件重复提交重放原知识）。
+
+类型双校验（扩展名 + 内容魔数）与大小上限全程 fail-closed，本地直写与
+远程直传一致执行。客户端 init 后中断的孤儿会话（processing 草稿）由
+`content media cleanup-orphans [--older-than <分钟>] --yes` 清理：
+删除存储对象并移除草稿行，属高影响操作，未带 `--yes` 返回
+`confirmation_required`。
 
 ## 已知限制
 
