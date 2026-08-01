@@ -14,7 +14,8 @@ import { TestEnvironmentProvider } from "../infrastructure/test-environment-prov
 import type { CommandResult } from "../kernel/result.js";
 import type {
   BrowseSearchResults,
-  CarePlanDetail
+  CarePlanDetail,
+  PublicContent
 } from "../modules/browse/contracts.js";
 import type { EnvironmentSnapshot, ForecastDay } from "../modules/environment/environment-ports.js";
 import { seedContent } from "./content-fixture.js";
@@ -91,6 +92,34 @@ function fixture(options: { provider?: TestEnvironmentProvider } = {}) {
     })
   };
 }
+
+test("browse article/video show：返回来源与免责声明（§25.5 患者侧 9）", async () => {
+  const { application } = fixture();
+  try {
+    const article = dataOf<PublicContent>(
+      await application.execute({
+        command: "browse article show",
+        input: { id: "article-public" }
+      })
+    );
+    assert.ok(article.source.length > 0);
+    assert.equal(article.source, "已审核测试来源");
+    assert.ok(article.disclaimer.length > 0);
+    assert.ok(article.disclaimer.includes("不代替门诊诊断"));
+
+    const video = dataOf<PublicContent>(
+      await application.execute({
+        command: "browse video show",
+        input: { id: "video-public" }
+      })
+    );
+    assert.ok(video.source.length > 0);
+    assert.ok(video.disclaimer.length > 0);
+    assert.ok(video.disclaimer.includes("不代替门诊诊断"));
+  } finally {
+    application.close();
+  }
+});
 
 test("通用方案：已发布可见，未发布/草稿不可见，搜索只覆盖已发布", async () => {
   const { application } = fixture();

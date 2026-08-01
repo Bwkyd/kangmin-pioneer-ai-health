@@ -378,6 +378,102 @@ test("方案关联视频校验：不存在或未发布的视频不能启用", as
   }
 });
 
+test("方案启用走事务路径：启用前视频被下架 → enablePlan 拒绝（评审 C 事务变式）", async () => {
+  const { app, mediaDirectory, token } = await fixture();
+  try {
+    const mediaFile = join(mediaDirectory, "unpublish-video.mp4");
+    writeFileSync(mediaFile, "video-bytes");
+    const media = dataOf<{ id: string }>(
+      await app.execute({
+        command: "content media upload",
+        adminToken: token,
+        input: { file: mediaFile }
+      })
+    );
+    const video = dataOf<{ id: string }>(
+      await app.execute({
+        command: "content video create",
+        adminToken: token,
+        input: {
+          title: "将被下架的视频",
+          category: "居家护理",
+          idempotencyKey: "plan-video-unpublish"
+        }
+      })
+    );
+    dataOf(
+      await app.execute({
+        command: "content video update",
+        adminToken: token,
+        input: {
+          id: video.id,
+          expectedRevision: 1,
+          summary: "视频简介",
+          body: "视频正文简介。",
+          source: "来源",
+          mediaId: media.id
+        }
+      })
+    );
+    dataOf(
+      await app.execute({
+        command: "content video publish",
+        adminToken: token,
+        input: { id: video.id, expectedRevision: 2, yes: true }
+      })
+    );
+
+    // 视频发布时创建方案（创建仅校验视频存在，不校验发布状态）。
+    const plan = dataOf<AgentPlan>(
+      await app.execute({
+        command: "agent plan create",
+        adminToken: token,
+        input: {
+          name: "引用下架视频的方案",
+          syndrome: "LUNG_HEAT",
+          method: "日常护理",
+          steps: ["步骤一"],
+          risks: "风险提示",
+          precautions: "注意事项",
+          contraindications: "禁忌",
+          videoResourceId: video.id
+        }
+      })
+    );
+
+    // 另一进程先下架视频（并发窗口的确定性模拟）：enablePlan 的校验与
+    // 状态更新同一事务（setPlanStatusGuarded），视频发布状态在事务内
+    // 重读并拒绝，不产生"已启用但依赖已下架"的中间状态。
+    dataOf(
+      await app.execute({
+        command: "content video unpublish",
+        adminToken: token,
+        input: { id: video.id, expectedRevision: 3, yes: true }
+      })
+    );
+    const rejected = await app.execute({
+      command: "agent plan enable",
+      adminToken: token,
+      input: { id: plan.id, expectedRevision: 1, yes: true }
+    });
+    assert.equal(rejected.ok, false);
+    if (!rejected.ok) assert.equal(rejected.error.code, "validation_failed");
+
+    // 无部分写入：方案仍为 draft（revision 未推进）。
+    const after = dataOf<AgentPlan>(
+      await app.execute({
+        command: "agent plan show",
+        adminToken: token,
+        input: { id: plan.id }
+      })
+    );
+    assert.equal(after.status, "draft");
+    assert.equal(after.revision, 1);
+  } finally {
+    app.close();
+  }
+});
+
 test("模型设置：不显示完整 API Key；未配置时测试如实报错；模拟测试契约", async () => {
   const { app, databasePath, token } = await fixture();
   try {

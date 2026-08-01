@@ -79,6 +79,13 @@ export type UpdatePlanResult =
   | { kind: "not_found" }
   | { kind: "version_conflict"; currentRevision: number };
 
+/** 启用前校验与状态更新同一事务的结果（guard 返回的 missing 由调用方映射）。 */
+export type PlanGuardedUpdateResult =
+  | { kind: "updated"; plan: AgentPlan }
+  | { kind: "not_found" }
+  | { kind: "version_conflict"; currentRevision: number }
+  | { kind: "validation_failed"; missing: string[] };
+
 export interface AgentAdminRepository {
   // ---- 知识 ----
   createKnowledge(
@@ -129,6 +136,22 @@ export interface AgentAdminRepository {
     status: PlanStatus,
     updatedAt: string
   ): Promise<UpdatePlanResult>;
+  /**
+   * 启用前校验与状态更新同一事务（评审 C 事务变式，与内容发布
+   * updateGuarded 同类）：guard 在 BEGIN IMMEDIATE 内执行，视频发布
+   * 状态在事务内重读——并发进程在另一事务下架视频时，本事务校验
+   * 拒绝，状态更新不提交；校验通过才在同一事务内置为 enabled。
+   */
+  setPlanStatusGuarded(
+    id: string,
+    expectedRevision: number,
+    status: PlanStatus,
+    updatedAt: string,
+    guard: (
+      plan: AgentPlan,
+      video: { id: string; status: string } | null
+    ) => string[]
+  ): Promise<PlanGuardedUpdateResult>;
 
   // ---- 模型设置 ----
   getModelConfig(): Promise<ModelConfigRow | null>;

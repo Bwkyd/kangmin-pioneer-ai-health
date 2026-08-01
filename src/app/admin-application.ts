@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash } from "node:crypto";
 
 import { DomainError } from "../kernel/errors.js";
 import { failure, success, type CommandResult } from "../kernel/result.js";
@@ -67,13 +67,41 @@ function opt(input: Record<string, unknown>, key: string): string | undefined {
   return optionalString(input, key) ?? undefined;
 }
 
-function idempotencyKeyOf(input: Record<string, unknown>): string {
+/** 稳定序列化：对象按键排序（与 conversation-service 的 canonicalJson 一致）。 */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(
+        ([key, entry]) =>
+          `${JSON.stringify(key)}:${canonicalJson(entry)}`
+      );
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * 幂等键来源：显式 --idempotency-key 优先（现有语义不变）；
+ * 缺省时生成确定性键 sha256(command + ":" + canonicalJson(input))——
+ * 同命令同内容重试得到同键，走重放返回原记录，绝不重复创建；
+ * 不同内容得到不同键。CLI 传入的 input 不含随机字段（时间戳/请求号
+ * 由服务端生成），确定性键与实际请求内容一一对应。
+ */
+function idempotencyKeyOf(
+  command: string,
+  input: Record<string, unknown>
+): string {
   const value = input.idempotencyKey;
   if (typeof value === "string" && value.trim() !== "") {
     return value.trim();
   }
-  // 每次 CLI 调用生成一次性幂等键：显式键仍获得重放保护。
-  return randomUUID();
+  return createHash("sha256")
+    .update(`${command}:${canonicalJson(input)}`, "utf8")
+    .digest("hex");
 }
 
 export class KangminAdminApplication {
@@ -225,7 +253,7 @@ export class KangminAdminApplication {
               disclaimer: opt(input, "disclaimer") ?? "",
               methodTags: optionalStringArray(input, "methodTags") ?? [],
               displayOrder: optionalIntegerInRange(input, "displayOrder", 0, 1_000_000) ?? 0,
-              idempotencyKey: idempotencyKeyOf(input)
+              idempotencyKey: idempotencyKeyOf(command, input)
             }),
             request.requestId
           );
@@ -295,7 +323,7 @@ export class KangminAdminApplication {
               disclaimer: opt(input, "disclaimer") ?? "",
               methodTags: optionalStringArray(input, "methodTags") ?? [],
               displayOrder: optionalIntegerInRange(input, "displayOrder", 0, 1_000_000) ?? 0,
-              idempotencyKey: idempotencyKeyOf(input)
+              idempotencyKey: idempotencyKeyOf(command, input)
             }),
             request.requestId
           );

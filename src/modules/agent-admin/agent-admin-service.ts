@@ -466,19 +466,28 @@ export class AgentAdminService {
     if (plan.status === "enabled") {
       return plan;
     }
-    const missing = await this.validatePlanForEnable(plan);
-    if (missing.length > 0) {
-      throw new DomainError(
-        "validation_failed",
-        `启用前校验未通过：${missing.join("、")}`
-      );
-    }
-    const outcome = await this.repository.setPlanStatus(
+    // 固定证型注册表是常量（非数据库状态），无并发窗口，事务外校验；
+    // 方案内容与视频发布状态等数据库依赖在事务内重读校验
+    // （repository.setPlanStatusGuarded，评审 C 事务变式）：并发进程
+    // 在另一事务下架视频时，本事务校验拒绝，不产生"已启用但依赖已
+    // 下架"的中间状态。
+    const syndromeMissing =
+      (await this.syndromes.find(plan.syndrome)) === null
+        ? ["适用证型无效"]
+        : [];
+    const outcome = await this.repository.setPlanStatusGuarded(
       id,
       expectedRevision,
       "enabled",
-      now()
+      now(),
+      (current, video) => this.planEnableMissing(current, video)
     );
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError(
+        "validation_failed",
+        `启用前校验未通过：${[...syndromeMissing, ...outcome.missing].join("、")}`
+      );
+    }
     const updated = this.planOutcome(outcome, expectedRevision);
     await this.audit.record({
       actorKind: "admin",
@@ -717,8 +726,10 @@ export class AgentAdminService {
   }
 
   /**
-   * 启用前程序校验：证型存在、名称与调理方法非空、至少一个有效步骤、
-   * 风险/注意事项/禁忌完整、关联视频存在且已发布、不引用已停用资源。
+   * 启用前程序校验（预览路径）：证型存在、名称与调理方法非空、
+   * 至少一个有效步骤、风险/注意事项/禁忌完整、关联视频存在且已发布。
+   * 预览只读展示，允许事务外快照；启用路径改走 planEnableMissing
+   * （repository.setPlanStatusGuarded 在事务内重读视频发布状态）。
    */
   private async validatePlanForEnable(plan: AgentPlan): Promise<string[]> {
     const missing: string[] = [];
@@ -726,6 +737,41 @@ export class AgentAdminService {
     if (syndrome === null) {
       missing.push("适用证型无效");
     }
+    missing.push(...this.planContentMissing(plan));
+    if (plan.videoResourceId !== null) {
+      const video = await this.repository.findVideoResource(plan.videoResourceId);
+      if (video === null) {
+        missing.push("关联视频不存在");
+      } else if (video.status !== "published") {
+        missing.push("关联视频未发布");
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * 启用前校验的事务内变体（评审 C 事务变式）：只含数据库依赖项，
+   * 由仓储在 BEGIN IMMEDIATE 内以重读的方案行与视频发布状态调用；
+   * 固定证型注册表为常量，在 enablePlan 中事务外校验。
+   */
+  private planEnableMissing(
+    plan: AgentPlan,
+    video: { id: string; status: string } | null
+  ): string[] {
+    const missing = this.planContentMissing(plan);
+    if (plan.videoResourceId !== null) {
+      if (video === null) {
+        missing.push("关联视频不存在");
+      } else if (video.status !== "published") {
+        missing.push("关联视频未发布");
+      }
+    }
+    return missing;
+  }
+
+  /** 方案自身内容完整性（与数据库状态无关，事务内外共用）。 */
+  private planContentMissing(plan: AgentPlan): string[] {
+    const missing: string[] = [];
     if (plan.name.trim() === "") {
       missing.push("方案名称");
     }
@@ -743,14 +789,6 @@ export class AgentAdminService {
     }
     if (plan.contraindications.trim() === "") {
       missing.push("禁忌");
-    }
-    if (plan.videoResourceId !== null) {
-      const video = await this.repository.findVideoResource(plan.videoResourceId);
-      if (video === null) {
-        missing.push("关联视频不存在");
-      } else if (video.status !== "published") {
-        missing.push("关联视频未发布");
-      }
     }
     return missing;
   }

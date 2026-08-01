@@ -13,12 +13,19 @@ import { createApplication } from "../app/composition-root.js";
 import { DomainError } from "../kernel/errors.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { ExtractionCandidate } from "../modules/agent/model-ports.js";
-import type { ConversationTurnResult } from "../modules/agent/conversation-contracts.js";
+import type {
+  ConversationSession,
+  ConversationTurnResult
+} from "../modules/agent/conversation-contracts.js";
+import type { CommitTurnInput } from "../modules/agent/conversation-repository.js";
 import { CLINICAL_FREEZE_BLOCK } from "../modules/agent/output-validation.js";
 import {
   AesGcmEncryption,
-  parseEncryptionKeys
+  parseEncryptionKeys,
+  PlaintextEncryption
 } from "../infrastructure/aes-gcm-encryption.js";
+import { KangminDatabase } from "../infrastructure/database.js";
+import { SqliteConversationRepository } from "../infrastructure/sqlite-conversation-repository.js";
 
 const KEY_V1 = Buffer.alloc(32, 1).toString("base64");
 
@@ -701,6 +708,111 @@ test("加密策略：生产环境未配置密钥启动失败 config_missing；�
     assert.ok(turn.message !== null);
   } finally {
     local.close();
+  }
+});
+
+test("commitTurn 并发 CAS：旧 revision 提交返回 version_conflict 且无部分写入", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-conv-cas-"));
+  const databasePath = join(directory, "conv.sqlite");
+  const database = new KangminDatabase(databasePath);
+  const repository = new SqliteConversationRepository(database);
+  const encryption = new PlaintextEncryption();
+  const timestamp = "2026-08-01T00:00:00.000Z";
+  try {
+    const session: ConversationSession = {
+      id: "conv-cas-1",
+      patientId: null,
+      state: "active",
+      saveConsentId: null,
+      rulePackageVersion: "draft-2026-07",
+      rulePackageHash: "rule-hash",
+      revision: 1,
+      lastSequence: 0,
+      closedAt: null,
+      retentionUntil: "2026-09-01T00:00:00.000Z",
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    await repository.createSession(session);
+
+    const commitInput = (expectedRevision: number, next: ConversationSession): CommitTurnInput => ({
+      sessionId: session.id,
+      expectedRevision,
+      answers: [],
+      candidates: [],
+      decision: {
+        id: "decision-1",
+        sessionId: session.id,
+        decisionSequence: 1,
+        sessionRevision: 1,
+        inputSnapshotEncrypted: encryption.encrypt("快照"),
+        inputSnapshotHash: "snapshot-hash",
+        outcome: "need_more_information",
+        stage: "safety",
+        severityCode: null,
+        syndromeCode: null,
+        nextQuestionsJson: "[]",
+        matchedRuleIdsJson: "[]",
+        rulePackageVersion: "draft-2026-07",
+        rulePackageHash: "rule-hash",
+        planId: null,
+        planRevision: null,
+        createdAt: timestamp
+      },
+      messages: [
+        {
+          id: "message-1",
+          sessionId: session.id,
+          sequence: 1,
+          role: "assistant",
+          decisionId: "decision-1",
+          contentEncrypted: encryption.encrypt("回复"),
+          contentHash: "content-hash",
+          createdAt: timestamp
+        }
+      ],
+      next
+    });
+
+    // 第一轮：读到的 revision=1 提交成功（revision 1→2）。
+    const first = await repository.commitTurn(
+      commitInput(1, {
+        ...session,
+        revision: 2,
+        lastSequence: 1,
+        updatedAt: timestamp
+      })
+    );
+    assert.deepEqual(first, { kind: "committed" });
+
+    // 第二轮以旧 revision（1）提交：模拟并发窗口内另一轮已提交，
+    // 本请求读到的会话 revision 已过期 → 整轮拒绝（CAS 乐观锁），
+    // 不产生任何部分写入（决策/消息计数不变，revision 不推进）。
+    const second = await repository.commitTurn(
+      commitInput(1, {
+        ...session,
+        revision: 2,
+        lastSequence: 3,
+        updatedAt: timestamp
+      })
+    );
+    assert.deepEqual(second, { kind: "version_conflict", currentRevision: 2 });
+
+    const counts = database.connection.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM agent_decisions WHERE session_id = ?) AS decisions,
+        (SELECT COUNT(*) FROM agent_messages WHERE session_id = ?) AS messages,
+        (SELECT revision FROM agent_conversations WHERE id = ?) AS revision
+    `).get(session.id, session.id, session.id) as unknown as {
+      decisions: number;
+      messages: number;
+      revision: number;
+    };
+    assert.equal(counts.decisions, 1);
+    assert.equal(counts.messages, 1);
+    assert.equal(counts.revision, 2);
+  } finally {
+    database.close();
   }
 });
 

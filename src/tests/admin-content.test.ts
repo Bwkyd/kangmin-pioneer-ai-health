@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 // 测试进程以本地开发模式启动：组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -10,6 +11,7 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
+import { KangminDatabase } from "../infrastructure/database.js";
 import type { CommandResult } from "../kernel/result.js";
 import type {
   AdminArticle,
@@ -26,6 +28,20 @@ function dataOf<T>(result: CommandResult): T {
     assert.fail(`${result.error.code}: ${result.error.message}`);
   }
   return result.data as T;
+}
+
+/** 稳定序列化（与 admin-application 的确定性幂等键实现保持一致）。 */
+function canonicalJson(value: unknown): string {
+  if (Array.isArray(value)) {
+    return `[${value.map(canonicalJson).join(",")}]`;
+  }
+  if (value !== null && typeof value === "object") {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, entry]) => `${JSON.stringify(key)}:${canonicalJson(entry)}`);
+    return `{${entries.join(",")}}`;
+  }
+  return JSON.stringify(value);
 }
 
 async function fixture(): Promise<{
@@ -261,7 +277,10 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
       patient.close();
     }
 
-    // 被已发布内容引用的素材不能停用或删除
+    // 被已发布内容引用的素材不能停用或删除。
+    // 引用检查与停用写入在同一事务（评审 C 事务变式：disableMediaGuarded/
+    // deleteMediaGuarded 在 BEGIN IMMEDIATE 内 count + UPDATE）：失败
+    // 路径不得产生部分写入——素材仍是 ready，已发布引用完好。
     const disableRef = await app.execute({
       command: "content media disable",
       adminToken: token,
@@ -269,6 +288,18 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
     });
     assert.equal(disableRef.ok, false);
     if (!disableRef.ok) assert.equal(disableRef.error.code, "validation_failed");
+    const afterFailedDisable = dataOf<ContentMediaRow & { referencedBy: unknown }>(
+      await app.execute({
+        command: "content media show",
+        adminToken: token,
+        input: { id: media.id }
+      })
+    );
+    assert.equal(afterFailedDisable.status, "ready");
+    assert.equal(
+      (afterFailedDisable.referencedBy as { publishedResources: number }).publishedResources,
+      1
+    );
 
     const deleteRef = await app.execute({
       command: "content media delete",
@@ -399,6 +430,84 @@ test("公告状态机与分类停用后禁止新发布", async () => {
     });
     assert.equal(blocked.ok, false);
     if (!blocked.ok) assert.equal(blocked.error.code, "validation_failed");
+  } finally {
+    app.close();
+  }
+});
+
+test("admin 无显式幂等键：同命令同内容重试 → 确定性键重放，不重复创建（评审 C 真实缺陷）", async () => {
+  const { app, databasePath, token } = await fixture();
+  try {
+    dataOf<ContentCategoryRow>(
+      await app.execute({
+        command: "content category create",
+        adminToken: token,
+        input: { name: "幂等分类", kind: "article" }
+      })
+    );
+
+    const input = {
+      title: "确定性幂等文章",
+      category: "幂等分类",
+      summary: "摘要",
+      body: "正文内容。",
+      source: "来源"
+    };
+    const first = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article create",
+        adminToken: token,
+        input: { ...input }
+      })
+    );
+    // 同内容重试（无显式键）：确定性键相同 → 重放返回原记录，不重复创建
+    // （修复前缺省键每次 randomUUID，重试会绕过幂等重复创建）。
+    const second = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article create",
+        adminToken: token,
+        input: { ...input }
+      })
+    );
+    assert.equal(second.id, first.id);
+    const listed = dataOf<{ items: AdminArticle[] }>(
+      await app.execute({ command: "content article list", adminToken: token })
+    );
+    assert.equal(listed.items.length, 1);
+
+    // 幂等键确实是确定性 sha256(command + ":" + canonicalJson(input))，
+    // 而非每次随机的 UUID，且整库只有一行幂等记录。
+    const database = new KangminDatabase(databasePath);
+    try {
+      const rows = database.connection.prepare(`
+        SELECT idempotency_key, request_hash FROM admin_idempotency
+        WHERE scope = 'content.article.create'
+        ORDER BY created_at ASC, idempotency_key ASC
+      `).all() as unknown as Array<{ idempotency_key: string; request_hash: string }>;
+      assert.equal(rows.length, 1);
+      assert.equal(
+        rows[0]?.idempotency_key,
+        createHash("sha256")
+          .update(`content article create:${canonicalJson(input)}`, "utf8")
+          .digest("hex")
+      );
+    } finally {
+      database.close();
+    }
+
+    // 不同内容 → 不同确定性键 → 第二条记录。
+    const other = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article create",
+        adminToken: token,
+        input: { ...input, title: "另一篇文章" }
+      })
+    );
+    assert.notEqual(other.id, first.id);
+    const after = dataOf<{ items: AdminArticle[] }>(
+      await app.execute({ command: "content article list", adminToken: token })
+    );
+    assert.equal(after.items.length, 2);
   } finally {
     app.close();
   }

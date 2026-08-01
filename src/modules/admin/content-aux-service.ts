@@ -167,19 +167,25 @@ export class ContentAuxService {
     if (media.status === "disabled") {
       throw new DomainError("validation_failed", "该素材已停用");
     }
-    const references = await this.repository.countMediaReferences(id);
-    if (
-      references.publishedResources > 0 ||
-      references.enabledKnowledge > 0
-    ) {
-      throw new DomainError(
-        "validation_failed",
-        "素材仍被已发布内容或已启用知识引用，不能停用"
-      );
+    // 引用检查与停用写入同一事务（repository.disableMediaGuarded）：
+    // BEGIN IMMEDIATE 持写锁期间，并发进程不能创建新的已发布引用——
+    // 消除"countMediaReferences 检查 → setMediaStatus 提交"之间的
+    // 竞态窗口（与发布校验 updateGuarded 同类，评审 C 事务变式）。
+    const outcome = await this.repository.disableMediaGuarded(
+      id,
+      now(),
+      (references) =>
+        references.publishedResources > 0 || references.enabledKnowledge > 0
+          ? ["素材仍被已发布内容或已启用知识引用，不能停用"]
+          : []
+    );
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "素材不存在");
     }
-    await this.repository.setMediaStatus(id, "disabled", now());
-    const updated = await this.repository.findMedia(id);
-    return updated ?? media;
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError("validation_failed", outcome.missing.join("、"));
+    }
+    return outcome.media;
   }
 
   async deleteMedia(id: string): Promise<{ id: string; deleted: true }> {
@@ -187,19 +193,19 @@ export class ContentAuxService {
     if (media === null) {
       throw new DomainError("resource_not_found", "素材不存在");
     }
-    const references = await this.repository.countMediaReferences(id);
-    if (
-      references.publishedResources > 0 ||
-      references.enabledKnowledge > 0
-    ) {
-      throw new DomainError(
-        "validation_failed",
-        "素材仍被已发布内容或已启用知识引用，不能删除"
-      );
-    }
-    const outcome = await this.repository.deleteMedia(id);
-    if (outcome === "not_found") {
+    // 引用检查与删除同一事务（repository.deleteMediaGuarded）：
+    // 删除前检查 + 清草稿引用 + 置 deleted 一次提交，并发进程不能在
+    // 检查通过后、提交前创建新的已发布引用（评审 C 事务变式）。
+    const outcome = await this.repository.deleteMediaGuarded(id, (references) =>
+      references.publishedResources > 0 || references.enabledKnowledge > 0
+        ? ["素材仍被已发布内容或已启用知识引用，不能删除"]
+        : []
+    );
+    if (outcome.kind === "not_found") {
       throw new DomainError("resource_not_found", "素材不存在");
+    }
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError("validation_failed", outcome.missing.join("、"));
     }
     // 删除受管副本；失败不阻断删除（对象存储后续阶段统一回收）。
     try {

@@ -56,6 +56,18 @@ export type UpdateMessageResult =
   | { kind: "not_found" }
   | { kind: "version_conflict"; currentRevision: number };
 
+/** 引用检查与停用写入同一事务的结果（guard 返回的 missing 由调用方映射）。 */
+export type GuardedMediaUpdateResult =
+  | { kind: "updated"; media: ContentMediaRow }
+  | { kind: "not_found" }
+  | { kind: "validation_failed"; missing: string[] };
+
+/** 引用检查与删除同一事务的结果（guard 返回的 missing 由调用方映射）。 */
+export type GuardedMediaDeleteResult =
+  | { kind: "deleted" }
+  | { kind: "not_found" }
+  | { kind: "validation_failed"; missing: string[] };
+
 type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
 
 export interface ContentAuxRepository {
@@ -102,13 +114,25 @@ export interface ContentAuxRepository {
   }): Promise<void>;
   findMedia(id: string): Promise<ContentMediaRow | null>;
   listMedia(): Promise<ContentMediaRow[]>;
-  setMediaStatus(
+  /**
+   * 引用检查与停用写入同一事务（BEGIN IMMEDIATE）：
+   * guard 在事务内用同一连接读取引用计数，返回缺失项；缺省为空即更新。
+   * 并发进程不能在检查通过后、提交前创建新的已发布引用
+   * （与发布校验 updateGuarded 同类竞态，消除"检查→提交"窗口）。
+   */
+  disableMediaGuarded(
     id: string,
-    status: MediaStatus,
     updatedAt: string,
-    failureReason?: string | null
-  ): Promise<"updated" | "not_found">;
-  deleteMedia(id: string): Promise<"deleted" | "not_found">;
+    guard: (counts: MediaReferenceCounts) => string[]
+  ): Promise<GuardedMediaUpdateResult>;
+  /**
+   * 引用检查与删除同一事务（BEGIN IMMEDIATE）：删除前检查 +
+   * 清草稿引用 + 置 deleted 一次提交；guard 语义同 disableMediaGuarded。
+   */
+  deleteMediaGuarded(
+    id: string,
+    guard: (counts: MediaReferenceCounts) => string[]
+  ): Promise<GuardedMediaDeleteResult>;
   /** 被已发布内容 / 已启用知识 / 已启用方案引用的素材不可停用或删除。 */
   countMediaReferences(mediaId: string): Promise<MediaReferenceCounts>;
 

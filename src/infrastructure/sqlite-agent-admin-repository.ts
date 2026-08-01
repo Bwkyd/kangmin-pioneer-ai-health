@@ -6,6 +6,7 @@ import type {
   ChunkInput,
   KnowledgeRow,
   ModelConfigRow,
+  PlanGuardedUpdateResult,
   PlanRow,
   TestCaseRow,
   UpdatePlanResult
@@ -315,13 +316,18 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   }
 
   async findPlan(id: string): Promise<AgentPlan | null> {
-    const row = this.database.connection.prepare(`
+    const row = this.findPlanSync(id);
+    return row === undefined ? null : toPlan(row);
+  }
+
+  /** 事务内方案读取（与 findPlan 同 SQL）。 */
+  private findPlanSync(id: string): PlanRowShape | undefined {
+    return this.database.connection.prepare(`
       SELECT id, name, syndrome, method, steps_json, precautions, risks,
              contraindications, applicable_age, video_resource_id, display_order,
              status, revision, created_by, created_at, updated_at
       FROM agent_plans WHERE id = ?
     `).get(id) as unknown as PlanRowShape | undefined;
-    return row === undefined ? null : toPlan(row);
   }
 
   async updatePlan(
@@ -380,6 +386,61 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
       }
       if (current.revision !== expectedRevision) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      const result = this.database.connection.prepare(`
+        UPDATE agent_plans
+        SET status = ?, updated_at = ?, revision = revision + 1
+        WHERE id = ?
+      `).run(status, updatedAt, id);
+      if (result.changes !== 1) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      const updated = this.database.connection.prepare(`
+        SELECT id, name, syndrome, method, steps_json, precautions, risks,
+               contraindications, applicable_age, video_resource_id, display_order,
+               status, revision, created_by, created_at, updated_at
+        FROM agent_plans WHERE id = ?
+      `).get(id) as unknown as PlanRowShape;
+      return { kind: "updated" as const, plan: toPlan(updated) };
+    });
+  }
+
+  /**
+   * 启用前校验与状态更新同一事务（评审 C 事务变式）：guard 在
+   * BEGIN IMMEDIATE 内执行，方案与视频发布状态在事务内重读——
+   * 并发进程在另一事务下架视频时，本事务校验拒绝，状态更新不提交；
+   * 校验通过才在同一事务内置为 enabled（与 setPlanStatus 共用 CAS）。
+   */
+  async setPlanStatusGuarded(
+    id: string,
+    expectedRevision: number,
+    status: PlanStatus,
+    updatedAt: string,
+    guard: (
+      plan: AgentPlan,
+      video: { id: string; status: string } | null
+    ) => string[]
+  ): Promise<PlanGuardedUpdateResult> {
+    return this.database.transaction(() => {
+      const current = this.findPlanSync(id);
+      if (current === undefined) {
+        return { kind: "not_found" as const };
+      }
+      if (current.revision !== expectedRevision) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      const plan = toPlan(current);
+      const video =
+        plan.videoResourceId === null
+          ? null
+          : (this.database.connection.prepare(
+              "SELECT id, status FROM content_items WHERE kind = 'video' AND id = ?"
+            ).get(plan.videoResourceId) as unknown as
+              | { id: string; status: string }
+              | undefined) ?? null;
+      const missing = guard(plan, video);
+      if (missing.length > 0) {
+        return { kind: "validation_failed" as const, missing };
       }
       const result = this.database.connection.prepare(`
         UPDATE agent_plans

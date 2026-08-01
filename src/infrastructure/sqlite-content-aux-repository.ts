@@ -4,6 +4,8 @@ import type {
   ContentCategoryRow,
   ContentMediaRow,
   ContentMessageRow,
+  GuardedMediaDeleteResult,
+  GuardedMediaUpdateResult,
   MediaKind,
   MediaReferenceCounts,
   MediaStatus,
@@ -272,11 +274,7 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
   }
 
   async findMedia(id: string): Promise<ContentMediaRow | null> {
-    const row = this.database.connection.prepare(`
-      SELECT id, kind, filename, stored_path, size_bytes, mime_type, sha256,
-             status, failure_reason, created_by, created_at, updated_at
-      FROM content_resource_media WHERE id = ?
-    `).get(id) as unknown as MediaRow | undefined;
+    const row = this.findMediaSync(id);
     return row === undefined ? null : toMedia(row);
   }
 
@@ -290,24 +288,58 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
     return rows.map(toMedia);
   }
 
-  async setMediaStatus(
+  /**
+   * 引用检查与停用写入同一事务（评审 C 事务变式）：
+   * BEGIN IMMEDIATE 持写锁期间，并发进程不能创建新的已发布引用
+   * 越过事务提交生效——消除"countMediaReferences 检查 → setMediaStatus
+   * 提交"之间的竞态窗口（与发布校验 updateGuarded 同类）。
+   */
+  async disableMediaGuarded(
     id: string,
-    status: MediaStatus,
     updatedAt: string,
-    failureReason: string | null = null
-  ): Promise<"updated" | "not_found"> {
-    const result = this.database.connection.prepare(`
-      UPDATE content_resource_media
-      SET status = ?, failure_reason = ?, updated_at = ?
-      WHERE id = ?
-    `).run(status, failureReason, updatedAt, id);
-    return result.changes === 1 ? "updated" : "not_found";
+    guard: (counts: MediaReferenceCounts) => string[]
+  ): Promise<GuardedMediaUpdateResult> {
+    return this.database.transaction(() => {
+      const media = this.findMediaSync(id);
+      if (media === undefined) {
+        return { kind: "not_found" as const };
+      }
+      const missing = guard(this.countMediaReferencesSync(id));
+      if (missing.length > 0) {
+        return { kind: "validation_failed" as const, missing };
+      }
+      this.database.connection.prepare(`
+        UPDATE content_resource_media
+        SET status = 'disabled', failure_reason = NULL, updated_at = ?
+        WHERE id = ?
+      `).run(updatedAt, id);
+      return {
+        kind: "updated" as const,
+        media: { ...toMedia(media), status: "disabled", updatedAt }
+      };
+    });
   }
 
-  async deleteMedia(id: string): Promise<"deleted" | "not_found"> {
+  /**
+   * 引用检查与删除同一事务（评审 C 事务变式）：删除前检查 + 清除
+   * 草稿/下架内容与非启用知识的引用 + 置 deleted 一次提交；已发布
+   * 内容的引用由事务内 guard 判定（引用>0 → validation_failed 回滚）。
+   */
+  async deleteMediaGuarded(
+    id: string,
+    guard: (counts: MediaReferenceCounts) => string[]
+  ): Promise<GuardedMediaDeleteResult> {
     return this.database.transaction(() => {
-      // 已发布内容的引用在服务层已阻止；这里清除草稿/下架内容与
-      // 非启用知识的引用，避免外键约束阻断删除（删除只断引用不断内容）。
+      const media = this.findMediaSync(id);
+      if (media === undefined) {
+        return { kind: "not_found" as const };
+      }
+      const missing = guard(this.countMediaReferencesSync(id));
+      if (missing.length > 0) {
+        return { kind: "validation_failed" as const, missing };
+      }
+      // 这里清除草稿/下架内容与非启用知识的引用，避免外键约束阻断删除
+      // （删除只断引用不断内容）。
       this.database.connection.prepare(`
         UPDATE content_items
         SET media_id = NULL, cover_media_id = NULL
@@ -317,14 +349,19 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
         UPDATE agent_knowledge_items SET source_media_id = NULL
         WHERE source_media_id = ?
       `).run(id);
-      const result = this.database.connection.prepare(
+      this.database.connection.prepare(
         "DELETE FROM content_resource_media WHERE id = ?"
       ).run(id);
-      return result.changes === 1 ? "deleted" : "not_found";
+      return { kind: "deleted" as const };
     });
   }
 
   async countMediaReferences(mediaId: string): Promise<MediaReferenceCounts> {
+    return this.countMediaReferencesSync(mediaId);
+  }
+
+  /** 事务内引用计数（与事务外读取共用同一 SQL，保持语义一致）。 */
+  private countMediaReferencesSync(mediaId: string): MediaReferenceCounts {
     const published = this.database.connection.prepare(`
       SELECT COUNT(*) AS count FROM content_items
       WHERE status = 'published' AND (media_id = ? OR cover_media_id = ?)
@@ -339,6 +376,15 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
       // 方案引用的是视频内容（content_items），不直接引用素材。
       enabledPlans: 0
     };
+  }
+
+  /** 事务内素材读取（与 findMedia 同 SQL）。 */
+  private findMediaSync(id: string): MediaRow | undefined {
+    return this.database.connection.prepare(`
+      SELECT id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+             status, failure_reason, created_by, created_at, updated_at
+      FROM content_resource_media WHERE id = ?
+    `).get(id) as unknown as MediaRow | undefined;
   }
 
   // ---- 站内公告 ----
