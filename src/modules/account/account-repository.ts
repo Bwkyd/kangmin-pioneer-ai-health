@@ -47,10 +47,15 @@ export interface AccountRepository {
    * 用户名已存在（含并发唯一约束命中）抛 version_conflict。
    */
   createAccount(input: CreateAccountInput): Promise<AccountSnapshot>;
-  /** 更新昵称并递增 revision，返回更新后的快照。 */
+  /**
+   * 更新昵称并递增 revision（事务与卫生残留批 P2-9）：
+   * expectedRevision 作 CAS 谓词（WHERE patient_id = ? AND revision = ?），
+   * 并发修改 → version_conflict；账号不存在 → resource_not_found。
+   */
   updateNickname(
     patientId: string,
-    nickname: string | null
+    nickname: string | null,
+    expectedRevision: number
   ): Promise<AccountSnapshot>;
   touchLastActive(patientId: string, at: string): Promise<void>;
   /** 追加同意决策：sequence 自动取该患者该类型最大值 + 1（无记录时从 1 起）。 */

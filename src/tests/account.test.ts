@@ -11,6 +11,7 @@ import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
+import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
 import type { CommandResult } from "../kernel/result.js";
 
 const PASSWORD = "s3cret-pass-1";
@@ -453,9 +454,19 @@ test("profile show/update 只读写昵称，健康档案字段不受影响", asy
     assert.equal(shownData.accountStatus, "active");
     assert.ok(shownData.patientId.length > 0);
 
+    // expectedRevision CAS（事务与卫生残留批 P2-9，与 health profile 一致）：
+    // 过期修订号 → version_conflict。
+    const stale = await application.execute({
+      command: "account profile update",
+      input: { nickname: "迟到昵称", expectedRevision: 99 },
+      sessionToken: login.token
+    });
+    assert.equal(stale.ok, false);
+    if (!stale.ok) assert.equal(stale.error.code, "version_conflict");
+
     const updated = await application.execute({
       command: "account profile update",
-      input: { nickname: "小敏" },
+      input: { nickname: "小敏", expectedRevision: 1 },
       sessionToken: login.token
     });
     assert.equal(
@@ -473,7 +484,7 @@ test("profile show/update 只读写昵称，健康档案字段不受影响", asy
     // 空串/显式清空 → null（清空语义，与 record 的 null 清空一致）。
     const cleared = await application.execute({
       command: "account profile update",
-      input: { nickname: "" },
+      input: { nickname: "", expectedRevision: 2 },
       sessionToken: login.token
     });
     assert.equal(dataOf<{ nickname: string | null }>(cleared).nickname, null);
@@ -556,5 +567,34 @@ test("privacy 返回静态说明；数据权利命令明确 capability_unavailab
     assert.deepEqual(errorOf(bare).code, "command_invalid");
   } finally {
     application.close();
+  }
+});
+
+test("开发会话同 token 再存不复活已撤销会话（INSERT 冲突不覆盖撤销标记，P2-11）", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-session-revive-"));
+  const databasePath = join(directory, "session.sqlite");
+  const database = new KangminDatabase(databasePath);
+  try {
+    const repository = new SqliteSessionRepository(database);
+    const tokenHash = createHash("sha256").update("same-token").digest("hex");
+    const input = {
+      tokenHash,
+      developmentSubject: "revive-subject",
+      newPatientId: "patient_revive",
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      createdAt: "2026-01-01T00:00:00.000Z"
+    };
+    await repository.saveDevelopmentSession(input);
+    assert.ok(await repository.revokeSession(tokenHash));
+    assert.equal(await repository.findSession(tokenHash), null);
+    // 同 token 再存：ON CONFLICT DO NOTHING → 已撤销行原样保留，
+    // 会话不会被 REPLACE 复活。
+    await repository.saveDevelopmentSession({
+      ...input,
+      createdAt: "2026-01-02T00:00:00.000Z"
+    });
+    assert.equal(await repository.findSession(tokenHash), null);
+  } finally {
+    database.close();
   }
 });

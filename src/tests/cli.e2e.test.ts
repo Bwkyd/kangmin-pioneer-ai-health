@@ -459,7 +459,7 @@ test("Agent 真实 CLI 子进程完成安全会话并跨进程恢复", async () 
   );
 });
 
-test("Agent 对话命令通过真实 CLI：exec/test run/feedback/快捷入口", () => {
+test("Agent 对话命令通过真实 CLI：exec/feedback/快捷入口；患者侧 test run 关闭", () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-cli-agent-"));
   const databasePath = join(directory, "agent.sqlite");
   const environment = { KANGMIN_DB_PATH: databasePath };
@@ -506,18 +506,22 @@ test("Agent 对话命令通过真实 CLI：exec/test run/feedback/快捷入口",
   assert.equal(shortcutBody.command, "agent start");
   assert.ok(shortcutBody.data.conversationId.length > 0);
 
-  // agent test run：模拟链路（结构化 answers）。
+  // 患者侧 agent test run：评审 R2 P0——模拟链路属于管理端，患者侧返回
+  // capability_unavailable（exit 6），绝不输出完整 ClinicalVerdict。
   const testRun = run([
     "agent", "test", "run",
     "--answer", "thirst=yes",
     "--answer", "sleep_affected=no",
     "--json"
   ], environment);
-  assert.equal(testRun.status, 0, testRun.stderr);
+  assert.equal(testRun.status, 6, testRun.stderr);
   const testRunBody = JSON.parse(testRun.stdout) as {
-    data: { planBlocked: boolean; explanation: { simulated: boolean } };
+    ok: boolean;
+    error: { code: string; message: string };
   };
-  assert.equal(testRunBody.data.explanation.simulated, true);
+  assert.equal(testRunBody.ok, false);
+  assert.equal(testRunBody.error.code, "capability_unavailable");
+  assert.match(testRunBody.error.message, /kangmin-admin/u);
 
   // feedback：helpful 可记录；非法评分被拒绝。
   const feedback = run([

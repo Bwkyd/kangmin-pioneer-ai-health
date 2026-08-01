@@ -112,32 +112,46 @@ export class AdminAuthService {
       );
     }
 
+    const timestamp = new Date().toISOString();
     if (input.role === "owner") {
-      const existing = await this.accounts.countAll();
-      if (existing > 0) {
+      // 首个 owner 引导（事务与卫生残留批 P1-2）：count 检查与 insert
+      // 合并进仓储的同一事务（createFirstOwner），跨进程并发引导时
+      // 只有一个请求创建成功，另一个收到 owner_exists——不再有
+      // "countAll()===0 检查与 accounts.create 之间被并发创建"的窗口。
+      const outcome = await this.accounts.createFirstOwner({
+        id: randomUUID(),
+        username,
+        passwordHash: await hashPassword(password),
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+      if (outcome === "owner_exists") {
         throw new DomainError(
           "permission_denied",
           "已有管理员存在，引导完成后不能再次创建主管理员"
         );
       }
-    } else if (identity === null || identity.role !== "owner") {
-      throw new DomainError(
-        "permission_denied",
-        "仅主管理员可以创建普通管理员"
-      );
-    }
-
-    const timestamp = new Date().toISOString();
-    const outcome = await this.accounts.create({
-      id: randomUUID(),
-      username,
-      passwordHash: await hashPassword(password),
-      role: input.role,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    });
-    if (outcome.kind === "username_taken") {
-      throw new DomainError("validation_failed", "用户名已存在");
+      if (outcome === "username_taken") {
+        throw new DomainError("validation_failed", "用户名已存在");
+      }
+    } else {
+      if (identity === null || identity.role !== "owner") {
+        throw new DomainError(
+          "permission_denied",
+          "仅主管理员可以创建普通管理员"
+        );
+      }
+      const outcome = await this.accounts.create({
+        id: randomUUID(),
+        username,
+        passwordHash: await hashPassword(password),
+        role: input.role,
+        createdAt: timestamp,
+        updatedAt: timestamp
+      });
+      if (outcome.kind === "username_taken") {
+        throw new DomainError("validation_failed", "用户名已存在");
+      }
     }
     const created = await this.accounts.findByUsername(username);
     if (created === null) {

@@ -867,3 +867,33 @@ test("日历投影按日合并症状、暴露和用药，趋势只读且不填�
     application.close();
   }
 });
+
+test("agent exec 消息长度上限：超过 4096 字符 → validation_failed（P2-12d）", async () => {
+  // 注入空候选提取/解释替身：使 execTurn 走结构化问答成功路径，
+  // 证明边界消息不被长度校验拒绝（消息长度校验在对话管线之前）。
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-msg-len-"));
+  const application = createApplication(join(directory, "records.sqlite"), {
+    extraction: { extractCandidates: async () => [] },
+    explanation: { explain: async () => null }
+  });
+  try {
+    const oversized = await application.execute({
+      command: "agent exec",
+      input: { message: "长".repeat(4097) }
+    });
+    assert.equal(oversized.ok, false);
+    if (!oversized.ok) {
+      assert.equal(oversized.error.code, "validation_failed");
+      assert.match(oversized.error.message, /4096/u);
+    }
+
+    // 恰好 4096 字符允许通过（进入对话管线成功返回）
+    const boundary = await application.execute({
+      command: "agent exec",
+      input: { message: "短".repeat(4096) }
+    });
+    assert.equal(boundary.ok, true);
+  } finally {
+    application.close();
+  }
+});

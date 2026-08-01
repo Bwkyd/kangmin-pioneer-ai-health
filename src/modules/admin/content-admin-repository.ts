@@ -49,9 +49,9 @@ export type PublishMediaState =
 /**
  * 发布依赖快照：仓储在 updateGuarded 的同一数据库事务内读取，
  * 使"先校验依赖、再更新状态"与并发停用/删除之间没有窗口。
- * null 表示未引用；category 为 null 还表示分类不存在（不报错，
- * 与 preview 语义一致）；coverMedia/media 为 { found: false }
- * 表示引用了但素材不存在。
+ * null 表示未引用（或分类名非空时引用不存在——由服务层区分：
+ * 引用了不存在的分类 → validation_failed，见 dependencyMissing）。
+ * coverMedia/media 为 { found: false } 表示引用了但素材不存在。
  */
 export interface PublishGuardState {
   category: { status: "active" | "disabled"; kind: string } | null;

@@ -164,7 +164,7 @@ account login --username <用户名>
 account status
 account logout
 account profile show
-account profile update [--nickname <昵称>]
+account profile update [--nickname <昵称>] --expected-revision <n>
 account consent show
 account consent update --type privacy|medical_boundary
     --decision granted|withdrawn --policy-version <版本> --request-id <ID>
@@ -330,10 +330,13 @@ batch_partial_failure / internal_error
   或本地凭据文件解析。客户端提交身份字段返回 `permission_denied`。
 - **健康正文加密**：症状、档案、暴露、用药正文经 AES-256-GCM 加密落库
   （库内不存明文）；无密钥且非开发环境时启动失败（fail-closed）。
-- **输出不含敏感信息**：stdout/stderr 不输出会话令牌；`auth login` 成功后
-  令牌写入 0600 凭据文件并从响应中删除；users 只读投影对手机号等标识
-  脱敏（保留前 3 后 4），绝不返回完整手机号或用户名；健康正文只经加密
-  落库，不进日志与脱敏视图。
+- **输出不含敏感信息**：患者 `account login` 的 human 模式（无 `--json`）
+  把会话令牌只写入 stderr（stdout 显示固定提示，不含令牌）；
+  `--json` 模式保留 `data.token` 供机器集成读取后写入
+  `KANGMIN_SESSION_TOKEN`（脚本勿把该输出落日志）；管理端 `auth login`
+  成功后令牌写入 0600 凭据文件并从响应中删除；users 只读投影对手机号
+  等标识脱敏（保留前 3 后 4），绝不返回完整手机号或用户名；健康正文
+  只经加密落库，不进日志与脱敏视图。
 - **临床红线**：临床规则包为 candidate，正式患者输出在临床冻结前硬阻断
   （Agent 不输出证型、穴位、疗程或调理方案）；`unknown`、冲突、无命中
   和信息不足不会被猜测补齐。

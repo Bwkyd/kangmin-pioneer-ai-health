@@ -8,7 +8,9 @@
  * agent_decisions/agent_feedback）。
  *
  * 临床红线：正式输出路径在规则包临床冻结（status=approved）前必须硬阻断；
- * draft（candidate）规则包只允许出现在 `agent test run` 模拟链路。
+ * 模拟测试链路（`agent test run`）属于管理端（kangmin-admin），患者侧调用
+ * 返回 capability_unavailable——患者 CLI 设计 §6 没有 test run 命令，患者
+ * 一步拿到完整 ClinicalVerdict 可枚举决策表（评审 R2 P0）。
  */
 
 import type {
@@ -161,7 +163,8 @@ export interface ConversationTurnResult {
   notices: Array<{ content: string; contentHash: string }>;
   verdict: {
     outcome: DecisionOutcome;
-    stage: string;
+    /** candidate 规则包下裁剪为 null（评审 R2：stage 侧信道，见 patientVerdict）。 */
+    stage: string | null;
     severityCode: string | null;
     syndromeCode: string | null;
     nextQuestions: NextQuestion[];
@@ -177,6 +180,10 @@ export interface ConversationTurnResult {
   closed: boolean;
 }
 
+/**
+ * 模拟链路输入（保留以支撑 dispatcher 类型边界）：患者侧调用一律返回
+ * capability_unavailable（评审 R2 P0，模拟链路属于管理端 kangmin-admin）。
+ */
 export interface ConversationTestRunInput {
   answers: readonly ConfirmedFact[];
 }
@@ -186,7 +193,8 @@ export interface DecisionSummary {
   id: string;
   decisionSequence: number;
   outcome: DecisionOutcome;
-  stage: string;
+  /** candidate 规则包下裁剪为 null（评审 R2：stage 侧信道，见 summarizeDecision）。 */
+  stage: string | null;
   severityCode: string | null;
   syndromeCode: string | null;
   matchedRuleIds: string[];
@@ -201,6 +209,7 @@ export interface ConversationShowResult {
   lastDecision: DecisionSummary | null;
 }
 
+/** 结果类型保留仅为 dispatcher 类型边界；患者侧永不返回（capability_unavailable）。 */
 export interface ConversationTestRunResult {
   verdict: ClinicalVerdict;
   planBlocked: boolean;

@@ -10,11 +10,11 @@ import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
+import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
 import type { CommandResult } from "../kernel/result.js";
 import type {
   BrowseSearchResults,
-  CarePlanDetail,
   PublicContent
 } from "../modules/browse/contracts.js";
 import type { EnvironmentSnapshot, ForecastDay } from "../modules/environment/environment-ports.js";
@@ -35,7 +35,11 @@ function errorCodeOf(result: CommandResult): string {
   return result.error.code;
 }
 
-/** 种子：已发布/未发布方案 + 环境快照。 */
+/**
+ * 种子：管理端已启用/草稿方案（评审 R2 P1 双门禁：agent_plans.status=
+ * 'enabled' 是管理端/匹配门禁，患者可见还需临床规则包 approved）+
+ * string[] 与非法 steps_json 格式（评审 R2 P2 契约兼容测试用）。
+ */
 function seedPlans(databasePath: string): void {
   const database = new KangminDatabase(databasePath);
   try {
@@ -50,6 +54,14 @@ function seedPlans(databasePath: string): void {
               '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
              ('plan-draft', '未发布方案', 'LUNG_QI_COLD', '日常护理', '[]',
               '', '', '', 'draft', 1, 1,
+              '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+             ('plan-string-steps', '管理端 string[] 步骤方案', 'LUNG_HEAT',
+              '日常护理', '["生理盐水洗鼻","外出佩戴口罩"]',
+              '注意事项', '风险提示', '禁忌', 'enabled', 1, 2,
+              '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+             ('plan-bad-steps', '非法步骤格式方案', 'LUNG_HEAT', '日常护理',
+              '{"step":1,"title":"不是数组"}',
+              '', '', '', 'enabled', 1, 3,
               '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
     `);
   } finally {
@@ -121,25 +133,24 @@ test("browse article/video show：返回来源与免责声明（§25.5 患者侧
   }
 });
 
-test("通用方案：已发布可见，未发布/草稿不可见，搜索只覆盖已发布", async () => {
+test("评审 R2 P1 双门禁：candidate 下方案浏览关闭（list 空、show resource_not_found、搜索不含方案）", async () => {
   const { application } = fixture();
   try {
+    // 临床规则包未冻结（approved）前，browse plan 患者可见门禁关闭：
+    // 管理端启用（agent_plans.status='enabled'）的方案也绝不公开给
+    // 匿名患者——HELP"当前无获批临床规则和方案"承诺一致，患者无法经
+    // browse plan show 拿到完整调理方案（含穴位/疗程文本）。
     const listed = dataOf<{ items: Array<{ id: string }> }>(
       await application.execute({ command: "browse plan list" })
     );
-    assert.deepEqual(listed.items.map((item) => item.id), ["plan-published"]);
+    assert.deepEqual(listed.items, []);
 
-    const shown = dataOf<CarePlanDetail>(
-      await application.execute({
-        command: "browse plan show",
-        input: { id: "plan-published" }
-      })
-    );
-    assert.equal(shown.name, "花粉季通用护理方案");
-    assert.equal(shown.publishedRevision, 1);
-    assert.equal(shown.steps.length, 2);
-    assert.equal(shown.steps[0]?.title, "生理盐水洗鼻");
-    assert.match(shown.disclaimer ?? "", /本内容仅作健康科普和居家管理参考/u);
+    // 即便方案已管理端启用，患者 show 也是 resource_not_found。
+    const shown = await application.execute({
+      command: "browse plan show",
+      input: { id: "plan-published" }
+    });
+    assert.equal(errorCodeOf(shown), "resource_not_found");
 
     const hidden = await application.execute({
       command: "browse plan show",
@@ -153,22 +164,78 @@ test("通用方案：已发布可见，未发布/草稿不可见，搜索只覆�
     });
     assert.equal(errorCodeOf(missing), "resource_not_found");
 
-    const leaked = dataOf<BrowseSearchResults>(
+    const searched = dataOf<BrowseSearchResults>(
       await application.execute({
         command: "browse search",
-        input: { query: "未发布" }
+        input: { query: "护理" }
       })
     );
-    // 跨类型搜索整体不出现未发布方案（也不出现草稿内容）。
-    assert.deepEqual(leaked.articles, []);
-    assert.deepEqual(leaked.videos, []);
-    assert.deepEqual(leaked.plans, []);
+    // 跨类型搜索同样不出现任何方案（门禁关闭与已发布状态无关）。
+    assert.deepEqual(searched.plans, []);
   } finally {
     application.close();
   }
 });
 
-test("browse search 跨文章/视频/方案，只覆盖已发布", async () => {
+test("方案双门禁与 steps 双格式（仓储级）：门禁关闭短路，打开后 string[]/对象数组都渲染", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-plan-gate-"));
+  const databasePath = join(directory, "plans.sqlite");
+  seedPlans(databasePath);
+  const database = new KangminDatabase(databasePath);
+  try {
+    // 门禁关闭（默认，= candidate 组合根未注入 planBrowseEnabled）：
+    // 策略性短路返回空/null，不触达存储。
+    const closed = new SqliteContentReadRepository(database);
+    assert.deepEqual(await closed.listPlans(), []);
+    assert.equal(await closed.findPlan("plan-published"), null);
+    assert.deepEqual(await closed.searchPlans("护理", 10), []);
+
+    // 门禁打开（规则包 approved 后组合根注入 planBrowseEnabled: true）：
+    // status='enabled' 才可见，draft 仍隐藏（管理端门禁独立生效）。
+    const open = new SqliteContentReadRepository(database, {
+      planBrowseEnabled: true
+    });
+    const listed = await open.listPlans();
+    assert.deepEqual(
+      listed.map((item) => item.id).sort(),
+      ["plan-bad-steps", "plan-published", "plan-string-steps"]
+    );
+
+    // 对象数组格式（当前种子/浏览端格式）。
+    const detail = await open.findPlan("plan-published");
+    assert.ok(detail !== null);
+    assert.equal(detail.name, "花粉季通用护理方案");
+    assert.equal(detail.publishedRevision, 1);
+    assert.equal(detail.steps.length, 2);
+    assert.equal(detail.steps[0]?.step, 1);
+    assert.equal(detail.steps[0]?.title, "生理盐水洗鼻");
+    assert.equal(detail.steps[0]?.description, "早晚各一次");
+
+    // string[] 格式（管理端 AgentPlan.steps 历史契约）→ 按数组顺序
+    // 映射为 {step: i+1, title}（评审 R2 P2：修复前稳定返回 steps:[]）。
+    const stringSteps = await open.findPlan("plan-string-steps");
+    assert.ok(stringSteps !== null);
+    assert.deepEqual(stringSteps.steps, [
+      { step: 1, title: "生理盐水洗鼻" },
+      { step: 2, title: "外出佩戴口罩" }
+    ]);
+
+    // 非法 steps_json（非数组）→ 空列表，绝不宽松解析。
+    const bad = await open.findPlan("plan-bad-steps");
+    assert.ok(bad !== null);
+    assert.deepEqual(bad.steps, []);
+
+    assert.equal(await open.findPlan("plan-draft"), null);
+    assert.deepEqual(
+      (await open.searchPlans("护理", 10)).map((item) => item.id),
+      ["plan-published"]
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("browse search 跨文章/视频/方案，只覆盖已发布（candidate 下方案门禁关闭）", async () => {
   const { application } = fixture();
   try {
     const results = dataOf<BrowseSearchResults>(
@@ -177,9 +244,10 @@ test("browse search 跨文章/视频/方案，只覆盖已发布", async () => {
         input: { query: "护理" }
       })
     );
-    // “鼻腔护理基础视频”（video-public）与“花粉季通用护理方案”（plan-published）。
+    // “鼻腔护理基础视频”（video-public）命中；“花粉季通用护理方案”
+    // （plan-published）虽管理端启用，但规则包未冻结 → 患者搜索不可见。
     assert.deepEqual(results.videos.map((item) => item.id), ["video-public"]);
-    assert.deepEqual(results.plans.map((item) => item.id), ["plan-published"]);
+    assert.deepEqual(results.plans, []);
     assert.deepEqual(results.articles, []);
 
     const all = dataOf<BrowseSearchResults>(
@@ -424,10 +492,12 @@ test("未登录可 browse：文章/方案/环境均不要求会话令牌", async
     );
     assert.ok(list.items.length > 0);
 
+    // candidate 下方案浏览门禁关闭：匿名/登录均返回空列表（门禁与
+    // 会话无关，规则包 approved 后开放，见仓储级双门禁测试）。
     const plans = dataOf<{ items: unknown[] }>(
       await application.execute({ command: "browse plan list" })
     );
-    assert.ok(plans.items.length > 0);
+    assert.equal(plans.items.length, 0);
 
     const env = dataOf<EnvironmentSnapshot>(
       await application.execute({ command: "browse environment current" })
@@ -444,8 +514,14 @@ test("读失败必须抛 storage_unavailable，不伪装成空列表", async () 
   const list = await application.execute({ command: "browse article list" });
   assert.equal(errorCodeOf(list), "storage_unavailable");
 
+  // 方案浏览门禁在 candidate 下关闭：策略性短路返回空列表，不触达
+  // 存储（关闭门禁的确定响应，不是伪装成空数据）；门禁打开后的存储
+  // 故障仍由 guard 映射 storage_unavailable（见仓储级测试）。
   const plans = await application.execute({ command: "browse plan list" });
-  assert.equal(errorCodeOf(plans), "storage_unavailable");
+  assert.equal(plans.ok, true);
+  if (plans.ok) {
+    assert.deepEqual(plans.data, { items: [] });
+  }
 
   const env = await application.execute({
     command: "browse environment current"

@@ -25,14 +25,18 @@ export interface BrowseHome {
   };
 }
 
-/** 通用护理方案列表条目（agent_care_plans.published_revision 非空才可见）。 */
+/**
+ * 通用护理方案列表条目（设计 §17 双门禁：临床规则包 approved
+ * （planBrowseEnabled）之外，还需管理端启用 agent_plans.status='enabled'；
+ * candidate 期间患者不可见）。
+ */
 export interface CarePlanSummary {
   id: string;
   name: string;
   publishedRevision: number;
 }
 
-/** 通用护理方案详情（内容来自当前发布修订）。 */
+/** 通用护理方案详情（步骤兼容管理端 string[] 与对象数组两种格式）。 */
 export interface CarePlanDetail extends CarePlanSummary {
   summary: string | null;
   steps: Array<{ step: number; title: string; description?: string }>;

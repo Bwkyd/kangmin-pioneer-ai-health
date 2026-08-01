@@ -1,4 +1,5 @@
 import { KangminDatabase } from "./database.js";
+import { runIdempotentCreate } from "./idempotency.js";
 import type {
   ContentAuxRepository,
   ContentCategoryRow,
@@ -6,6 +7,7 @@ import type {
   ContentMessageRow,
   GuardedMediaDeleteResult,
   GuardedMediaUpdateResult,
+  IdempotentCreateResult,
   MediaKind,
   MediaReferenceCounts,
   MediaStatus,
@@ -273,6 +275,73 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
     );
   }
 
+  /**
+   * 幂等创建素材（事务与卫生残留批 P2-7）：素材行 + 幂等行同一事务；
+   * 幂等键为文件内容指纹，同文件重传 → 重放返回原素材。
+   */
+  async createMediaIdempotent(
+    adminId: string,
+    media: ContentMediaRow,
+    idempotencyKey: string,
+    requestHash: string
+  ): Promise<IdempotentCreateResult<ContentMediaRow>> {
+    return this.database.transaction(() => {
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "admin_idempotency",
+        actorColumn: "admin_id",
+        scopeColumn: "scope",
+        keyColumn: "idempotency_key",
+        actorId: adminId,
+        scope: "content.media.upload",
+        key: idempotencyKey,
+        requestHash,
+        resultJson: JSON.stringify(media),
+        createdAt: media.createdAt,
+        verifyExists: (json) =>
+          this.database.connection.prepare(
+            "SELECT id FROM content_resource_media WHERE id = ?"
+          ).get((JSON.parse(json) as ContentMediaRow).id) !== undefined,
+        insert: () => {
+          this.database.connection.prepare(`
+            INSERT INTO content_resource_media(
+              id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+              status, failure_reason, created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            media.id,
+            media.kind,
+            media.filename,
+            media.storedPath,
+            media.sizeBytes,
+            media.mimeType,
+            media.sha256,
+            media.status,
+            media.failureReason,
+            media.createdBy,
+            media.createdAt,
+            media.updatedAt
+          );
+        }
+      });
+      switch (outcome.kind) {
+        case "created":
+          return { kind: "created" as const, item: media };
+        case "replayed":
+          return {
+            kind: "replayed" as const,
+            item: JSON.parse(outcome.resultJson) as ContentMediaRow
+          };
+        case "stale_replay":
+          return { kind: "stale_replay" as const };
+        case "idempotency_conflict":
+          return { kind: "conflict" as const };
+        case "date_conflict":
+          // 管理端未启用 date_conflict 语义，结构上不可达；归入冲突。
+          return { kind: "conflict" as const };
+      }
+    });
+  }
+
   async findMedia(id: string): Promise<ContentMediaRow | null> {
     const row = this.findMediaSync(id);
     return row === undefined ? null : toMedia(row);
@@ -440,6 +509,72 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
       input.createdAt,
       input.updatedAt
     );
+  }
+
+  /**
+   * 幂等创建公告（事务与卫生残留批 P2-7）：公告行 + 幂等行同一事务；
+   * 确定性键同内容重试 → 重放返回原公告，不重复创建。
+   */
+  async createMessageIdempotent(
+    adminId: string,
+    message: ContentMessageRow,
+    idempotencyKey: string,
+    requestHash: string
+  ): Promise<IdempotentCreateResult<ContentMessageRow>> {
+    return this.database.transaction(() => {
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "admin_idempotency",
+        actorColumn: "admin_id",
+        scopeColumn: "scope",
+        keyColumn: "idempotency_key",
+        actorId: adminId,
+        scope: "content.message.create",
+        key: idempotencyKey,
+        requestHash,
+        resultJson: JSON.stringify(message),
+        createdAt: message.createdAt,
+        verifyExists: (json) =>
+          this.database.connection.prepare(
+            "SELECT id FROM content_messages WHERE id = ?"
+          ).get((JSON.parse(json) as ContentMessageRow).id) !== undefined,
+        insert: () => {
+          this.database.connection.prepare(`
+            INSERT INTO content_messages(
+              id, title, body, summary, category_id, status, revision,
+              published_at, created_by, created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            message.id,
+            message.title,
+            message.body,
+            message.summary,
+            message.categoryId,
+            message.status,
+            message.revision,
+            message.publishedAt,
+            message.createdBy,
+            message.createdAt,
+            message.updatedAt
+          );
+        }
+      });
+      switch (outcome.kind) {
+        case "created":
+          return { kind: "created" as const, item: message };
+        case "replayed":
+          return {
+            kind: "replayed" as const,
+            item: JSON.parse(outcome.resultJson) as ContentMessageRow
+          };
+        case "stale_replay":
+          return { kind: "stale_replay" as const };
+        case "idempotency_conflict":
+          return { kind: "conflict" as const };
+        case "date_conflict":
+          // 管理端未启用 date_conflict 语义，结构上不可达；归入冲突。
+          return { kind: "conflict" as const };
+      }
+    });
   }
 
   async updateMessage(

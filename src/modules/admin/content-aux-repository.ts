@@ -62,6 +62,13 @@ export type GuardedMediaUpdateResult =
   | { kind: "not_found" }
   | { kind: "validation_failed"; missing: string[] };
 
+/** 管理端幂等创建（admin_idempotency 归一语义，与内容文章创建一致）。 */
+export type IdempotentCreateResult<T> =
+  | { kind: "created"; item: T }
+  | { kind: "replayed"; item: T }
+  | { kind: "stale_replay" }
+  | { kind: "conflict" };
+
 /** 引用检查与删除同一事务的结果（guard 返回的 missing 由调用方映射）。 */
 export type GuardedMediaDeleteResult =
   | { kind: "deleted" }
@@ -112,6 +119,17 @@ export interface ContentAuxRepository {
     createdAt: string;
     updatedAt: string;
   }): Promise<void>;
+  /**
+   * 幂等创建素材（事务与卫生残留批 P2-7）：admin_idempotency
+   * （scope=content.media.upload），幂等键为文件内容指纹 sha256——
+   * 同文件重传走重放返回原素材，不重复登记。重放前校验素材仍存在。
+   */
+  createMediaIdempotent(
+    adminId: string,
+    media: ContentMediaRow,
+    idempotencyKey: string,
+    requestHash: string
+  ): Promise<IdempotentCreateResult<ContentMediaRow>>;
   findMedia(id: string): Promise<ContentMediaRow | null>;
   listMedia(): Promise<ContentMediaRow[]>;
   /**
@@ -152,6 +170,17 @@ export interface ContentAuxRepository {
     createdAt: string;
     updatedAt: string;
   }): Promise<void>;
+  /**
+   * 幂等创建公告（事务与卫生残留批 P2-7）：admin_idempotency
+   * （scope=content.message.create），确定性键同内容重试 → 重放返回
+   * 原公告；verifyExists 保证公告不存在时同键重放返回 stale_replay。
+   */
+  createMessageIdempotent(
+    adminId: string,
+    message: ContentMessageRow,
+    idempotencyKey: string,
+    requestHash: string
+  ): Promise<IdempotentCreateResult<ContentMessageRow>>;
   updateMessage(
     message: ContentMessageRow,
     expectedRevision: number

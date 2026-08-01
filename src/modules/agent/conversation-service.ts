@@ -455,7 +455,10 @@ export class ConversationService {
       id: decision.id,
       decisionSequence: decision.decisionSequence,
       outcome: decision.outcome,
-      stage: decision.stage,
+      // 评审 R2：candidate 下 stage 一并裁剪（置 null）——stage 进程
+      // （safety→applicability→severity→syndrome→completed）可让患者
+      // 确认"已通过严重度/证型阶段"，构成决策表进展侧信道。
+      stage: trimmed ? null : decision.stage,
       // 未临床冻结（candidate）时对患者裁剪临床字段：绝不通过
       // 结构化字段侧信道拼装完整方案（评审 P0-2，见 patientVerdict）。
       severityCode: trimmed ? null : decision.severityCode,
@@ -468,20 +471,21 @@ export class ConversationService {
   }
 
   /**
-   * 患者侧 verdict 裁剪（评审 P0-2）：
+   * 患者侧 verdict 裁剪（评审 P0-2 + R2）：
    * 规则包未临床冻结（candidate）时，execTurn 返回的 verdict 只保留
-   * outcome/stage/nextQuestions 与规则包元数据，severityCode/
+   * outcome/nextQuestions 与规则包元数据，stage/severityCode/
    * syndromeCode/matchedRuleIds 置空——避免患者用 agent exec --json
-   * 拿到证型/严重度/命中规则后拼出完整调理方案，违反 HELP“Agent 不
-   * 输出证型、穴位、疗程或调理方案”承诺。
+   * 拿到证型/严重度/命中规则/阶段进展后拼出完整调理方案，违反 HELP
+   * “Agent 不输出证型、穴位、疗程或调理方案”承诺。
    *
    * 边界与决策记录：
-   * - `agent test run`（模拟链路）与管理员侧不受裁剪：testRun 返回
-   *   完整 ClinicalVerdict，供开发/临床验证规则包（结构独立，不经过
-   *   本方法）；
-   * - `browse plan show` 保持只读可用：它是后台明确发布
-   *   （agent_plans.status='enabled'）的内容浏览，不是 agent 判定。
-   *   本方法裁剪掉 planId 后，患者第一步就拿不到 planId，无法发起
+   * - 患者侧 `agent test run` 已关闭（capability_unavailable）：模拟
+   *   链路属于管理端（kangmin-admin agent test run），患者一步拿完整
+   *   ClinicalVerdict 可枚举决策表（评审 R2 P0，见 testRun）；
+   * - `browse plan list/show` 受双门禁：管理端启用（status='enabled'）
+   *   之外还需临床规则包冻结（approved）才对患者开放（评审 R2 P1，
+   *   见 SqliteContentReadRepository.planBrowseEnabled）。本方法裁剪掉
+   *   planId 后，患者第一步就拿不到 planId，无法发起
    *   “exec 拿证型 → conversations show 拿 planId → browse 拼步骤”
    *   三步拼装，侧信道被切断。
    */
@@ -491,7 +495,8 @@ export class ConversationService {
     const trimmed = this.kernel.rulePackageStatus !== "approved";
     return {
       outcome: verdict.outcome,
-      stage: verdict.stage,
+      // 评审 R2：candidate 下 stage 归一为 null（进展侧信道，见 summarizeDecision）。
+      stage: trimmed ? null : verdict.stage,
       severityCode: trimmed ? null : verdict.severityCode,
       syndromeCode: trimmed ? null : verdict.syndromeCode,
       nextQuestions: verdict.nextQuestions,
@@ -540,28 +545,26 @@ export class ConversationService {
   }
 
   /**
-   * 患者侧模拟链路（agent test run）：输入测试答案 → 规则结果 →
-   * 方案（阻断中）→ 知识（未接入）→ AI 解释（固定模板模拟）。
-   * 只验证不修改规则，不持久化，不调用模型。
+   * 患者侧 `agent test run`（评审 R2 P0 关闭）：
+   * 模拟测试链路属于管理端（kangmin-admin agent test run，管理侧已按
+   * capability_unavailable 桩占位，见 agent-admin-service），患者 CLI
+   * 设计 §6 不存在 test run 命令——患者侧 `kangmin agent test run` 是
+   * w4 擅自添加。修复：患者侧一律返回 capability_unavailable，绝不向
+   * 匿名/患者调用者返回完整 ClinicalVerdict（severityCode/
+   * syndromeCode/matchedRuleIds/planId/planRevision/allQuestions 可
+   * 一步枚举完整决策表，配合 browse plan show 拼出方案，P0-2 侧信道
+   * 修复失效）。
+   *
+   * 方法签名保留以支撑 dispatcher 类型边界（app/application.ts 的
+   * `agent test run` 分支仍调用本方法；命令解析/HELP 的移除属跨文件
+   * 协同改动，见评审记录）。输入校验（answerFacts）仍在 dispatcher
+   * 层先行，非法输入先于本方法返回 validation_failed。
    */
   async testRun(input: ConversationTestRunInput): Promise<ConversationTestRunResult> {
-    const verdict = this.kernel.evaluate(input.answers);
-    const validated = renderValidatedOutput(
-      verdict,
-      this.kernel.rulePackageStatus,
-      null
+    throw new DomainError(
+      "capability_unavailable",
+      "模拟链路属于管理端：请使用 kangmin-admin agent test run"
     );
-    return {
-      verdict,
-      planBlocked: verdict.outcome === "classified",
-      explanation: {
-        templateId: validated.templateId,
-        content: validated.content,
-        contentHash: validated.contentHash,
-        simulated: true
-      },
-      knowledge: { state: "not_available" }
-    };
   }
 
   private createSession(patientId: string | null, timestamp: string): ConversationSession {

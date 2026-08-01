@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 // 测试进程以本地开发模式启动：组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+import { createHash } from "node:crypto";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,6 +12,8 @@ import test from "node:test";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
+import { SqliteAdminAccountRepository } from "../infrastructure/sqlite-admin-account-repository.js";
+import { SqliteAdminSessionRepository } from "../infrastructure/sqlite-admin-session-repository.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { AdminAccountView, LoginResult } from "../modules/admin/admin-auth-service.js";
 
@@ -327,6 +330,77 @@ test("患者会话不能进入管理后台，开发占位密码不可登录", as
     });
     assert.equal(devLogin.ok, false);
     if (!devLogin.ok) assert.equal(devLogin.error.code, "authentication_required");
+  } finally {
+    app.close();
+  }
+});
+
+test("首个 owner 引导：count 与 insert 同一事务，并发引导只有一个成功（P1-2）", async () => {
+  const { app, databasePath } = await fixture();
+  try {
+    // 第一次 createFirstOwner：count=0 → 创建成功
+    const first = dataOf<AdminAccountView>(
+      await app.execute({
+        command: "auth admins add",
+        input: { username: "race-owner", password: "race-secret-1", role: "owner" }
+      })
+    );
+    assert.equal(first.role, "owner");
+
+    // 第二次：count>0 → owner_exists（即使用户名不同也不能创建第二个 owner）
+    const second = await app.execute({
+      command: "auth admins add",
+      input: { username: "race-owner-2", password: "race-secret-2", role: "owner" }
+    });
+    assert.equal(second.ok, false);
+    if (!second.ok) assert.equal(second.error.code, "permission_denied");
+
+    // 仓储级竞态语义：并发路径下 count 检查与 insert 在同一个
+    // BEGIN IMMEDIATE 事务内完成——直接调用 createFirstOwner 模拟
+    // 第二个进程在引导窗口内到达，必须拿到 owner_exists。
+    const database = new KangminDatabase(databasePath);
+    try {
+      const repository = new SqliteAdminAccountRepository(database);
+      const outcome = await repository.createFirstOwner({
+        id: "race_owner_second_id",
+        username: "race-owner-2",
+        passwordHash: "x",
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      assert.equal(outcome, "owner_exists");
+    } finally {
+      database.close();
+    }
+  } finally {
+    app.close();
+  }
+});
+
+test("开发会话同 token 再存不复活已撤销会话（INSERT 冲突不覆盖撤销标记，P2-11）", async () => {
+  const { app, databasePath } = await fixture();
+  try {
+    const database = new KangminDatabase(databasePath);
+    try {
+      const repository = new SqliteAdminSessionRepository(database);
+      const tokenHash = createHash("sha256").update("admin-same-token").digest("hex");
+      const input = {
+        subject: "revive-admin",
+        newAdminId: "revive_admin_id",
+        tokenHash,
+        expiresAt: "2099-01-01T00:00:00.000Z",
+        createdAt: "2026-01-01T00:00:00.000Z"
+      };
+      await repository.save(input);
+      await repository.revoke(tokenHash, new Date().toISOString(), "test");
+      assert.equal(await repository.find(tokenHash), null);
+      // 同 token 再存：ON CONFLICT DO NOTHING → 已撤销行原样保留，
+      // 会话不会被 REPLACE 复活。
+      await repository.save(input);
+      assert.equal(await repository.find(tokenHash), null);
+    } finally {
+      database.close();
+    }
   } finally {
     app.close();
   }

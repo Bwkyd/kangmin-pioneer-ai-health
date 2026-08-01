@@ -6,6 +6,7 @@ import {
   copyFileSync,
   mkdirSync,
   readFileSync,
+  rmSync,
   statSync
 } from "node:fs";
 import { basename, extname, join } from "node:path";
@@ -149,6 +150,11 @@ export class AgentAdminService {
   /**
    * 添加知识源文件：注册元数据 + 复制源文件 + 骨架解析分块。
    * 解析失败（PDF/Word 无解析器）如实标记 index_failed，不伪装成功。
+   *
+   * 事务与卫生残留批 P1-4：素材登记与知识创建在仓储同一事务内
+   * （createKnowledgeSource），任一失败整体回滚，不留孤儿素材行；
+   * 失败或重放时已复制的文件在本方法内清理。幂等键为文件内容指纹
+   * （sha256）：同文件重试走重放返回原知识，不重复创建。
    */
   async addKnowledge(
     adminId: string,
@@ -174,7 +180,19 @@ export class AgentAdminService {
       );
     }
 
+    const buffer = readFileSync(filePath);
+    // 确定性幂等键：文件内容指纹。同文件重试 → 同键 → 重放返回原知识。
+    const sha256 = createHash("sha256").update(buffer).digest("hex");
+    const mimeType = extension === ".pdf"
+      ? "application/pdf"
+      : extension === ".docx" || extension === ".doc"
+        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        : "text/markdown";
+
+    const parsed = this.parseSource(extension, buffer);
+    const timestamp = now();
     const id = newId("kno");
+    const sourceMediaId = newId("med");
     const filename = basename(filePath);
     const targetDirectory = join(this.mediaDirectory, id);
     const targetPath = join(targetDirectory, filename);
@@ -186,39 +204,6 @@ export class AgentAdminService {
         cause: error
       });
     }
-
-    const buffer = readFileSync(filePath);
-    const sha256 = createHash("sha256").update(buffer).digest("hex");
-    const mimeType = extension === ".pdf"
-      ? "application/pdf"
-      : extension === ".docx" || extension === ".doc"
-        ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-        : "text/markdown";
-
-    const parsed = this.parseSource(extension, buffer);
-    const timestamp = now();
-    // 知识源文件同时登记为素材：把注册时生成的 media ID 写入
-    // agent_knowledge_items.source_media_id（顺序写入，先素材后知识，
-    // FK 可满足），使 countMediaReferences 能检测到已启用知识的引用。
-    const sourceMediaId = newId("med");
-    await this.repository.registerMedia({
-      id: sourceMediaId,
-      kind: extension === ".pdf"
-        ? "pdf"
-        : extension === ".docx" || extension === ".doc"
-          ? "word"
-          : "markdown",
-      filename,
-      storedPath: targetPath,
-      sizeBytes: stats.size,
-      mimeType,
-      sha256,
-      status: "ready",
-      failureReason: null,
-      createdBy: adminId,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    });
 
     const row: KnowledgeRow = {
       id,
@@ -236,11 +221,65 @@ export class AgentAdminService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    await this.repository.createKnowledge({
-      ...row,
-      chunks: parsed.kind === "parsed" ? parsed.chunks : []
-    });
-    return row;
+
+    const removeCopiedFile = (): void => {
+      try {
+        rmSync(targetDirectory, { recursive: true, force: true });
+      } catch {
+        // 忽略：清理失败不遮蔽原始错误。
+      }
+    };
+
+    let outcome;
+    try {
+      outcome = await this.repository.createKnowledgeSource({
+        adminId,
+        // 知识源文件同时登记为素材：source_media_id 写入知识行
+        // （同一事务内先素材后知识，FK 可满足），使 countMediaReferences
+        // 能检测到已启用知识的引用。
+        media: {
+          id: sourceMediaId,
+          kind: extension === ".pdf"
+            ? "pdf"
+            : extension === ".docx" || extension === ".doc"
+              ? "word"
+              : "markdown",
+          filename,
+          storedPath: targetPath,
+          sizeBytes: stats.size,
+          mimeType,
+          sha256,
+          status: "ready",
+          failureReason: null,
+          createdBy: adminId,
+          createdAt: timestamp,
+          updatedAt: timestamp
+        },
+        knowledge: {
+          ...row,
+          chunks: parsed.kind === "parsed" ? parsed.chunks : []
+        },
+        idempotencyKey: sha256,
+        requestHash: sha256
+      });
+    } catch (error) {
+      // 事务失败（回滚，无孤儿素材行）：清理已复制的文件后抛出。
+      removeCopiedFile();
+      throw error;
+    }
+    if (outcome.kind === "conflict") {
+      removeCopiedFile();
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      removeCopiedFile();
+      throw new DomainError("stale_replay", "相同幂等键对应的知识已不存在");
+    }
+    if (outcome.kind === "replayed") {
+      // 重放：原知识与其文件副本已存在，本次复制的副本多余，清理。
+      removeCopiedFile();
+    }
+    return outcome.item;
   }
 
   async listKnowledge(status?: string): Promise<KnowledgeItem[]> {
@@ -288,8 +327,22 @@ export class AgentAdminService {
         "只有已建立索引的知识可以启用"
       );
     }
-    await this.repository.setKnowledgeStatus(id, "enabled", now());
-    const updated = await this.getKnowledge(id);
+    // 状态更新与来源素材状态校验在同一事务（setKnowledgeStatusGuarded，
+    // 与 setPlanStatusGuarded 同类事务变式）：并发停用素材时，本事务
+    // 重读素材状态并拒绝，不产生"已启用但源素材已停用"的中间状态。
+    const outcome = await this.repository.setKnowledgeStatusGuarded(
+      id,
+      "enabled",
+      now(),
+      (knowledge, media) => this.knowledgeEnableMissing(knowledge, media)
+    );
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "知识不存在");
+    }
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError("validation_failed", outcome.missing.join("、"));
+    }
+    const updated = outcome.knowledge;
     await this.audit.record({
       actorKind: "admin",
       actorId: adminId,
@@ -311,8 +364,24 @@ export class AgentAdminService {
     if (item.status !== "enabled") {
       throw new DomainError("validation_failed", "只有已启用知识可以停用");
     }
-    await this.repository.setKnowledgeStatus(id, "disabled", now());
-    const updated = await this.getKnowledge(id);
+    // 与启用同走事务守卫：停用只要求事务内重读状态仍为 enabled
+    //（状态谓词 CAS，防止并发启用/停用交错）。
+    const outcome = await this.repository.setKnowledgeStatusGuarded(
+      id,
+      "disabled",
+      now(),
+      (knowledge) =>
+        knowledge.status === "enabled"
+          ? []
+          : ["知识状态已变化，请重新读取"]
+    );
+    if (outcome.kind === "not_found") {
+      throw new DomainError("resource_not_found", "知识不存在");
+    }
+    if (outcome.kind === "validation_failed") {
+      throw new DomainError("validation_failed", outcome.missing.join("、"));
+    }
+    const updated = outcome.knowledge;
     await this.audit.record({
       actorKind: "admin",
       actorId: adminId,
@@ -354,7 +423,8 @@ export class AgentAdminService {
       applicableAge: string;
       videoResourceId: string;
       displayOrder: number;
-    }>
+    }>,
+    idempotencyKey: string
   ): Promise<AgentPlan> {
     const name = input.name.trim();
     if (name === "") {
@@ -383,8 +453,38 @@ export class AgentAdminService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    await this.repository.createPlan(this.toPlanRow(plan));
-    return plan;
+    // 幂等创建（事务与卫生残留批 P2-7）：确定性键同内容重试 → 重放
+    // 返回原方案；requestHash 取业务字段稳定哈希，重试内容一致时相同。
+    const requestHash = createHash("sha256")
+      .update(
+        JSON.stringify({
+          name,
+          syndrome: input.syndrome,
+          method: input.method?.trim() ?? "",
+          steps: (input.steps ?? []).map((step) => step.trim()),
+          precautions: input.precautions?.trim() ?? "",
+          risks: input.risks?.trim() ?? "",
+          contraindications: input.contraindications?.trim() ?? "",
+          applicableAge: input.applicableAge?.trim() || null,
+          videoResourceId: input.videoResourceId ?? null,
+          displayOrder: input.displayOrder ?? 0
+        }),
+        "utf8"
+      )
+      .digest("hex");
+    const outcome = await this.repository.createPlanIdempotent(
+      adminId,
+      this.toPlanRow(plan),
+      idempotencyKey,
+      requestHash
+    );
+    if (outcome.kind === "conflict") {
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError("stale_replay", "相同幂等键对应的方案已不存在");
+    }
+    return outcome.item;
   }
 
   async listPlans(status?: string): Promise<AgentPlan[]> {
@@ -617,7 +717,19 @@ export class AgentAdminService {
       lastTestStatus: current?.lastTestStatus ?? null,
       lastTestAt: current?.lastTestAt ?? null
     };
-    await this.repository.upsertModelConfig(next);
+    // 单行 CAS（事务与卫生残留批 P2-8）：以最近一次快照的 updated_at
+    // 作谓词，并发覆盖被仓储拒绝 → version_conflict（与内容/方案的
+    // expectedRevision 语义一致）。
+    const outcome = await this.repository.upsertModelConfig(
+      next,
+      current?.updatedAt ?? null
+    );
+    if (outcome === "conflict") {
+      throw new DomainError(
+        "version_conflict",
+        "模型配置已被其他管理员更新，请重新读取"
+      );
+    }
     return this.toModelView(next);
   }
 
@@ -631,7 +743,7 @@ export class AgentAdminService {
       );
     }
     const timestamp = now();
-    await this.repository.upsertModelConfig({
+    const outcome = await this.repository.upsertModelConfig({
       provider: config?.provider ?? MODEL_DEFAULTS.provider,
       modelName: config?.modelName ?? "",
       timeoutSeconds: config?.timeoutSeconds ?? MODEL_DEFAULTS.timeoutSeconds,
@@ -644,7 +756,13 @@ export class AgentAdminService {
       updatedAt: timestamp,
       lastTestStatus: "capability_unavailable",
       lastTestAt: timestamp
-    });
+    }, config?.updatedAt ?? null);
+    if (outcome === "conflict") {
+      throw new DomainError(
+        "version_conflict",
+        "模型配置已被其他管理员更新，请重新读取"
+      );
+    }
     throw new DomainError(
       "capability_unavailable",
       "模型提供方适配器尚未接入（骨架阶段），无法验证真实连接"
@@ -764,6 +882,34 @@ export class AgentAdminService {
         missing.push("关联视频不存在");
       } else if (video.status !== "published") {
         missing.push("关联视频未发布");
+      }
+    }
+    return missing;
+  }
+
+  /**
+   * 知识启用前校验的事务内变体：只含数据库依赖项，由仓储在
+   * BEGIN IMMEDIATE 内以重读的知识行与素材状态调用；并发停用素材、
+   * 并发启用都在事务内被拒绝，不产生"已启用但源素材已停用"中间状态。
+   */
+  private knowledgeEnableMissing(
+    knowledge: KnowledgeRow,
+    media: { id: string; status: string } | null
+  ): string[] {
+    const missing: string[] = [];
+    if (knowledge.status === "enabled") {
+      missing.push("知识已启用");
+    } else if (
+      knowledge.status !== "indexed" &&
+      knowledge.status !== "disabled"
+    ) {
+      missing.push("知识状态不允许启用");
+    }
+    if (knowledge.sourceMediaId !== null) {
+      if (media === null) {
+        missing.push("知识源素材不存在");
+      } else if (media.status === "disabled") {
+        missing.push("知识源素材已停用");
       }
     }
     return missing;

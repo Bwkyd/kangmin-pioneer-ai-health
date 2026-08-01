@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -13,15 +13,17 @@ import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import type { CommandResult } from "../kernel/result.js";
+import { ContentAuxService } from "../modules/admin/content-aux-service.js";
 import type {
-  AdminArticle,
-  AdminContentItem
-} from "../modules/admin/content-admin-repository.js";
-import type {
+  ContentAuxRepository,
   ContentCategoryRow,
   ContentMediaRow,
   ContentMessageRow
 } from "../modules/admin/content-aux-repository.js";
+import type {
+  AdminArticle,
+  AdminContentItem
+} from "../modules/admin/content-admin-repository.js";
 
 function dataOf<T>(result: CommandResult): T {
   if (!result.ok) {
@@ -520,3 +522,245 @@ test("admin 无显式幂等键：同命令同内容重试 → 确定性键重放
 // 内容删除命令：ContentAdminRepository 无 delete 方法，全代码库不存在删除
 // content_items 行的路径，同键重放永远命中 "replayed" 分支。若未来新增内容删除，
 // 需补 "create → delete → 同键重放返回 stale_replay" 的端到端用例。
+
+test("已发布文章被修改后置回草稿：患者不再看到未校验修改（事务与卫生残留批 P1-1）", async () => {
+  const { app, databasePath, token } = await fixture();
+  try {
+    dataOf<ContentCategoryRow>(
+      await app.execute({
+        command: "content category create",
+        adminToken: token,
+        input: { name: "改稿分类", kind: "article" }
+      })
+    );
+    const created = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article create",
+        adminToken: token,
+        input: {
+          title: "已发布改稿文章",
+          category: "改稿分类",
+          idempotencyKey: "publish-edit-1"
+        }
+      })
+    );
+    dataOf(
+      await app.execute({
+        command: "content article update",
+        adminToken: token,
+        input: {
+          id: created.id,
+          expectedRevision: 1,
+          summary: "摘要",
+          body: "已发布正文。",
+          source: "来源"
+        }
+      })
+    );
+    dataOf(
+      await app.execute({
+        command: "content article publish",
+        adminToken: token,
+        input: { id: created.id, expectedRevision: 2, yes: true }
+      })
+    );
+
+    // 发布后患者可见
+    const patient = createApplication(databasePath);
+    try {
+      const visible = await patient.execute({
+        command: "browse article show",
+        input: { id: created.id }
+      });
+      assert.equal(visible.ok, true);
+    } finally {
+      patient.close();
+    }
+
+    // 修改已发布内容 → 必须置回草稿（published_at 清空、患者端不可见）
+    const updated = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article update",
+        adminToken: token,
+        input: { id: created.id, expectedRevision: 3, title: "改稿后的标题" }
+      })
+    );
+    assert.equal(updated.status, "draft");
+    assert.equal(updated.publishedAt, null);
+    assert.equal(updated.revision, 4);
+
+    const patientAfter = createApplication(databasePath);
+    try {
+      const hidden = await patientAfter.execute({
+        command: "browse article show",
+        input: { id: created.id }
+      });
+      assert.equal(hidden.ok, false);
+      if (!hidden.ok) assert.equal(hidden.error.code, "resource_not_found");
+    } finally {
+      patientAfter.close();
+    }
+  } finally {
+    app.close();
+  }
+});
+
+test("分类被改名后，引用旧分类名的内容发布失败（区分未引用与引用不存在，P1-6 补测）", async () => {
+  const { app, token } = await fixture();
+  try {
+    dataOf<ContentCategoryRow>(
+      await app.execute({
+        command: "content category create",
+        adminToken: token,
+        input: { name: "旧分类名", kind: "article" }
+      })
+    );
+    const article = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article create",
+        adminToken: token,
+        input: {
+          title: "引用被改名分类的文章",
+          category: "旧分类名",
+          summary: "摘要",
+          body: "正文。",
+          source: "来源",
+          idempotencyKey: "renamed-cat-article"
+        }
+      })
+    );
+    // 改名分类：原名在 content_categories 中不再存在
+    const listed = dataOf<{ items: ContentCategoryRow[] }>(
+      await app.execute({
+        command: "content category list",
+        adminToken: token,
+        input: { kind: "article" }
+      })
+    );
+    const category = listed.items.find(
+      (item) => item.name === "旧分类名"
+    ) as ContentCategoryRow;
+    dataOf(
+      await app.execute({
+        command: "content category update",
+        adminToken: token,
+        input: { id: category.id, expectedRevision: category.revision, name: "新分类名" }
+      })
+    );
+    // 事务内快照查不到分类名 → validation_failed（引用不存在的分类）
+    const blocked = await app.execute({
+      command: "content article publish",
+      adminToken: token,
+      input: { id: article.id, expectedRevision: 1, yes: true }
+    });
+    assert.equal(blocked.ok, false);
+    if (!blocked.ok) assert.equal(blocked.error.code, "validation_failed");
+    // 预览同样报告分类缺失（与发布路径一致）
+    const preview = dataOf<{ validation: { ok: boolean; missing: string[] } }>(
+      await app.execute({
+        command: "content article preview",
+        adminToken: token,
+        input: { id: article.id }
+      })
+    );
+    assert.ok(preview.validation.missing.includes("分类不存在"));
+  } finally {
+    app.close();
+  }
+});
+
+test("content message create 同内容重试 → 确定性幂等键重放，不重复创建（P2-7）", async () => {
+  const { app, databasePath, token } = await fixture();
+  try {
+    const input = { title: "幂等公告", body: "同内容重试不重复创建。" };
+    const first = dataOf<ContentMessageRow>(
+      await app.execute({ command: "content message create", adminToken: token, input })
+    );
+    const second = dataOf<ContentMessageRow>(
+      await app.execute({ command: "content message create", adminToken: token, input })
+    );
+    assert.equal(second.id, first.id);
+    const listed = dataOf<{ items: ContentMessageRow[] }>(
+      await app.execute({ command: "content message list", adminToken: token })
+    );
+    assert.equal(listed.items.length, 1);
+
+    const database = new KangminDatabase(databasePath);
+    try {
+      const rows = database.connection.prepare(`
+        SELECT idempotency_key FROM admin_idempotency
+        WHERE scope = 'content.message.create'
+      `).all() as unknown as Array<{ idempotency_key: string }>;
+      assert.equal(rows.length, 1);
+    } finally {
+      database.close();
+    }
+  } finally {
+    app.close();
+  }
+});
+
+test("content media upload 同文件重传 → 重放；show/list 输出不含 storedPath（P2-7/P2-12a）", async () => {
+  const { app, mediaDirectory, token } = await fixture();
+  try {
+    const file = join(mediaDirectory, "replay.png");
+    writeFileSync(file, "same-bytes");
+    const first = dataOf<{ id: string; filename: string; storedPath?: unknown }>(
+      await app.execute({ command: "content media upload", adminToken: token, input: { file } })
+    );
+    // 输出裁剪：受管目录绝对路径（storedPath）绝不进入命令输出
+    assert.ok(!JSON.stringify(first).includes(mediaDirectory));
+    assert.equal(first.storedPath, undefined);
+    assert.equal(first.filename, "replay.png");
+
+    // 同文件（内容指纹 sha256 相同）重传 → 重放返回原素材
+    const second = dataOf<{ id: string }>(
+      await app.execute({ command: "content media upload", adminToken: token, input: { file } })
+    );
+    assert.equal(second.id, first.id);
+
+    const listed = dataOf<{ items: Array<{ id: string }> }>(
+      await app.execute({ command: "content media list", adminToken: token })
+    );
+    assert.equal(listed.items.length, 1);
+    assert.ok(!JSON.stringify(listed).includes(mediaDirectory));
+
+    const shown = dataOf<{ referencedBy: unknown }>(
+      await app.execute({
+        command: "content media show",
+        adminToken: token,
+        input: { id: first.id }
+      })
+    );
+    assert.ok(!JSON.stringify(shown).includes(mediaDirectory));
+    assert.equal(
+      (shown.referencedBy as { publishedResources: number }).publishedResources,
+      0
+    );
+  } finally {
+    app.close();
+  }
+});
+
+test("uploadMedia 注册失败时清理已复制的文件，不留孤儿副本（P2-10）", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-upload-cleanup-"));
+  const mediaDirectory = join(directory, "admin-media");
+  const file = join(directory, "source.png");
+  writeFileSync(file, "bytes");
+  const failingRepository = {
+    createMediaIdempotent: async (): Promise<never> => {
+      throw new Error("boom");
+    }
+  } as unknown as ContentAuxRepository;
+  const service = new ContentAuxService(
+    failingRepository,
+    mediaDirectory,
+    { record: async () => {} }
+  );
+  await assert.rejects(
+    () => service.uploadMedia("admin-1", file, "image"),
+    /boom/u
+  );
+  // 复制发生在注册之前；注册失败后副本目录必须被清理（目录为空）。
+  assert.equal(readdirSync(mediaDirectory).length, 0);
+});

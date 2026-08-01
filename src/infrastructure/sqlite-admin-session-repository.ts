@@ -65,9 +65,13 @@ export class SqliteAdminSessionRepository implements AdminSessionRepository {
           ) VALUES (?, ?, '!dev-session-only', 'owner', 'active', 1, ?, ?)
         `).run(adminId, input.subject, input.createdAt, input.createdAt);
       }
+      // 事务与卫生残留批 P2-11：同 patient_sessions——不用 INSERT OR
+      // REPLACE，避免同 token 再存复活已撤销会话；ON CONFLICT DO NOTHING
+      // 保留原有行（含 revoked 标记），撤销语义不被绕过。
       this.database.connection.prepare(`
-        INSERT OR REPLACE INTO admin_sessions(token_hash, admin_id, expires_at, created_at)
+        INSERT INTO admin_sessions(token_hash, admin_id, expires_at, created_at)
         VALUES (?, ?, ?, ?)
+        ON CONFLICT(token_hash) DO NOTHING
       `).run(input.tokenHash, adminId, input.expiresAt, input.createdAt);
       return adminId;
     });

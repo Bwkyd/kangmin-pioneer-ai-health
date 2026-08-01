@@ -277,3 +277,24 @@ test("CLI 数据权利与未实现命令返回 capability_unavailable（exit 6�
     );
   }
 });
+
+test("CLI human 模式登录：令牌只进 stderr，stdout 不含令牌（P2-12c）", async () => {
+  const { databasePath, environment } = fixture();
+
+  const register = run([
+    "account", "register",
+    "--username", "human_user",
+    "--nickname", "人机",
+    "--json"
+  ], environment, `${PASSWORD}\n`);
+  assert.equal(register.status, 0, register.stderr);
+
+  // human 模式（无 --json）：令牌绝不进入 stdout，只写 stderr 提示
+  const login = run([
+    "account", "login",
+    "--username", "human_user"
+  ], environment, `${PASSWORD}\n`);
+  assert.equal(login.status, 0, login.stderr);
+  assert.ok(!login.stdout.includes("token"), "stdout 不得包含会话令牌");
+  assert.match(login.stderr, /KANGMIN_SESSION_TOKEN/u);
+});

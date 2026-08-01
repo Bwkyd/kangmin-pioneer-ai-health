@@ -464,12 +464,18 @@ export class KangminAdminApplication {
         case "content message create":
           return success(
             command,
-            await this.aux.createMessage(adminId, {
-              title: requiredString(input, "title"),
-              body: requiredString(input, "body"),
-              summary: opt(input, "summary"),
-              categoryId: opt(input, "categoryId")
-            }),
+            await this.aux.createMessage(
+              adminId,
+              {
+                title: requiredString(input, "title"),
+                body: requiredString(input, "body"),
+                summary: opt(input, "summary"),
+                categoryId: opt(input, "categoryId")
+              },
+              // 幂等创建（事务与卫生残留批 P2-7）：确定性键同内容重试
+              // → 重放返回原公告，不重复创建。
+              idempotencyKeyOf(command, input)
+            ),
             request.requestId
           );
         case "content message list":
@@ -585,18 +591,24 @@ export class KangminAdminApplication {
         case "agent plan create":
           return success(
             command,
-            await this.agent.createPlan(adminId, {
-              name: requiredString(input, "name"),
-              syndrome: requiredString(input, "syndrome"),
-              method: opt(input, "method"),
-              steps: optionalStringArray(input, "steps"),
-              precautions: opt(input, "precautions"),
-              risks: opt(input, "risks"),
-              contraindications: opt(input, "contraindications"),
-              applicableAge: opt(input, "applicableAge"),
-              videoResourceId: opt(input, "videoResourceId"),
-              displayOrder: optionalIntegerInRange(input, "displayOrder", 0, 1_000_000)
-            }),
+            await this.agent.createPlan(
+              adminId,
+              {
+                name: requiredString(input, "name"),
+                syndrome: requiredString(input, "syndrome"),
+                method: opt(input, "method"),
+                steps: optionalStringArray(input, "steps"),
+                precautions: opt(input, "precautions"),
+                risks: opt(input, "risks"),
+                contraindications: opt(input, "contraindications"),
+                applicableAge: opt(input, "applicableAge"),
+                videoResourceId: opt(input, "videoResourceId"),
+                displayOrder: optionalIntegerInRange(input, "displayOrder", 0, 1_000_000)
+              },
+              // 幂等创建（事务与卫生残留批 P2-7）：显式键优先，缺省
+              // 确定性键 sha256(command + ":" + canonicalJson(input))。
+              idempotencyKeyOf(command, input)
+            ),
             request.requestId
           );
         case "agent plan list":

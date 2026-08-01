@@ -3,14 +3,19 @@ import assert from "node:assert/strict";
 // 测试进程以本地开发模式启动：组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
+import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
+import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
 import type { CommandResult } from "../kernel/result.js";
+import { AgentAdminService } from "../modules/agent-admin/agent-admin-service.js";
+import type { AgentAdminRepository } from "../modules/agent-admin/agent-admin-ports.js";
 import type { KnowledgeItem, AgentPlan, ModelConfigView } from "../modules/agent-admin/contracts.js";
 
 function dataOf<T>(result: CommandResult): T {
@@ -554,4 +559,276 @@ test("模型设置：不显示完整 API Key；未配置时测试如实报错；
   } finally {
     app.close();
   }
+});
+
+test("知识源素材被停用后 enableKnowledge 失败（事务内守卫，P1-3）", async () => {
+  const { app, mediaDirectory, token } = await fixture();
+  try {
+    const file = join(mediaDirectory, "素材停用知识.md");
+    writeFileSync(
+      file,
+      "# 停用素材知识\n\n停用后启用必须被拒绝。"
+    );
+    const added = dataOf<KnowledgeItem>(
+      await app.execute({ command: "agent knowledge add", adminToken: token, input: { file } })
+    );
+    await app.execute({
+      command: "agent knowledge index",
+      adminToken: token,
+      input: { id: added.id }
+    });
+
+    // 停用来源素材（此时知识未启用，引用计数为 0，允许停用）
+    dataOf(
+      await app.execute({
+        command: "content media disable",
+        adminToken: token,
+        input: { id: added.sourceMediaId as string, yes: true }
+      })
+    );
+
+    // 启用被拒绝：事务内重读素材状态 → 已停用 → validation_failed
+    const enable = await app.execute({
+      command: "agent knowledge enable",
+      adminToken: token,
+      input: { id: added.id, yes: true }
+    });
+    assert.equal(enable.ok, false);
+    if (!enable.ok) assert.equal(enable.error.code, "validation_failed");
+    assert.ok(!enable.ok && enable.error.message.includes("素材"));
+
+    // 状态未被部分写入：仍为 indexed
+    const after = dataOf<KnowledgeItem>(
+      await app.execute({ command: "agent knowledge show", adminToken: token, input: { id: added.id } })
+    );
+    assert.equal(after.status, "indexed");
+  } finally {
+    app.close();
+  }
+});
+
+test("addKnowledge 同文件重试 → 文件指纹幂等重放；不留重复知识（P1-4）", async () => {
+  const { app, databasePath, mediaDirectory, token } = await fixture();
+  try {
+    const file = join(mediaDirectory, "幂等知识.md");
+    writeFileSync(file, "# 幂等知识\n\n同文件内容只创建一条。");
+
+    const first = dataOf<KnowledgeItem>(
+      await app.execute({ command: "agent knowledge add", adminToken: token, input: { file } })
+    );
+    // 同内容重试：确定性键（文件 sha256）相同 → 重放返回原知识
+    const second = dataOf<KnowledgeItem>(
+      await app.execute({ command: "agent knowledge add", adminToken: token, input: { file } })
+    );
+    assert.equal(second.id, first.id);
+
+    const listed = dataOf<{ items: KnowledgeItem[] }>(
+      await app.execute({ command: "agent knowledge list", adminToken: token })
+    );
+    assert.equal(listed.items.length, 1);
+
+    // 幂等行只落一条；素材也只登记一条（事务同源）
+    const database = new KangminDatabase(databasePath);
+    try {
+      const keys = database.connection.prepare(`
+        SELECT idempotency_key FROM admin_idempotency
+        WHERE scope = 'agent.knowledge.add'
+      `).all() as unknown as Array<{ idempotency_key: string }>;
+      assert.equal(keys.length, 1);
+      const mediaCount = database.connection.prepare(`
+        SELECT COUNT(*) AS count FROM content_resource_media
+        WHERE id = ?
+      `).get(first.sourceMediaId as string) as unknown as { count: number };
+      assert.equal(mediaCount.count, 1);
+    } finally {
+      database.close();
+    }
+  } finally {
+    app.close();
+  }
+});
+
+test("createKnowledgeSource 失败整体回滚：不留孤儿素材行与幂等行（P1-4）", async () => {
+  const { app, databasePath } = await fixture();
+  try {
+    const database = new KangminDatabase(databasePath);
+    try {
+      const repository = new SqliteAgentAdminRepository(database, new PlaintextEncryption());
+      // 制造事务内失败：素材 status 非法（CHECK 违约）→ 整个事务回滚。
+      //（类型上 status 联合类型不含 "bogus"，用一次结构化类型断言表示
+      // 非法输入，正是要验证的失败路径。）
+      const invalidMediaInput = {
+        adminId: "admin_x",
+        media: {
+          id: "med_orphan",
+          kind: "markdown",
+          filename: "x.md",
+          storedPath: "/tmp/x.md",
+          sizeBytes: 1,
+          mimeType: "text/markdown",
+          sha256: "deadbeef",
+          status: "bogus",
+          failureReason: null,
+          createdBy: "admin_x",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z"
+        },
+        knowledge: {
+          id: "kno_orphan",
+          name: "x.md",
+          source: null,
+          description: null,
+          sourceMediaId: "med_orphan",
+          sizeBytes: 1,
+          mimeType: "text/markdown",
+          sha256: "deadbeef",
+          status: "processing",
+          parseError: null,
+          chunkCount: 0,
+          createdBy: "admin_x",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          chunks: []
+        },
+        idempotencyKey: "deadbeef",
+        requestHash: "deadbeef"
+      };
+      await assert.rejects(
+        () => repository.createKnowledgeSource(
+          invalidMediaInput as unknown as Parameters<
+            typeof repository.createKnowledgeSource
+          >[0]
+        )
+      );
+      // 回滚后：无素材行、无知识行、无幂等行（无孤儿）
+      const mediaRow = database.connection.prepare(
+        "SELECT id FROM content_resource_media WHERE id = 'med_orphan'"
+      ).get();
+      assert.equal(mediaRow, undefined);
+      const knowledgeRow = database.connection.prepare(
+        "SELECT id FROM agent_knowledge_items WHERE id = 'kno_orphan'"
+      ).get();
+      assert.equal(knowledgeRow, undefined);
+      const idemRow = database.connection.prepare(`
+        SELECT idempotency_key FROM admin_idempotency
+        WHERE scope = 'agent.knowledge.add' AND idempotency_key = 'deadbeef'
+      `).get();
+      assert.equal(idemRow, undefined);
+    } finally {
+      database.close();
+    }
+  } finally {
+    app.close();
+  }
+});
+
+test("agent plan create 同内容重试 → 确定性幂等键重放，不重复创建（P2-7）", async () => {
+  const { app, databasePath, token } = await fixture();
+  try {
+    const input = {
+      name: "幂等方案",
+      syndrome: "LUNG_QI_COLD",
+      method: "日常护理",
+      steps: ["步骤一"],
+      risks: "风险提示",
+      precautions: "注意事项",
+      contraindications: "禁忌"
+    };
+    const first = dataOf<AgentPlan>(
+      await app.execute({ command: "agent plan create", adminToken: token, input })
+    );
+    const second = dataOf<AgentPlan>(
+      await app.execute({ command: "agent plan create", adminToken: token, input })
+    );
+    assert.equal(second.id, first.id);
+    const listed = dataOf<{ items: AgentPlan[] }>(
+      await app.execute({ command: "agent plan list", adminToken: token })
+    );
+    assert.equal(listed.items.length, 1);
+
+    const database = new KangminDatabase(databasePath);
+    try {
+      const rows = database.connection.prepare(`
+        SELECT idempotency_key FROM admin_idempotency
+        WHERE scope = 'agent.plan.create'
+      `).all() as unknown as Array<{ idempotency_key: string }>;
+      assert.equal(rows.length, 1);
+    } finally {
+      database.close();
+    }
+  } finally {
+    app.close();
+  }
+});
+
+test("模型配置单行 CAS：过期 updated_at 快照更新被拒绝（P2-8）", async () => {
+  const { app, databasePath } = await fixture();
+  try {
+    const database = new KangminDatabase(databasePath);
+    try {
+      const repository = new SqliteAgentAdminRepository(database, new PlaintextEncryption());
+      const row = {
+        provider: "openai-compatible",
+        modelName: "gpt-4o-mini",
+        timeoutSeconds: 30,
+        maxOutputTokens: 1024,
+        knowledgeRetrievalEnabled: 0,
+        retrievalCount: 3,
+        explanationEnabled: 1,
+        apiKey: null,
+        updatedBy: "admin_a",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+        lastTestStatus: null,
+        lastTestAt: null
+      };
+      // 首次写入（行不存在 → INSERT）
+      assert.equal(await repository.upsertModelConfig(row, null), "updated");
+      // 用过期快照更新 → conflict（并发覆盖被拒绝）
+      assert.equal(
+        await repository.upsertModelConfig(
+          { ...row, modelName: "stale-write", updatedAt: "2026-01-02T00:00:00.000Z" },
+          "2020-01-01T00:00:00.000Z"
+        ),
+        "conflict"
+      );
+      // 用最新快照更新 → 成功
+      assert.equal(
+        await repository.upsertModelConfig(
+          { ...row, modelName: "fresh-write", updatedAt: "2026-01-03T00:00:00.000Z" },
+          "2026-01-01T00:00:00.000Z"
+        ),
+        "updated"
+      );
+      const stored = await repository.getModelConfig();
+      assert.equal(stored?.modelName, "fresh-write");
+    } finally {
+      database.close();
+    }
+  } finally {
+    app.close();
+  }
+});
+
+test("addKnowledge 事务失败时清理已复制的知识文件（不留孤儿副本，P1-4）", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-knowledge-cleanup-"));
+  const mediaDirectory = join(directory, "admin-media");
+  const file = join(directory, "source.md");
+  writeFileSync(file, "# 源文件\n\n正文。");
+  const failingRepository = {
+    createKnowledgeSource: async (): Promise<never> => {
+      throw new Error("boom");
+    }
+  } as unknown as AgentAdminRepository;
+  const service = new AgentAdminService(
+    failingRepository,
+    new BuiltinSyndromeRegistry(),
+    mediaDirectory,
+    { record: async () => {} }
+  );
+  await assert.rejects(
+    () => service.addKnowledge("admin-1", file),
+    /boom/u
+  );
+  // 复制发生在登记之前；登记失败后副本目录必须被清理（目录为空）。
+  assert.equal(readdirSync(mediaDirectory).length, 0);
 });

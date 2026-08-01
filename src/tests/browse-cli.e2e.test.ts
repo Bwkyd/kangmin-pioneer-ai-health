@@ -100,19 +100,20 @@ test("未登录真实 CLI：browse 全部只读命令成功执行", () => {
   assert.equal(listBody.ok, true);
   assert.deepEqual(listBody.data.items.map((item) => item.id), ["article-public"]);
 
+  // 评审 R2 P1 双门禁：临床规则包未冻结（candidate）时，管理端启用的
+  // 方案（status='enabled'）对患者浏览也不可见——list 为空、show 为
+  // resource_not_found、搜索不含方案。
   const plans = run(["browse", "plan", "list", "--json"], environment);
   assert.equal(plans.status, 0, plans.stderr);
   const plansBody = parseJson<{ items: Array<{ id: string }> }>(plans);
-  assert.deepEqual(plansBody.data.items.map((item) => item.id), ["plan-published"]);
+  assert.deepEqual(plansBody.data.items, []);
 
   const planShow = run(
     ["browse", "plan", "show", "plan-published", "--json"],
     environment
   );
-  assert.equal(planShow.status, 0, planShow.stderr);
-  const planBody = parseJson<{ name: string; steps: unknown[] }>(planShow);
-  assert.equal(planBody.data.name, "花粉季通用护理方案");
-  assert.equal(planBody.data.steps.length, 2);
+  assert.equal(planShow.status, 3);
+  assert.equal(parseJson(planShow).error.code, "resource_not_found");
 
   const hiddenPlan = run(
     ["browse", "plan", "show", "plan-draft", "--json"],
@@ -131,7 +132,7 @@ test("未登录真实 CLI：browse 全部只读命令成功执行", () => {
     plans: Array<{ id: string }>;
   }>(search);
   assert.deepEqual(searchBody.data.videos.map((item) => item.id), ["video-public"]);
-  assert.deepEqual(searchBody.data.plans.map((item) => item.id), ["plan-published"]);
+  assert.deepEqual(searchBody.data.plans, []);
 
   const home = run(["browse", "--json"], environment);
   assert.equal(home.status, 0, home.stderr);

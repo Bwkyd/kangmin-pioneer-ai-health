@@ -213,3 +213,57 @@ test("users 命令只读：不存在任何写入口", async () => {
     app.close();
   }
 });
+
+test("用户会话列表过滤已撤销会话：logout 后不再显示（P2-5）", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-admin-users-sessions-"));
+  const databasePath = join(directory, "users.sqlite");
+
+  // 通过患者应用播种：开发会话 + 本地账号会话（后者 logout 撤销）
+  const patientApp = createApplication(databasePath);
+  let patientId = "";
+  try {
+    const session = await patientApp.sessions.createDevelopmentSession("revoke-patient");
+    patientId = session.patientId;
+    await patientApp.execute({
+      command: "account register",
+      sessionToken: session.token,
+      input: { username: "revoke_user", nickname: "撤销用户", password: "revoke-pass-1" }
+    });
+    const login = dataOf<{ token: string }>(
+      await patientApp.execute({
+        command: "account login",
+        input: { username: "revoke_user", password: "revoke-pass-1" }
+      })
+    );
+    await patientApp.execute({ command: "account logout", sessionToken: login.token });
+  } finally {
+    patientApp.close();
+  }
+
+  const app = createAdminApplication(databasePath);
+  try {
+    dataOf(
+      await app.execute({
+        command: "auth admins add",
+        input: { username: "owner-s", password: "owner-secret-s", role: "owner" }
+      })
+    );
+    const owner = dataOf<LoginResult>(
+      await app.execute({
+        command: "auth login",
+        input: { username: "owner-s", password: "owner-secret-s" }
+      })
+    );
+    const sessions = dataOf<{ items: Array<{ active: boolean }> }>(
+      await app.execute({
+        command: "users sessions",
+        adminToken: owner.token,
+        input: { id: patientId }
+      })
+    );
+    // 已撤销的账号会话不进入列表，只剩未撤销的开发会话。
+    assert.equal(sessions.items.length, 1);
+  } finally {
+    app.close();
+  }
+});

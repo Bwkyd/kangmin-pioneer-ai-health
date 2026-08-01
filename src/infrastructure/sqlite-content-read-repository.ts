@@ -13,6 +13,16 @@ const DISCLAIMER = "本内容仅作健康科普和居家管理参考，不代替
 
 /** 方案列表/搜索的返回条数上限（方案数量少，防御性截断）。 */
 const MAX_PLAN_LIST = 100;
+
+/**
+ * 方案浏览可见性开关（设计 §17 双门禁的患者侧半边）：
+ * planBrowseEnabled = 临床规则包是否 approved，由组合根注入；
+ * 未注入时默认 false（candidate 期间方案对患者不可见）。
+ */
+export interface PlanBrowseVisibility {
+  planBrowseEnabled?: boolean;
+}
+
 const PUBLIC_PREDICATE = `
   status = 'published'
   AND patient_visible = 1
@@ -74,13 +84,29 @@ function toPlanDetail(row: PlanRow): CarePlanDetail {
     try {
       const parsed: unknown = JSON.parse(row.steps_json);
       if (Array.isArray(parsed)) {
-        steps = parsed.filter(
-          (step): step is CarePlanDetail["steps"][number] =>
-            typeof step === "object" &&
-            step !== null &&
-            typeof (step as { step?: unknown }).step === "number" &&
-            typeof (step as { title?: unknown }).title === "string"
-        );
+        // 兼容管理端写回的两种 steps_json 格式（评审 R2 P2 契约兼容）：
+        // 1. AgentPlan.steps 为 string[]（历史契约）→ 按数组顺序映射为
+        //    {step: i+1, title: 文本}；
+        // 2. 对象数组 {step, title, description?}（当前种子/浏览端格式）。
+        // 非法条目丢弃、解析失败回退空列表，绝不宽松解析。
+        steps = parsed
+          .map((entry, index) => {
+            if (typeof entry === "string") {
+              return { step: index + 1, title: entry };
+            }
+            if (
+              typeof entry === "object" &&
+              entry !== null &&
+              typeof (entry as { step?: unknown }).step === "number" &&
+              typeof (entry as { title?: unknown }).title === "string"
+            ) {
+              return entry as CarePlanDetail["steps"][number];
+            }
+            return null;
+          })
+          .filter(
+            (step): step is CarePlanDetail["steps"][number] => step !== null
+          );
       }
     } catch {
       steps = [];
@@ -101,16 +127,30 @@ function toPlanDetail(row: PlanRow): CarePlanDetail {
  *
  * 可见性门禁：content_items 只返回 status='published' 且
  * patient_visible/version_valid/media_available 全部就绪的内容；
- * agent_plans（0009，管理端写入的统一方案表）只返回 status='enabled'
- * 的方案——当前 enable 同时作为患者浏览可见门禁，未来按设计 §17
- * 双门禁拆分为独立的患者发布指针（agent_care_plans 0007 历史表
- * 不再读写，保留在迁移账本中）。
+ * agent_plans（0009，管理端写入的统一方案表）按设计 §17 双门禁拆分：
+ * - 管理端/Agent 匹配门禁：agent_plans.status='enabled'（管理端启用方案）；
+ * - 患者浏览可见门禁：planBrowseEnabled（= 临床规则包是否 approved），
+ *   由组合根按规则包状态注入，candidate 期间恒 false。
+ * 两个门禁相互独立：candidate 期间管理端"启用方案"不再把完整调理方案
+ * （含穴位/疗程文本）公开给匿名患者（评审 R2 P1，与 HELP"当前无获批
+ * 临床规则和方案"一致）；approved 后组合根注入 true 才开放浏览。
+ * （agent_care_plans 0007 历史表不再读写，保留在迁移账本中。）
  *
- * 读失败（数据库损坏、连接关闭、锁异常）统一映射为 storage_unavailable，
- * 绝不伪装成空列表。
+ * 门禁关闭（planBrowseEnabled=false）时方案方法在触达存储前短路返回
+ * 空列表/null——这是关闭策略的确定响应，不是"伪装成空列表"；存储读
+ * 失败（数据库损坏、连接关闭、锁异常）仍统一映射为 storage_unavailable。
  */
 export class SqliteContentReadRepository implements ContentReadRepository {
-  constructor(private readonly database: KangminDatabase) {}
+  private readonly planBrowseEnabled: boolean;
+
+  constructor(
+    private readonly database: KangminDatabase,
+    options: PlanBrowseVisibility = {}
+  ) {
+    // 默认 false（fail-closed）：组合根当前未注入即 candidate，方案不
+    // 对患者开放；规则包 approved 后由组合根传 { planBrowseEnabled: true }。
+    this.planBrowseEnabled = options.planBrowseEnabled ?? false;
+  }
 
   async list(kind: PublicContentKind): Promise<PublicContent[]> {
     return this.guard(() => {
@@ -204,10 +244,16 @@ export class SqliteContentReadRepository implements ContentReadRepository {
   }
 
   async listPlans(): Promise<CarePlanSummary[]> {
+    if (!this.planBrowseEnabled) {
+      return [];
+    }
     return this.guard(() => this.queryPlans(null, MAX_PLAN_LIST));
   }
 
   async findPlan(id: string): Promise<CarePlanDetail | null> {
+    if (!this.planBrowseEnabled) {
+      return null;
+    }
     return this.guard(() => {
       const row = this.database.connection
         .prepare(`
@@ -221,6 +267,9 @@ export class SqliteContentReadRepository implements ContentReadRepository {
   }
 
   async searchPlans(query: string, limit: number): Promise<CarePlanSummary[]> {
+    if (!this.planBrowseEnabled) {
+      return [];
+    }
     return this.guard(() => this.queryPlans(likePatternOf(query), limit));
   }
 

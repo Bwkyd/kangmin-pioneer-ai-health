@@ -54,8 +54,8 @@ browse 命令：
   browse video categories
   browse video search <query>
   browse video show <id>
-  browse plan list
-  browse plan show <id>
+  browse plan list（临床规则包冻结后开放，当前返回空）
+  browse plan show <id>（临床规则包冻结后开放，当前不可见）
   browse search <query>
   browse environment current [--city X]
   browse environment forecast [--days N]
@@ -75,7 +75,8 @@ agent 命令（两条管线，路由按输入区分）：
   agent resume <session-id>        恢复确定性安全会话
   agent sessions list|show         确定性安全会话列表/详情
   agent feedback <id> --rating helpful|unhelpful [--reason <文本>]
-  agent test run --answer <field>=<state> 模拟链路（只验证不修改）
+
+模拟测试（agent test run）属于管理端：kangmin-admin agent test run。
 
 account 命令：
   account register --username <用户名> [--nickname <昵称>]
@@ -100,7 +101,7 @@ account 命令：
 
 当前真实可用：
   agent 确定性安全会话 + 自由对话管线（临床规则包为 candidate，正式输出阻断）、
-  record 全部命令、browse 已发布文章/视频/方案/环境快照、
+  record 全部命令、browse 已发布文章/视频/环境快照（方案待临床冻结后开放）、
   account 注册/登录/状态/退出/资料/同意/隐私。
 
 临床边界：
@@ -134,7 +135,7 @@ _kangmin() {
   local group="\${words[2]}"
   local -a sub
   case "\$group" in
-    agent) sub=('start:开始会话' 'exec:非交互对话' 'continue:继续安全会话' 'resume:恢复安全会话' 'sessions:安全会话列表/详情' 'conversations:自由对话列表/详情' 'feedback:对话反馈' 'test:模拟链路') ;;
+    agent) sub=('start:开始会话' 'exec:非交互对话' 'continue:继续安全会话' 'resume:恢复安全会话' 'sessions:安全会话列表/详情' 'conversations:自由对话列表/详情' 'feedback:对话反馈') ;;
     record) sub=('symptom:症状/TNSS 记录' 'profile:健康档案' 'exposure:暴露记录' 'medication:用药记录' 'overview:健康概览' 'calendar:日历' 'trend:趋势') ;;
     browse) sub=('article:科普文章' 'video:视频内容' 'plan:通用方案' 'search:跨内容搜索' 'environment:环境快照') ;;
     account) sub=('register:注册' 'login:登录' 'status:登录状态' 'logout:退出' 'profile:资料' 'consent:同意管理' 'privacy:隐私政策') ;;
@@ -960,6 +961,20 @@ export async function runCli(
       input: parsed.input,
       sessionToken: environment.KANGMIN_SESSION_TOKEN
     });
+    if (parsed.command === "account login" && result.ok) {
+      const data = result.data as { token?: unknown };
+      if (parsed.json) {
+        // --json：token 保留在 data.token（机器集成读取后写入
+        // KANGMIN_SESSION_TOKEN；README 已注明该字段语义）。
+      } else if (typeof data.token === "string" && data.token !== "") {
+        // human 模式（事务与卫生残留批 P2-12c）：令牌只写 stderr，
+        // stdout 绝不出现令牌；stdout 给固定提示。
+        process.stderr.write(
+          `会话令牌（请写入环境变量 KANGMIN_SESSION_TOKEN）：${data.token}\n`
+        );
+        delete data.token;
+      }
+    }
     if (parsed.json) {
       process.stdout.write(`${JSON.stringify(result)}\n`);
     } else if (result.ok) {

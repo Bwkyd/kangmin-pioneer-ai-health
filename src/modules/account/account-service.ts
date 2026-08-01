@@ -314,10 +314,13 @@ export class AccountService {
   /**
    * 昵称读写：undefined=继承，null/空串=清空，字符串=设置（1-32 字符）。
    * 只含账号资料，不含健康档案（健康档案属于 record profile）。
+   * expectedRevision 作 CAS（事务与卫生残留批 P2-9，与 health profile
+   * 一致）：并发修改 → version_conflict。
    */
   async profileUpdate(
     patientId: string,
-    nickname: string | null | undefined
+    nickname: string | null | undefined,
+    expectedRevision: number
   ): Promise<Record<string, unknown>> {
     if (nickname === undefined) {
       throw new DomainError(
@@ -327,7 +330,11 @@ export class AccountService {
     }
     validateNickname(nickname);
     await this.accountOf(patientId);
-    const updated = await this.accounts.updateNickname(patientId, nickname);
+    const updated = await this.accounts.updateNickname(
+      patientId,
+      nickname,
+      expectedRevision
+    );
     return {
       patientId: updated.patientId,
       usernameMasked: updated.usernameMasked,

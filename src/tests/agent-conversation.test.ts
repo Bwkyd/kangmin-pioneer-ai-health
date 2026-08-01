@@ -296,7 +296,8 @@ test("安全阻断：高危输入直接阻断并结束对话，输出固定文�
     assert.equal(blocked.closed, true);
     assert.equal(blocked.state, "completed");
     assert.equal(blocked.verdict?.outcome, "blocked");
-    assert.equal(blocked.verdict?.stage, "safety");
+    // 评审 R2：candidate 状态下 stage 侧信道同样裁剪（阶段进展不可确认）。
+    assert.equal(blocked.verdict?.stage, null);
     // 评审 P0-2：candidate 状态下患者侧 verdict 不暴露命中规则 ID。
     assert.deepEqual(blocked.verdict?.matchedRuleIds, []);
     assert.ok(blocked.message !== null);
@@ -322,7 +323,8 @@ test("unknown 不等于 no：安全字段 unknown 走补问，无法进展时 fa
   const { application } = await fixture();
   try {
     const first = await exec(application, { message: "" });
-    assert.equal(first.verdict?.stage, "safety");
+    // 评审 R2：candidate 下 stage 归一为 null（不暴露"处于安全阶段"）。
+    assert.equal(first.verdict?.stage, null);
     assert.equal(first.verdict?.outcome, "need_more_information");
 
     // 回答 unknown：不通过安全阶段，继续补问。
@@ -331,7 +333,7 @@ test("unknown 不等于 no：安全字段 unknown 走补问，无法进展时 fa
       conversationId: first.conversationId
     });
     assert.equal(unknown.verdict?.outcome, "need_more_information");
-    assert.equal(unknown.verdict?.stage, "safety");
+    assert.equal(unknown.verdict?.stage, null);
     assert.equal(unknown.closed, false);
 
     // 只答 2 问 unknown 不 fail-closed：安全阶段待答全集 7 问，剩余
@@ -363,19 +365,22 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
     let turn = await exec(application, {
       message: "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 未满12周岁：否"
     });
-    assert.equal(turn.verdict?.stage, "applicability");
+    // 评审 R2：candidate 下 stage 归一为 null（进展侧信道裁剪），
+    // 流程位置改由 outcome/nextQuestions 确认。
+    assert.equal(turn.verdict?.stage, null);
+    assert.equal(turn.verdict?.outcome, "need_more_information");
 
     turn = await exec(application, {
       message: "阵发性喷嚏：是 清水样涕：是 鼻痒：是 鼻塞：是 感冒样表现：否 鼻窦炎样表现：否",
       conversationId: turn.conversationId
     });
-    assert.equal(turn.verdict?.stage, "severity");
+    assert.equal(turn.verdict?.stage, null);
 
     turn = await exec(application, {
       message: "影响睡眠：否 影响日常活动：否 影响工作学习：否 难以忍受：否",
       conversationId: turn.conversationId
     });
-    assert.equal(turn.verdict?.stage, "syndrome");
+    assert.equal(turn.verdict?.stage, null);
 
     turn = await exec(application, {
       message: "口渴：是 四肢不温：否 倦怠乏力：否",
@@ -383,7 +388,7 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
     });
     // 裁决为 classified（轻度 + 肺经伏热）……
     assert.equal(turn.verdict?.outcome, "classified");
-    assert.equal(turn.verdict?.stage, "completed");
+    assert.equal(turn.verdict?.stage, null);
     // 评审 P0-2：candidate 状态下对患者裁剪临床结构化字段——证型/
     // 严重度/命中规则/方案 ID 一律不输出，杜绝拼装完整方案的侧信道。
     assert.equal(turn.verdict?.severityCode, null);
@@ -420,7 +425,7 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
       decisionCount: number;
       lastDecision: {
         outcome: string;
-        stage: string;
+        stage: string | null;
         severityCode: string | null;
         syndromeCode: string | null;
         matchedRuleIds: string[];
@@ -435,7 +440,8 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
     );
     assert.ok(boundShow.decisionCount >= 4);
     assert.equal(boundShow.lastDecision?.outcome, "classified");
-    assert.equal(boundShow.lastDecision?.stage, "completed");
+    // 评审 R2：决策摘要的 stage 与临床字段一样裁剪（置 null）。
+    assert.equal(boundShow.lastDecision?.stage, null);
     // 评审 P0-2：candidate 状态下决策摘要同样裁剪临床字段（无证型、
     // 无严重度、无命中规则、无 planId），患者无法借此拼装方案。
     assert.equal(boundShow.lastDecision?.severityCode, null);
@@ -483,8 +489,9 @@ test("模型提取候选：只返回待确认候选，不直接进入规则输�
     assert.equal("value" in view, false);
     assert.equal("justification" in view, false);
     assert.ok(!JSON.stringify(turn).includes("测试替身"));
-    // 候选未确认前不进入规则输入：内核仍处于安全补问阶段。
-    assert.equal(turn.verdict?.stage, "safety");
+    // 候选未确认前不进入规则输入：内核仍处于安全补问阶段
+    //（评审 R2：candidate 下 stage 裁剪为 null，不暴露阶段位置）。
+    assert.equal(turn.verdict?.stage, null);
   } finally {
     application.close();
   }
@@ -527,14 +534,14 @@ test("fail-closed 基于未截断补问全集：4 问只答 2 问 unknown 不关
     let turn = await exec(application, {
       message: "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 未满12周岁：否"
     });
-    assert.equal(turn.verdict?.stage, "applicability");
+    assert.equal(turn.verdict?.stage, null);
 
     turn = await exec(application, {
       message: "阵发性喷嚏：是 清水样涕：是 鼻痒：是 鼻塞：是 感冒样表现：否 鼻窦炎样表现：否",
       conversationId: turn.conversationId
     });
     assert.equal(turn.verdict?.outcome, "need_more_information");
-    assert.equal(turn.verdict?.stage, "severity");
+    assert.equal(turn.verdict?.stage, null);
     // 单次最多展示 2 问（截断），但严重度待答全集为 4 问。
     assert.equal(turn.verdict?.nextQuestions.length, 2);
 
@@ -546,7 +553,7 @@ test("fail-closed 基于未截断补问全集：4 问只答 2 问 unknown 不关
     });
     assert.equal(partial.closed, false);
     assert.equal(partial.verdict?.outcome, "need_more_information");
-    assert.equal(partial.verdict?.stage, "severity");
+    assert.equal(partial.verdict?.stage, null);
     assert.ok(partial.message !== null);
     assert.ok(partial.message.content.includes("为了继续评估"));
 
@@ -610,49 +617,49 @@ test("反馈：helpful/unhelpful 可记录，非法评分被拒绝，原因加�
   }
 });
 
-test("agent test run：模拟链路只验证不修改，方案阻断中，AI 解释为模板模拟", async () => {
+test("患者侧 agent test run 关闭：capability_unavailable（模拟链路属于管理端）", async () => {
   const { application } = await fixture();
   try {
-    const result = dataOf<{
-      verdict: { outcome: string; severityCode: string | null; syndromeCode: string | null };
-      planBlocked: boolean;
-      explanation: { simulated: true; content: string };
-      knowledge: { state: string };
-    }>(
-      await application.execute({
-        command: "agent test run",
-        input: {
-          answers: [
-            { fieldCode: "urgent_help", state: "no" },
-            { fieldCode: "high_fever", state: "no" },
-            { fieldCode: "epistaxis_foul_discharge", state: "no" },
-            { fieldCode: "severe_neuro_symptoms", state: "no" },
-            { fieldCode: "skin_lesion", state: "no" },
-            { fieldCode: "pregnancy", state: "no" },
-            { fieldCode: "child_under_12", state: "no" },
-            { fieldCode: "paroxysmal_sneezing", state: "yes" },
-            { fieldCode: "watery_rhinorrhea", state: "yes" },
-            { fieldCode: "nasal_itching", state: "yes" },
-            { fieldCode: "nasal_congestion", state: "yes" },
-            { fieldCode: "cold_like_symptoms", state: "no" },
-            { fieldCode: "sinusitis_like_symptoms", state: "no" },
-            { fieldCode: "sleep_affected", state: "no" },
-            { fieldCode: "daily_activity_affected", state: "no" },
-            { fieldCode: "work_study_affected", state: "no" },
-            { fieldCode: "symptoms_intolerable", state: "no" },
-            { fieldCode: "thirst", state: "yes" },
-            { fieldCode: "limbs_not_warm", state: "no" }
-          ]
-        }
-      })
-    );
-    assert.equal(result.verdict.outcome, "classified");
-    assert.equal(result.verdict.severityCode, "mild");
-    assert.equal(result.verdict.syndromeCode, "LUNG_HEAT");
-    assert.equal(result.planBlocked, true);
-    assert.equal(result.explanation.simulated, true);
-    assert.equal(result.explanation.content, CLINICAL_FREEZE_BLOCK);
-    assert.equal(result.knowledge.state, "not_available");
+    // 评审 R2 P0：患者 CLI 设计 §6 没有 test run 命令，模拟链路属于
+    // 管理端（kangmin-admin agent test run，管理侧已有 capability_
+    // unavailable 桩）。患者侧 `agent test run` 是 w4 擅自添加——修复
+    // 为返回 capability_unavailable，绝不向匿名患者返回完整
+    // ClinicalVerdict（severityCode/syndromeCode/matchedRuleIds/
+    // planId/allQuestions 可一步枚举决策表，配合 browse plan show 拼
+    // 出方案，P0-2 侧信道修复失效）。
+    const result = await application.execute({
+      command: "agent test run",
+      input: {
+        answers: [
+          { fieldCode: "urgent_help", state: "no" },
+          { fieldCode: "high_fever", state: "no" },
+          { fieldCode: "epistaxis_foul_discharge", state: "no" },
+          { fieldCode: "severe_neuro_symptoms", state: "no" },
+          { fieldCode: "skin_lesion", state: "no" },
+          { fieldCode: "pregnancy", state: "no" },
+          { fieldCode: "child_under_12", state: "no" },
+          { fieldCode: "paroxysmal_sneezing", state: "yes" },
+          { fieldCode: "watery_rhinorrhea", state: "yes" },
+          { fieldCode: "nasal_itching", state: "yes" },
+          { fieldCode: "nasal_congestion", state: "yes" },
+          { fieldCode: "cold_like_symptoms", state: "no" },
+          { fieldCode: "sinusitis_like_symptoms", state: "no" },
+          { fieldCode: "sleep_affected", state: "no" },
+          { fieldCode: "daily_activity_affected", state: "no" },
+          { fieldCode: "work_study_affected", state: "no" },
+          { fieldCode: "symptoms_intolerable", state: "no" },
+          { fieldCode: "thirst", state: "yes" },
+          { fieldCode: "limbs_not_warm", state: "no" }
+        ]
+      }
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "capability_unavailable");
+      assert.match(result.error.message, /kangmin-admin/u);
+    }
+    // 任何成功数据（verdict/planBlocked/explanation/knowledge）都不得出现。
+    assert.equal("data" in result, false);
   } finally {
     application.close();
   }

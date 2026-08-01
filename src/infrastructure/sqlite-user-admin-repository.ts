@@ -123,9 +123,12 @@ export class SqliteUserAdminRepository implements UserReadRepository {
   }
 
   async listSessions(userId: string, limit: number): Promise<PatientSessionRow[]> {
+    // 事务与卫生残留批 P2-5：已撤销会话（logout）不进入管理端会话列表，
+    // 避免把已失效令牌误报为活跃会话。
     const rows = this.database.connection.prepare(`
       SELECT token_hash, created_at, expires_at
-      FROM patient_sessions WHERE patient_id = ?
+      FROM patient_sessions
+      WHERE patient_id = ? AND revoked_at IS NULL
       ORDER BY created_at DESC, token_hash ASC
       LIMIT ?
     `).all(userId, limit) as unknown as SessionShape[];

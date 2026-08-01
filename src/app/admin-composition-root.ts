@@ -42,13 +42,14 @@ function doctorChecks(
       return "failed";
     }
   })();
+  // 事务与卫生残留批 P2-12b：固定文案，不输出素材目录绝对路径。
   checks.push({
     name: "media-storage",
     status: mediaDirectoryStatus,
     message:
       mediaDirectoryStatus === "ok"
-        ? `素材目录可读写：${mediaDirectory}`
-        : `素材目录不可读写：${mediaDirectory}`
+        ? "素材目录可读写"
+        : "素材目录不可读写（检查权限与磁盘空间）"
   });
 
   const accounts = database.connection.prepare(

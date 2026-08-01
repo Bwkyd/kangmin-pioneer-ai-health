@@ -61,7 +61,22 @@ function now(): string {
   return new Date().toISOString();
 }
 
+function hash(value: unknown): string {
+  return createHash("sha256").update(JSON.stringify(value)).digest("hex");
+}
+
 type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
+
+/**
+ * 素材输出视图（事务与卫生残留批 P2-12a）：不暴露受管目录的绝对路径
+ * storedPath（机器集成不需要，泄露服务器布局）。filename 保留。
+ */
+export type ContentMediaView = Omit<ContentMediaRow, "storedPath">;
+
+function toMediaView(media: ContentMediaRow): ContentMediaView {
+  const { storedPath: _storedPath, ...view } = media;
+  return view;
+}
 
 function requireChange(changes: Record<string, unknown>): void {
   if (Object.keys(changes).length === 0) {
@@ -81,12 +96,16 @@ export class ContentAuxService {
   /**
    * 上传本地文件：注册元数据 + 复制到受管媒体目录（对象存储后续阶段接入）。
    * 复制失败不会注册为成功。
+   *
+   * 事务与卫生残留批 P2-7/P2-10：幂等键取文件内容指纹（sha256），同文件
+   * 重传 → 重放返回原素材，不重复登记；createMedia 抛错（含幂等冲突）
+   * 时在 catch 中删除已复制的文件，不留孤儿副本。
    */
   async uploadMedia(
     adminId: string,
     filePath: string,
     kindHint?: string
-  ): Promise<ContentMediaRow> {
+  ): Promise<ContentMediaView> {
     let stats;
     try {
       stats = statSync(filePath);
@@ -117,6 +136,12 @@ export class ContentAuxService {
       mkdirSync(targetDirectory, { recursive: true });
       copyFileSync(filePath, targetPath);
     } catch (error) {
+      // 复制失败：清理可能残留的半成品目录后抛出。
+      try {
+        rmSync(targetDirectory, { recursive: true, force: true });
+      } catch {
+        // 忽略：清理失败不遮蔽原始错误。
+      }
       throw new DomainError("validation_failed", "素材文件复制失败", {
         cause: error
       });
@@ -125,7 +150,7 @@ export class ContentAuxService {
     const fileBuffer = (await import("node:fs")).readFileSync(filePath);
     const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
     const timestamp = now();
-    await this.repository.createMedia({
+    const media: ContentMediaRow = {
       id,
       kind: kind as MediaKind,
       filename,
@@ -138,28 +163,68 @@ export class ContentAuxService {
       createdBy: adminId,
       createdAt: timestamp,
       updatedAt: timestamp
-    });
-    const created = await this.repository.findMedia(id);
-    if (created === null) {
-      throw new DomainError("internal_error", "素材注册后读取失败");
+    };
+    let outcome;
+    try {
+      outcome = await this.repository.createMediaIdempotent(
+        adminId,
+        media,
+        // 确定性幂等键：文件内容指纹（与请求内容一一对应）。
+        sha256,
+        hash({ kind, filename, sha256, sizeBytes: stats.size })
+      );
+    } catch (error) {
+      // 注册失败：清理已复制的文件，不留孤儿副本（P2-10）。
+      try {
+        rmSync(targetDirectory, { recursive: true, force: true });
+      } catch {
+        // 忽略：清理失败不遮蔽原始错误。
+      }
+      throw error;
     }
-    return created;
+    if (outcome.kind === "conflict") {
+      try {
+        rmSync(targetDirectory, { recursive: true, force: true });
+      } catch {
+        // 忽略。
+      }
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      try {
+        rmSync(targetDirectory, { recursive: true, force: true });
+      } catch {
+        // 忽略。
+      }
+      throw new DomainError("stale_replay", "相同幂等键对应的素材已不存在");
+    }
+    if (outcome.kind === "replayed") {
+      // 重放：原素材与其文件副本已存在，本次复制的副本多余，清理。
+      try {
+        rmSync(targetDirectory, { recursive: true, force: true });
+      } catch {
+        // 忽略。
+      }
+    }
+    return toMediaView(outcome.item);
   }
 
-  async listMedia(): Promise<ContentMediaRow[]> {
-    return this.repository.listMedia();
+  async listMedia(): Promise<ContentMediaView[]> {
+    return (await this.repository.listMedia()).map(toMediaView);
   }
 
-  async getMedia(id: string): Promise<ContentMediaRow & { referencedBy: unknown }> {
+  async getMedia(
+    id: string
+  ): Promise<ContentMediaView & { referencedBy: unknown }> {
     const media = await this.repository.findMedia(id);
     if (media === null) {
       throw new DomainError("resource_not_found", "素材不存在");
     }
     const referencedBy = await this.repository.countMediaReferences(id);
-    return { ...media, referencedBy };
+    return { ...toMediaView(media), referencedBy };
   }
 
-  async disableMedia(id: string): Promise<ContentMediaRow> {
+  async disableMedia(id: string): Promise<ContentMediaView> {
     const media = await this.repository.findMedia(id);
     if (media === null) {
       throw new DomainError("resource_not_found", "素材不存在");
@@ -185,7 +250,7 @@ export class ContentAuxService {
     if (outcome.kind === "validation_failed") {
       throw new DomainError("validation_failed", outcome.missing.join("、"));
     }
-    return outcome.media;
+    return toMediaView(outcome.media);
   }
 
   async deleteMedia(id: string): Promise<{ id: string; deleted: true }> {
@@ -340,7 +405,8 @@ export class ContentAuxService {
       body: string;
       summary?: string | undefined;
       categoryId?: string | undefined;
-    }
+    },
+    idempotencyKey: string
   ): Promise<ContentMessageRow> {
     const title = input.title.trim();
     const body = input.body.trim();
@@ -364,8 +430,26 @@ export class ContentAuxService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
-    await this.repository.createMessage(message);
-    return message;
+    // 幂等创建（事务与卫生残留批 P2-7）：确定性键同内容重试 → 重放
+    // 返回原公告；requestHash 取业务字段稳定哈希，重试内容一致时相同。
+    const outcome = await this.repository.createMessageIdempotent(
+      adminId,
+      message,
+      idempotencyKey,
+      hash({
+        title,
+        body,
+        summary: input.summary?.trim() || null,
+        categoryId: input.categoryId ?? null
+      })
+    );
+    if (outcome.kind === "conflict") {
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError("stale_replay", "相同幂等键对应的公告已不存在");
+    }
+    return outcome.item;
   }
 
   async listMessages(status?: string): Promise<ContentMessageRow[]> {

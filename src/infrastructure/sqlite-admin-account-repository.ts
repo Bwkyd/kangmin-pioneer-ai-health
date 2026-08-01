@@ -107,6 +107,48 @@ export class SqliteAdminAccountRepository implements AdminAccountRepository {
     });
   }
 
+  /**
+   * 首个 owner 引导（事务与卫生残留批 P1-2）：count 与 insert 在同一
+   * BEGIN IMMEDIATE 事务内，跨进程并发引导只有一个请求见到 count=0，
+   * 另一个返回 owner_exists——关闭"countAll()===0 → create"竞态窗口。
+   */
+  async createFirstOwner(input: {
+    id: string;
+    username: string;
+    passwordHash: string;
+    createdAt: string;
+    updatedAt: string;
+  }): Promise<"created" | "owner_exists" | "username_taken"> {
+    return this.database.transaction(() => {
+      const count = this.database.connection.prepare(
+        "SELECT COUNT(*) AS count FROM admin_accounts"
+      ).get() as unknown as { count: number };
+      if (count.count > 0) {
+        return "owner_exists";
+      }
+      try {
+        this.database.connection.prepare(`
+          INSERT INTO admin_accounts(
+            id, username, password_hash, role, status,
+            revision, created_at, updated_at
+          ) VALUES (?, ?, ?, 'owner', 'active', 1, ?, ?)
+        `).run(
+          input.id,
+          input.username,
+          input.passwordHash,
+          input.createdAt,
+          input.updatedAt
+        );
+        return "created";
+      } catch (error) {
+        if (String(error).includes("UNIQUE")) {
+          return "username_taken";
+        }
+        throw error;
+      }
+    });
+  }
+
   async updateStatus(
     id: string,
     status: "active" | "disabled",

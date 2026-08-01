@@ -253,6 +253,13 @@ export class ContentAdminService {
       {
         ...current,
         ...(provided as Partial<AdminContentItem>),
+        // 已发布内容被修改必须置回草稿：患者端展示的是已校验版本，
+        // 未校验的新修改不能继续对患者可见。published_at 清空，
+        // patient_visible 由仓储按 status 派生为 0（update 的 SQL 中
+        // patient_visible = status === 'published' ? 1 : 0）。
+        ...(current.status === "published"
+          ? { status: "draft" as const, publishedAt: null }
+          : {}),
         revision: current.revision + 1,
         updatedAt: new Date().toISOString()
       },
@@ -379,15 +386,16 @@ export class ContentAdminService {
     const missing = this.staticPublishMissing(item);
     if (item.category.trim() !== "") {
       const category = await this.aux.findCategoryByName(item.category);
-      if (category !== null) {
-        if (category.status !== "active") {
-          missing.push("分类已停用");
-        } else if (
-          category.kind !== "general" &&
-          category.kind !== item.kind
-        ) {
-          missing.push("分类类型不符");
-        }
+      if (category === null) {
+        // 与发布路径的 dependencyMissing 一致：引用了不存在的分类 → 缺失。
+        missing.push("分类不存在");
+      } else if (category.status !== "active") {
+        missing.push("分类已停用");
+      } else if (
+        category.kind !== "general" &&
+        category.kind !== item.kind
+      ) {
+        missing.push("分类类型不符");
       }
     }
 
@@ -441,7 +449,11 @@ export class ContentAdminService {
     state: PublishGuardState
   ): string[] {
     const missing: string[] = [];
-    if (state.category !== null) {
+    if (item.category.trim() !== "" && state.category === null) {
+      // 区分"未引用"与"引用不存在"：分类名非空但事务内快照查不到
+      // （被删除/改名）→ 发布前校验必须失败，草稿不携带失效分类。
+      missing.push("分类不存在");
+    } else if (state.category !== null) {
       if (state.category.status !== "active") {
         missing.push("分类已停用");
       } else if (

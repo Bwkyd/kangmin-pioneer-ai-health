@@ -138,17 +138,38 @@ export class SqliteAccountRepository implements AccountRepository {
 
   async updateNickname(
     patientId: string,
-    nickname: string | null
+    nickname: string | null,
+    expectedRevision: number
   ): Promise<AccountSnapshot> {
     return this.database.transaction(() => {
       const updatedAt = new Date().toISOString();
-      this.database.connection
+      // CAS 谓词（事务与卫生残留批 P2-9）：revision 不匹配即并发修改，
+      // 0 行更新映射为 version_conflict（与 health profile 语义一致）。
+      const result = this.database.connection
         .prepare(`
           UPDATE patient_accounts
           SET nickname = ?, revision = revision + 1, updated_at = ?
-          WHERE patient_id = ?
+          WHERE patient_id = ? AND revision = ?
         `)
-        .run(nickname, updatedAt, patientId);
+        .run(nickname, updatedAt, patientId, expectedRevision);
+      if (result.changes !== 1) {
+        const exists = this.database.connection
+          .prepare("SELECT patient_id FROM patient_accounts WHERE patient_id = ?")
+          .get(patientId);
+        if (exists === undefined) {
+          throw new DomainError(
+            "resource_not_found",
+            "当前会话没有本地账号，请先注册"
+          );
+        }
+        throw new DomainError(
+          "version_conflict",
+          "资料已更新，请重新读取",
+          {
+            details: { expectedRevision }
+          }
+        );
+      }
       const row = this.database.connection
         .prepare(`
           SELECT ${ACCOUNT_COLUMNS}

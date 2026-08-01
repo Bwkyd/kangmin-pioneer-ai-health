@@ -139,12 +139,13 @@ export function runPatientDoctor(
     } finally {
       database.close();
     }
-  } catch (error) {
+  } catch {
+    // 事务与卫生残留批 P2-12b：doctor 报告固定文案，不拼接底层
+    // error.message（可能含绝对路径/内部实现细节）。
     checks.push({
       name: "database",
       status: "failed",
-      message:
-        error instanceof Error ? error.message : "健康记录存储不可用"
+      message: "数据库打开或迁移失败，请检查存储与密钥配置"
     });
   }
 

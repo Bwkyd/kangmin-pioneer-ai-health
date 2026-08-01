@@ -86,11 +86,53 @@ export type PlanGuardedUpdateResult =
   | { kind: "version_conflict"; currentRevision: number }
   | { kind: "validation_failed"; missing: string[] };
 
+/**
+ * 知识状态守卫更新结果：知识无 revision 列，事务内重读的状态同时充当
+ * guard 输入与 UPDATE 状态谓词（CAS），并发变化 → validation_failed。
+ */
+export type KnowledgeGuardedUpdateResult =
+  | { kind: "updated"; knowledge: KnowledgeRow }
+  | { kind: "not_found" }
+  | { kind: "validation_failed"; missing: string[] };
+
+/** 管理端幂等创建（admin_idempotency 归一语义，与内容创建一致）。 */
+export type IdempotentCreateResult<T> =
+  | { kind: "created"; item: T }
+  | { kind: "replayed"; item: T }
+  | { kind: "stale_replay" }
+  | { kind: "conflict" };
+
 export interface AgentAdminRepository {
   // ---- 知识 ----
   createKnowledge(
     input: KnowledgeRow & { chunks: ChunkInput[] }
   ): Promise<void>;
+  /**
+   * 素材登记 + 知识创建 + 幂等行同一事务（事务与卫生残留批 P1-4）：
+   * registerMedia 与 createKnowledge 不再跨事务——任一失败整体回滚，
+   * 不留孤儿素材；确定性幂等键（文件 sha256）同内容重试 → 重放返回
+   * 原知识。verifyExists 保证已删除知识同键重放返回 stale_replay。
+   */
+  createKnowledgeSource(input: {
+    adminId: string;
+    media: {
+      id: string;
+      kind: "image" | "video" | "word" | "pdf" | "markdown";
+      filename: string;
+      storedPath: string;
+      sizeBytes: number;
+      mimeType: string | null;
+      sha256: string | null;
+      status: "processing" | "ready" | "failed" | "disabled";
+      failureReason: string | null;
+      createdBy: string | null;
+      createdAt: string;
+      updatedAt: string;
+    };
+    knowledge: KnowledgeRow & { chunks: ChunkInput[] };
+    idempotencyKey: string;
+    requestHash: string;
+  }): Promise<IdempotentCreateResult<KnowledgeRow>>;
   listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]>;
   findKnowledge(id: string): Promise<KnowledgeRow | null>;
   setKnowledgeStatus(
@@ -99,6 +141,22 @@ export interface AgentAdminRepository {
     updatedAt: string,
     parseError?: string | null
   ): Promise<"updated" | "not_found">;
+  /**
+   * 启用/停用前校验与状态更新同一事务（事务与卫生残留批 P1-3，与
+   * setPlanStatusGuarded 同类事务变式）：guard 在 BEGIN IMMEDIATE 内
+   * 收到重读的知识行与来源素材状态——并发停用素材时本事务校验拒绝，
+   * 状态更新不提交；UPDATE 带状态谓词（知识无 revision 列，以事务内
+   * 重读的状态本身作 CAS 令牌）。
+   */
+  setKnowledgeStatusGuarded(
+    id: string,
+    status: KnowledgeStatus,
+    updatedAt: string,
+    guard: (
+      knowledge: KnowledgeRow,
+      media: { id: string; status: string } | null
+    ) => string[]
+  ): Promise<KnowledgeGuardedUpdateResult>;
   searchChunks(query: string, onlyEnabled: boolean): Promise<
     Array<{
       knowledgeId: string;
@@ -127,6 +185,17 @@ export interface AgentAdminRepository {
 
   // ---- 方案 ----
   createPlan(input: PlanRow): Promise<void>;
+  /**
+   * 幂等创建方案（事务与卫生残留批 P2-7）：与内容/公告创建同用
+   * admin_idempotency（scope=agent.plan.create）；verifyExists 保证
+   * 目标不存在时同键重放返回 stale_replay。
+   */
+  createPlanIdempotent(
+    adminId: string,
+    plan: PlanRow,
+    idempotencyKey: string,
+    requestHash: string
+  ): Promise<IdempotentCreateResult<AgentPlan>>;
   listPlans(status?: PlanStatus): Promise<AgentPlan[]>;
   findPlan(id: string): Promise<AgentPlan | null>;
   updatePlan(plan: AgentPlan, expectedRevision: number): Promise<UpdatePlanResult>;
@@ -155,7 +224,16 @@ export interface AgentAdminRepository {
 
   // ---- 模型设置 ----
   getModelConfig(): Promise<ModelConfigRow | null>;
-  upsertModelConfig(row: ModelConfigRow): Promise<void>;
+  /**
+   * 单行 CAS 更新（事务与卫生残留批 P2-8）：行已存在时以
+   * expectedUpdatedAt 作乐观锁谓词（WHERE id = 1 AND updated_at = ?），
+   * 并发覆盖被拒绝返回 "conflict"（调用方映射 version_conflict）；
+   * 行不存在时直接 INSERT。
+   */
+  upsertModelConfig(
+    row: ModelConfigRow,
+    expectedUpdatedAt: string | null
+  ): Promise<"updated" | "conflict">;
 
   // ---- 模拟测试 ----
   findTestCase(id: string): Promise<TestCaseRow | null>;

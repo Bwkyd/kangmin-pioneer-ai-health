@@ -64,11 +64,16 @@ export class SqliteSessionRepository implements SessionRepository {
           );
       }
 
+      // 事务与卫生残留批 P2-11：不用 INSERT OR REPLACE——token 随机
+      // 不冲突，但 REPLACE 会先删旧行，绕过"已撤销会话保持撤销"语义
+      // （同 token 再存会把 revoked_at 行复活成全新会话）。改为
+      // ON CONFLICT DO NOTHING：已存在的 token（含已撤销）原样保留。
       this.database.connection
         .prepare(`
-          INSERT OR REPLACE INTO patient_sessions(
+          INSERT INTO patient_sessions(
             token_hash, patient_id, expires_at, created_at
           ) VALUES (?, ?, ?, ?)
+          ON CONFLICT(token_hash) DO NOTHING
         `)
         .run(
           input.tokenHash,

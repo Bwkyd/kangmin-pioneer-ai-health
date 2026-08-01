@@ -51,6 +51,12 @@ export interface CommandRequest {
   requestId?: string | undefined;
 }
 
+/**
+ * agent exec / agent start --message 消息长度上限（字符数）：
+ * 与 HTTP 请求体 64KiB 约束对齐取小者（事务与卫生残留批 P2-12d）。
+ */
+export const AGENT_MESSAGE_MAX_LENGTH = 4096;
+
 export interface DoctorCheck {
   name: string;
   status: "ok" | "failed" | "not_configured";
@@ -272,11 +278,17 @@ export class KangminApplication {
       if (this.isAnonymousAgentCommand(command, input)) {
         const patientId = await this.resolvePatientOrNull(request.sessionToken);
         if (command === "agent exec") {
+          const message =
+            typeof input.message === "string" ? input.message.trim() : "";
+          // 消息长度上限（事务与卫生残留批 P2-12d）：service 层入口统一
+          // 校验（conversation-service 属并行域，校验放在本分发处），
+          // 与 HTTP 64KiB 约束对齐取小者（字符数）。
+          this.assertAgentMessageLength(message);
           return success(
             command,
             await this.conversations.execTurn({
               patientId,
-              message: typeof input.message === "string" ? input.message.trim() : "",
+              message,
               conversationId: this.optionalString(input, "conversationId"),
               saveConsent: input.saveConsent === true
             }),
@@ -284,12 +296,14 @@ export class KangminApplication {
           );
         }
         if (command === "agent start") {
+          const message =
+            typeof input.message === "string" ? input.message.trim() : "";
+          this.assertAgentMessageLength(message);
           return success(
             command,
             await this.conversations.execTurn({
               patientId,
-              message:
-                typeof input.message === "string" ? input.message.trim() : "",
+              message,
               saveConsent: input.saveConsent === true
             }),
             request.requestId
@@ -717,7 +731,14 @@ export class KangminApplication {
           command,
           await this.accounts.profileUpdate(
             patientId,
-            optionalString(input, "nickname")
+            optionalString(input, "nickname"),
+            // CAS（事务与卫生残留批 P2-9）：与 record profile update 一致。
+            integerInRange(
+              input,
+              "expectedRevision",
+              0,
+              Number.MAX_SAFE_INTEGER
+            )
           ),
           request.requestId
         );
@@ -868,6 +889,20 @@ export class KangminApplication {
       return null;
     }
     return (await this.sessions.resolvePatient(token)).patientId;
+  }
+
+  /**
+   * agent exec / agent start --message 的消息长度上限
+   * （事务与卫生残留批 P2-12d）：4096 字符（与 HTTP 请求体 64KiB
+   * 对齐取小者），超限 validation_failed，避免超长消息进入对话存储。
+   */
+  private assertAgentMessageLength(message: string): void {
+    if (message.length > AGENT_MESSAGE_MAX_LENGTH) {
+      throw new DomainError(
+        "validation_failed",
+        `消息长度不能超过 ${AGENT_MESSAGE_MAX_LENGTH} 字符`
+      );
+    }
   }
 
   private optionalString(
