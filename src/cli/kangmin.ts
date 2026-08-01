@@ -929,7 +929,9 @@ export async function runCli(
   // config_missing）也要输出结构化检查报告，而不是整体启动失败。
   if (parsed.command === "doctor") {
     const baseUrl = remoteCommandBaseUrl(environment);
-    if (baseUrl !== undefined) {
+    // 远程模式或 PostgreSQL 后端：doctor 走应用执行器（PG doctor 是异步的，
+    // 本地同步探针只适用于 SQLite）。
+    if (baseUrl !== undefined || environment.KANGMIN_DATABASE_URL?.trim()) {
       let executor: PatientCommandExecutor;
       try {
         executor = createPatientExecutor(environment);

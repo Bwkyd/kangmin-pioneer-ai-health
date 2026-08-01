@@ -18,6 +18,20 @@ jobs:
     name: quality
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: kangmin
+          POSTGRES_PASSWORD: kangmin
+          POSTGRES_DB: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kangmin"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     steps:
       - name: Checkout
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
@@ -50,3 +64,7 @@ jobs:
       - name: CLI quality gate
         run: npm run check
         working-directory: src
+        env:
+          # PostgreSQL 契约/应用级测试在该服务上自建一次性隔离库；
+          # 未设置时这些测试自动 skip。
+          KANGMIN_TEST_DATABASE_URL: postgres://kangmin:kangmin@localhost:5432/postgres

@@ -42,7 +42,7 @@ function safeFacts(): ConfirmedFact[] {
   ];
 }
 
-function kernelWith(planRegistry: PlanRegistryPort = { findApprovedPlan: () => null }): ClinicalRuleKernel {
+function kernelWith(planRegistry: PlanRegistryPort = { findApprovedPlan: async () => null }): ClinicalRuleKernel {
   return new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
 }
 
@@ -68,7 +68,7 @@ test("规则包元数据：版本、candidate 状态与稳定哈希", () => {
   assert.equal(DRAFT_RULE_PACKAGE.sourceRefs.length, 3);
 });
 
-test("高危输入逐项阻断：高热/出血/皮损/孕期/儿童/急救/神经症状", () => {
+test("高危输入逐项阻断：高热/出血/皮损/孕期/儿童/急救/神经症状", async () => {
   const cases: Array<[string, string]> = [
     ["urgent_help", "SAF-01"],
     ["high_fever", "SAF-02"],
@@ -79,7 +79,7 @@ test("高危输入逐项阻断：高热/出血/皮损/孕期/儿童/急救/神�
     ["child_under_12", "SAF-07"]
   ];
   for (const [fieldCode, ruleId] of cases) {
-    const verdict = kernelWith().evaluate([fact(fieldCode, "yes")]);
+    const verdict = await kernelWith().evaluate([fact(fieldCode, "yes")]);
     assert.equal(verdict.outcome, "blocked", fieldCode);
     assert.equal(verdict.stage, "safety");
     assert.ok(verdict.matchedRuleIds.includes(ruleId), fieldCode);
@@ -87,24 +87,24 @@ test("高危输入逐项阻断：高热/出血/皮损/孕期/儿童/急救/神�
   }
 });
 
-test("unknown 不等于 no：安全字段 unknown 时绝不通过安全阶段", () => {
-  const verdict = kernelWith().evaluate([fact("high_fever", "unknown")]);
+test("unknown 不等于 no：安全字段 unknown 时绝不通过安全阶段", async () => {
+  const verdict = await kernelWith().evaluate([fact("high_fever", "unknown")]);
   assert.equal(verdict.outcome, "need_more_information");
   assert.equal(verdict.stage, "safety");
   assert.ok(verdict.nextQuestions.some((q) => q.fieldCode === "high_fever"));
 });
 
-test("没有任何事实时：先补问安全字段，单次不超过 2 个", () => {
-  const verdict = kernelWith().evaluate([]);
+test("没有任何事实时：先补问安全字段，单次不超过 2 个", async () => {
+  const verdict = await kernelWith().evaluate([]);
   assert.equal(verdict.outcome, "need_more_information");
   assert.equal(verdict.stage, "safety");
   assert.ok(verdict.nextQuestions.length > 0);
   assert.ok(verdict.nextQuestions.length <= 2);
 });
 
-test("nextQuestions 截断展示但 allQuestions 保留全集（fail-closed 判定依据）", () => {
+test("nextQuestions 截断展示但 allQuestions 保留全集（fail-closed 判定依据）", async () => {
   // 严重度阶段待答全集 4 问；展示截断为 2 问（评审 P1 kimi P1-6）。
-  const verdict = kernelWith().evaluate(safeFacts());
+  const verdict = await kernelWith().evaluate(safeFacts());
   assert.equal(verdict.outcome, "need_more_information");
   assert.equal(verdict.stage, "severity");
   assert.equal(verdict.nextQuestions.length, 2);
@@ -119,12 +119,12 @@ test("nextQuestions 截断展示但 allQuestions 保留全集（fail-closed 判�
   );
 });
 
-test("非补问裁决 allQuestions 为空", () => {
-  const blocked = kernelWith().evaluate([fact("pregnancy", "yes")]);
+test("非补问裁决 allQuestions 为空", async () => {
+  const blocked = await kernelWith().evaluate([fact("pregnancy", "yes")]);
   assert.equal(blocked.outcome, "blocked");
   assert.deepEqual(blocked.allQuestions, []);
 
-  const classified = kernelWith().evaluate(
+  const classified = await kernelWith().evaluate(
     factsWith(safeFacts(), [
       ...mildSeverityFacts(),
       fact("thirst", "yes"),
@@ -135,17 +135,17 @@ test("非补问裁决 allQuestions 为空", () => {
   assert.deepEqual(classified.allQuestions, []);
 });
 
-test("低优先级不能覆盖高优先级阻断：安全阻断优先于严重度/证型分类", () => {
+test("低优先级不能覆盖高优先级阻断：安全阻断优先于严重度/证型分类", async () => {
   const facts = factsWith(safeFacts(), [
     fact("sleep_affected", "yes"),
     fact("thirst", "yes"),
     fact("limbs_not_warm", "no")
   ]);
   // 无阻断时这条路径会分类为 moderate_severe + LUNG_HEAT
-  const clean = kernelWith().evaluate(facts);
+  const clean = await kernelWith().evaluate(facts);
   assert.equal(clean.outcome, "classified");
 
-  const blocked = kernelWith().evaluate(
+  const blocked = await kernelWith().evaluate(
     factsWith(facts, [fact("pregnancy", "yes")])
   );
   assert.equal(blocked.outcome, "blocked");
@@ -153,17 +153,17 @@ test("低优先级不能覆盖高优先级阻断：安全阻断优先于严重�
   assert.ok(blocked.matchedRuleIds.includes("SAF-06"));
 });
 
-test("严重度信息缺失时绝不静默按轻度处理（unknown 不等于 no）", () => {
-  const verdict = kernelWith().evaluate(safeFacts());
+test("严重度信息缺失时绝不静默按轻度处理（unknown 不等于 no）", async () => {
+  const verdict = await kernelWith().evaluate(safeFacts());
   assert.equal(verdict.outcome, "need_more_information");
   assert.equal(verdict.stage, "severity");
   assert.ok(verdict.nextQuestions.some((q) => q.fieldCode === "sleep_affected"));
 });
 
-test("严重度：4 问全否 → mild；任一为是 → moderate_severe；未知 → 补问", () => {
+test("严重度：4 问全否 → mild；任一为是 → moderate_severe；未知 → 补问", async () => {
   // 严重度已分类但证型信息不足时，流水线停在 syndrome 阶段，
   // 裁决仍携带已确定的 severityCode（该阶段之后的字段为空）。
-  const allNo = kernelWith().evaluate(
+  const allNo = await kernelWith().evaluate(
     factsWith(safeFacts(), [
       fact("sleep_affected", "no"),
       fact("daily_activity_affected", "no"),
@@ -175,7 +175,7 @@ test("严重度：4 问全否 → mild；任一为是 → moderate_severe；未�
   assert.equal(allNo.stage, "syndrome");
   assert.equal(allNo.severityCode, "mild");
 
-  const oneYes = kernelWith().evaluate(
+  const oneYes = await kernelWith().evaluate(
     factsWith(safeFacts(), [
       fact("sleep_affected", "yes"),
       fact("daily_activity_affected", "no"),
@@ -186,7 +186,7 @@ test("严重度：4 问全否 → mild；任一为是 → moderate_severe；未�
   assert.equal(oneYes.stage, "syndrome");
   assert.equal(oneYes.severityCode, "moderate_severe");
 
-  const twoYes = kernelWith().evaluate(
+  const twoYes = await kernelWith().evaluate(
     factsWith(safeFacts(), [
       fact("sleep_affected", "yes"),
       fact("work_study_affected", "yes")
@@ -194,7 +194,7 @@ test("严重度：4 问全否 → mild；任一为是 → moderate_severe；未�
   );
   assert.equal(twoYes.severityCode, "moderate_severe");
 
-  const unknown = kernelWith().evaluate(
+  const unknown = await kernelWith().evaluate(
     factsWith(safeFacts(), [fact("sleep_affected", "unknown")])
   );
   assert.equal(unknown.outcome, "need_more_information");
@@ -202,7 +202,7 @@ test("严重度：4 问全否 → mild；任一为是 → moderate_severe；未�
   assert.equal(unknown.severityCode, null);
 });
 
-test("证型：五型决策树逐一命中", () => {
+test("证型：五型决策树逐一命中", async () => {
   const cases: Array<[ConfirmedFact[], string, string]> = [
     // 口渴 + 四肢不温否 → 肺经伏热
     [
@@ -247,7 +247,7 @@ test("证型：五型决策树逐一命中", () => {
   ];
 
   for (const [syndromeFacts, expectedCode, expectedRule] of cases) {
-    const verdict = kernelWith().evaluate(
+    const verdict = await kernelWith().evaluate(
       factsWith(safeFacts(), [...mildSeverityFacts(), ...syndromeFacts])
     );
     assert.equal(verdict.outcome, "classified", `${expectedRule} ${expectedCode}`);
@@ -256,8 +256,8 @@ test("证型：五型决策树逐一命中", () => {
   }
 });
 
-test("证型无命中：信息完整但不匹配任何规则 → no_match，不猜测", () => {
-  const verdict = kernelWith().evaluate(
+test("证型无命中：信息完整但不匹配任何规则 → no_match，不猜测", async () => {
+  const verdict = await kernelWith().evaluate(
     factsWith(safeFacts(), [
       ...mildSeverityFacts(),
       fact("thirst", "no"),
@@ -273,8 +273,8 @@ test("证型无命中：信息完整但不匹配任何规则 → no_match，不�
   assert.deepEqual(verdict.matchedRuleIds, []);
 });
 
-test("证型待定信息不足 → 补问且不越过证型阶段", () => {
-  const verdict = kernelWith().evaluate(
+test("证型待定信息不足 → 补问且不越过证型阶段", async () => {
+  const verdict = await kernelWith().evaluate(
     factsWith(safeFacts(), [
       ...mildSeverityFacts(),
       fact("thirst", "yes"),
@@ -286,7 +286,7 @@ test("证型待定信息不足 → 补问且不越过证型阶段", () => {
   assert.ok(verdict.nextQuestions.some((q) => q.fieldCode === "limbs_not_warm"));
 });
 
-test("冲突：多个不同证型同时精确命中 → conflict，绝不猜测", () => {
+test("冲突：多个不同证型同时精确命中 → conflict，绝不猜测", async () => {
   // 构造一个故意重叠的规则包（同一条件两个不同证型），验证引擎冲突语义。
   const overlapping: RulePackage = {
     version: "test-overlap-v0",
@@ -324,8 +324,8 @@ test("冲突：多个不同证型同时精确命中 → conflict，绝不猜测"
     planSafetyRules: [],
     checksum: "test"
   };
-  const kernel = new ClinicalRuleKernel(overlapping, { findApprovedPlan: () => null });
-  const verdict = kernel.evaluate(
+  const kernel = new ClinicalRuleKernel(overlapping, { findApprovedPlan: async () => null });
+  const verdict = await kernel.evaluate(
     factsWith(safeFacts(), [
       fact("sleep_affected", "yes"),
       fact("thirst", "yes"),
@@ -338,8 +338,8 @@ test("冲突：多个不同证型同时精确命中 → conflict，绝不猜测"
   assert.deepEqual([...verdict.matchedRuleIds].sort(), ["TEST-A", "TEST-B"]);
 });
 
-test("适用范围：主症不足两项 → non_applicable（转介不猜测）", () => {
-  const verdict = kernelWith().evaluate(
+test("适用范围：主症不足两项 → non_applicable（转介不猜测）", async () => {
+  const verdict = await kernelWith().evaluate(
     factsWith(
       safeFacts().filter((f) => !["paroxysmal_sneezing", "watery_rhinorrhea", "nasal_itching", "nasal_congestion"].includes(f.fieldCode)),
       [
@@ -355,10 +355,10 @@ test("适用范围：主症不足两项 → non_applicable（转介不猜测）"
   assert.ok(verdict.matchedRuleIds.includes("APP-01"));
 });
 
-test("适用范围：感冒样/鼻窦炎样表现 → non_applicable", () => {
+test("适用范围：感冒样/鼻窦炎样表现 → non_applicable", async () => {
   for (const fieldCode of ["cold_like_symptoms", "sinusitis_like_symptoms"]) {
     // 安全字段全部确认 no 后，适用范围阶段才会被评估（固定顺序）。
-    const verdict = kernelWith().evaluate(
+    const verdict = await kernelWith().evaluate(
       factsWith(safeFacts(), [fact(fieldCode, "yes")])
     );
     assert.equal(verdict.outcome, "non_applicable", fieldCode);
@@ -366,8 +366,8 @@ test("适用范围：感冒样/鼻窦炎样表现 → non_applicable", () => {
   }
 });
 
-test("完整分类：轻度 + 肺经伏热，无已批准方案时 planId=null", () => {
-  const verdict = kernelWith().evaluate(
+test("完整分类：轻度 + 肺经伏热，无已批准方案时 planId=null", async () => {
+  const verdict = await kernelWith().evaluate(
     factsWith(safeFacts(), [
       ...mildSeverityFacts(),
       fact("thirst", "yes"),
@@ -383,14 +383,14 @@ test("完整分类：轻度 + 肺经伏热，无已批准方案时 planId=null",
   assert.ok(verdict.matchedRuleIds.includes("T1"));
 });
 
-test("方案安全：肺经伏热 + 含灸法方案 → 方案安全阻断（MSAF-01）", () => {
+test("方案安全：肺经伏热 + 含灸法方案 → 方案安全阻断（MSAF-01）", async () => {
   const registry: PlanRegistryPort = {
-    findApprovedPlan: (input) =>
+    findApprovedPlan: async (input) =>
       input.syndromeCode === "LUNG_HEAT"
         ? { planId: "plan-test", planRevision: 1, attributes: { moxibustion: "yes" } }
         : null
   };
-  const verdict = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+  const verdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
     factsWith(safeFacts(), [
       ...mildSeverityFacts(),
       fact("thirst", "yes"),
@@ -403,15 +403,15 @@ test("方案安全：肺经伏热 + 含灸法方案 → 方案安全阻断（MSA
   assert.ok(verdict.matchedRuleIds.includes("T1"));
 });
 
-test("方案安全通过：肺经伏热 + 无灸法方案 → classified 且绑定方案", () => {
+test("方案安全通过：肺经伏热 + 无灸法方案 → classified 且绑定方案", async () => {
   const registry: PlanRegistryPort = {
-    findApprovedPlan: () => ({
+    findApprovedPlan: async () => ({
       planId: "plan-test",
       planRevision: 3,
       attributes: { moxibustion: "no" }
     })
   };
-  const verdict = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+  const verdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
     factsWith(safeFacts(), [
       ...mildSeverityFacts(),
       fact("thirst", "yes"),
@@ -426,8 +426,8 @@ test("方案安全通过：肺经伏热 + 无灸法方案 → classified 且绑�
   assert.ok(verdict.matchedRuleIds.includes("T1"));
 });
 
-test("同一字段多次确认：最后一次生效（快照语义）", () => {
-  const verdict = kernelWith().evaluate([
+test("同一字段多次确认：最后一次生效（快照语义）", async () => {
+  const verdict = await kernelWith().evaluate([
     fact("high_fever", "no"),
     fact("high_fever", "yes")
   ]);
@@ -435,10 +435,10 @@ test("同一字段多次确认：最后一次生效（快照语义）", () => {
   assert.ok(verdict.matchedRuleIds.includes("SAF-02"));
 });
 
-test("规则包内容哈希稳定：同一包两次评估返回同一哈希", () => {
+test("规则包内容哈希稳定：同一包两次评估返回同一哈希", async () => {
   const kernel = kernelWith();
-  const first = kernel.evaluate([]);
-  const second = kernel.evaluate([fact("thirst", "yes")]);
+  const first = await kernel.evaluate([]);
+  const second = await kernel.evaluate([fact("thirst", "yes")]);
   assert.equal(first.rulePackageHash, second.rulePackageHash);
   assert.equal(first.rulePackageHash, kernel.rulePackageHash);
 });
@@ -483,7 +483,7 @@ function lungHeatFacts(): ConfirmedFact[] {
   ]);
 }
 
-test("生产注册表：含灸法的启用方案触发 MSAF-01 阻断（自由文本 method 映射）", () => {
+test("生产注册表：含灸法的启用方案触发 MSAF-01 阻断（自由文本 method 映射）", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-registry-"));
   const database = new KangminDatabase(join(directory, "registry.sqlite"));
   try {
@@ -496,7 +496,7 @@ test("生产注册表：含灸法的启用方案触发 MSAF-01 阻断（自由�
     const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry);
 
     // 管理端自由文本“温和艾灸与日常护理”含“灸”→ 属性键 moxibustion。
-    const found = registry.findApprovedPlan({
+    const found = await registry.findApprovedPlan({
       syndromeCode: "LUNG_HEAT",
       severityCode: "mild"
     });
@@ -504,7 +504,7 @@ test("生产注册表：含灸法的启用方案触发 MSAF-01 阻断（自由�
     assert.equal(found?.attributes.moxibustion, "yes");
     assert.equal(found?.attributes.guasha_cupping, undefined);
 
-    const verdict = kernel.evaluate(lungHeatFacts());
+    const verdict = await kernel.evaluate(lungHeatFacts());
     assert.equal(verdict.outcome, "blocked");
     assert.equal(verdict.stage, "plan_safety");
     assert.ok(verdict.matchedRuleIds.includes("MSAF-01"));
@@ -515,7 +515,7 @@ test("生产注册表：含灸法的启用方案触发 MSAF-01 阻断（自由�
   }
 });
 
-test("生产注册表：刮痧/拔罐方法映射为 guasha_cupping（MSAF-02 属性键）", () => {
+test("生产注册表：刮痧/拔罐方法映射为 guasha_cupping（MSAF-02 属性键）", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-registry-"));
   const database = new KangminDatabase(join(directory, "registry.sqlite"));
   try {
@@ -525,7 +525,7 @@ test("生产注册表：刮痧/拔罐方法映射为 guasha_cupping（MSAF-02 �
       method: "刮痧与拔罐组合调理"
     });
     const registry = new SqlitePlanRegistry(database);
-    const found = registry.findApprovedPlan({
+    const found = await registry.findApprovedPlan({
       syndromeCode: "COLD_HEAT_COMPLEX",
       severityCode: "mild"
     });
@@ -537,7 +537,7 @@ test("生产注册表：刮痧/拔罐方法映射为 guasha_cupping（MSAF-02 �
     // 裁决；皮损时 pipeline 在 safety 阶段已被 SAF-05 阻断，MSAF-02
     // 在本测试中通过注册表映射直接验证属性键而非经完整流水线。
     const guashaFacts = factsWith(lungHeatFacts(), [fact("skin_lesion", "yes")]);
-    const safetyVerdict = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+    const safetyVerdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
       guashaFacts
     );
     assert.equal(safetyVerdict.outcome, "blocked");
@@ -548,7 +548,7 @@ test("生产注册表：刮痧/拔罐方法映射为 guasha_cupping（MSAF-02 �
   }
 });
 
-test("生产注册表：method 为空或无法映射时不出属性键（unmatched 安全语义）", () => {
+test("生产注册表：method 为空或无法映射时不出属性键（unmatched 安全语义）", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-registry-"));
   const database = new KangminDatabase(join(directory, "registry.sqlite"));
   try {
@@ -562,7 +562,7 @@ test("生产注册表：method 为空或无法映射时不出属性键（unmatch
     }
     const registry = new SqlitePlanRegistry(database);
     for (const [id, syndrome] of cases) {
-      const found = registry.findApprovedPlan({
+      const found = await registry.findApprovedPlan({
         syndromeCode: syndrome,
         severityCode: "mild"
       });
@@ -573,7 +573,7 @@ test("生产注册表：method 为空或无法映射时不出属性键（unmatch
 
     // 无方法属性 → MSAF-01 的 moxibustion 条件按 unmatched 处理，
     // 方案安全通过（classified + 绑定方案），绝不误阻断。
-    const verdict = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+    const verdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
       lungHeatFacts()
     );
     assert.equal(verdict.outcome, "classified");
