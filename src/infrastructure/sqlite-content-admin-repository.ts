@@ -69,6 +69,13 @@ function methodTagsJson(tags: readonly string[]): string {
   return JSON.stringify(tags);
 }
 
+/**
+ * 患者侧公开引用（媒体交付链）：cover_url/media_url 不落对象存储键
+ * （stored_path 是受管存储内部地址），更新时改写为公开媒体路由
+ * /v1/media/<med_id>；cover_media_id/media_id 为 NULL 时 SQL 字符串
+ * 拼接得 NULL，与旧 SELECT stored_path 的 NULL 语义一致。旧库的裸键
+ * 存量由迁移 0014_content_media_public_urls 一次性改写。
+ */
 export class SqliteContentAdminRepository implements ContentAdminRepository {
   constructor(private readonly database: KangminDatabase) {}
 
@@ -192,8 +199,8 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
           revision = ?, cover_media_id = ?, media_id = ?,
           instructions = ?, precautions = ?, disclaimer = ?,
           method_tags = ?, display_order = ?,
-          cover_url = (SELECT stored_path FROM content_resource_media WHERE id = cover_media_id),
-          media_url = (SELECT stored_path FROM content_resource_media WHERE id = media_id)
+          cover_url = '/v1/media/' || cover_media_id,
+          media_url = '/v1/media/' || media_id
         WHERE id = ? AND kind = ? AND revision = ?
       `).run(
         item.title,
@@ -255,8 +262,8 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
           revision = ?, cover_media_id = ?, media_id = ?,
           instructions = ?, precautions = ?, disclaimer = ?,
           method_tags = ?, display_order = ?,
-          cover_url = (SELECT stored_path FROM content_resource_media WHERE id = cover_media_id),
-          media_url = (SELECT stored_path FROM content_resource_media WHERE id = media_id)
+          cover_url = '/v1/media/' || cover_media_id,
+          media_url = '/v1/media/' || media_id
         WHERE id = ? AND kind = ? AND revision = ?
       `).run(
         item.title,

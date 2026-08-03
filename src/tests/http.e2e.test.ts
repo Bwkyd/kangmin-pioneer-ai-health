@@ -1,11 +1,13 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
+import { KangminDatabase } from "../infrastructure/database.js";
 import { seedContent } from "./content-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
@@ -316,5 +318,159 @@ test("HTTP 非法 JSON、超大请求和无效 input 返回稳定错误契约", 
   } finally {
     await close(server);
     application.close();
+  }
+});
+
+/**
+ * 公开媒体路由（媒体交付链 issue-151）：管理端上传 → 发布 → 匿名下载；
+ * 未发布引用/不存在/非法 id 一律 404（不泄露存在性）。
+ */
+test("GET /v1/media/:id：已发布引用发字节流，未发布/不存在/非法 id 404", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-media-http-"));
+  const databasePath = join(directory, "content.sqlite");
+  const mediaDirectory = join(directory, "admin-media");
+  mkdirSync(mediaDirectory, { recursive: true });
+
+  const admin = createAdminApplication(databasePath, { mediaDirectory });
+  const adminToken =
+    (await admin.sessions.createDevelopmentSession("owner-media")).token;
+  const adminCommand = async (command: string, input: Record<string, unknown>) => {
+    const result = await admin.execute({ command, adminToken, input });
+    if (!result.ok) {
+      assert.fail(`${command}: ${result.error.code}: ${result.error.message}`);
+    }
+    return result.data as Record<string, unknown>;
+  };
+
+  // 上传封面图（PNG 魔数）与视频（ISO BMFF ftyp 魔数）各一，外加一张
+  // 只被草稿引用的图片（内容须不同：上传幂等键是文件内容指纹）。
+  const pngBytes = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+  const draftPngBytes = Buffer.concat([pngBytes, Buffer.from([0xde, 0xad])]);
+  const mp4Bytes = Buffer.from([
+    0x00, 0x00, 0x00, 0x18, 0x66, 0x74, 0x79, 0x70, 0x6d, 0x70, 0x34, 0x32
+  ]);
+  const coverFile = join(mediaDirectory, "cover.png");
+  const videoFile = join(mediaDirectory, "clip.mp4");
+  const draftFile = join(mediaDirectory, "draft.png");
+  writeFileSync(coverFile, pngBytes);
+  writeFileSync(videoFile, mp4Bytes);
+  writeFileSync(draftFile, draftPngBytes);
+  const coverId = (await adminCommand("content media upload", { file: coverFile })).id as string;
+  const videoMediaId = (await adminCommand("content media upload", { file: videoFile })).id as string;
+  const draftMediaId = (await adminCommand("content media upload", { file: draftFile })).id as string;
+
+  await adminCommand("content category create", { name: "日常防护", kind: "article" });
+  await adminCommand("content category create", { name: "居家护理", kind: "video" });
+
+  // 发布带封面的文章与带素材的视频；另一篇引用第三张图的文章保持草稿。
+  const article = await adminCommand("content article create", {
+    title: "封面文章",
+    category: "日常防护",
+    idempotencyKey: "media-e2e-article"
+  });
+  await adminCommand("content article update", {
+    id: article.id,
+    expectedRevision: 1,
+    summary: "摘要",
+    body: "正文",
+    source: "来源",
+    coverMediaId: coverId
+  });
+  await adminCommand("content article publish", {
+    id: article.id,
+    expectedRevision: 2,
+    yes: true
+  });
+  const video = await adminCommand("content video create", {
+    title: "护理视频",
+    category: "居家护理",
+    idempotencyKey: "media-e2e-video"
+  });
+  await adminCommand("content video update", {
+    id: video.id,
+    expectedRevision: 1,
+    summary: "视频简介",
+    body: "视频正文简介。",
+    source: "来源",
+    mediaId: videoMediaId
+  });
+  await adminCommand("content video publish", {
+    id: video.id,
+    expectedRevision: 2,
+    yes: true
+  });
+  const draft = await adminCommand("content article create", {
+    title: "草稿文章",
+    category: "日常防护",
+    idempotencyKey: "media-e2e-draft"
+  });
+  await adminCommand("content article update", {
+    id: draft.id,
+    expectedRevision: 1,
+    coverMediaId: draftMediaId
+  });
+
+  // 患者侧应用与 HTTP 服务（本地对象存储默认指向同一 admin-media 目录）。
+  const application = createApplication(databasePath);
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
+  try {
+    // 患者侧引用已改写为公开路由（与路由自洽）。
+    const shown = await application.execute({
+      command: "browse video show",
+      input: { id: video.id as string }
+    });
+    assert.equal(shown.ok, true);
+    if (shown.ok) {
+      assert.equal(
+        (shown.data as { mediaUrl: string }).mediaUrl,
+        `/v1/media/${videoMediaId}`
+      );
+    }
+
+    const cover = await fetch(`${origin}/v1/media/${coverId}`);
+    assert.equal(cover.status, 200);
+    assert.equal(cover.headers.get("content-type"), "image/*");
+    assert.equal(cover.headers.get("cache-control"), "public, max-age=3600");
+    assert.equal(
+      Number(cover.headers.get("content-length")),
+      pngBytes.length
+    );
+    assert.deepEqual(Buffer.from(await cover.arrayBuffer()), pngBytes);
+
+    const clip = await fetch(`${origin}/v1/media/${videoMediaId}`);
+    assert.equal(clip.status, 200);
+    assert.equal(clip.headers.get("content-type"), "video/*");
+    assert.deepEqual(Buffer.from(await clip.arrayBuffer()), mp4Bytes);
+
+    // 素材被停用（直接改库模拟）→ 非 ready 不服务。
+    const database = new KangminDatabase(databasePath);
+    try {
+      database.connection
+        .prepare("UPDATE content_resource_media SET status = 'disabled' WHERE id = ?")
+        .run(coverId);
+    } finally {
+      database.close();
+    }
+    const disabled = await fetch(`${origin}/v1/media/${coverId}`);
+    assert.equal(disabled.status, 404);
+
+    for (const path of [
+      `/v1/media/${draftMediaId}`, // 仅草稿（未发布）引用
+      "/v1/media/med_000000000000", // 形状合法但不存在
+      "/v1/media/..%2F..%2Fetc", // 百分号编码路径穿越
+      "/v1/media/not-a-valid-id", // 非法字符
+      "/v1/media/med_000000000000/extra" // 斜杠附加段
+    ]) {
+      const response = await fetch(`${origin}${path}`);
+      assert.equal(response.status, 404, path);
+      // 404 与不存在路由同形（命令信封），不泄露资源存在性。
+      const body = await response.json() as { error: { code: string } };
+      assert.equal(body.error.code, "resource_not_found", path);
+    }
+  } finally {
+    await close(server);
+    application.close();
+    admin.close();
   }
 });

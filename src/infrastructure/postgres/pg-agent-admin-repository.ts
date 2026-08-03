@@ -801,6 +801,78 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     });
   }
 
+  /**
+   * 内容更新与启用等价校验同一事务（与 setPlanStatusGuarded 同类事务
+   * 变式）：guard 在事务内执行，视频发布状态按新内容的
+   * videoResourceId 在事务内重读——并发进程在另一事务下架视频时，本
+   * 事务校验拒绝，内容更新不提交（与 updatePlan 共用 CAS）。
+   */
+  async updatePlanGuarded(
+    plan: AgentPlan,
+    expectedRevision: number,
+    guard: (
+      plan: AgentPlan,
+      video: { id: string; status: string } | null
+    ) => string[]
+  ): Promise<PlanGuardedUpdateResult> {
+    return this.database.transaction(async (client) => {
+      const currentResult = await this.database.queryIn<{ revision: number }>(
+        client,
+        "SELECT revision FROM agent_plans WHERE id = $1",
+        [plan.id]
+      );
+      const current = currentResult.rows[0];
+      if (current === undefined) {
+        return { kind: "not_found" as const };
+      }
+      if (current.revision !== expectedRevision) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      let video: { id: string; status: string } | null = null;
+      if (plan.videoResourceId !== null) {
+        const videoResult = await this.database.queryIn<{
+          id: string;
+          status: string;
+        }>(
+          client,
+          "SELECT id, status FROM content_items WHERE kind = 'video' AND id = $1",
+          [plan.videoResourceId]
+        );
+        video = videoResult.rows[0] ?? null;
+      }
+      const missing = guard(plan, video);
+      if (missing.length > 0) {
+        return { kind: "validation_failed" as const, missing };
+      }
+      await this.database.queryIn(
+        client,
+        `UPDATE agent_plans SET
+          name = $1, syndrome = $2, method = $3, steps_json = $4, precautions = $5,
+          risks = $6, contraindications = $7, applicable_age = $8,
+          video_resource_id = $9, display_order = $10, status = $11,
+          updated_at = $12, revision = $13
+        WHERE id = $14`,
+        [
+          plan.name,
+          plan.syndrome,
+          plan.method,
+          JSON.stringify(plan.steps),
+          plan.precautions,
+          plan.risks,
+          plan.contraindications,
+          plan.applicableAge,
+          plan.videoResourceId,
+          plan.displayOrder,
+          plan.status,
+          plan.updatedAt,
+          plan.revision,
+          plan.id
+        ]
+      );
+      return { kind: "updated" as const, plan };
+    });
+  }
+
   async setPlanStatus(
     id: string,
     expectedRevision: number,

@@ -314,6 +314,67 @@ function routeNotFound(response: ServerResponse): void {
 }
 
 /**
+ * 媒体 id 白名单：照 newId("med") 生成格式 med_<12 位小写十六进制>。
+ * 含 ..、斜杠、编码绕过或任何非法字符一律不匹配（路由按 404 处理，
+ * 不区分 400/404，不泄露资源存在性）。
+ */
+const MEDIA_ID_PATTERN = /^med_[0-9a-f]{12}$/;
+
+/**
+ * 公开媒体路由（GET /v1/media/:id，媒体交付链 issue-151）：不套命令
+ * 信封，直接发字节流；公开范围门禁（仅 published 内容引用）与素材
+ * 可用性由 browse 服务判定，这里只做 id 白名单与响应头。
+ * 不套用命令限流分类（与静态资源一致：公开只读、按 id 寻址且不可变，
+ * 缓存语义清晰），媒体内容不可变故 Cache-Control 公开缓存 1 小时。
+ */
+async function mediaAsset(
+  response: ServerResponse,
+  application: KangminApplication,
+  pathname: string
+): Promise<void> {
+  let mediaId: string;
+  try {
+    mediaId = decodeURIComponent(pathname.slice("/v1/media/".length));
+  } catch {
+    mediaId = "";
+  }
+  if (!MEDIA_ID_PATTERN.test(mediaId)) {
+    routeNotFound(response);
+    return;
+  }
+  try {
+    const media = await application.getPublishedMedia(mediaId);
+    if (media === null) {
+      routeNotFound(response);
+      return;
+    }
+    if (response.writableEnded) {
+      return;
+    }
+    response.statusCode = 200;
+    response.setHeader("content-type", media.contentType);
+    response.setHeader("content-length", media.body.length);
+    response.setHeader("cache-control", "public, max-age=3600");
+    response.setHeader("x-content-type-options", "nosniff");
+    response.setHeader("referrer-policy", "no-referrer");
+    response.end(media.body);
+  } catch (error) {
+    json(
+      response,
+      503,
+      failure(
+        "media asset",
+        new DomainError(
+          "storage_unavailable",
+          "媒体资源不可用",
+          { retryable: true, cause: error }
+        )
+      )
+    );
+  }
+}
+
+/**
  * 429 信封：rate_limited 是 HTTP 传输层补充码，不在 kernel 错误码表
  * （该表由其它 issue 维护），这里显式构造并保持 CommandResult 信封
  * 风格；retryAfter 作为信封附加顶层字段，同时回写 Retry-After 头。
@@ -495,6 +556,15 @@ export function createKangminHttpServer(
         "styles.css",
         "text/css; charset=utf-8"
       );
+      return;
+    }
+
+    // 公开媒体路由：已发布内容引用的媒体字节（非命令信封）。
+    if (
+      request.method === "GET" &&
+      requestUrl.pathname.startsWith("/v1/media/")
+    ) {
+      await mediaAsset(response, application, requestUrl.pathname);
       return;
     }
 

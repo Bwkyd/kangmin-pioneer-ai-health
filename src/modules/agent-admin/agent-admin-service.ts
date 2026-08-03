@@ -639,6 +639,25 @@ export class AgentAdminService {
       revision: current.revision + 1,
       updatedAt: now()
     };
+    if (current.status === "enabled") {
+      // 启用状态的方案：更新后内容必须通过启用等价校验（防患者端展示被
+      // 清空步骤/风险文本或换成未发布视频）。证型是固定注册表常量且新值
+      // 已在上方 requireSyndrome 校验；内容完整性与视频发布状态等数据库
+      // 依赖走 updatePlanGuarded 事务内重读校验（与 enablePlan 同一事务
+      // 变式），校验失败整个更新拒绝，不落库。
+      const outcome = await this.repository.updatePlanGuarded(
+        next,
+        expectedRevision,
+        (plan, video) => this.planEnableMissing(plan, video)
+      );
+      if (outcome.kind === "validation_failed") {
+        throw new DomainError(
+          "validation_failed",
+          `方案处于启用状态，更新后内容未通过启用校验：${outcome.missing.join("、")}`
+        );
+      }
+      return this.planOutcome(outcome, expectedRevision);
+    }
     const outcome = await this.repository.updatePlan(next, expectedRevision);
     return this.planOutcome(outcome, expectedRevision);
   }

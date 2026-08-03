@@ -225,7 +225,14 @@ test("方案开关：KANGMIN_PLAN_BROWSE_ENABLED=1 且有 enabled 方案 → pla
         );
         assert.equal(listed.items[0]?.name, "花粉季通用护理方案");
 
-        const shown = dataOf<{ id: string; steps: unknown[] }>(
+        const shown = dataOf<{
+          id: string;
+          steps: unknown[];
+          precautions: string;
+          risks: string;
+          contraindications: string;
+          videoResourceId: string | null;
+        }>(
           await application.execute({
             command: "browse plan show",
             input: { id: "plan-published" }
@@ -233,6 +240,11 @@ test("方案开关：KANGMIN_PLAN_BROWSE_ENABLED=1 且有 enabled 方案 → pla
         );
         assert.equal(shown.id, "plan-published");
         assert.equal(shown.steps.length, 1);
+        // 临床字段投影（issue-151）：开关打开后详情携带风险/注意/禁忌。
+        assert.equal(shown.precautions, "注意事项");
+        assert.equal(shown.risks, "风险提示");
+        assert.equal(shown.contraindications, "禁忌");
+        assert.equal(shown.videoResourceId, null);
 
         const searched = dataOf<{ plans: Array<{ id: string }> }>(
           await application.execute({

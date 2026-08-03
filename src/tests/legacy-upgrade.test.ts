@@ -660,3 +660,65 @@ test("0012 孤儿会话升级抛明确错误，而不是晦涩的 FK 违约回�
     }
   );
 });
+
+test("0014 媒体公开引用迁移：裸键存量改写为 /v1/media/<id>，无引用行不触碰", () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-upgrade-media-"));
+  const databasePath = join(directory, "media.sqlite");
+
+  // 模拟 0014 前的旧数据：cover_url/media_url 落对象键裸键（stored_path）。
+  const seed = new KangminDatabase(databasePath);
+  seed.connection.exec(`
+    INSERT INTO content_resource_media(
+      id, kind, filename, stored_path, size_bytes, status,
+      created_at, updated_at
+    ) VALUES
+      ('med_oldcover', 'image', 'cover.png', 'med_oldcover/cover.png', 10,
+       'ready', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z'),
+      ('med_oldvideo', 'video', 'video.mp4', 'med_oldvideo/video.mp4', 20,
+       'ready', '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
+    INSERT INTO content_items(
+      id, kind, title, category, summary, source, cover_url, media_url,
+      status, patient_visible, version_valid, media_available,
+      published_at, updated_at, cover_media_id, media_id
+    ) VALUES
+      ('legacy-item', 'video', '旧内容', '鼻炎科普', '摘要', '编辑部',
+       'med_oldcover/cover.png', 'med_oldvideo/video.mp4',
+       'published', 1, 1, 1,
+       '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z',
+       'med_oldcover', 'med_oldvideo'),
+      ('legacy-free', 'article', '自由文本', '鼻炎科普', '摘要', '编辑部',
+       'https://example.invalid/x.jpg', NULL,
+       'published', 1, 1, 1,
+       '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', NULL, NULL);
+    DELETE FROM schema_migrations
+    WHERE version = '0014_content_media_public_urls';
+  `);
+  seed.close();
+
+  // 回退账本后重开：0014 重放，裸键改写为公开媒体路由。
+  const database = new KangminDatabase(databasePath);
+  try {
+    const rowOf = (id: string) =>
+      database.connection
+        .prepare("SELECT cover_url, media_url FROM content_items WHERE id = ?")
+        .get(id) as unknown as {
+        cover_url: string | null;
+        media_url: string | null;
+      };
+    // 有素材引用的行：裸键改写为 /v1/media/<med_id>。
+    const rewritten = rowOf("legacy-item");
+    assert.equal(rewritten.cover_url, "/v1/media/med_oldcover");
+    assert.equal(rewritten.media_url, "/v1/media/med_oldvideo");
+    // 无素材引用的行（自由文本/外链 URL）：不触碰。
+    const untouched = rowOf("legacy-free");
+    assert.equal(untouched.cover_url, "https://example.invalid/x.jpg");
+    assert.equal(untouched.media_url, null);
+    assert.ok(
+      appliedMigrationVersions(database).includes(
+        "0014_content_media_public_urls"
+      )
+    );
+  } finally {
+    database.close();
+  }
+});

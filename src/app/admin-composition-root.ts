@@ -1,21 +1,17 @@
 import { accessSync, constants } from "node:fs";
-import { dirname, join } from "node:path";
 
 import { KangminAdminApplication, type DoctorCheck, type DoctorReport } from "./admin-application.js";
 import {
+  defaultMediaDirectory,
   resolveDatabaseUrl,
   resolveEncryption,
+  resolveObjectStorage,
   type ReadinessProbe
 } from "./composition-root.js";
 import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
-import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
 import { DomainError } from "../kernel/errors.js";
-import type {
-  ObjectHead,
-  ObjectStoragePort,
-  ObjectUploadTicket
-} from "../modules/system/object-storage-ports.js";
+import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
 import {
   KangminPgDatabase,
   appliedPgMigrationVersions
@@ -35,10 +31,6 @@ import { SqliteContentAuxRepository } from "../infrastructure/sqlite-content-aux
 import { SqliteAuditRepository } from "../infrastructure/sqlite-audit-repository.js";
 import { SqliteUserAdminRepository } from "../infrastructure/sqlite-user-admin-repository.js";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
-
-function defaultMediaDirectory(databasePath: string): string {
-  return join(dirname(databasePath), "admin-media");
-}
 
 /**
  * 管理端生产存储 fail-closed（与患者端 assertProductionStorage 同策略）：
@@ -109,93 +101,6 @@ function objectStorageReadinessProbe(
       }
     }
   };
-}
-
-/**
- * 本地存储延迟创建：LocalFilesystemObjectStorage 构造即创建根目录，若
- * 组合根启动时就实例化，素材目录会被提前创建，doctor 的"目录缺失或不可
- * 读写即 failed"语义失效（既有 CLI 契约：未引导环境 doctor 不健康）。
- * 首次实际读写时才创建目录，保持既有 doctor 行为。
- */
-class LazyLocalObjectStorage implements ObjectStoragePort {
-  private inner: ObjectStoragePort | undefined;
-
-  constructor(private readonly rootDirectory: string) {}
-
-  private storage(): ObjectStoragePort {
-    this.inner ??= new LocalFilesystemObjectStorage(this.rootDirectory);
-    return this.inner;
-  }
-
-  putObject(input: {
-    key: string;
-    body: Buffer;
-    contentType?: string | undefined;
-  }): Promise<void> {
-    return this.storage().putObject(input);
-  }
-
-  getObject(key: string): Promise<Buffer> {
-    return this.storage().getObject(key);
-  }
-
-  headObject(key: string): Promise<ObjectHead | null> {
-    return this.storage().headObject(key);
-  }
-
-  deleteObject(key: string): Promise<void> {
-    return this.storage().deleteObject(key);
-  }
-
-  createUploadTicket(input: {
-    key: string;
-    contentType: string;
-    sizeBytes: number;
-    sha256: string;
-  }): Promise<ObjectUploadTicket> {
-    return this.storage().createUploadTicket(input);
-  }
-
-  verifyObject(input: {
-    key: string;
-    sha256: string;
-    sizeBytes: number;
-  }): Promise<boolean> {
-    return this.storage().verifyObject(input);
-  }
-}
-
-/**
- * 对象存储选择：显式注入优先（测试/远程编排）；否则 KANGMIN_S3_BUCKET
- * 存在 → S3 兼容后端（缺访问凭证抛 config_missing）；否则本地文件系统
- * （mediaDirectory 照旧解析，语义与改造前一致）。
- */
-function resolveObjectStorage(
-  options: { objectStorage?: ObjectStoragePort | undefined },
-  mediaDirectory: string
-): ObjectStoragePort {
-  if (options.objectStorage !== undefined) {
-    return options.objectStorage;
-  }
-  const bucket = process.env.KANGMIN_S3_BUCKET;
-  if (bucket !== undefined && bucket.trim() !== "") {
-    const accessKeyId = process.env.KANGMIN_S3_ACCESS_KEY_ID ?? "";
-    const secretAccessKey = process.env.KANGMIN_S3_SECRET_ACCESS_KEY ?? "";
-    if (accessKeyId === "" || secretAccessKey === "") {
-      throw new DomainError(
-        "config_missing",
-        "已配置 KANGMIN_S3_BUCKET，但缺少 KANGMIN_S3_ACCESS_KEY_ID / KANGMIN_S3_SECRET_ACCESS_KEY"
-      );
-    }
-    return new S3ObjectStorage({
-      bucket,
-      endpoint: process.env.KANGMIN_S3_ENDPOINT || undefined,
-      region: process.env.KANGMIN_S3_REGION || "us-east-1",
-      accessKeyId,
-      secretAccessKey
-    });
-  }
-  return new LazyLocalObjectStorage(mediaDirectory);
 }
 
 /**

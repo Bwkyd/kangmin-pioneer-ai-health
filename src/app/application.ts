@@ -21,6 +21,7 @@ import { AccountService } from "../modules/account/account-service.js";
 import { SessionService } from "../modules/account/session-service.js";
 import type { ContentReadRepository } from "../modules/browse/content-read-repository.js";
 import { BrowseService } from "../modules/browse/browse-service.js";
+import type { PublishedMedia } from "../modules/browse/contracts.js";
 import {
   listLimitOf,
   listOffsetOf,
@@ -28,6 +29,7 @@ import {
   resourceIdOf,
   searchQueryOf
 } from "../modules/browse/domain.js";
+import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
 import type { AgentRepository } from "../modules/agent/agent-repository.js";
 import { AgentService } from "../modules/agent/agent-service.js";
 import type { AgentQuestion, TriStateAnswer } from "../modules/agent/contracts.js";
@@ -111,7 +113,8 @@ export class KangminApplication {
     private readonly doctorProvider: DoctorCheckProvider = async () => ({
       checks: [],
       healthy: true
-    })
+    }),
+    objectStorage?: ObjectStoragePort | undefined
   ) {
     this.sessions = sessions;
     this.records = new RecordService(recordRepository);
@@ -121,7 +124,11 @@ export class KangminApplication {
       environmentProvider,
       environmentCache
     );
-    this.browse = new BrowseService(contentReadRepository, this.environment);
+    this.browse = new BrowseService(
+      contentReadRepository,
+      this.environment,
+      objectStorage
+    );
     this.agent = new AgentService(
       agentRepository,
       new RecordSnapshotAdapter(this.records)
@@ -802,6 +809,15 @@ export class KangminApplication {
 
   close(): void {
     this.closeResources();
+  }
+
+  /**
+   * 已发布内容引用的媒体字节（HTTP GET /v1/media/:id 专用）：不套命令
+   * 信封协议，直接给适配层字节流；无已发布引用/素材不可用/未配置对象
+   * 存储一律 null（路由 404，不泄露存在性）。
+   */
+  async getPublishedMedia(mediaId: string): Promise<PublishedMedia | null> {
+    return this.browse.getPublishedMedia(mediaId);
   }
 
   private rejectClientIdentity(input: Record<string, unknown>): void {

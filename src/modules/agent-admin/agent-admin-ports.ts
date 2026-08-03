@@ -239,6 +239,21 @@ export interface AgentAdminRepository {
   listPlans(status?: PlanStatus): Promise<AgentPlan[]>;
   findPlan(id: string): Promise<AgentPlan | null>;
   updatePlan(plan: AgentPlan, expectedRevision: number): Promise<UpdatePlanResult>;
+  /**
+   * 内容更新与启用等价校验同一事务（与 setPlanStatusGuarded 同类事务
+   * 变式）：guard 在 BEGIN IMMEDIATE 内收到合并后的新方案内容与事务内
+   * 重读的视频发布状态——并发进程在另一事务下架视频时，本事务校验
+   * 拒绝，内容更新不提交；校验通过才在同一事务内落库（与 updatePlan
+   * 共用 CAS）。
+   */
+  updatePlanGuarded(
+    plan: AgentPlan,
+    expectedRevision: number,
+    guard: (
+      plan: AgentPlan,
+      video: { id: string; status: string } | null
+    ) => string[]
+  ): Promise<PlanGuardedUpdateResult>;
   setPlanStatus(
     id: string,
     expectedRevision: number,

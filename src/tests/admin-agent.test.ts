@@ -14,6 +14,7 @@ import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
+import { DomainError } from "../kernel/errors.js";
 import type { CommandResult } from "../kernel/result.js";
 import { AgentAdminService } from "../modules/agent-admin/agent-admin-service.js";
 import type { AgentAdminRepository } from "../modules/agent-admin/agent-admin-ports.js";
@@ -487,6 +488,136 @@ test("方案启用走事务路径：启用前视频被下架 → enablePlan 拒�
     );
     assert.equal(after.status, "draft");
     assert.equal(after.revision, 1);
+  } finally {
+    app.close();
+  }
+});
+
+test("启用状态方案的更新重跑启用校验：清空步骤/换未发布视频拒绝，合法更新放行，草稿不变", async () => {
+  const { app, databasePath, mediaDirectory, token } = await fixture();
+  try {
+    const created = dataOf<AgentPlan>(
+      await app.execute({
+        command: "agent plan create",
+        adminToken: token,
+        input: {
+          name: "启用后更新方案",
+          syndrome: "LUNG_HEAT",
+          method: "日常护理",
+          steps: ["生理盐水洗鼻"],
+          risks: "风险提示",
+          precautions: "注意事项",
+          contraindications: "禁忌"
+        }
+      })
+    );
+    const enabled = dataOf<AgentPlan>(
+      await app.execute({
+        command: "agent plan enable",
+        adminToken: token,
+        input: { id: created.id, expectedRevision: 1, yes: true }
+      })
+    );
+    assert.equal(enabled.status, "enabled");
+
+    // 清空步骤 → validation_failed（命令输入层对空 steps 数组即拒绝；
+    // 服务层守卫的第二道拒绝见下方服务层直测）。两次拒绝均不落库。
+    const emptySteps = await app.execute({
+      command: "agent plan update",
+      adminToken: token,
+      input: { id: created.id, expectedRevision: 2, steps: [] }
+    });
+    assert.equal(emptySteps.ok, false);
+    if (!emptySteps.ok) assert.equal(emptySteps.error.code, "validation_failed");
+
+    // 换成未发布视频 → validation_failed（草稿视频存在但未发布）。
+    const draftVideo = dataOf<{ id: string }>(
+      await app.execute({
+        command: "content video create",
+        adminToken: token,
+        input: {
+          title: "未发布视频",
+          category: "居家护理",
+          idempotencyKey: "enabled-update-video-1"
+        }
+      })
+    );
+    const unpublishedVideo = await app.execute({
+      command: "agent plan update",
+      adminToken: token,
+      input: {
+        id: created.id,
+        expectedRevision: 2,
+        videoResourceId: draftVideo.id
+      }
+    });
+    assert.equal(unpublishedVideo.ok, false);
+    if (!unpublishedVideo.ok) {
+      assert.equal(unpublishedVideo.error.code, "validation_failed");
+    }
+
+    // 两次拒绝均未落库：内容、状态、revision 原样。
+    const unchanged = dataOf<AgentPlan>(
+      await app.execute({
+        command: "agent plan show",
+        adminToken: token,
+        input: { id: created.id }
+      })
+    );
+    assert.equal(unchanged.status, "enabled");
+    assert.equal(unchanged.revision, 2);
+    assert.deepEqual(unchanged.steps, ["生理盐水洗鼻"]);
+    assert.equal(unchanged.videoResourceId, null);
+
+    // 合法更新（改名称）→ 成功且状态仍 enabled。
+    const renamed = dataOf<AgentPlan>(
+      await app.execute({
+        command: "agent plan update",
+        adminToken: token,
+        input: { id: created.id, expectedRevision: 2, name: "启用后更新方案v2" }
+      })
+    );
+    assert.equal(renamed.status, "enabled");
+    assert.equal(renamed.name, "启用后更新方案v2");
+    assert.equal(renamed.revision, 3);
+
+    // 服务层直测（命令输入层对空 steps 数组/空文本另有一层校验，清空
+    // 语义只能直达服务层验证）：enabled 方案清空步骤被守卫拒绝；draft
+    // 方案清空步骤仍允许（行为不变）。
+    const serviceDatabase = new KangminDatabase(databasePath);
+    try {
+      const service = new AgentAdminService(
+        new SqliteAgentAdminRepository(serviceDatabase, new PlaintextEncryption()),
+        new BuiltinSyndromeRegistry(),
+        new LocalFilesystemObjectStorage(mediaDirectory),
+        { record: async () => {} }
+      );
+      await assert.rejects(
+        () => service.updatePlan(created.id, 3, { steps: [] }),
+        (error: unknown) => {
+          assert.ok(error instanceof DomainError);
+          assert.equal(error.code, "validation_failed");
+          return true;
+        }
+      );
+      const guardKept = await service.getPlan(created.id);
+      assert.equal(guardKept.status, "enabled");
+      assert.equal(guardKept.revision, 3);
+      assert.deepEqual(guardKept.steps, ["生理盐水洗鼻"]);
+
+      const draft = dataOf<AgentPlan>(
+        await app.execute({
+          command: "agent plan create",
+          adminToken: token,
+          input: { name: "草稿方案", syndrome: "LUNG_QI_COLD" }
+        })
+      );
+      const draftCleared = await service.updatePlan(draft.id, 1, { steps: [] });
+      assert.equal(draftCleared.status, "draft");
+      assert.deepEqual(draftCleared.steps, []);
+    } finally {
+      serviceDatabase.close();
+    }
   } finally {
     app.close();
   }

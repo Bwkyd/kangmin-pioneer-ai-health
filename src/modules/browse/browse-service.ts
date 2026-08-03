@@ -7,19 +7,49 @@ import type {
   CarePlanDetail,
   CarePlanSummary,
   PublicContent,
-  PublicContentKind
+  PublicContentKind,
+  PublishedMedia
 } from "./contracts.js";
 import type { EnvironmentSnapshot } from "../environment/environment-ports.js";
+import type { ObjectStoragePort } from "../system/object-storage-ports.js";
 
 /** browse 首页需要的最小环境能力（由应用层注入 EnvironmentService）。 */
 export interface BrowseEnvironmentPort {
   current(location: string): Promise<EnvironmentSnapshot>;
 }
 
+/**
+ * 媒体响应 Content-Type 白名单：与上传白名单（media-validation
+ * MEDIA_MIME）的取值一致（库存 mime_type 即这些值），另收具体图片/
+ * 视频类型（历史或外部写入的行可能存具体 mime）。为空或不在白名单
+ * 一律 application/octet-stream——绝不原样反射库存值（防 text/html
+ * 等可被浏览器执行的类型注入）。
+ */
+const SERVABLE_CONTENT_TYPES = new Set([
+  "image/*",
+  "video/*",
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/markdown"
+]);
+
+function servableContentType(mimeType: string | null): string {
+  return mimeType !== null && SERVABLE_CONTENT_TYPES.has(mimeType)
+    ? mimeType
+    : "application/octet-stream";
+}
+
 export class BrowseService {
   constructor(
     private readonly repository: ContentReadRepository,
-    private readonly environment: BrowseEnvironmentPort
+    private readonly environment: BrowseEnvironmentPort,
+    private readonly objectStorage?: ObjectStoragePort | undefined
   ) {}
 
   async home(location?: string): Promise<BrowseHome> {
@@ -116,5 +146,23 @@ export class BrowseService {
       this.repository.searchPlans(query, 100)
     ]);
     return { articles, videos, plans };
+  }
+
+  /**
+   * 已发布内容引用的媒体字节（HTTP GET /v1/media/:id 专用，不走命令
+   * 信封）。公开范围门禁在仓储层（仅 published 引用可见）；素材可用性
+   * 在此判定（非 ready 不服务）。未注入对象存储、无引用、素材不可用
+   * 一律 null（路由 404，不泄露存在性）。
+   */
+  async getPublishedMedia(mediaId: string): Promise<PublishedMedia | null> {
+    if (this.objectStorage === undefined) {
+      return null;
+    }
+    const media = await this.repository.findPublishedMedia(mediaId);
+    if (media === null || media.status !== "ready") {
+      return null;
+    }
+    const body = await this.objectStorage.getObject(media.storedPath);
+    return { body, contentType: servableContentType(media.mimeType) };
   }
 }

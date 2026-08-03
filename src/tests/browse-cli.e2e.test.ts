@@ -165,6 +165,25 @@ test("未登录真实 CLI：browse 全部只读命令成功执行", () => {
   assert.equal(paginatedBody.data.limit, 5);
 });
 
+test("真实 CLI：门禁打开后 browse plan show 透出临床字段（issue-151）", () => {
+  const { databasePath } = fixture();
+  const shown = run(
+    ["browse", "plan", "show", "plan-published", "--json"],
+    { KANGMIN_DB_PATH: databasePath, KANGMIN_PLAN_BROWSE_ENABLED: "1" }
+  );
+  assert.equal(shown.status, 0, shown.stderr);
+  const body = parseJson<{
+    precautions: string;
+    risks: string;
+    contraindications: string;
+    videoResourceId: string | null;
+  }>(shown);
+  assert.equal(body.data.precautions, "注意事项");
+  assert.equal(body.data.risks, "风险提示");
+  assert.equal(body.data.contraindications, "禁忌");
+  assert.equal(body.data.videoResourceId, null);
+});
+
 test("真实 CLI 环境命令：current 固定数据、未知城市、provider 不可用、过期 stale", () => {
   const { databasePath } = fixture();
 

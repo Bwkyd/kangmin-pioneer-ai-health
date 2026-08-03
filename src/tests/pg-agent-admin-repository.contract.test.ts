@@ -830,6 +830,77 @@ test(
   }
 );
 
+test(
+  "方案：updatePlanGuarded——version_conflict / guard 事务内重读视频拒绝不提交 / 通过则同事务更新",
+  { skip: SKIP },
+  async () => {
+    const repo = agentAdmin();
+    const missingPlan = makePlanRow(uid("missing"));
+    assert.equal(
+      (
+        await repo.updatePlanGuarded(
+          { ...missingPlan, steps: ["第一步"], revision: 2 },
+          1,
+          () => []
+        )
+      ).kind,
+      "not_found"
+    );
+
+    const videoId = uid("video");
+    await insertVideoContentItem(videoId, "unpublished");
+    const plan = makePlanRow(uid("plan"), { videoResourceId: videoId });
+    await repo.createPlan(plan);
+    const current = await repo.findPlan(plan.id);
+    assert.ok(current !== null);
+
+    const conflict = await repo.updatePlanGuarded(
+      { ...current, name: "不该写入", revision: 9 },
+      9,
+      () => []
+    );
+    assert.equal(conflict.kind, "version_conflict");
+    if (conflict.kind === "version_conflict") {
+      assert.equal(conflict.currentRevision, 1);
+    }
+
+    // 视频未发布：guard 在事务内按新内容的 videoResourceId 重读到
+    // unpublished，拒绝且不提交（方案名不被写入）。
+    let guardSawVideo: { id: string; status: string } | null | undefined;
+    const rejected = await repo.updatePlanGuarded(
+      { ...current, name: "改名方案", revision: 2 },
+      1,
+      (_plan, video) => {
+        guardSawVideo = video;
+        return video === null || video.status !== "published"
+          ? ["关联视频未发布"]
+          : [];
+      }
+    );
+    assert.equal(rejected.kind, "validation_failed");
+    assert.equal(guardSawVideo?.status, "unpublished");
+    assert.equal((await repo.findPlan(plan.id))?.name, `方案-${plan.id}`);
+    assert.equal((await repo.findPlan(plan.id))?.revision, 1);
+
+    // 视频发布后 guard 通过，同事务写入新内容且 revision 推进。
+    await database().query(
+      "UPDATE content_items SET status = 'published' WHERE id = $1",
+      [videoId]
+    );
+    const updated = await repo.updatePlanGuarded(
+      { ...current, name: "改名方案", revision: 2 },
+      1,
+      (_plan, video) =>
+        video === null || video.status !== "published"
+          ? ["关联视频未发布"]
+          : []
+    );
+    assert.equal(updated.kind, "updated");
+    assert.equal((await repo.findPlan(plan.id))?.name, "改名方案");
+    assert.equal((await repo.findPlan(plan.id))?.revision, 2);
+  }
+);
+
 // ==================== 模型配置（含加密 api_key） ====================
 
 function makeModelConfig(overrides: Partial<ModelConfigRow> = {}): ModelConfigRow {

@@ -723,6 +723,69 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
     });
   }
 
+  /**
+   * 内容更新与启用等价校验同一事务（与 setPlanStatusGuarded 同类事务
+   * 变式）：guard 在 BEGIN IMMEDIATE 内执行，视频发布状态按新内容的
+   * videoResourceId 在事务内重读——并发进程在另一事务下架视频时，本
+   * 事务校验拒绝，内容更新不提交（与 updatePlan 共用 CAS）。
+   */
+  async updatePlanGuarded(
+    plan: AgentPlan,
+    expectedRevision: number,
+    guard: (
+      plan: AgentPlan,
+      video: { id: string; status: string } | null
+    ) => string[]
+  ): Promise<PlanGuardedUpdateResult> {
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT revision FROM agent_plans WHERE id = ?"
+      ).get(plan.id) as unknown as { revision: number } | undefined;
+      if (current === undefined) {
+        return { kind: "not_found" as const };
+      }
+      if (current.revision !== expectedRevision) {
+        return { kind: "version_conflict" as const, currentRevision: current.revision };
+      }
+      const video =
+        plan.videoResourceId === null
+          ? null
+          : (this.database.connection.prepare(
+              "SELECT id, status FROM content_items WHERE kind = 'video' AND id = ?"
+            ).get(plan.videoResourceId) as unknown as
+              | { id: string; status: string }
+              | undefined) ?? null;
+      const missing = guard(plan, video);
+      if (missing.length > 0) {
+        return { kind: "validation_failed" as const, missing };
+      }
+      this.database.connection.prepare(`
+        UPDATE agent_plans SET
+          name = ?, syndrome = ?, method = ?, steps_json = ?, precautions = ?,
+          risks = ?, contraindications = ?, applicable_age = ?,
+          video_resource_id = ?, display_order = ?, status = ?,
+          updated_at = ?, revision = ?
+        WHERE id = ?
+      `).run(
+        plan.name,
+        plan.syndrome,
+        plan.method,
+        JSON.stringify(plan.steps),
+        plan.precautions,
+        plan.risks,
+        plan.contraindications,
+        plan.applicableAge,
+        plan.videoResourceId,
+        plan.displayOrder,
+        plan.status,
+        plan.updatedAt,
+        plan.revision,
+        plan.id
+      );
+      return { kind: "updated" as const, plan };
+    });
+  }
+
   async setPlanStatus(
     id: string,
     expectedRevision: number,

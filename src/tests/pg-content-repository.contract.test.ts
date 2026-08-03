@@ -330,7 +330,8 @@ if (databaseUrl === undefined) {
     const updated = await adminRepo.update(publishing, 1);
     assert.deepEqual(updated, { kind: "updated", item: publishing });
 
-    // 发布置 patient_visible=1，并把 cover_url/media_url 同步为素材存储路径。
+    // 发布置 patient_visible=1，并把 cover_url/media_url 改写为公开媒体
+    // 路由 /v1/media/<med_id>（媒体交付链 issue-151，不再落对象键裸键）。
     const { rows } = await db.query<{
       title: string;
       patient_visible: number;
@@ -344,8 +345,8 @@ if (databaseUrl === undefined) {
     assert.deepEqual(rows[0], {
       title: "更新后的标题",
       patient_visible: 1,
-      cover_url: "/media/cover.png",
-      media_url: "/media/video.mp4",
+      cover_url: "/v1/media/m-cover",
+      media_url: "/v1/media/m-video",
       revision: 2
     });
 
@@ -901,6 +902,12 @@ if (databaseUrl === undefined) {
     ]);
     assert.equal(legacy?.summary, "调理概要");
     assert.equal(legacy?.publishedRevision, 3);
+    // 临床字段投影（issue-151）：precautions/risks/contraindications
+    // 原样透出；无视频引用为 null。
+    assert.equal(legacy?.precautions, "注意");
+    assert.equal(legacy?.risks, "风险");
+    assert.equal(legacy?.contraindications, "禁忌");
+    assert.equal(legacy?.videoResourceId, null);
     assert.equal(
       legacy?.disclaimer,
       "本内容仅作健康科普和居家管理参考，不代替门诊诊断和专业医疗建议。"
@@ -920,6 +927,24 @@ if (databaseUrl === undefined) {
       { step: 1, title: "第一步", description: "d" },
       { step: 3, title: "后续" }
     ]);
+
+    // 有视频引用的方案透出 videoResourceId。
+    await insertBrowseItem({ id: "video-for-plan", kind: "video" });
+    await db.query(
+      `INSERT INTO agent_plans(
+        id, name, syndrome, method, steps_json, precautions, risks,
+        contraindications, video_resource_id, display_order, status,
+        revision, created_at, updated_at
+      ) VALUES ('plan-video', '带视频方案', '肺气虚', '调理概要', '["步骤一"]',
+                '注意B', '风险B', '禁忌B', 'video-for-plan', 2, 'enabled',
+                1, $1, $1)`,
+      [T0]
+    );
+    const withVideo = await planOpenReadRepo.findPlan("plan-video");
+    assert.equal(withVideo?.videoResourceId, "video-for-plan");
+    assert.equal(withVideo?.precautions, "注意B");
+    assert.equal(withVideo?.risks, "风险B");
+    assert.equal(withVideo?.contraindications, "禁忌B");
 
     // steps_json 解析失败回退空列表，绝不宽松解析。
     await insertPlan("plan-c", "方案C", "enabled", 2, 1, "not-json");
@@ -944,6 +969,85 @@ if (databaseUrl === undefined) {
     // 草稿不可见；% 字面匹配。
     assert.deepEqual(await planOpenReadRepo.searchPlans("草稿", 10), []);
     assert.deepEqual(await planOpenReadRepo.searchPlans("%", 10), []);
+  });
+
+  test("read.findPublishedMedia：仅 published 引用可见，素材状态原样返回（issue-151）", async () => {
+    await auxRepo.createMedia(makeMedia("m-pub"));
+    await auxRepo.createMedia(makeMedia("m-cover-pub"));
+    await auxRepo.createMedia(makeMedia("m-draft"));
+    await auxRepo.createMedia(makeMedia("m-disabled", { status: "disabled" }));
+    await insertBrowseItem({ id: "item-published", kind: "video", mediaId: "m-pub", coverMediaId: "m-cover-pub" });
+    await insertBrowseItem({ id: "item-draft", status: "draft", mediaId: "m-draft" });
+    await insertBrowseItem({ id: "item-disabled-media", mediaId: "m-disabled" });
+
+    // media_id 与 cover_media_id 两种引用都可命中。
+    const found = await readRepo.findPublishedMedia("m-pub");
+    assert.deepEqual(found, {
+      storedPath: "/media/m-pub.png",
+      mimeType: "image/png",
+      status: "ready"
+    });
+    assert.equal(
+      (await readRepo.findPublishedMedia("m-cover-pub"))?.storedPath,
+      "/media/m-cover-pub.png"
+    );
+
+    // 仅被草稿引用 / 不存在 → null（不泄露存在性）。
+    assert.equal(await readRepo.findPublishedMedia("m-draft"), null);
+    assert.equal(await readRepo.findPublishedMedia("m-missing"), null);
+
+    // 素材被停用但仍有 published 引用：行返回且状态原样（disabled），
+    // 可用性门禁留给服务层（非 ready 不服务）。
+    assert.equal((await readRepo.findPublishedMedia("m-disabled"))?.status, "disabled");
+  });
+
+  test("迁移 0002：裸键存量改写为 /v1/media/<id>，无引用行不触碰（issue-151）", async () => {
+    await auxRepo.createMedia(makeMedia("m-old-cover"));
+    await auxRepo.createMedia(makeMedia("m-old-video", { kind: "video" }));
+    // 模拟 0002 前的旧数据：cover_url/media_url 落对象键裸键（stored_path）。
+    await db.query(
+      `INSERT INTO content_items(
+        id, kind, title, category, summary, body, source,
+        cover_url, media_url, status, patient_visible, version_valid,
+        media_available, published_at, updated_at, revision,
+        cover_media_id, media_id
+      ) VALUES ('legacy-item', 'video', '旧内容', '鼻炎科普', '摘要', '正文',
+                '编辑部', '/media/m-old-cover.png', '/media/m-old-video.mp4',
+                'published', 1, 1, 1, $1, $1, 1, 'm-old-cover', 'm-old-video'),
+               ('legacy-free', 'article', '自由文本', '鼻炎科普', '摘要', '正文',
+                '编辑部', 'https://example.invalid/x.jpg', NULL,
+                'published', 1, 1, 1, $1, $1, 1, NULL, NULL)`,
+      [T0]
+    );
+    // 回退账本模拟旧库：0002 未应用，重开连接触发迁移重放。
+    await db.query(
+      "DELETE FROM schema_migrations WHERE version = '0002_content_media_public_urls'"
+    );
+    const remigrated = new KangminPgDatabase(testDatabase.url);
+    try {
+      await remigrated.ready;
+      const { rows } = await remigrated.query<{
+        id: string;
+        cover_url: string | null;
+        media_url: string | null;
+      }>(
+        "SELECT id, cover_url, media_url FROM content_items ORDER BY id ASC"
+      );
+      assert.deepEqual(rows, [
+        {
+          id: "legacy-free",
+          cover_url: "https://example.invalid/x.jpg",
+          media_url: null
+        },
+        {
+          id: "legacy-item",
+          cover_url: "/v1/media/m-old-cover",
+          media_url: "/v1/media/m-old-video"
+        }
+      ]);
+    } finally {
+      await remigrated.close();
+    }
   });
 
   // ---- 远程上传会话（upload-init / confirm / cleanup-orphans 的仓储语义） ----
