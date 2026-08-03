@@ -56,6 +56,10 @@ export interface CarePlanSummary {
 export interface CarePlanDetail extends CarePlanSummary {
   summary: string | null;
   steps: Array<{ step: number; title: string; description?: string }>;
+  precautions: string;
+  risks: string;
+  contraindications: string;
+  videoResourceId: string | null;
   disclaimer: string | null;
 }
 
@@ -64,4 +68,13 @@ export interface BrowseSearchResults {
   articles: PublicContent[];
   videos: PublicContent[];
   plans: CarePlanSummary[];
+}
+
+/**
+ * HTTP 媒体路由（GET /v1/media/:id）返回的已发布媒体字节：
+ * 不套命令信封，直接发字节流；contentType 已过服务层白名单。
+ */
+export interface PublishedMedia {
+  body: Buffer;
+  contentType: string;
 }

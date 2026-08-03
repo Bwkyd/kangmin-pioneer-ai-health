@@ -29,6 +29,7 @@
 
 import { DomainError } from "../kernel/errors.js";
 import type { EncryptionPort } from "../kernel/encryption.js";
+import { dirname, join } from "node:path";
 import {
   KangminApplication,
   type DoctorCheck,
@@ -64,6 +65,13 @@ import { SqliteSessionRepository } from "../infrastructure/sqlite-session-reposi
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
 import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-environment-provider.js";
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
+import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
+import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import type {
+  ObjectHead,
+  ObjectStoragePort,
+  ObjectUploadTicket
+} from "../modules/system/object-storage-ports.js";
 
 // 结构化请求日志的唯一实现在 infrastructure；经组合根再导出，
 // 供 http 适配层引用（架构约束：cli/http/dev 不直接依赖 infrastructure）。
@@ -106,6 +114,18 @@ export interface ApplicationOptions {
    * 配置后使用 PostgreSQL 存储，缺省保持 SQLite（local/integration）。
    */
   databaseUrl?: string | undefined;
+  /**
+   * 显式注入对象存储端口（测试/远程编排）；未提供时按
+   * resolveObjectStorage 解析（KANGMIN_S3_BUCKET → S3，否则本地目录）。
+   * 患者侧用于 HTTP 媒体路由读取已发布内容引用的媒体字节。
+   */
+  objectStorage?: ObjectStoragePort | undefined;
+  /**
+   * 本地对象存储根目录（未配置 S3 时生效）；默认
+   * KANGMIN_ADMIN_MEDIA_DIR 或 <数据库目录>/admin-media（与管理端一致，
+   * 媒体路由才能读到管理端上传的字节）。
+   */
+  mediaDirectory?: string | undefined;
 }
 
 /** 解析存储后端：显式参数优先，其次 KANGMIN_DATABASE_URL。 */
@@ -121,6 +141,100 @@ export function resolveDatabaseUrl(
   return fromEnvironment === undefined || fromEnvironment === ""
     ? undefined
     : fromEnvironment;
+}
+
+/** 本地素材目录默认位置：<数据库目录>/admin-media（患者/管理组合根共用）。 */
+export function defaultMediaDirectory(databasePath: string): string {
+  return join(dirname(databasePath), "admin-media");
+}
+
+/**
+ * 本地存储延迟创建：LocalFilesystemObjectStorage 构造即创建根目录，若
+ * 组合根启动时就实例化，素材目录会被提前创建，doctor 的"目录缺失或不可
+ * 读写即 failed"语义失效（既有 CLI 契约：未引导环境 doctor 不健康）。
+ * 首次实际读写时才创建目录，保持既有 doctor 行为。
+ */
+class LazyLocalObjectStorage implements ObjectStoragePort {
+  private inner: ObjectStoragePort | undefined;
+
+  constructor(private readonly rootDirectory: string) {}
+
+  private storage(): ObjectStoragePort {
+    this.inner ??= new LocalFilesystemObjectStorage(this.rootDirectory);
+    return this.inner;
+  }
+
+  putObject(input: {
+    key: string;
+    body: Buffer;
+    contentType?: string | undefined;
+  }): Promise<void> {
+    return this.storage().putObject(input);
+  }
+
+  getObject(key: string): Promise<Buffer> {
+    return this.storage().getObject(key);
+  }
+
+  headObject(key: string): Promise<ObjectHead | null> {
+    return this.storage().headObject(key);
+  }
+
+  deleteObject(key: string): Promise<void> {
+    return this.storage().deleteObject(key);
+  }
+
+  createUploadTicket(input: {
+    key: string;
+    contentType: string;
+    sizeBytes: number;
+    sha256: string;
+  }): Promise<ObjectUploadTicket> {
+    return this.storage().createUploadTicket(input);
+  }
+
+  verifyObject(input: {
+    key: string;
+    sha256: string;
+    sizeBytes: number;
+  }): Promise<boolean> {
+    return this.storage().verifyObject(input);
+  }
+}
+
+/**
+ * 对象存储选择（患者/管理组合根共用，媒体交付链 issue-151）：显式注入
+ * 优先（测试/远程编排）；否则 KANGMIN_S3_BUCKET 存在 → S3 兼容后端
+ * （缺访问凭证抛 config_missing）；否则本地文件系统（mediaDirectory
+ * 照旧解析，语义与改造前一致）。staging/production 强制 S3 由
+ * assertProductionStorage 在装配入口校验。
+ */
+export function resolveObjectStorage(
+  options: { objectStorage?: ObjectStoragePort | undefined },
+  mediaDirectory: string
+): ObjectStoragePort {
+  if (options.objectStorage !== undefined) {
+    return options.objectStorage;
+  }
+  const bucket = process.env.KANGMIN_S3_BUCKET;
+  if (bucket !== undefined && bucket.trim() !== "") {
+    const accessKeyId = process.env.KANGMIN_S3_ACCESS_KEY_ID ?? "";
+    const secretAccessKey = process.env.KANGMIN_S3_SECRET_ACCESS_KEY ?? "";
+    if (accessKeyId === "" || secretAccessKey === "") {
+      throw new DomainError(
+        "config_missing",
+        "已配置 KANGMIN_S3_BUCKET，但缺少 KANGMIN_S3_ACCESS_KEY_ID / KANGMIN_S3_SECRET_ACCESS_KEY"
+      );
+    }
+    return new S3ObjectStorage({
+      bucket,
+      endpoint: process.env.KANGMIN_S3_ENDPOINT || undefined,
+      region: process.env.KANGMIN_S3_REGION || "us-east-1",
+      accessKeyId,
+      secretAccessKey
+    });
+  }
+  return new LazyLocalObjectStorage(mediaDirectory);
 }
 
 /**
@@ -508,6 +622,14 @@ export function createApplicationWithOps(
   });
   const extraction: ModelExtractionPort = options.extraction ?? modelAdapter;
   const explanation: ModelExplanationPort = options.explanation ?? modelAdapter;
+  // 对象存储（媒体交付链 issue-151）：与管理端同一解析规则，本地后端
+  // 默认指向管理端素材目录（KANGMIN_ADMIN_MEDIA_DIR 或 <db目录>/admin-media），
+  // HTTP 媒体路由经 browse 服务读取已发布内容引用的字节。
+  const mediaDirectory =
+    options.mediaDirectory ??
+    process.env.KANGMIN_ADMIN_MEDIA_DIR ??
+    defaultMediaDirectory(databasePath);
+  const objectStorage = resolveObjectStorage(options, mediaDirectory);
   const staticProbes = {
     encryption: encryptionReadinessProbe(environment),
     environmentProvider: environmentProviderReadinessProbe(environmentProvider),
@@ -547,7 +669,8 @@ export function createApplicationWithOps(
         () => {
           void database.close();
         },
-        () => runPgPatientDoctor(database, environment)
+        () => runPgPatientDoctor(database, environment),
+        objectStorage
       ),
       readinessProbes
     };
@@ -589,7 +712,8 @@ export function createApplicationWithOps(
       () => {
         database.close();
       },
-      () => Promise.resolve(runPatientDoctor(databasePath, environment))
+      () => Promise.resolve(runPatientDoctor(databasePath, environment)),
+      objectStorage
     ),
     readinessProbes
   };

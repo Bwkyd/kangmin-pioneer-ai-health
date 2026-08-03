@@ -515,5 +515,18 @@ export const PG_MIGRATIONS: PgMigration[] = [
       `CREATE INDEX agent_test_cases_created
         ON agent_test_cases(created_at DESC)`
     ]
+  },
+  {
+    // 媒体交付链（issue-151）：cover_url/media_url 改为公开媒体路由
+    // /v1/media/<med_id>（发布时由仓储 UPDATE 写入），旧库已落对象键
+    // 裸键（stored_path）的存量在此一次性改写；cover_media_id/media_id
+    // 为 NULL 的行不触碰（自由文本/外链 URL 保持原值）。
+    version: "0002_content_media_public_urls",
+    statements: [
+      `UPDATE content_items SET cover_url = '/v1/media/' || cover_media_id
+       WHERE cover_media_id IS NOT NULL`,
+      `UPDATE content_items SET media_url = '/v1/media/' || media_id
+       WHERE media_id IS NOT NULL`
+    ]
   }
 ];

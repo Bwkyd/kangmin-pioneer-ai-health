@@ -1,6 +1,9 @@
 import { DomainError } from "../kernel/errors.js";
 import { KangminDatabase } from "./database.js";
-import type { ContentReadRepository } from "../modules/browse/content-read-repository.js";
+import type {
+  ContentReadRepository,
+  PublishedMediaRef
+} from "../modules/browse/content-read-repository.js";
 import type {
   CarePlanDetail,
   CarePlanSummary,
@@ -51,6 +54,10 @@ interface PlanRow {
   revision: number;
   method: string | null;
   steps_json: string | null;
+  precautions: string;
+  risks: string;
+  contraindications: string;
+  video_resource_id: string | null;
 }
 
 function toPublicContent(row: ContentRow): PublicContent {
@@ -118,6 +125,10 @@ function toPlanDetail(row: PlanRow): CarePlanDetail {
     publishedRevision: row.revision,
     summary: row.method,
     steps,
+    precautions: row.precautions,
+    risks: row.risks,
+    contraindications: row.contraindications,
+    videoResourceId: row.video_resource_id,
     disclaimer: DISCLAIMER
   };
 }
@@ -257,7 +268,8 @@ export class SqliteContentReadRepository implements ContentReadRepository {
     return this.guard(() => {
       const row = this.database.connection
         .prepare(`
-          SELECT id, name, revision, method, steps_json
+          SELECT id, name, revision, method, steps_json,
+                 precautions, risks, contraindications, video_resource_id
           FROM agent_plans
           WHERE id = ? AND status = 'enabled'
         `)
@@ -279,7 +291,8 @@ export class SqliteContentReadRepository implements ContentReadRepository {
         ? "status = 'enabled'"
         : `status = 'enabled' AND name LIKE ? ESCAPE '\\'`;
     const statement = this.database.connection.prepare(`
-      SELECT id, name, revision, method, steps_json
+      SELECT id, name, revision, method, steps_json,
+             precautions, risks, contraindications, video_resource_id
       FROM agent_plans
       WHERE ${where}
       ORDER BY display_order ASC, id ASC
@@ -291,6 +304,39 @@ export class SqliteContentReadRepository implements ContentReadRepository {
         : statement.all(pattern, limit)
     ) as unknown as PlanRow[];
     return rows.map(toPlanSummary);
+  }
+
+  /**
+   * 公开媒体行（HTTP 媒体路由）：仅当素材被某个 status='published' 的
+   * content_item 以 media_id 或 cover_media_id 引用时返回；无引用或
+   * 素材不存在一律 null（不泄露存在性）。素材自身可用性（ready）由
+   * 服务层判定。媒体公开门禁与方案浏览门禁（planBrowseEnabled）无关，
+   * 不受 candidate 短路影响。
+   */
+  async findPublishedMedia(mediaId: string): Promise<PublishedMediaRef | null> {
+    return this.guard(() => {
+      const row = this.database.connection
+        .prepare(`
+          SELECT m.stored_path, m.mime_type, m.status
+          FROM content_resource_media m
+          WHERE m.id = ?
+            AND EXISTS (
+              SELECT 1 FROM content_items c
+              WHERE c.status = 'published'
+                AND (c.media_id = m.id OR c.cover_media_id = m.id)
+            )
+        `)
+        .get(mediaId) as unknown as
+        | { stored_path: string; mime_type: string | null; status: string }
+        | undefined;
+      return row === undefined
+        ? null
+        : {
+            storedPath: row.stored_path,
+            mimeType: row.mime_type,
+            status: row.status
+          };
+    });
   }
 
   /** 读失败统一映射：storage_unavailable（retryable），绝不伪装成空列表。 */

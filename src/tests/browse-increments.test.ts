@@ -15,6 +15,7 @@ import { TestEnvironmentProvider } from "../infrastructure/test-environment-prov
 import type { CommandResult } from "../kernel/result.js";
 import type {
   BrowseSearchResults,
+  CarePlanDetail,
   PublicContent
 } from "../modules/browse/contracts.js";
 import type { EnvironmentSnapshot, ForecastDay } from "../modules/environment/environment-ports.js";
@@ -210,6 +211,12 @@ test("方案双门禁与 steps 双格式（仓储级）：门禁关闭短路，�
     assert.equal(detail.steps[0]?.step, 1);
     assert.equal(detail.steps[0]?.title, "生理盐水洗鼻");
     assert.equal(detail.steps[0]?.description, "早晚各一次");
+    // 临床字段投影（issue-151）：precautions/risks/contraindications
+    // 原样透出；无视频引用为 null。
+    assert.equal(detail.precautions, "注意事项");
+    assert.equal(detail.risks, "风险提示");
+    assert.equal(detail.contraindications, "禁忌");
+    assert.equal(detail.videoResourceId, null);
 
     // string[] 格式（管理端 AgentPlan.steps 历史契约）→ 按数组顺序
     // 映射为 {step: i+1, title}（评审 R2 P2：修复前稳定返回 steps:[]）。
@@ -230,8 +237,62 @@ test("方案双门禁与 steps 双格式（仓储级）：门禁关闭短路，�
       (await open.searchPlans("护理", 10)).map((item) => item.id),
       ["plan-published"]
     );
+
+    // 有视频引用的方案透出 videoResourceId（引用已发布视频内容）。
+    database.connection.exec(`
+      INSERT INTO content_items(
+        id, kind, title, category, summary, source, status,
+        patient_visible, version_valid, media_available, published_at,
+        updated_at, revision
+      ) VALUES ('video-for-plan', 'video', '方案视频', '居家护理', '摘要',
+                '来源', 'published', 1, 1, 1,
+                '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z', 1);
+      INSERT INTO agent_plans(
+        id, name, syndrome, method, steps_json, precautions, risks,
+        contraindications, video_resource_id, status, revision,
+        display_order, created_at, updated_at
+      ) VALUES ('plan-with-video', '带视频方案', 'LUNG_HEAT', '日常护理',
+                '["步骤一"]', '注意事项B', '风险提示B', '禁忌B',
+                'video-for-plan', 'enabled', 1, 4,
+                '2026-08-01T00:00:00Z', '2026-08-01T00:00:00Z');
+    `);
+    const withVideo = await open.findPlan("plan-with-video");
+    assert.ok(withVideo !== null);
+    assert.equal(withVideo.videoResourceId, "video-for-plan");
+    assert.equal(withVideo.precautions, "注意事项B");
+    assert.equal(withVideo.risks, "风险提示B");
+    assert.equal(withVideo.contraindications, "禁忌B");
   } finally {
     database.close();
+  }
+});
+
+test("browse plan show 透出临床字段（服务层，门禁打开；issue-151）", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-plan-fields-"));
+  const databasePath = join(directory, "plans.sqlite");
+  seedContent(databasePath);
+  seedPlans(databasePath);
+  // 患者可见门禁（= 规则包 approved 时组合根注入 planBrowseEnabled）
+  // 经环境变量打开，验证命令层输出携带临床字段。
+  process.env.KANGMIN_PLAN_BROWSE_ENABLED = "1";
+  const application = createApplication(databasePath, {
+    environmentProvider: new TestEnvironmentProvider()
+  });
+  try {
+    const shown = dataOf<CarePlanDetail>(
+      await application.execute({
+        command: "browse plan show",
+        input: { id: "plan-published" }
+      })
+    );
+    assert.equal(shown.id, "plan-published");
+    assert.equal(shown.precautions, "注意事项");
+    assert.equal(shown.risks, "风险提示");
+    assert.equal(shown.contraindications, "禁忌");
+    assert.equal(shown.videoResourceId, null);
+  } finally {
+    application.close();
+    delete process.env.KANGMIN_PLAN_BROWSE_ENABLED;
   }
 });
 
