@@ -11,6 +11,15 @@
  *
  * 模型端口默认 DeepSeek 适配器：未配置 KANGMIN_DEEPSEEK_API_KEY 时
  * 抛 provider_unavailable，对话降级为结构化问答；测试可注入替身。
+ *
+ * 环境 Provider 门禁（fail-closed，与加密降级同一谓词）：测试替身仅在
+ * KANGMIN_APP_ENV 为 local/integration，或显式 KANGMIN_ALLOW_DEV_SESSION=1
+ * （且非 staging/production）时启用；其余环境（含 CLI 默认未设
+ * KANGMIN_APP_ENV）注入 UnavailableEnvironmentProvider，环境命令抛
+ * provider_unavailable，绝不返回测试桩固定假数据。
+ *
+ * 方案浏览开关：KANGMIN_PLAN_BROWSE_ENABLED=1 时注入
+ * planBrowseEnabled=true（默认 false，临床规则包冻结前不放开）。
  */
 
 import { DomainError } from "../kernel/errors.js";
@@ -47,6 +56,7 @@ import { SqlitePlanRegistry } from "../infrastructure/sqlite-plan-registry.js";
 import { SqliteRecordRepository } from "../infrastructure/sqlite-record-repository.js";
 import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
+import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-environment-provider.js";
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
 import { AccountService } from "../modules/account/account-service.js";
 import { SessionService } from "../modules/account/session-service.js";
@@ -98,12 +108,38 @@ export function resolveDatabaseUrl(
 }
 
 /**
+ * 开发降级谓词（fail-closed，加密降级与环境测试替身共用）：
+ * 仅 KANGMIN_APP_ENV 为 local/integration，或显式
+ * KANGMIN_ALLOW_DEV_SESSION=1（且非 staging/production）时允许；
+ * 其余任何环境（含默认未设 KANGMIN_APP_ENV）拒绝。
+ */
+function developmentFallbackAllowed(environment: NodeJS.ProcessEnv): boolean {
+  const appEnvironment = environment.KANGMIN_APP_ENV;
+  return (
+    appEnvironment === "local" ||
+    appEnvironment === "integration" ||
+    (environment.KANGMIN_ALLOW_DEV_SESSION === "1" &&
+      appEnvironment !== "staging" &&
+      appEnvironment !== "production")
+  );
+}
+
+/**
  * 默认环境 Provider：测试替身适配器（本 MVP 唯一适配器）。
  * 支持用 KANGMIN_ENV_PROVIDER_MODE=fixed|unavailable|timeout
  * 控制故障模式，便于 CLI 级联调与端到端测试。
+ *
+ * 环境门禁：非开发环境（见 developmentFallbackAllowed）注入
+ * UnavailableEnvironmentProvider，环境命令抛 provider_unavailable，
+ * 绝不在 staging/production 返回测试桩固定假数据。
  */
-function defaultEnvironmentProvider(): EnvironmentProviderPort {
-  const mode = process.env.KANGMIN_ENV_PROVIDER_MODE;
+function defaultEnvironmentProvider(
+  environment: NodeJS.ProcessEnv
+): EnvironmentProviderPort {
+  if (!developmentFallbackAllowed(environment)) {
+    return new UnavailableEnvironmentProvider();
+  }
+  const mode = environment.KANGMIN_ENV_PROVIDER_MODE;
   if (mode === "unavailable" || mode === "timeout") {
     return new TestEnvironmentProvider({ mode });
   }
@@ -113,13 +149,7 @@ function defaultEnvironmentProvider(): EnvironmentProviderPort {
 /** 加密配置检查（SQLite 与 PostgreSQL doctor 共用）。 */
 function encryptionDoctorCheck(environment: NodeJS.ProcessEnv): DoctorCheck {
   const keys = parseEncryptionKeys(environment.KANGMIN_ENCRYPTION_KEYS);
-  const appEnvironment = environment.KANGMIN_APP_ENV;
-  const plaintextAllowed =
-    appEnvironment === "local" ||
-    appEnvironment === "integration" ||
-    (environment.KANGMIN_ALLOW_DEV_SESSION === "1" &&
-      appEnvironment !== "staging" &&
-      appEnvironment !== "production");
+  const plaintextAllowed = developmentFallbackAllowed(environment);
   if (keys.length > 0) {
     return {
       name: "encryption",
@@ -145,11 +175,18 @@ function encryptionDoctorCheck(environment: NodeJS.ProcessEnv): DoctorCheck {
 /** 环境数据与模型检查（两种存储后端 doctor 共用的静态部分）。 */
 function staticDoctorChecks(environment: NodeJS.ProcessEnv): DoctorCheck[] {
   return [
-    {
-      name: "environment-data",
-      status: "not_configured",
-      message: "环境数据接口为测试替身（后续阶段接入真实供应商）"
-    },
+    developmentFallbackAllowed(environment)
+      ? {
+          name: "environment-data",
+          status: "not_configured",
+          message: "环境数据接口为测试替身（后续阶段接入真实供应商）"
+        }
+      : {
+          name: "environment-data",
+          status: "not_configured",
+          message:
+            "环境数据供应商未配置：当前环境环境命令返回 provider_unavailable（fail-closed），待接入真实供应商"
+        },
     environment.KANGMIN_DEEPSEEK_API_KEY
       ? {
           name: "model",
@@ -249,7 +286,7 @@ export function createApplication(
       : { ...process.env, KANGMIN_APP_ENV: options.appEnvironment };
   const encryption = options.encryption ?? resolveEncryption(environment);
   const environmentProvider =
-    options.environmentProvider ?? defaultEnvironmentProvider();
+    options.environmentProvider ?? defaultEnvironmentProvider(environment);
   const modelAdapter = new DeepSeekModelAdapter({
     apiKey: process.env.KANGMIN_DEEPSEEK_API_KEY
   });
@@ -307,7 +344,11 @@ export function createApplication(
   return new KangminApplication(
     sessions,
     new SqliteRecordRepository(database, encryption),
-    new SqliteContentReadRepository(database),
+    // 方案浏览开关（设计 §17 患者侧门禁）：默认 false，临床规则包冻结
+    // 前不放开；显式 KANGMIN_PLAN_BROWSE_ENABLED=1 时注入 true。
+    new SqliteContentReadRepository(database, {
+      planBrowseEnabled: environment.KANGMIN_PLAN_BROWSE_ENABLED === "1"
+    }),
     new SqliteAgentRepository(database),
     new AccountService(new SqliteAccountRepository(database), sessions),
     environmentProvider,
@@ -337,16 +378,9 @@ export function resolveEncryption(
   if (keys.length > 0) {
     return new AesGcmEncryption(keys);
   }
-  const appEnvironment = environment.KANGMIN_APP_ENV;
   // 显式 staging/production 时 KANGMIN_ALLOW_DEV_SESSION 不生效：
   // 即使误设开发会话开关，生产环境也不得明文降级（fail-closed）。
-  if (
-    appEnvironment === "local" ||
-    appEnvironment === "integration" ||
-    (environment.KANGMIN_ALLOW_DEV_SESSION === "1" &&
-      appEnvironment !== "staging" &&
-      appEnvironment !== "production")
-  ) {
+  if (developmentFallbackAllowed(environment)) {
     return new PlaintextEncryption();
   }
   throw new DomainError(
