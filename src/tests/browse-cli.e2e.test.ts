@@ -262,17 +262,31 @@ test("真实 CLI：存储不可用与空数据不同，browse 抛 storage_unavai
   assert.equal(body.error.code, "storage_unavailable");
 });
 
-test("真实 CLI：staging 下环境命令 fail-closed，首页环境区块明确标注状态", () => {
+test("真实 CLI：staging 启动门禁与环境 Provider 门禁均 fail-closed", () => {
   const { databasePath } = fixture();
   // staging 语义下明文开发降级失效：必须提供真实加密密钥才能启动
-  // （加密门禁既有行为）；这里专注验证环境 Provider 门禁。
-  const environment = {
+  // （加密门禁既有行为）；这里专注验证 stage-1 远程门禁与环境 Provider 门禁。
+  const baseEnvironment = {
     KANGMIN_DB_PATH: databasePath,
-    KANGMIN_APP_ENV: "staging",
     KANGMIN_ENCRYPTION_KEYS: `v1:${Buffer.alloc(32, 7).toString("base64")}`
   };
 
-  // staging 下绝不返回测试桩固定假数据。
+  // staging 且无 KANGMIN_API_BASE_URL：stage-1 远程门禁在启动期即
+  // 拒绝（config_missing，exit 5），命令根本不会执行，绝不返回假数据。
+  const staging = run(
+    ["browse", "environment", "current", "--city", "成都", "--json"],
+    { ...baseEnvironment, KANGMIN_APP_ENV: "staging" }
+  );
+  assert.equal(staging.status, 5, staging.stderr);
+  assert.equal(parseJson(staging).error.code, "config_missing");
+
+  // 未设 KANGMIN_APP_ENV（默认环境）：本地运行。本文件顶层为既有用例全局
+  // 设了 ALLOW_DEV_SESSION=1，这里显式置空以关闭开发允许开关，
+  // 验证环境 Provider 门禁 fail-closed —— 绝不返回测试桩固定假数据。
+  const environment = {
+    ...baseEnvironment,
+    KANGMIN_ALLOW_DEV_SESSION: ""
+  };
   const current = run(
     ["browse", "environment", "current", "--city", "成都", "--json"],
     environment
