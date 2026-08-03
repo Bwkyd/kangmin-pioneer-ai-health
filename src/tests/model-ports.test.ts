@@ -43,6 +43,11 @@ function hangingFetch(): typeof fetch {
       init?.signal?.addEventListener("abort", () => {
         reject(new DOMException("Aborted", "AbortError"));
       });
+      // Node 22 的 AbortSignal.timeout 定时器不维持事件循环，信号可能
+      // 永远不发；兜底真实定时器保证挂起请求最终按同样的中止语义失败。
+      setTimeout(() => {
+        reject(new DOMException("Aborted", "AbortError"));
+      }, 100);
     })) as unknown as typeof fetch;
 }
 

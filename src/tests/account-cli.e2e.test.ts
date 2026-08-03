@@ -25,11 +25,28 @@ function run(
   environment: Record<string, string>,
   input?: string
 ): SpawnSyncReturns<string> {
-  return spawnSync(process.execPath, [cli, ...args], {
+  const result = spawnSync(process.execPath, [cli, ...args], {
     encoding: "utf8",
     env: { ...process.env, ...environment },
     input
   });
+  result.stderr = stripNodeRuntimeWarnings(result.stderr);
+  return result;
+}
+
+/**
+ * Node 22 对实验性的 node:sqlite 会向 stderr 打印 ExperimentalWarning；
+ * 这是运行时版本噪音，不属于 CLI 自身诊断输出，断言前剔除。
+ */
+function stripNodeRuntimeWarnings(stderr: string): string {
+  return stderr
+    .split("\n")
+    .filter(
+      (line) =>
+        !/^\(node:\d+\) (Experimental)?Warning/u.test(line) &&
+        !line.startsWith("(Use `node --trace-warnings")
+    )
+    .join("\n");
 }
 
 interface CliBody {

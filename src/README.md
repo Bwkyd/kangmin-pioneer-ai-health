@@ -1,9 +1,9 @@
 # 抗敏先锋 CLI-first 新实现（交付文档）
 
 与 `legacy/` 隔离的新应用核心，通过两个 CLI 交付：患者端 `kangmin`
-与 管理端 `kangmin-admin`。本地 SQLite 生产化（版本化迁移账本、加密、
-幂等与版本控制、审计、fail-closed 密钥语义），当前为 CLI 阶段交付，
-浏览器薄壳（legacy 样式前端）为后续任务。
+与管理端 `kangmin-admin`。CLI 可作为远程命令服务的薄客户端；本地 SQLite
+模式保留给开发和集成测试。当前只交付 CLI，不包含前端套壳，也不表示
+PostgreSQL、对象存储或正式身份认证已经完成。
 
 ## 产品概述
 
@@ -37,18 +37,42 @@ auth     登录并管理普通管理员账号
 ```bash
 cd "/Users/chenqiqiang/work/抗敏先锋AI鼻健康管理系统/src"
 npm ci
-npm run check        # typecheck + 架构门禁 + 189 单元测试 + 浏览器 e2e
+npm run check        # typecheck + 架构门禁 + 单元/集成测试 + 浏览器 e2e
 ```
 
 `npm run check` 全绿后，`dist/cli/kangmin.js` 与 `dist/cli/kangmin-admin.js`
 即为可执行入口（也可 `npm link` 后用 `kangmin` / `kangmin-admin` 直跑）。
 
-### 密钥配置（fail-closed 语义）
+### 远程命令服务（预发/生产必选）
+
+两个 CLI 使用同一服务地址，但访问相互隔离的版本化路由：
+
+```text
+GET  /v1/meta
+POST /v1/patient/commands
+POST /v1/admin/commands
+```
+
+```bash
+export KANGMIN_API_BASE_URL="https://api.example.com"
+export KANGMIN_API_TIMEOUT_MS="15000" # 可选，100–120000 毫秒
+export KANGMIN_SESSION_TOKEN="<opaque patient token>"
+# 管理 CLI 使用独立的 KANGMIN_ADMIN_TOKEN，患者令牌不能调用管理路由
+```
+
+设置 `KANGMIN_APP_ENV=staging` 或 `production` 时，如果没有
+`KANGMIN_API_BASE_URL`，CLI 会以 `config_missing` 失败，禁止静默回退到
+本地数据库。每次命令先校验 `/v1/meta` 的协议与 schema 版本；不兼容返回
+`protocol_incompatible`，网络不可达返回可重试的 `service_unavailable`。
+
+### 本地/集成配置（fail-closed 语义）
 
 | 环境变量 | 说明 |
 | --- | --- |
 | `KANGMIN_ENCRYPTION_KEYS` | AES-256-GCM 密钥链 `"v1:<base64>,v2:<base64>"`，首个为当前版本；配置后健康正文加密落库 |
-| `KANGMIN_APP_ENV` | `local` / `integration` / `staging` / `production`，默认 `production` |
+| `KANGMIN_APP_ENV` | `local` / `integration` / `staging` / `production`；显式预发/生产禁止本地回退 |
+| `KANGMIN_API_BASE_URL` | 远程命令服务根地址；预发/生产 CLI 必填，不得含凭据、查询或片段 |
+| `KANGMIN_API_TIMEOUT_MS` | 远程请求超时毫秒数，默认 15000，范围 100–120000 |
 | `KANGMIN_ALLOW_DEV_SESSION` | 开发降级开关（`1` 启用），显式 `staging`/`production` 时失效 |
 | `KANGMIN_DB_PATH` | 数据库文件路径，默认 `src/.local/kangmin-mvp.sqlite` |
 | `KANGMIN_SESSION_TOKEN` | 患者会话令牌（CLI 不接收 `patient_id`/`user_id`） |
@@ -299,8 +323,8 @@ healthy 时退出码 0，否则 6。
 | 2 | 命令/输入错误 | `command_invalid`、`invalid_json`、`payload_too_large` |
 | 3 | 资源不存在 | `resource_not_found` |
 | 4 | 状态/版本/幂等冲突 | `version_conflict`、`date_conflict`、`idempotency_conflict`、`stale_replay` |
-| 5 | 前置条件缺失（同意/确认/必填配置/正式内容） | `confirmation_required`、`config_missing`、`more_information_required` |
-| 6 | 外部数据源未配置或不可用 | `capability_unavailable`、`storage_unavailable`、`provider_unavailable`、`provider_timeout`、`location_unavailable`、`projection_pending` |
+| 5 | 前置条件或协议不兼容 | `confirmation_required`、`config_missing`、`more_information_required`、`protocol_incompatible` |
+| 6 | 远程服务、外部数据源或存储不可用 | `service_unavailable`、`capability_unavailable`、`storage_unavailable`、`provider_unavailable`、`provider_timeout`、`location_unavailable`、`projection_pending` |
 | 7 | 输入校验失败 | `validation_failed` |
 | 8 | 安全规则阻断 | `safety_blocked` |
 | 9 | 未登录或权限不足 | `authentication_required`、`permission_denied` |
@@ -311,15 +335,15 @@ true，版本冲突/校验失败为 false）。
 
 ### 错误码清单
 
-患者端与管理端共享同一套错误码（见 `src/kernel/errors.ts`），共 23 个：
+患者端与管理端共享同一套错误码（见 `src/kernel/errors.ts`），共 25 个：
 
 ```text
 command_invalid / invalid_json / payload_too_large
 resource_not_found
 version_conflict / date_conflict / idempotency_conflict / stale_replay
-confirmation_required / config_missing / more_information_required
+confirmation_required / config_missing / more_information_required / protocol_incompatible
 capability_unavailable / storage_unavailable
-provider_unavailable / provider_timeout / location_unavailable / projection_pending
+service_unavailable / provider_unavailable / provider_timeout / location_unavailable / projection_pending
 validation_failed / safety_blocked
 authentication_required / permission_denied
 batch_partial_failure / internal_error
@@ -348,7 +372,10 @@ batch_partial_failure / internal_error
 - **读取失败与空数据区分**：存储/模型不可用映射为 `storage_unavailable` /
   `provider_unavailable`（retryable 语义），绝不伪装成空数据。
 
-## 数据库
+## 本地/集成数据库
+
+以下 SQLite 能力只描述当前本地和集成运行模式，不是生产存储验收结论。
+生产目标 PostgreSQL 与对象存储适配器仍属于后续阶段。
 
 - 单文件 SQLite（默认 `src/.local/kangmin-mvp.sqlite`），WAL 模式、
   外键开启、busy 重试。
