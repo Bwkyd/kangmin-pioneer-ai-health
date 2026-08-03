@@ -2,7 +2,11 @@ import { accessSync, constants } from "node:fs";
 import { dirname, join } from "node:path";
 
 import { KangminAdminApplication, type DoctorCheck, type DoctorReport } from "./admin-application.js";
-import { resolveDatabaseUrl, resolveEncryption } from "./composition-root.js";
+import {
+  resolveDatabaseUrl,
+  resolveEncryption,
+  type ReadinessProbe
+} from "./composition-root.js";
 import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
@@ -34,6 +38,77 @@ import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js"
 
 function defaultMediaDirectory(databasePath: string): string {
   return join(dirname(databasePath), "admin-media");
+}
+
+/**
+ * 管理端生产存储 fail-closed（与患者端 assertProductionStorage 同策略）：
+ * KANGMIN_APP_ENV=staging|production 时，缺 KANGMIN_DATABASE_URL、缺
+ * KANGMIN_S3_BUCKET 或出现 KANGMIN_ALLOW_DEV_SESSION=1 一律
+ * config_missing；local/integration 不校验（本地零影响）。
+ */
+export function assertProductionStorage(
+  environment: NodeJS.ProcessEnv
+): void {
+  const appEnvironment = environment.KANGMIN_APP_ENV;
+  if (appEnvironment !== "staging" && appEnvironment !== "production") {
+    return;
+  }
+  if (environment.KANGMIN_ALLOW_DEV_SESSION === "1") {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 不允许设置 KANGMIN_ALLOW_DEV_SESSION=1（开发会话开关）"
+    );
+  }
+  if (resolveDatabaseUrl({}, environment) === undefined) {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 必须配置 KANGMIN_DATABASE_URL（PostgreSQL），禁止回退 SQLite"
+    );
+  }
+  const bucket = environment.KANGMIN_S3_BUCKET?.trim();
+  if (bucket === undefined || bucket === "") {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 必须配置 KANGMIN_S3_BUCKET（对象存储），禁止回退本地素材目录"
+    );
+  }
+}
+
+/**
+ * 对象存储 /ready 探针：S3 后端用 headObject 探测桶与凭证（对象无需
+ * 存在，不抛即可用）；本地文件系统后端保持目录 R_OK/W_OK 检查
+ * （生产由 assertProductionStorage 阻断，本地后端只服务 local/
+ * integration）。固定文案，不泄露桶名/端点/绝对路径。
+ */
+function objectStorageReadinessProbe(
+  storage: ObjectStoragePort,
+  mediaDirectory: string
+): ReadinessProbe {
+  return {
+    name: "object-storage",
+    run: async () => {
+      if (storage instanceof S3ObjectStorage) {
+        try {
+          await storage.headObject("__readiness_probe__");
+          return { status: "ok", message: "对象存储可用" };
+        } catch {
+          return {
+            status: "failed",
+            message: "对象存储不可用（检查桶与凭证配置）"
+          };
+        }
+      }
+      try {
+        accessSync(mediaDirectory, constants.R_OK | constants.W_OK);
+        return { status: "ok", message: "素材目录可读写" };
+      } catch {
+        return {
+          status: "failed",
+          message: "素材目录不可读写（检查权限与磁盘空间）"
+        };
+      }
+    }
+  };
 }
 
 /**
@@ -301,6 +376,16 @@ async function doctorChecks(
   };
 }
 
+/** 管理端 /ready 探针集（数据库探针由患者端组合根提供，同一 PG）。 */
+export interface AdminReadinessProbes {
+  objectStorage: ReadinessProbe;
+}
+
+export interface AdminApplicationWithOps {
+  application: KangminAdminApplication;
+  readinessProbes: AdminReadinessProbes;
+}
+
 export function createAdminApplication(
   path: string,
   options: {
@@ -309,31 +394,55 @@ export function createAdminApplication(
     objectStorage?: ObjectStoragePort | undefined;
   } = {}
 ): KangminAdminApplication {
+  return createAdminApplicationWithOps(path, options).application;
+}
+
+/**
+ * 带运维语义的管理端装配：除应用实例外，同时返回对象存储就绪探针
+ * （探针闭包复用同一存储实例，不另建客户端）。
+ */
+export function createAdminApplicationWithOps(
+  path: string,
+  options: {
+    mediaDirectory?: string;
+    databaseUrl?: string | undefined;
+    objectStorage?: ObjectStoragePort | undefined;
+  } = {}
+): AdminApplicationWithOps {
+  // 生产存储 fail-closed：staging/production 缺 PG / 缺对象存储桶 /
+  // 出现开发会话开关一律 config_missing（local/integration 不校验）。
+  assertProductionStorage(process.env);
   // 与患者端一致的密钥策略（fail-closed）：KANGMIN_ENCRYPTION_KEYS → AES；
   // local/integration 或显式 KANGMIN_ALLOW_DEV_SESSION=1 → 明文开发降级；
   // 其余环境 → config_missing。API Key 与旧库回填依赖该端口。
   const encryption = resolveEncryption(process.env);
   const mediaDirectory = options.mediaDirectory ?? defaultMediaDirectory(path);
   const objectStorage = resolveObjectStorage(options, mediaDirectory);
+  const readinessProbes: AdminReadinessProbes = {
+    objectStorage: objectStorageReadinessProbe(objectStorage, mediaDirectory)
+  };
 
   const databaseUrl = resolveDatabaseUrl(options);
   if (databaseUrl !== undefined) {
     const database = new KangminPgDatabase(databaseUrl);
-    return new KangminAdminApplication(
-      new PgAdminSessionRepository(database),
-      new PgAdminAccountRepository(database),
-      new PgContentAdminRepository(database),
-      new PgContentAuxRepository(database),
-      new PgAgentAdminRepository(database, encryption),
-      new BuiltinSyndromeRegistry(),
-      new PgUserAdminRepository(database),
-      objectStorage,
-      new PgAuditRepository(database),
-      () => {
-        void database.close();
-      },
-      () => pgDoctorChecks(database, objectStorage, mediaDirectory)
-    );
+    return {
+      application: new KangminAdminApplication(
+        new PgAdminSessionRepository(database),
+        new PgAdminAccountRepository(database),
+        new PgContentAdminRepository(database),
+        new PgContentAuxRepository(database),
+        new PgAgentAdminRepository(database, encryption),
+        new BuiltinSyndromeRegistry(),
+        new PgUserAdminRepository(database),
+        objectStorage,
+        new PgAuditRepository(database),
+        () => {
+          void database.close();
+        },
+        () => pgDoctorChecks(database, objectStorage, mediaDirectory)
+      ),
+      readinessProbes
+    };
   }
 
   const database = new KangminDatabase(path, encryption);
@@ -344,19 +453,22 @@ export function createAdminApplication(
   const agentRepository = new SqliteAgentAdminRepository(database, encryption);
   const userRepository = new SqliteUserAdminRepository(database);
   const auditRepository = new SqliteAuditRepository(database);
-  return new KangminAdminApplication(
-    sessionRepository,
-    accountRepository,
-    contentRepository,
-    auxRepository,
-    agentRepository,
-    new BuiltinSyndromeRegistry(),
-    userRepository,
-    objectStorage,
-    auditRepository,
-    () => {
-      database.close();
-    },
-    () => doctorChecks(database, objectStorage, mediaDirectory)
-  );
+  return {
+    application: new KangminAdminApplication(
+      sessionRepository,
+      accountRepository,
+      contentRepository,
+      auxRepository,
+      agentRepository,
+      new BuiltinSyndromeRegistry(),
+      userRepository,
+      objectStorage,
+      auditRepository,
+      () => {
+        database.close();
+      },
+      () => doctorChecks(database, objectStorage, mediaDirectory)
+    ),
+    readinessProbes
+  };
 }

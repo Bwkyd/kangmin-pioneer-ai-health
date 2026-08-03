@@ -465,6 +465,51 @@ PostgreSQL 适配器已实现（见下节）；对象存储两种后端见"对�
 删除存储对象并移除草稿行，属高影响操作，未带 `--yes` 返回
 `confirmation_required`。
 
+## OCI 镜像与部署契约
+
+`src/Dockerfile` 为多阶段构建：builder 阶段 `npm ci && npm run build`
+（TypeScript 只在构建期编译），runner 阶段只携带 `dist/` 与
+`npm ci --omit=dev` 产出的生产依赖，以非 root 用户 `node` 运行，
+typescript、playwright 等 dev 依赖不进入运行时镜像。
+
+```bash
+docker build -t kangmin-cli:latest ./src
+docker run --rm -p 8787:8787 \
+  -e KANGMIN_APP_ENV=production \
+  -e KANGMIN_DATABASE_URL="postgres://..." \
+  -e KANGMIN_ENCRYPTION_KEYS="v1:<base64>" \
+  -e KANGMIN_S3_BUCKET="..." \
+  -e KANGMIN_S3_ACCESS_KEY_ID="..." \
+  -e KANGMIN_S3_SECRET_ACCESS_KEY="..." \
+  kangmin-cli:latest
+```
+
+运行契约：
+
+- 入口 `node dist/http/server.js`，端口 8787（`EXPOSE 8787`）；镜像内
+  `HEALTHCHECK` 用 node fetch 打 `GET /live`（slim 镜像不含 curl）。
+- 生产必需环境变量：`KANGMIN_APP_ENV=production`、`KANGMIN_DATABASE_URL`
+  （PostgreSQL 连接串）、`KANGMIN_ENCRYPTION_KEYS`；素材/知识走 S3 时
+  另需 `KANGMIN_S3_BUCKET`、`KANGMIN_S3_ACCESS_KEY_ID`、
+  `KANGMIN_S3_SECRET_ACCESS_KEY`（`KANGMIN_S3_ENDPOINT`、
+  `KANGMIN_S3_REGION` 可选）。变量语义见上文"本地/集成配置"表。
+- 进程以非 root `node` 用户运行；配置 `KANGMIN_DATABASE_URL` 后不再写
+  本地 SQLite，根文件系统可按只读（`--read-only`）挂载。缺省 SQLite
+  路径 `.local/` 仅供开发，不是生产路径。
+- 服务当前监听 127.0.0.1（见 `src/http/server.ts`），容器内健康检查
+  直连该地址；对外发布由编排层（同 Pod 代理等）处理。
+
+SBOM 与依赖审计：
+
+```bash
+npm run sbom                            # 生成 sbom.cyclonedx.json（CycloneDX，不入库）
+npm audit --omit=dev --audit-level=high # 生产依赖高危审计，非零即失败
+```
+
+CI 的 `image` 任务（依赖 `quality` 通过）构建镜像、容器内冒烟
+（`node dist/cli/kangmin.js --version`）、执行上述生产依赖审计，并把
+SBOM 作为 artifact 上传（保留 30 天）。
+
 ## 已知限制
 
 - **Agent 正式输出在临床冻结前阻断**：规则包为 candidate，只能用于

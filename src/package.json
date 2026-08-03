@@ -18,7 +18,8 @@
     "check": "npm run typecheck && npm run lint && npm test",
     "dev:session": "npm run build --silent && node dist/dev/create-session.js",
     "dev:admin-session": "npm run build --silent && node dist/dev/create-admin-session.js",
-    "start:http": "npm run build --silent && node dist/http/server.js"
+    "start:http": "npm run build --silent && node dist/http/server.js",
+    "sbom": "node scripts/write-sbom.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.10.0",

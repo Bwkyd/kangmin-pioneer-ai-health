@@ -1,0 +1,29 @@
+# syntax=docker/dockerfile:1
+
+# 构建阶段：安装完整依赖（含 dev）并编译 TypeScript；
+# typescript、playwright 等 dev 依赖只存在于本阶段，不进入运行时镜像。
+FROM node:22-bookworm-slim AS builder
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY . .
+# 编译产物写入 dist/；随后按锁文件重装生产依赖，
+# 保证 runner 阶段拿到的 node_modules 不含任何 dev 依赖。
+RUN npm run build \
+  && npm ci --omit=dev
+
+# 运行阶段：只携带 dist/ 与生产 node_modules，以非 root 用户 node 运行。
+FROM node:22-bookworm-slim AS runner
+ENV NODE_ENV=production
+# 容器内监听全部网卡（编排层负责网络边界）；本地裸跑默认仍仅回环。
+ENV KANGMIN_HTTP_HOST=0.0.0.0
+WORKDIR /app
+COPY --from=builder --chown=node:node /app/package.json ./package.json
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/dist ./dist
+USER node
+EXPOSE 8787
+# node:22-bookworm-slim 不含 curl，健康检查用 node 内置 fetch 打 /live。
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
+  CMD node -e "fetch('http://127.0.0.1:8787/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
+ENTRYPOINT ["node", "dist/http/server.js"]

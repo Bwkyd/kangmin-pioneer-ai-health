@@ -6,3 +6,4 @@ node_modules/
 *.sqlite-wal
 node_modules
 *.credentials.json
+sbom.cyclonedx.json

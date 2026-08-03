@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { createServer, type IncomingMessage, type ServerResponse, type Server } from "node:http";
 import { dirname, join, resolve } from "node:path";
@@ -6,27 +7,60 @@ import { pathToFileURL } from "node:url";
 import {
   type KangminApplication
 } from "../app/application.js";
-import { createApplication } from "../app/composition-root.js";
+import {
+  createApplicationWithOps,
+  createStructuredRequestLogger,
+  logLevelForStatus,
+  type ReadinessProbe,
+  type RequestLogger
+} from "../app/composition-root.js";
 import {
   type KangminAdminApplication
 } from "../app/admin-application.js";
-import { createAdminApplication } from "../app/admin-composition-root.js";
+import { createAdminApplicationWithOps } from "../app/admin-composition-root.js";
 import {
   DomainError,
   exitCodeForCode,
-  httpStatusForCode
+  httpStatusForCode,
+  type ErrorCode
 } from "../kernel/errors.js";
-import { failure, success } from "../kernel/result.js";
+import { failure, success, type FailureResult } from "../kernel/result.js";
 import {
   COMMAND_PROTOCOL_VERSION,
   COMMAND_SCHEMA_VERSION,
   type CommandServiceMeta
 } from "../kernel/protocol.js";
 
-const MAX_BODY_BYTES = 64 * 1024;
+/**
+ * 请求体大小上限默认值：保持既有 64 KiB 契约（http.e2e 既有断言）。
+ * 生产入口 main() 按 KANGMIN_HTTP_BODY_LIMIT 覆盖，缺省放宽到 1 MiB。
+ */
+const DEFAULT_BODY_LIMIT_BYTES = 64 * 1024;
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const SESSION_COOKIE = "kangmin_session";
 
+/** 限流路由类：strict 最严，upload 次之，commands 普通命令。 */
+type RateLimitClass = "strict" | "upload" | "commands";
+
+const DEFAULT_RATE_LIMITS: Record<RateLimitClass, number> = {
+  strict: 10,
+  upload: 30,
+  commands: 120
+};
+const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
+
 type AppEnvironment = "local" | "integration" | "staging" | "production";
+
+export interface RateLimitOptions {
+  /** /dev/session 与登录类命令每窗口上限（默认 10）。 */
+  strictPerWindow?: number;
+  /** /v1/*commands 普通命令每窗口上限（默认 120）。 */
+  commandsPerWindow?: number;
+  /** 上传类命令每窗口上限（默认 30）。 */
+  uploadPerWindow?: number;
+  /** 固定窗口长度毫秒（默认 60000；测试可缩短验证窗口恢复）。 */
+  windowMs?: number;
+}
 
 export interface HttpServerOptions {
   appEnvironment?: AppEnvironment;
@@ -34,18 +68,121 @@ export interface HttpServerOptions {
   webRoot?: URL;
   adminApplication?: KangminAdminApplication | undefined;
   serviceVersion?: string | undefined;
+  /** /ready 探针（组合根注入；缺省为空集，语义上不就绪项为零）。 */
+  readinessProbes?: ReadinessProbe[];
+  /** 请求体大小上限字节（默认 64 KiB，保持既有契约）。 */
+  bodyLimitBytes?: number;
+  /** 单请求整体超时毫秒（默认 30000），超限返回 408。 */
+  requestTimeoutMs?: number;
+  /** 进程内固定窗口限流配置（默认见 DEFAULT_RATE_LIMITS）。 */
+  rateLimits?: RateLimitOptions;
+  /** 结构化请求日志（默认写 stderr 单行 JSON，字段固定且脱敏）。 */
+  requestLogger?: RequestLogger;
 }
 
-async function readJson(request: IncomingMessage): Promise<unknown> {
+interface RateBucket {
+  windowStart: number;
+  count: number;
+}
+
+interface RateLimitDecision {
+  allowed: boolean;
+  retryAfterSeconds: number;
+}
+
+/**
+ * 进程内固定窗口限流器：维度 = 客户端 IP × 路由类。
+ * 窗口过期条目由定时器定期清理，避免长期运行内存膨胀。
+ */
+class FixedWindowRateLimiter {
+  private readonly buckets = new Map<string, RateBucket>();
+  private readonly sweeper: NodeJS.Timeout;
+
+  constructor(
+    private readonly limits: Record<RateLimitClass, number>,
+    private readonly windowMs: number
+  ) {
+    // unref：清理定时器不阻止进程退出。
+    this.sweeper = setInterval(() => {
+      this.sweep();
+    }, this.windowMs);
+    this.sweeper.unref();
+  }
+
+  check(ip: string, routeClass: RateLimitClass): RateLimitDecision {
+    const now = Date.now();
+    const key = `${routeClass}:${ip}`;
+    const existing = this.buckets.get(key);
+    if (existing === undefined || now - existing.windowStart >= this.windowMs) {
+      this.buckets.set(key, { windowStart: now, count: 1 });
+      return { allowed: true, retryAfterSeconds: 0 };
+    }
+    existing.count += 1;
+    if (existing.count > this.limits[routeClass]) {
+      return {
+        allowed: false,
+        retryAfterSeconds: Math.max(
+          1,
+          Math.ceil((existing.windowStart + this.windowMs - now) / 1000)
+        )
+      };
+    }
+    return { allowed: true, retryAfterSeconds: 0 };
+  }
+
+  dispose(): void {
+    clearInterval(this.sweeper);
+  }
+
+  private sweep(): void {
+    const now = Date.now();
+    for (const [key, bucket] of this.buckets) {
+      if (now - bucket.windowStart >= this.windowMs) {
+        this.buckets.delete(key);
+      }
+    }
+  }
+}
+
+/** 客户端 IP：x-forwarded-for 首段，缺省回退 socket 对端地址。 */
+function clientIp(request: IncomingMessage): string {
+  const forwarded = request.headers["x-forwarded-for"];
+  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
+  const first = raw?.split(",")[0]?.trim();
+  if (first !== undefined && first !== "") {
+    return first;
+  }
+  return request.socket.remoteAddress ?? "unknown";
+}
+
+/** 命令路由类判定：登录类最严；直传票据/远程素材入库归上传类。 */
+function commandRateLimitClass(command: string): RateLimitClass {
+  if (command === "account login" || command === "auth login") {
+    return "strict";
+  }
+  if (
+    command.includes("upload-init") ||
+    command.includes("upload-confirm") ||
+    command.includes("add-from-media")
+  ) {
+    return "upload";
+  }
+  return "commands";
+}
+
+async function readJson(
+  request: IncomingMessage,
+  maxBodyBytes: number
+): Promise<unknown> {
   const chunks: Buffer[] = [];
   let size = 0;
   for await (const chunk of request) {
     const buffer = Buffer.from(chunk);
     size += buffer.length;
-    if (size > MAX_BODY_BYTES) {
+    if (size > maxBodyBytes) {
       throw new DomainError(
         "payload_too_large",
-        "请求内容不能超过 64 KiB"
+        "请求内容超过大小限制"
       );
     }
     chunks.push(buffer);
@@ -113,6 +250,11 @@ function json(
   statusCode: number,
   body: unknown
 ): void {
+  // 整体超时已结束响应时，后续迟到的写入一律丢弃（处理器无法中断，
+  // 但绝不允许二次写响应）。
+  if (response.writableEnded) {
+    return;
+  }
   response.statusCode = statusCode;
   response.setHeader("content-type", "application/json; charset=utf-8");
   response.setHeader("cache-control", "private, no-store");
@@ -130,6 +272,9 @@ async function staticAsset(
 ): Promise<void> {
   try {
     const body = await readFile(new URL(filename, webRoot));
+    if (response.writableEnded) {
+      return;
+    }
     response.statusCode = 200;
     response.setHeader("content-type", contentType);
     response.setHeader("cache-control", "no-store");
@@ -168,6 +313,43 @@ function routeNotFound(response: ServerResponse): void {
   );
 }
 
+/**
+ * 429 信封：rate_limited 是 HTTP 传输层补充码，不在 kernel 错误码表
+ * （该表由其它 issue 维护），这里显式构造并保持 CommandResult 信封
+ * 风格；retryAfter 作为信封附加顶层字段，同时回写 Retry-After 头。
+ */
+function rateLimitedResult(
+  command: string,
+  requestId: string,
+  retryAfterSeconds: number
+): FailureResult & { retryAfter: number } {
+  const result = failure(
+    command,
+    new DomainError(
+      "rate_limited" as ErrorCode,
+      "请求过于频繁，请稍后重试",
+      { retryable: true }
+    ),
+    requestId
+  );
+  return { ...result, retryAfter: retryAfterSeconds };
+}
+
+/** 408 信封：与 rate_limited 同理的 HTTP 传输层补充码。 */
+function requestTimeoutResult(
+  requestId: string
+): FailureResult {
+  return failure(
+    "http request",
+    new DomainError(
+      "request_timeout" as ErrorCode,
+      "请求处理超时，请稍后重试",
+      { retryable: true }
+    ),
+    requestId
+  );
+}
+
 export function createKangminHttpServer(
   application: KangminApplication,
   options: HttpServerOptions = {}
@@ -185,12 +367,90 @@ export function createKangminHttpServer(
     schemaVersion: COMMAND_SCHEMA_VERSION,
     audiences: ["patient", "admin"]
   };
+  const readinessProbes = options.readinessProbes ?? [];
+  const bodyLimitBytes = options.bodyLimitBytes ?? DEFAULT_BODY_LIMIT_BYTES;
+  const requestTimeoutMs =
+    options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
+  const requestLogger =
+    options.requestLogger ?? createStructuredRequestLogger();
+  const rateLimiter = new FixedWindowRateLimiter(
+    {
+      strict:
+        options.rateLimits?.strictPerWindow ?? DEFAULT_RATE_LIMITS.strict,
+      upload:
+        options.rateLimits?.uploadPerWindow ?? DEFAULT_RATE_LIMITS.upload,
+      commands:
+        options.rateLimits?.commandsPerWindow ?? DEFAULT_RATE_LIMITS.commands
+    },
+    options.rateLimits?.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS
+  );
 
-  return createServer(async (request, response) => {
+  const server = createServer(async (request, response) => {
+    const startedAt = Date.now();
+    // 请求关联号：优先请求体 requestId（命令路由解析后回写），否则生成
+    // uuid；始终回写 x-request-id 响应头供排障关联。
+    let requestId: string = randomUUID();
+    response.setHeader("x-request-id", requestId);
+
+    // 单请求整体超时：超时即 408（传输层补充码 request_timeout），
+    // 处理器迟到的写入由 json/staticAsset 的 writableEnded 守卫丢弃。
+    const timeout = setTimeout(() => {
+      json(response, 408, requestTimeoutResult(requestId));
+    }, requestTimeoutMs);
+    timeout.unref();
+
+    // 结构化请求日志：响应完成时写一行；字段固定，绝不记录请求体、
+    // 令牌、手机号、健康内容（429 的 warn 行即限流审计记录）。
+    response.on("finish", () => {
+      clearTimeout(timeout);
+      requestLogger({
+        ts: new Date().toISOString(),
+        level: logLevelForStatus(response.statusCode),
+        requestId,
+        method: request.method ?? "UNKNOWN",
+        path: requestUrl.pathname,
+        status: response.statusCode,
+        durationMs: Date.now() - startedAt
+      });
+    });
+
     const requestUrl = new URL(
       request.url ?? "/",
       "http://127.0.0.1"
     );
+
+    // 存活探针：无任何依赖，进程能响应即 ok。
+    if (request.method === "GET" && requestUrl.pathname === "/live") {
+      json(response, 200, { status: "ok" });
+      return;
+    }
+
+    // 就绪探针：逐项执行组合根注入的探针；全 ok 才 200 ready:true，
+    // 任一 failed 或 not_configured 一律 503 ready:false。
+    if (request.method === "GET" && requestUrl.pathname === "/ready") {
+      const checks = await Promise.all(
+        readinessProbes.map(async (probe) => {
+          try {
+            const result = await probe.run();
+            return {
+              name: probe.name,
+              status: result.status,
+              message: result.message
+            };
+          } catch {
+            // 探针自身抛错视同 failed：不就绪必须显式可见。
+            return {
+              name: probe.name,
+              status: "failed" as const,
+              message: "探针执行失败"
+            };
+          }
+        })
+      );
+      const ready = checks.every((check) => check.status === "ok");
+      json(response, ready ? 200 : 503, { ready, checks });
+      return;
+    }
 
     if (request.method === "GET" && requestUrl.pathname === "/v1/meta") {
       json(response, 200, serviceMeta);
@@ -247,8 +507,24 @@ export function createKangminHttpServer(
         return;
       }
 
+      // 开发会话路由按路径归 strict 类，解析请求体之前先限流。
+      const decision = rateLimiter.check(clientIp(request), "strict");
+      if (!decision.allowed) {
+        response.setHeader("retry-after", String(decision.retryAfterSeconds));
+        json(
+          response,
+          429,
+          rateLimitedResult(
+            "development session create",
+            requestId,
+            decision.retryAfterSeconds
+          )
+        );
+        return;
+      }
+
       try {
-        const body = await readJson(request);
+        const body = await readJson(request, bodyLimitBytes);
         if (!isRecord(body) || typeof body.subject !== "string") {
           throw new DomainError(
             "command_invalid",
@@ -264,13 +540,17 @@ export function createKangminHttpServer(
         json(
           response,
           201,
-          success("development session create", {
-            developmentOnly: true,
-            expiresAt: session.expiresAt
-          })
+          success(
+            "development session create",
+            {
+              developmentOnly: true,
+              expiresAt: session.expiresAt
+            },
+            requestId
+          )
         );
       } catch (error) {
-        const result = failure("development session create", error);
+        const result = failure("development session create", error, requestId);
         json(response, httpStatusForCode(result.error.code), result);
       }
       return;
@@ -286,7 +566,7 @@ export function createKangminHttpServer(
     }
 
     try {
-      const body = await readJson(request);
+      const body = await readJson(request, bodyLimitBytes);
       if (!isRecord(body) || typeof body.command !== "string") {
         throw new DomainError(
           "command_invalid",
@@ -327,8 +607,32 @@ export function createKangminHttpServer(
         );
       }
 
-      const requestId =
-        typeof body.requestId === "string" ? body.requestId : undefined;
+      // 请求体验证通过后采用客户端 requestId 作为关联号并回写响应头。
+      if (typeof body.requestId === "string") {
+        requestId = body.requestId;
+        response.setHeader("x-request-id", requestId);
+      }
+
+      // 命令路由按命令归类限流（登录类 strict、上传类 upload、其余
+      // commands）；超限返回 429，信封保持 CommandResult 风格。
+      const decision = rateLimiter.check(
+        clientIp(request),
+        commandRateLimitClass(body.command)
+      );
+      if (!decision.allowed) {
+        response.setHeader("retry-after", String(decision.retryAfterSeconds));
+        json(
+          response,
+          429,
+          rateLimitedResult(
+            body.command,
+            requestId,
+            decision.retryAfterSeconds
+          )
+        );
+        return;
+      }
+
       const result = adminCommandRoute
         ? options.adminApplication === undefined
           ? failure(
@@ -354,10 +658,14 @@ export function createKangminHttpServer(
         result
       );
     } catch (error) {
-      const result = failure("http command", error);
+      const result = failure("http command", error, requestId);
       json(response, httpStatusForCode(result.error.code), result);
     }
   });
+  server.on("close", () => {
+    rateLimiter.dispose();
+  });
+  return server;
 }
 
 function appEnvironment(value: string | undefined): AppEnvironment {
@@ -369,20 +677,42 @@ function appEnvironment(value: string | undefined): AppEnvironment {
     : "production";
 }
 
+/** 正整数环境变量解析：未设置或非法时返回 undefined（回退默认值）。 */
+function positiveIntegerEnv(value: string | undefined): number | undefined {
+  if (value === undefined) {
+    return undefined;
+  }
+  const parsed = Number(value);
+  return Number.isFinite(parsed) && parsed > 0
+    ? Math.floor(parsed)
+    : undefined;
+}
+
 async function main(): Promise<void> {
   const databasePath = resolve(
     process.env.KANGMIN_DB_PATH ?? ".local/kangmin-mvp.sqlite"
   );
   let application;
   let adminApplication;
+  let readinessProbes: ReadinessProbe[] = [];
   try {
-    application = createApplication(databasePath);
-    adminApplication = createAdminApplication(databasePath, {
+    // 组合根负责生产 fail-closed 校验与探针装配；server 不直接触碰仓储。
+    const patientOps = createApplicationWithOps(databasePath);
+    application = patientOps.application;
+    const adminOps = createAdminApplicationWithOps(databasePath, {
       mediaDirectory: resolve(
         process.env.KANGMIN_ADMIN_MEDIA_DIR ??
           join(dirname(databasePath), "admin-media")
       )
     });
+    adminApplication = adminOps.application;
+    readinessProbes = [
+      patientOps.readinessProbes.database,
+      adminOps.readinessProbes.objectStorage,
+      patientOps.readinessProbes.encryption,
+      patientOps.readinessProbes.environmentProvider,
+      patientOps.readinessProbes.rulePackage
+    ];
   } catch (error) {
     application?.close();
     // 启动前置条件缺失（如生产缺加密密钥的 config_missing）走友好
@@ -398,11 +728,33 @@ async function main(): Promise<void> {
     appEnvironment: appEnvironment(process.env.KANGMIN_APP_ENV),
     allowDevelopmentSession:
       process.env.KANGMIN_ALLOW_DEV_SESSION === "1",
-    adminApplication
+    adminApplication,
+    readinessProbes,
+    // 生产默认 1 MiB（KANGMIN_HTTP_BODY_LIMIT 可覆盖）；直接创建
+    // server 的调用方保持 64 KiB 既有默认契约。
+    bodyLimitBytes:
+      positiveIntegerEnv(process.env.KANGMIN_HTTP_BODY_LIMIT) ?? 1024 * 1024,
+    requestTimeoutMs:
+      positiveIntegerEnv(process.env.KANGMIN_HTTP_TIMEOUT_MS) ??
+      DEFAULT_REQUEST_TIMEOUT_MS,
+    rateLimits: {
+      strictPerWindow:
+        positiveIntegerEnv(process.env.KANGMIN_RATE_LIMIT_STRICT_PER_MINUTE) ??
+        DEFAULT_RATE_LIMITS.strict,
+      commandsPerWindow:
+        positiveIntegerEnv(
+          process.env.KANGMIN_RATE_LIMIT_COMMANDS_PER_MINUTE
+        ) ?? DEFAULT_RATE_LIMITS.commands,
+      uploadPerWindow:
+        positiveIntegerEnv(process.env.KANGMIN_RATE_LIMIT_UPLOAD_PER_MINUTE) ??
+        DEFAULT_RATE_LIMITS.upload
+    }
   });
   const port = Number(process.env.PORT ?? "8787");
+  // 默认仅回环（防误暴露）；容器/编排部署用 KANGMIN_HTTP_HOST=0.0.0.0。
+  const host = process.env.KANGMIN_HTTP_HOST ?? "127.0.0.1";
 
-  server.listen(port, "127.0.0.1", () => {
+  server.listen(port, host, () => {
     const address = server.address();
     const actualPort =
       typeof address === "object" && address !== null ? address.port : port;
