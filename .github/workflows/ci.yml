@@ -84,3 +84,49 @@ jobs:
           # 未设置时这些测试自动 skip。
           KANGMIN_TEST_S3_ENDPOINT: http://127.0.0.1:9000
           KANGMIN_TEST_S3_BUCKET: kangmin-test
+
+  image:
+    name: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # 镜像交付依赖 quality 先行：质量门不过不构建镜像。
+    needs: quality
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+
+      - name: Set up Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: 22.13.0
+          cache: npm
+          cache-dependency-path: |
+            src/package-lock.json
+
+      - name: Install CLI locked dependencies
+        run: npm ci
+        working-directory: src
+
+      - name: Build OCI image
+        # 构建上下文为 src/，.dockerignore 排除 node_modules/dist/测试辅助。
+        run: docker build -t kangmin-cli:ci ./src
+
+      - name: Smoke test CLI in container
+        # 覆盖 ENTRYPOINT 直接跑 CLI 冒烟：--version 不依赖环境变量。
+        run: docker run --rm --entrypoint node kangmin-cli:ci dist/cli/kangmin.js --version
+
+      - name: Audit production dependencies
+        # 只审计生产依赖，出现 high 及以上漏洞即失败。
+        run: npm audit --omit=dev --audit-level=high
+        working-directory: src
+
+      - name: Generate SBOM
+        run: npm run sbom
+        working-directory: src
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: sbom
+          path: src/sbom.cyclonedx.json
+          retention-days: 30

@@ -20,6 +20,11 @@
  *
  * 方案浏览开关：KANGMIN_PLAN_BROWSE_ENABLED=1 时注入
  * planBrowseEnabled=true（默认 false，临床规则包冻结前不放开）。
+ *
+ * 生产存储策略（fail-closed，见 assertProductionStorage）：
+ * KANGMIN_APP_ENV=staging|production 时缺 PostgreSQL 连接串、缺对象
+ * 存储桶、环境 Provider 仍是测试替身、或出现开发会话开关，一律
+ * config_missing 拒绝启动；local/integration 不校验（本地零影响）。
  */
 
 import { DomainError } from "../kernel/errors.js";
@@ -39,6 +44,7 @@ import {
   KangminPgDatabase,
   appliedPgMigrationVersions
 } from "../infrastructure/postgres/pg-database.js";
+import { PG_MIGRATIONS } from "../infrastructure/postgres/pg-migrations.js";
 import { PgAccountRepository } from "../infrastructure/postgres/pg-account-repository.js";
 import { PgAgentRepository } from "../infrastructure/postgres/pg-agent-repository.js";
 import { PgContentReadRepository } from "../infrastructure/postgres/pg-content-read-repository.js";
@@ -58,6 +64,16 @@ import { SqliteSessionRepository } from "../infrastructure/sqlite-session-reposi
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
 import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-environment-provider.js";
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
+
+// 结构化请求日志的唯一实现在 infrastructure；经组合根再导出，
+// 供 http 适配层引用（架构约束：cli/http/dev 不直接依赖 infrastructure）。
+export {
+  createStructuredRequestLogger,
+  logLevelForStatus,
+  type RequestLogEntry,
+  type RequestLogger,
+  type StructuredLogLevel
+} from "../infrastructure/structured-logger.js";
 import { AccountService } from "../modules/account/account-service.js";
 import { SessionService } from "../modules/account/session-service.js";
 import { ConversationService } from "../modules/agent/conversation-service.js";
@@ -122,6 +138,190 @@ function developmentFallbackAllowed(environment: NodeJS.ProcessEnv): boolean {
       appEnvironment !== "staging" &&
       appEnvironment !== "production")
   );
+}
+
+/**
+ * 生产存储与依赖 fail-closed 校验（staging/production 才生效）：
+ * - 缺 KANGMIN_DATABASE_URL → config_missing（禁止回退 SQLite）；
+ * - 缺 KANGMIN_S3_BUCKET → config_missing（禁止回退本地素材目录）；
+ * - KANGMIN_ENV_PROVIDER_MODE 已设置（测试替身故障模式开关）→ config_missing；
+ * - 环境 Provider 仍是 TestEnvironmentProvider（尚未接真实供应商）或
+ *   UnavailableEnvironmentProvider（R1 门禁占位，同样非真实供应商）
+ *   → config_missing；
+ * - KANGMIN_ALLOW_DEV_SESSION=1 → config_missing（连开发会话开关都
+ *   不允许出现，路由层拒绝之外再压一道）。
+ * local/integration 直接返回，本地开发与集成测试零影响。
+ */
+export function assertProductionStorage(
+  environment: NodeJS.ProcessEnv,
+  context: { environmentProvider?: EnvironmentProviderPort | undefined } = {}
+): void {
+  const appEnvironment = environment.KANGMIN_APP_ENV;
+  if (appEnvironment !== "staging" && appEnvironment !== "production") {
+    return;
+  }
+  if (environment.KANGMIN_ALLOW_DEV_SESSION === "1") {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 不允许设置 KANGMIN_ALLOW_DEV_SESSION=1（开发会话开关）"
+    );
+  }
+  if (resolveDatabaseUrl({}, environment) === undefined) {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 必须配置 KANGMIN_DATABASE_URL（PostgreSQL），禁止回退 SQLite"
+    );
+  }
+  const bucket = environment.KANGMIN_S3_BUCKET?.trim();
+  if (bucket === undefined || bucket === "") {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 必须配置 KANGMIN_S3_BUCKET（对象存储），禁止回退本地素材目录"
+    );
+  }
+  const providerMode = environment.KANGMIN_ENV_PROVIDER_MODE?.trim();
+  if (providerMode !== undefined && providerMode !== "") {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 不允许设置 KANGMIN_ENV_PROVIDER_MODE（测试替身故障模式开关）"
+    );
+  }
+  if (
+    context.environmentProvider instanceof TestEnvironmentProvider ||
+    context.environmentProvider instanceof UnavailableEnvironmentProvider
+  ) {
+    throw new DomainError(
+      "config_missing",
+      "staging/production 必须接入真实环境数据供应商（当前为测试替身或不可用占位）"
+    );
+  }
+}
+
+/** /ready 单项探针结果：name 由探针声明，server 负责拼装输出。 */
+export interface ReadinessCheckResult {
+  status: "ok" | "failed" | "not_configured";
+  message: string;
+}
+
+/** 就绪探针：组合根注入 HTTP 适配层，server 不直接触碰仓储。 */
+export interface ReadinessProbe {
+  name: string;
+  run: () => Promise<ReadinessCheckResult>;
+}
+
+/** 患者侧 /ready 探针集（对象存储探针由管理端组合根提供）。 */
+export interface PatientReadinessProbes {
+  database: ReadinessProbe;
+  encryption: ReadinessProbe;
+  environmentProvider: ReadinessProbe;
+  rulePackage: ReadinessProbe;
+}
+
+export interface ApplicationWithOps {
+  application: KangminApplication;
+  readinessProbes: PatientReadinessProbes;
+}
+
+/** PostgreSQL 探针：SELECT 1 + 已应用迁移与代码 PG_MIGRATIONS 全量对齐。 */
+function pgDatabaseReadinessProbe(database: KangminPgDatabase): ReadinessProbe {
+  return {
+    name: "database",
+    run: async () => {
+      try {
+        await database.query("SELECT 1");
+        const applied = new Set(await appliedPgMigrationVersions(database));
+        const expected = PG_MIGRATIONS.map((migration) => migration.version);
+        const aligned =
+          applied.size === expected.length &&
+          expected.every((version) => applied.has(version));
+        return aligned
+          ? { status: "ok", message: "数据库可用，迁移版本与代码对齐" }
+          : {
+              status: "failed",
+              message: "数据库迁移版本与代码不一致，需先执行迁移"
+            };
+      } catch {
+        // 固定文案，不拼接底层错误细节（可能含连接串/内部信息）。
+        return { status: "failed", message: "数据库不可用" };
+      }
+    }
+  };
+}
+
+/**
+ * SQLite 探针（local/integration）：SELECT 1 + 迁移账本非空。
+ * SQLite 迁移清单未导出，版本对齐只在 PG 路径强校验；生产由
+ * assertProductionStorage 强制 PG，本探针不服务生产语义。
+ */
+function sqliteDatabaseReadinessProbe(database: KangminDatabase): ReadinessProbe {
+  return {
+    name: "database",
+    run: async () => {
+      try {
+        database.connection.prepare("SELECT 1").get();
+        return appliedMigrationVersions(database).length > 0
+          ? { status: "ok", message: "数据库可用" }
+          : { status: "failed", message: "数据库没有任何已应用迁移" };
+      } catch {
+        return { status: "failed", message: "数据库不可用" };
+      }
+    }
+  };
+}
+
+/** 加密探针：仅确认密钥已配置，不输出密钥本身。 */
+function encryptionReadinessProbe(
+  environment: NodeJS.ProcessEnv
+): ReadinessProbe {
+  return {
+    name: "encryption",
+    run: () =>
+      Promise.resolve(
+        parseEncryptionKeys(environment.KANGMIN_ENCRYPTION_KEYS).length > 0
+          ? { status: "ok", message: "已配置加密密钥" }
+          : {
+              status: "not_configured",
+              message: "未配置加密密钥（明文开发降级，仅限 local/integration）"
+            }
+      )
+  };
+}
+
+/** 环境 Provider 探针：测试替身或 R1 门禁不可用占位都不算生产就绪。 */
+function environmentProviderReadinessProbe(
+  provider: EnvironmentProviderPort
+): ReadinessProbe {
+  const isPlaceholder =
+    provider instanceof TestEnvironmentProvider ||
+    provider instanceof UnavailableEnvironmentProvider;
+  return {
+    name: "environment-provider",
+    run: () =>
+      Promise.resolve(
+        isPlaceholder
+          ? {
+              status: "not_configured",
+              message: "环境数据接口未接真实供应商（测试替身或不可用占位）"
+            }
+          : { status: "ok", message: "已接入环境数据供应商" }
+      )
+  };
+}
+
+/** 规则包探针：仅临床冻结（approved）才算就绪。 */
+function rulePackageReadinessProbe(): ReadinessProbe {
+  return {
+    name: "rule-package",
+    run: () =>
+      Promise.resolve(
+        DRAFT_RULE_PACKAGE.status === "approved"
+          ? { status: "ok", message: "规则包已临床冻结" }
+          : {
+              status: "not_configured",
+              message: `规则包未临床冻结（status=${DRAFT_RULE_PACKAGE.status}）`
+            }
+      )
+  };
 }
 
 /**
@@ -280,22 +480,47 @@ export function createApplication(
   databasePath: string,
   options: ApplicationOptions = {}
 ): KangminApplication {
+  return createApplicationWithOps(databasePath, options).application;
+}
+
+/**
+ * 带运维语义的应用装配：除应用实例外，同时返回 /ready 就绪探针
+ * （探针闭包复用同一数据库连接，不另开连接池）。
+ */
+export function createApplicationWithOps(
+  databasePath: string,
+  options: ApplicationOptions = {}
+): ApplicationWithOps {
   const environment =
     options.appEnvironment === undefined
       ? process.env
       : { ...process.env, KANGMIN_APP_ENV: options.appEnvironment };
-  const encryption = options.encryption ?? resolveEncryption(environment);
   const environmentProvider =
     options.environmentProvider ?? defaultEnvironmentProvider(environment);
+  // 生产存储 fail-closed：仅真实环境驱动时校验；options.appEnvironment
+  // 是文档化的测试装配钩子（显式注入视为测试，不套用生产存储门槛）。
+  if (options.appEnvironment === undefined) {
+    assertProductionStorage(environment, { environmentProvider });
+  }
+  const encryption = options.encryption ?? resolveEncryption(environment);
   const modelAdapter = new DeepSeekModelAdapter({
     apiKey: process.env.KANGMIN_DEEPSEEK_API_KEY
   });
   const extraction: ModelExtractionPort = options.extraction ?? modelAdapter;
   const explanation: ModelExplanationPort = options.explanation ?? modelAdapter;
+  const staticProbes = {
+    encryption: encryptionReadinessProbe(environment),
+    environmentProvider: environmentProviderReadinessProbe(environmentProvider),
+    rulePackage: rulePackageReadinessProbe()
+  };
 
   const databaseUrl = resolveDatabaseUrl(options, environment);
   if (databaseUrl !== undefined) {
     const database = new KangminPgDatabase(databaseUrl);
+    const readinessProbes: PatientReadinessProbes = {
+      database: pgDatabaseReadinessProbe(database),
+      ...staticProbes
+    };
     const sessions = new SessionService(new PgSessionRepository(database));
     // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
     // 注册表数据源接通统一方案表 agent_plans。
@@ -309,25 +534,31 @@ export function createApplication(
       explanation,
       encryption
     );
-    return new KangminApplication(
-      sessions,
-      new PgRecordRepository(database, encryption),
-      new PgContentReadRepository(database),
-      new PgAgentRepository(database),
-      new AccountService(new PgAccountRepository(database), sessions),
-      environmentProvider,
-      new PgEnvironmentCacheRepository(database),
-      conversations,
-      () => {
-        void database.close();
-      },
-      () => runPgPatientDoctor(database, environment)
-    );
+    return {
+      application: new KangminApplication(
+        sessions,
+        new PgRecordRepository(database, encryption),
+        new PgContentReadRepository(database),
+        new PgAgentRepository(database),
+        new AccountService(new PgAccountRepository(database), sessions),
+        environmentProvider,
+        new PgEnvironmentCacheRepository(database),
+        conversations,
+        () => {
+          void database.close();
+        },
+        () => runPgPatientDoctor(database, environment)
+      ),
+      readinessProbes
+    };
   }
 
   const database = new KangminDatabase(databasePath, encryption);
+  const readinessProbes: PatientReadinessProbes = {
+    database: sqliteDatabaseReadinessProbe(database),
+    ...staticProbes
+  };
   const sessions = new SessionService(new SqliteSessionRepository(database));
-
   // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
   // 注册表数据源接通统一方案表 agent_plans，供模拟测试与冻结后的正式评估使用。
   const planRegistry: PlanRegistryPort =
@@ -341,24 +572,27 @@ export function createApplication(
     encryption
   );
 
-  return new KangminApplication(
-    sessions,
-    new SqliteRecordRepository(database, encryption),
-    // 方案浏览开关（设计 §17 患者侧门禁）：默认 false，临床规则包冻结
-    // 前不放开；显式 KANGMIN_PLAN_BROWSE_ENABLED=1 时注入 true。
-    new SqliteContentReadRepository(database, {
-      planBrowseEnabled: environment.KANGMIN_PLAN_BROWSE_ENABLED === "1"
-    }),
-    new SqliteAgentRepository(database),
-    new AccountService(new SqliteAccountRepository(database), sessions),
-    environmentProvider,
-    new SqliteEnvironmentCacheRepository(database),
-    conversations,
-    () => {
-      database.close();
-    },
-    () => Promise.resolve(runPatientDoctor(databasePath, environment))
-  );
+  return {
+    application: new KangminApplication(
+      sessions,
+      new SqliteRecordRepository(database, encryption),
+      // 方案浏览开关（设计 §17 患者侧门禁）：默认 false，临床规则包冻结
+      // 前不放开；显式 KANGMIN_PLAN_BROWSE_ENABLED=1 时注入 true。
+      new SqliteContentReadRepository(database, {
+        planBrowseEnabled: environment.KANGMIN_PLAN_BROWSE_ENABLED === "1"
+      }),
+      new SqliteAgentRepository(database),
+      new AccountService(new SqliteAccountRepository(database), sessions),
+      environmentProvider,
+      new SqliteEnvironmentCacheRepository(database),
+      conversations,
+      () => {
+        database.close();
+      },
+      () => Promise.resolve(runPatientDoctor(databasePath, environment))
+    ),
+    readinessProbes
+  };
 }
 
 /**
