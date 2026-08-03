@@ -3,16 +3,20 @@ import {
   randomUUID
 } from "node:crypto";
 import {
-  copyFileSync,
-  mkdirSync,
   readFileSync,
-  rmSync,
   statSync
 } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename, extname } from "node:path";
 
 import { DomainError } from "../../kernel/errors.js";
+import {
+  assertKnowledgeExtension,
+  assertSizeWithinLimit,
+  DEFAULT_KNOWLEDGE_MAX_BYTES,
+  extensionOf
+} from "../admin/media-validation.js";
 import type { AuditPort } from "../system/audit-ports.js";
+import type { ObjectStoragePort } from "../system/object-storage-ports.js";
 import type {
   AgentAdminRepository,
   ChunkInput,
@@ -40,7 +44,6 @@ import type { SyndromeRegistryPort } from "./agent-admin-ports.js";
 
 type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
 
-const KNOWLEDGE_EXTENSIONS = new Set([".md", ".markdown", ".txt", ".pdf", ".docx"]);
 /** 骨架分块：每块约 1200 字符，按段落切分。 */
 const CHUNK_TARGET_LENGTH = 1200;
 
@@ -105,11 +108,20 @@ function maskApiKey(key: string | null): string | null {
   return `${key.slice(0, 4)}****${key.slice(-4)}`;
 }
 
+/** 大小上限读环境变量；未配置或非法值回退默认上限（fail-closed 仍生效）。 */
+function envBytesLimit(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
 export class AgentAdminService {
   constructor(
     private readonly repository: AgentAdminRepository,
     private readonly syndromes: SyndromeRegistryPort,
-    private readonly mediaDirectory: string,
+    private readonly storage: ObjectStoragePort,
     private readonly audit: AuditPort
   ) {}
 
@@ -148,12 +160,12 @@ export class AgentAdminService {
   // ==== 知识库 ====
 
   /**
-   * 添加知识源文件：注册元数据 + 复制源文件 + 骨架解析分块。
+   * 添加知识源文件：注册元数据 + 源文件写入对象存储 + 骨架解析分块。
    * 解析失败（PDF/Word 无解析器）如实标记 index_failed，不伪装成功。
    *
    * 事务与卫生残留批 P1-4：素材登记与知识创建在仓储同一事务内
    * （createKnowledgeSource），任一失败整体回滚，不留孤儿素材行；
-   * 失败或重放时已复制的文件在本方法内清理。幂等键为文件内容指纹
+   * 失败或重放时已写入的对象在本方法内清理。幂等键为文件内容指纹
    * （sha256）：同文件重试走重放返回原知识，不重复创建。
    */
   async addKnowledge(
@@ -173,13 +185,18 @@ export class AgentAdminService {
       throw new DomainError("validation_failed", "知识路径必须是文件");
     }
     const extension = extname(filePath).toLowerCase();
-    if (!KNOWLEDGE_EXTENSIONS.has(extension)) {
-      throw new DomainError(
-        "validation_failed",
-        `不支持的知识文件类型：${extension}（支持 .md/.txt/.pdf/.docx）`
-      );
-    }
+    // 扩展名白名单 + 大小上限（fail-closed）。
+    assertKnowledgeExtension(filePath);
+    assertSizeWithinLimit(
+      stats.size,
+      envBytesLimit(
+        process.env.KANGMIN_KNOWLEDGE_MAX_BYTES,
+        DEFAULT_KNOWLEDGE_MAX_BYTES
+      ),
+      "知识文件"
+    );
 
+    // 解析仍从本地文件读取（服务端直写路径）。
     const buffer = readFileSync(filePath);
     // 确定性幂等键：文件内容指纹。同文件重试 → 同键 → 重放返回原知识。
     const sha256 = createHash("sha256").update(buffer).digest("hex");
@@ -194,16 +211,9 @@ export class AgentAdminService {
     const id = newId("kno");
     const sourceMediaId = newId("med");
     const filename = basename(filePath);
-    const targetDirectory = join(this.mediaDirectory, id);
-    const targetPath = join(targetDirectory, filename);
-    try {
-      mkdirSync(targetDirectory, { recursive: true });
-      copyFileSync(filePath, targetPath);
-    } catch (error) {
-      throw new DomainError("validation_failed", "知识源文件复制失败", {
-        cause: error
-      });
-    }
+    const key = `${id}/${filename}`;
+    // 本地实现原子落盘（临时文件 + 改名），失败不留半成品，无需清理。
+    await this.storage.putObject({ key, body: buffer, contentType: mimeType });
 
     const row: KnowledgeRow = {
       id,
@@ -222,9 +232,9 @@ export class AgentAdminService {
       updatedAt: timestamp
     };
 
-    const removeCopiedFile = (): void => {
+    const removeStoredCopy = async (): Promise<void> => {
       try {
-        rmSync(targetDirectory, { recursive: true, force: true });
+        await this.storage.deleteObject(key);
       } catch {
         // 忽略：清理失败不遮蔽原始错误。
       }
@@ -245,7 +255,9 @@ export class AgentAdminService {
               ? "word"
               : "markdown",
           filename,
-          storedPath: targetPath,
+          // storedPath 语义变化（对象存储接入）：改为对象存储 key
+          // （`<kno_id>/<文件名>`），不再是服务器绝对路径。
+          storedPath: key,
           sizeBytes: stats.size,
           mimeType,
           sha256,
@@ -263,21 +275,96 @@ export class AgentAdminService {
         requestHash: sha256
       });
     } catch (error) {
-      // 事务失败（回滚，无孤儿素材行）：清理已复制的文件后抛出。
-      removeCopiedFile();
+      // 事务失败（回滚，无孤儿素材行）：清理已写入的对象后抛出。
+      await removeStoredCopy();
       throw error;
     }
     if (outcome.kind === "conflict") {
-      removeCopiedFile();
+      await removeStoredCopy();
       throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
     }
     if (outcome.kind === "stale_replay") {
-      removeCopiedFile();
+      await removeStoredCopy();
       throw new DomainError("stale_replay", "相同幂等键对应的知识已不存在");
     }
     if (outcome.kind === "replayed") {
-      // 重放：原知识与其文件副本已存在，本次复制的副本多余，清理。
-      removeCopiedFile();
+      // 重放：原知识与其对象已存在，本次写入的副本多余，清理。
+      await removeStoredCopy();
+    }
+    return outcome.item;
+  }
+
+  /**
+   * 从已上传素材创建知识（远程上传路径）：素材经 upload-init/confirm
+   * 就绪（status=ready）后，从对象存储读字节，复用本地 add 的
+   * parseSource/chunkText 骨架解析（md/txt 分块；pdf/docx 如实标记
+   * index_failed）。
+   *
+   * 幂等与本地 add 同 scope 同键（agent.knowledge.add + 素材 sha256）：
+   * 同一文件无论经本地还是远程路径添加，重复提交都重放原知识。
+   * 媒体行已在库，createKnowledgeFromMedia 同事务只插知识行 + 分块 +
+   * 幂等行，不重复登记素材。
+   */
+  async addKnowledgeFromMedia(
+    adminId: string,
+    mediaId: string,
+    input: { source?: string | undefined; description?: string | undefined } = {}
+  ): Promise<KnowledgeItem> {
+    const media = await this.repository.findMedia(mediaId);
+    if (media === null) {
+      throw new DomainError("resource_not_found", "素材不存在");
+    }
+    if (media.status !== "ready") {
+      throw new DomainError("validation_failed", "素材未完成上传");
+    }
+    // 与本地 add 同规则：知识扩展名白名单 + 大小上限（fail-closed）。
+    assertKnowledgeExtension(media.filename);
+    assertSizeWithinLimit(
+      media.sizeBytes,
+      envBytesLimit(
+        process.env.KANGMIN_KNOWLEDGE_MAX_BYTES,
+        DEFAULT_KNOWLEDGE_MAX_BYTES
+      ),
+      "知识文件"
+    );
+
+    const buffer = await this.storage.getObject(media.storedPath);
+    const extension = extensionOf(media.filename);
+    // 幂等键取素材行 sha256（confirm 已校验与对象一致）；
+    // 历史无指纹行兜底按内容现算。
+    const sha256 =
+      media.sha256 ?? createHash("sha256").update(buffer).digest("hex");
+    const parsed = this.parseSource(extension, buffer);
+    const timestamp = now();
+    const row: KnowledgeRow = {
+      id: newId("kno"),
+      name: media.filename,
+      source: input.source?.trim() || null,
+      description: input.description?.trim() || null,
+      sourceMediaId: media.id,
+      sizeBytes: media.sizeBytes,
+      mimeType: media.mimeType,
+      sha256,
+      status: parsed.kind === "parsed" ? "processing" : "index_failed",
+      parseError: parsed.kind === "parsed" ? null : parsed.error,
+      chunkCount: parsed.kind === "parsed" ? parsed.chunks.length : 0,
+      createdBy: adminId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    const outcome = await this.repository.createKnowledgeFromMedia(
+      adminId,
+      media.id,
+      { ...row, chunks: parsed.kind === "parsed" ? parsed.chunks : [] },
+      // 与本地 addKnowledge 同键同 hash：同文件重复提交 → 重放。
+      sha256,
+      sha256
+    );
+    if (outcome.kind === "conflict") {
+      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+    }
+    if (outcome.kind === "stale_replay") {
+      throw new DomainError("stale_replay", "相同幂等键对应的知识已不存在");
     }
     return outcome.item;
   }

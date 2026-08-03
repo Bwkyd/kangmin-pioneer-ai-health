@@ -625,27 +625,34 @@ if (connectionUrl === undefined) {
       details: {}
     });
 
-    const { rows } = await database.query<{
-      actor_kind: string;
-      actor_id: string;
-      action: string;
+    // 两条记录可能在同一毫秒内写入，created_at 并列时顺序不确定；
+    // 按业务键分别读取，不依赖插入顺序。
+    const first = await database.query<{
       entity_revision: number | null;
       request_id: string | null;
       details_json: string;
     }>(
-      `SELECT actor_kind, actor_id, action, entity_revision, request_id, details_json
-      FROM audit_events ORDER BY created_at ASC, id ASC`
+      `SELECT entity_revision, request_id, details_json
+       FROM audit_events WHERE request_id = 'req-1'`
     );
-    assert.equal(rows.length, 2);
-    assert.equal(rows[0]?.entity_revision, 3);
-    assert.equal(typeof rows[0]?.entity_revision, "number");
-    assert.equal(rows[0]?.request_id, "req-1");
-    assert.deepEqual(JSON.parse(rows[0]?.details_json ?? ""), {
+    assert.equal(first.rows.length, 1);
+    assert.equal(first.rows[0]?.entity_revision, 3);
+    assert.equal(typeof first.rows[0]?.entity_revision, "number");
+    assert.deepEqual(JSON.parse(first.rows[0]?.details_json ?? ""), {
       from: "review", to: "published"
     });
+
+    const second = await database.query<{
+      entity_revision: number | null;
+      request_id: string | null;
+    }>(
+      `SELECT entity_revision, request_id
+       FROM audit_events WHERE actor_kind = 'system' AND entity_id = 'p-1'`
+    );
+    assert.equal(second.rows.length, 1);
     // entityRevision/requestId 缺省 → NULL（pg 参数不得传 undefined）
-    assert.equal(rows[1]?.entity_revision, null);
-    assert.equal(rows[1]?.request_id, null);
+    assert.equal(second.rows[0]?.entity_revision, null);
+    assert.equal(second.rows[0]?.request_id, null);
   });
 
   test("audit.record：写入失败直接抛错，绝不静默（P1-3 强制审计）", async () => {

@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { DomainError } from "../kernel/errors.js";
 import { failure, success, type CommandResult } from "../kernel/result.js";
 import {
+  integerInRange,
   optionalIntegerInRange,
   optionalString,
   optionalStringArray,
@@ -11,6 +12,7 @@ import {
   requiredStringArray
 } from "../kernel/validation.js";
 import type { AuditPort } from "../modules/system/audit-ports.js";
+import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
 import { AdminAuthService } from "../modules/admin/admin-auth-service.js";
 import type { AdminAccountRepository } from "../modules/admin/admin-account-repository.js";
 import type { ContentAuxRepository } from "../modules/admin/content-aux-repository.js";
@@ -120,7 +122,7 @@ export class KangminAdminApplication {
     agentRepository: AgentAdminRepository,
     syndromeRegistry: SyndromeRegistryPort,
     userRepository: UserReadRepository,
-    mediaDirectory: string,
+    objectStorage: ObjectStoragePort,
     audit: AuditPort,
     private readonly closeResources: () => void = () => {},
     private readonly doctorProvider: DoctorCheckProvider = async () => ({
@@ -131,11 +133,11 @@ export class KangminAdminApplication {
     this.sessions = new AdminSessionService(sessionRepository);
     this.auth = new AdminAuthService(accountRepository, sessionRepository, audit);
     this.content = new ContentAdminService(contentRepository, auxRepository, audit);
-    this.aux = new ContentAuxService(auxRepository, mediaDirectory, audit);
+    this.aux = new ContentAuxService(auxRepository, objectStorage, audit);
     this.agent = new AgentAdminService(
       agentRepository,
       syndromeRegistry,
-      mediaDirectory,
+      objectStorage,
       audit
     );
     this.users = new UserAdminService(userRepository, audit);
@@ -409,6 +411,52 @@ export class KangminAdminApplication {
             await this.aux.deleteMedia(requiredString(input, "id")),
             request.requestId
           );
+        case "content media upload-init":
+          return success(
+            command,
+            await this.aux.uploadInit(
+              adminId,
+              {
+                filename: requiredString(input, "filename"),
+                kind: opt(input, "kind"),
+                sizeBytes: integerInRange(input, "sizeBytes", 0, Number.MAX_SAFE_INTEGER),
+                sha256: requiredString(input, "sha256")
+              },
+              request.requestId
+            ),
+            request.requestId
+          );
+        case "content media upload-confirm":
+          return success(
+            command,
+            await this.aux.uploadConfirm(
+              adminId,
+              {
+                mediaId: requiredString(input, "mediaId"),
+                sha256: requiredString(input, "sha256")
+              },
+              request.requestId
+            ),
+            request.requestId
+          );
+        case "content media cleanup-orphans":
+          requireConfirmation(input);
+          return success(
+            command,
+            await this.aux.cleanupOrphans(
+              adminId,
+              {
+                olderThanMinutes: optionalIntegerInRange(
+                  input,
+                  "olderThanMinutes",
+                  5,
+                  10080
+                )
+              },
+              request.requestId
+            ),
+            request.requestId
+          );
 
         // ---- content category ----
         case "content category create":
@@ -550,6 +598,19 @@ export class KangminAdminApplication {
               source: opt(input, "source"),
               description: opt(input, "description")
             }),
+            request.requestId
+          );
+        case "agent knowledge add-from-media":
+          return success(
+            command,
+            await this.agent.addKnowledgeFromMedia(
+              adminId,
+              requiredString(input, "mediaId"),
+              {
+                source: opt(input, "source"),
+                description: opt(input, "description")
+              }
+            ),
             request.requestId
           );
         case "agent knowledge index":

@@ -429,6 +429,100 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
     return this.countMediaReferencesSync(mediaId);
   }
 
+  // ---- 远程上传会话 ----
+
+  /**
+   * 按内容指纹查素材（上传会话去重）：ready 优先、processing 其次——
+   * 同指纹多行时服务层按"ready 重放 / processing 重发票据 / 其余新建"
+   * 判定，排序保证拿到可复用的那一行。
+   */
+  async findMediaBySha256(sha256: string): Promise<ContentMediaRow | null> {
+    const row = this.database.connection.prepare(`
+      SELECT id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+             status, failure_reason, created_by, created_at, updated_at
+      FROM content_resource_media
+      WHERE sha256 = ?
+      ORDER BY CASE status WHEN 'ready' THEN 0 WHEN 'processing' THEN 1 ELSE 2 END,
+               created_at DESC, id ASC
+      LIMIT 1
+    `).get(sha256) as unknown as MediaRow | undefined;
+    return row === undefined ? null : toMedia(row);
+  }
+
+  /** 远程上传会话草稿：status=processing 直入，不写幂等表。 */
+  async createMediaDraft(
+    adminId: string,
+    media: ContentMediaRow
+  ): Promise<void> {
+    this.database.connection.prepare(`
+      INSERT INTO content_resource_media(
+        id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+        status, failure_reason, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      media.id,
+      media.kind,
+      media.filename,
+      media.storedPath,
+      media.sizeBytes,
+      media.mimeType,
+      media.sha256,
+      media.status,
+      media.failureReason,
+      media.createdBy ?? adminId,
+      media.createdAt,
+      media.updatedAt
+    );
+  }
+
+  /**
+   * 素材状态 CAS 流转：UPDATE 带状态谓词（expectedStatus），谓词不命中
+   * （并发流转）返回 version_conflict；行不存在返回 not_found。
+   */
+  async transitionMediaStatus(
+    id: string,
+    expectedStatus: MediaStatus,
+    next: {
+      status: MediaStatus;
+      failureReason: string | null;
+      updatedAt: string;
+    }
+  ): Promise<"updated" | "not_found" | "version_conflict"> {
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT status FROM content_resource_media WHERE id = ?"
+      ).get(id) as unknown as { status: string } | undefined;
+      if (current === undefined) {
+        return "not_found";
+      }
+      const result = this.database.connection.prepare(`
+        UPDATE content_resource_media
+        SET status = ?, failure_reason = ?, updated_at = ?
+        WHERE id = ? AND status = ?
+      `).run(next.status, next.failureReason, next.updatedAt, id, expectedStatus);
+      return result.changes === 1 ? "updated" : "version_conflict";
+    });
+  }
+
+  /** 孤儿上传会话：status=processing 且 updated_at 早于阈值的行。 */
+  async listStaleProcessingMedia(cutoffIso: string): Promise<ContentMediaRow[]> {
+    const rows = this.database.connection.prepare(`
+      SELECT id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+             status, failure_reason, created_by, created_at, updated_at
+      FROM content_resource_media
+      WHERE status = 'processing' AND updated_at < ?
+      ORDER BY updated_at ASC, id ASC
+    `).all(cutoffIso) as unknown as MediaRow[];
+    return rows.map(toMedia);
+  }
+
+  /** 物理删除素材行（孤儿清理专用；无引用守卫，调用方限定 processing 行）。 */
+  async deleteMediaRow(id: string): Promise<void> {
+    this.database.connection.prepare(
+      "DELETE FROM content_resource_media WHERE id = ?"
+    ).run(id);
+  }
+
   /** 事务内引用计数（与事务外读取共用同一 SQL，保持语义一致）。 */
   private countMediaReferencesSync(mediaId: string): MediaReferenceCounts {
     const published = this.database.connection.prepare(`

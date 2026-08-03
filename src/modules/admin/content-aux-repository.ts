@@ -1,6 +1,11 @@
+// MediaKind 唯一来源是 media-validation（扩展名/魔数校验与存储行共用，
+// 避免多处定义发散）；此处 re-export 保持既有 import 路径不变。
+import type { MediaKind } from "./media-validation.js";
+
+export type { MediaKind };
+
 export type CategoryKind = "article" | "video" | "message" | "general";
 export type CategoryStatus = "active" | "disabled";
-export type MediaKind = "image" | "video" | "word" | "pdf" | "markdown";
 export type MediaStatus = "processing" | "ready" | "failed" | "disabled";
 export type MessageStatus = "draft" | "published" | "unpublished";
 
@@ -153,6 +158,36 @@ export interface ContentAuxRepository {
   ): Promise<GuardedMediaDeleteResult>;
   /** 被已发布内容 / 已启用知识 / 已启用方案引用的素材不可停用或删除。 */
   countMediaReferences(mediaId: string): Promise<MediaReferenceCounts>;
+
+  // ---- 远程上传会话（预签名直传） ----
+  /**
+   * 按内容指纹查素材（上传会话去重）：ready 优先于 processing，
+   * processing 优先于其余状态——ready 行重放 completed、processing 行
+   * 重发票据、仅 failed 行时由调用方新建草稿。
+   */
+  findMediaBySha256(sha256: string): Promise<ContentMediaRow | null>;
+  /**
+   * 远程上传会话草稿：status=processing 直入，不写幂等表
+   * （同文件去重由 findMediaBySha256 在服务层先行判定）。
+   */
+  createMediaDraft(adminId: string, media: ContentMediaRow): Promise<void>;
+  /**
+   * 素材状态 CAS 流转：UPDATE 带状态谓词（expectedStatus），谓词不命中
+   * （并发流转）返回 version_conflict，行不存在返回 not_found。
+   */
+  transitionMediaStatus(
+    id: string,
+    expectedStatus: MediaStatus,
+    next: {
+      status: MediaStatus;
+      failureReason: string | null;
+      updatedAt: string;
+    }
+  ): Promise<"updated" | "not_found" | "version_conflict">;
+  /** 孤儿上传会话：status=processing 且 updated_at 早于阈值的行。 */
+  listStaleProcessingMedia(cutoffIso: string): Promise<ContentMediaRow[]>;
+  /** 物理删除素材行（孤儿清理专用；无引用守卫，调用方限定 processing 行）。 */
+  deleteMediaRow(id: string): Promise<void>;
 
   // ---- 站内公告 ----
   listMessages(status?: MessageStatus): Promise<ContentMessageRow[]>;

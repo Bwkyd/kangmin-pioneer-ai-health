@@ -3,24 +3,31 @@ import {
   randomUUID
 } from "node:crypto";
 import {
-  copyFileSync,
-  mkdirSync,
-  rmSync,
+  readFileSync,
   statSync
 } from "node:fs";
-import { basename, extname, join } from "node:path";
+import { basename } from "node:path";
 
 import { DomainError } from "../../kernel/errors.js";
 import type { AuditPort } from "../system/audit-ports.js";
+import type {
+  ObjectStoragePort,
+  ObjectUploadTicket
+} from "../system/object-storage-ports.js";
 import type {
   CategoryKind,
   ContentAuxRepository,
   ContentCategoryRow,
   ContentMediaRow,
   ContentMessageRow,
-  MediaKind,
   MessageStatus
 } from "./content-aux-repository.js";
+import {
+  assertContentMatchesDeclared,
+  assertSizeWithinLimit,
+  DEFAULT_MEDIA_MAX_BYTES,
+  resolveMediaType
+} from "./media-validation.js";
 
 const CATEGORY_KINDS = new Set<CategoryKind>([
   "article",
@@ -28,30 +35,6 @@ const CATEGORY_KINDS = new Set<CategoryKind>([
   "message",
   "general"
 ]);
-
-const MEDIA_EXTENSIONS: Record<string, MediaKind> = {
-  ".jpg": "image",
-  ".jpeg": "image",
-  ".png": "image",
-  ".webp": "image",
-  ".gif": "image",
-  ".mp4": "video",
-  ".webm": "video",
-  ".docx": "word",
-  ".doc": "word",
-  ".pdf": "pdf",
-  ".md": "markdown",
-  ".markdown": "markdown",
-  ".txt": "markdown"
-};
-
-const MEDIA_MIME: Record<MediaKind, string> = {
-  image: "image/*",
-  video: "video/*",
-  word: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-  pdf: "application/pdf",
-  markdown: "text/markdown"
-};
 
 function newId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -64,6 +47,46 @@ function now(): string {
 function hash(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
+
+/** 大小上限读环境变量；未配置或非法值回退默认上限（fail-closed 仍生效）。 */
+function envBytesLimit(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") {
+    return fallback;
+  }
+  const parsed = Number(raw);
+  return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+/** sha256 契约：64 位小写十六进制（客户端计算的内容指纹）。 */
+const SHA256_PATTERN = /^[0-9a-f]{64}$/u;
+
+function assertSha256(value: string): void {
+  if (!SHA256_PATTERN.test(value)) {
+    throw new DomainError(
+      "validation_failed",
+      "sha256 必须是 64 位小写十六进制字符串"
+    );
+  }
+}
+
+/** upload-init 返回：ready 重放 completed；新建/续传返回直传票据。 */
+export type MediaUploadInitResult =
+  | { status: "completed"; media: ContentMediaView }
+  | {
+      status: "uploading";
+      mediaId: string;
+      objectKey: string;
+      ticket: ObjectUploadTicket;
+    };
+
+/** upload-confirm 返回：确认完成（含幂等重放）的素材视图。 */
+export interface MediaUploadConfirmResult {
+  status: "completed";
+  media: ContentMediaView;
+}
+
+/** 远程上传内容校验失败的固定文案（failure_reason 与错误消息共用前缀）。 */
+const UPLOAD_VERIFY_FAILURE_REASON = "上传内容校验失败";
 
 type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
 
@@ -87,19 +110,19 @@ function requireChange(changes: Record<string, unknown>): void {
 export class ContentAuxService {
   constructor(
     private readonly repository: ContentAuxRepository,
-    private readonly mediaDirectory: string,
+    private readonly storage: ObjectStoragePort,
     private readonly audit: AuditPort
   ) {}
 
   // ==== 素材 ====
 
   /**
-   * 上传本地文件：注册元数据 + 复制到受管媒体目录（对象存储后续阶段接入）。
-   * 复制失败不会注册为成功。
+   * 上传本地文件：注册元数据 + 写入对象存储（本地后端即 mediaDirectory，
+   * S3 后端即 bucket；对象键 `<med_id>/<原始文件名>`）。写入失败不会注册为成功。
    *
    * 事务与卫生残留批 P2-7/P2-10：幂等键取文件内容指纹（sha256），同文件
    * 重传 → 重放返回原素材，不重复登记；createMedia 抛错（含幂等冲突）
-   * 时在 catch 中删除已复制的文件，不留孤儿副本。
+   * 时删除已写入的对象，不留孤儿副本。
    */
   async uploadMedia(
     adminId: string,
@@ -118,51 +141,50 @@ export class ContentAuxService {
       throw new DomainError("validation_failed", "素材路径必须是文件");
     }
 
-    const kind = kindHint === undefined
-      ? MEDIA_EXTENSIONS[extname(filePath).toLowerCase()]
-      : kindHint;
-    if (kind === undefined || !Object.hasOwn(MEDIA_MIME, kind)) {
-      throw new DomainError(
-        "validation_failed",
-        `不支持的文件类型：${extname(filePath)}（支持图片/视频/Word/PDF/Markdown）`
-      );
-    }
+    // 双校验第一步：扩展名/--kind 白名单 + 大小上限（fail-closed）。
+    const { kind, mimeType } = resolveMediaType(filePath, kindHint);
+    assertSizeWithinLimit(
+      stats.size,
+      envBytesLimit(process.env.KANGMIN_MEDIA_MAX_BYTES, DEFAULT_MEDIA_MAX_BYTES),
+      "素材文件"
+    );
+
+    // 全量读入计算内容指纹：超限文件已被大小上限拦截，不会走到这里。
+    const fileBuffer = readFileSync(filePath);
+    const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
+    // 双校验第二步：内容魔数嗅探（前 16 字节），声明类型与内容不符即拒绝。
+    assertContentMatchesDeclared(kind, fileBuffer.subarray(0, 16));
 
     const id = newId("med");
-    const targetDirectory = join(this.mediaDirectory, id);
     const filename = basename(filePath);
-    const targetPath = join(targetDirectory, filename);
-    try {
-      mkdirSync(targetDirectory, { recursive: true });
-      copyFileSync(filePath, targetPath);
-    } catch (error) {
-      // 复制失败：清理可能残留的半成品目录后抛出。
-      try {
-        rmSync(targetDirectory, { recursive: true, force: true });
-      } catch {
-        // 忽略：清理失败不遮蔽原始错误。
-      }
-      throw new DomainError("validation_failed", "素材文件复制失败", {
-        cause: error
-      });
-    }
+    const key = `${id}/${filename}`;
+    // 本地实现原子落盘（临时文件 + 改名），失败不留半成品，无需清理。
+    await this.storage.putObject({ key, body: fileBuffer, contentType: mimeType });
 
-    const fileBuffer = (await import("node:fs")).readFileSync(filePath);
-    const sha256 = createHash("sha256").update(fileBuffer).digest("hex");
     const timestamp = now();
     const media: ContentMediaRow = {
       id,
-      kind: kind as MediaKind,
+      kind,
       filename,
-      storedPath: targetPath,
+      // storedPath 语义变化（对象存储接入）：改为对象存储 key
+      // （`<med_id>/<文件名>`），不再是服务器绝对路径；本地后端即
+      // mediaDirectory 下的相对路径，S3 后端即 bucket 内对象键。
+      storedPath: key,
       sizeBytes: stats.size,
-      mimeType: MEDIA_MIME[kind as MediaKind],
+      mimeType,
       sha256,
       status: "ready",
       failureReason: null,
       createdBy: adminId,
       createdAt: timestamp,
       updatedAt: timestamp
+    };
+    const removeStoredCopy = async (): Promise<void> => {
+      try {
+        await this.storage.deleteObject(key);
+      } catch {
+        // 忽略：清理失败不遮蔽原始错误。
+      }
     };
     let outcome;
     try {
@@ -174,37 +196,21 @@ export class ContentAuxService {
         hash({ kind, filename, sha256, sizeBytes: stats.size })
       );
     } catch (error) {
-      // 注册失败：清理已复制的文件，不留孤儿副本（P2-10）。
-      try {
-        rmSync(targetDirectory, { recursive: true, force: true });
-      } catch {
-        // 忽略：清理失败不遮蔽原始错误。
-      }
+      // 注册失败：清理已写入的对象，不留孤儿副本（P2-10）。
+      await removeStoredCopy();
       throw error;
     }
     if (outcome.kind === "conflict") {
-      try {
-        rmSync(targetDirectory, { recursive: true, force: true });
-      } catch {
-        // 忽略。
-      }
+      await removeStoredCopy();
       throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
     }
     if (outcome.kind === "stale_replay") {
-      try {
-        rmSync(targetDirectory, { recursive: true, force: true });
-      } catch {
-        // 忽略。
-      }
+      await removeStoredCopy();
       throw new DomainError("stale_replay", "相同幂等键对应的素材已不存在");
     }
     if (outcome.kind === "replayed") {
-      // 重放：原素材与其文件副本已存在，本次复制的副本多余，清理。
-      try {
-        rmSync(targetDirectory, { recursive: true, force: true });
-      } catch {
-        // 忽略。
-      }
+      // 重放：原素材与其对象已存在，本次写入的副本多余，清理。
+      await removeStoredCopy();
     }
     return toMediaView(outcome.item);
   }
@@ -272,13 +278,257 @@ export class ContentAuxService {
     if (outcome.kind === "validation_failed") {
       throw new DomainError("validation_failed", outcome.missing.join("、"));
     }
-    // 删除受管副本；失败不阻断删除（对象存储后续阶段统一回收）。
+    // 删除存储对象；失败不阻断删除（孤儿对象由后续对账统一回收）。
     try {
-      rmSync(media.storedPath, { force: true });
+      await this.storage.deleteObject(media.storedPath);
     } catch {
-      // 忽略：仅本地副本清理失败。
+      // 忽略：仅存储副本清理失败。
     }
     return { id, deleted: true };
+  }
+
+  // ==== 远程上传会话（预签名直传：init → 客户端直传 → confirm） ====
+
+  /**
+   * 上传会话申请（远程模式第一步）：双校验第一步（扩展名白名单 + 大小
+   * 上限，与本地直写一致）+ sha256 形状校验。
+   *
+   * 去重/幂等：同指纹 ready 行 → 重放 completed（重复上传不发新票据）；
+   * processing 行 → 复用该行重发票据（中断重试）；failed 行或不存在 →
+   * 新建 processing 草稿（createMediaDraft）并签发新票据。
+   *
+   * 本地文件系统后端不支持直传：createUploadTicket 抛
+   * capability_unavailable 原样透传（远程上传必须配对 S3 兼容后端）；
+   * 票据先于草稿行创建，本地后端下不留 processing 残留行。
+   */
+  async uploadInit(
+    adminId: string,
+    input: {
+      filename: string;
+      kind?: string | undefined;
+      sizeBytes: number;
+      sha256: string;
+    },
+    requestId?: string
+  ): Promise<MediaUploadInitResult> {
+    // 文件名只取 basename：对象键 `<med_id>/<文件名>`，拒绝路径成分。
+    const filename = basename(input.filename);
+    const { kind, mimeType } = resolveMediaType(filename, input.kind);
+    assertSizeWithinLimit(
+      input.sizeBytes,
+      envBytesLimit(process.env.KANGMIN_MEDIA_MAX_BYTES, DEFAULT_MEDIA_MAX_BYTES),
+      "素材文件"
+    );
+    assertSha256(input.sha256);
+
+    const existing = await this.repository.findMediaBySha256(input.sha256);
+    if (existing !== null && existing.status === "ready") {
+      // 重复上传重放：原素材已就绪，直接返回，不发新票据。
+      return { status: "completed", media: toMediaView(existing) };
+    }
+    if (existing !== null && existing.status === "processing") {
+      // 中断重试：复用原行与对象键，重发票据。
+      const ticket = await this.storage.createUploadTicket({
+        key: existing.storedPath,
+        contentType: existing.mimeType ?? mimeType,
+        sizeBytes: existing.sizeBytes,
+        sha256: existing.sha256 ?? input.sha256
+      });
+      return {
+        status: "uploading",
+        mediaId: existing.id,
+        objectKey: existing.storedPath,
+        ticket
+      };
+    }
+
+    const id = newId("med");
+    const objectKey = `${id}/${filename}`;
+    const ticket = await this.storage.createUploadTicket({
+      key: objectKey,
+      contentType: mimeType,
+      sizeBytes: input.sizeBytes,
+      sha256: input.sha256
+    });
+    const timestamp = now();
+    await this.repository.createMediaDraft(adminId, {
+      id,
+      kind,
+      filename,
+      storedPath: objectKey,
+      sizeBytes: input.sizeBytes,
+      mimeType,
+      sha256: input.sha256,
+      status: "processing",
+      failureReason: null,
+      createdBy: adminId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    });
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "media.upload_init",
+      entityType: "content_media",
+      entityId: id,
+      requestId,
+      details: { filename, sizeBytes: input.sizeBytes, sha256: input.sha256 }
+    });
+    return { status: "uploading", mediaId: id, objectKey, ticket };
+  }
+
+  /**
+   * 上传完成确认（远程模式第三步）：verifyObject 校验对象存在、大小与
+   * sha256 一致；通过后再做双校验第二步（读取真实字节魔数嗅探，类型
+   * 伪装防线，与本地落库前一致）。全部通过 → CAS 转 ready；任一失败 →
+   * 转 failed（固定 failure_reason）+ 删除对象 + validation_failed。
+   * 已 ready 且 sha 匹配 → 幂等重放 completed。
+   */
+  async uploadConfirm(
+    adminId: string,
+    input: { mediaId: string; sha256: string },
+    requestId?: string
+  ): Promise<MediaUploadConfirmResult> {
+    assertSha256(input.sha256);
+    const media = await this.repository.findMedia(input.mediaId);
+    if (media === null) {
+      throw new DomainError("resource_not_found", "素材不存在");
+    }
+    if (media.sha256 !== input.sha256) {
+      throw new DomainError("validation_failed", "sha256 与上传会话不符");
+    }
+    if (media.status === "ready") {
+      // 幂等重放：重复确认返回原视图。
+      return { status: "completed", media: toMediaView(media) };
+    }
+    if (media.status !== "processing") {
+      throw new DomainError(
+        "validation_failed",
+        "素材不在上传中状态，无法确认"
+      );
+    }
+
+    const verified = await this.storage.verifyObject({
+      key: media.storedPath,
+      sha256: input.sha256,
+      sizeBytes: media.sizeBytes
+    });
+    let contentMatches = false;
+    if (verified) {
+      // 类型伪装双校验第二步：魔数嗅探只抛 validation_failed，
+      // 其余存储错误（verify 刚成功，结构上不可达）原样向上抛。
+      const body = await this.storage.getObject(media.storedPath);
+      try {
+        assertContentMatchesDeclared(media.kind, body.subarray(0, 16));
+        contentMatches = true;
+      } catch (error) {
+        if (error instanceof DomainError && error.code === "validation_failed") {
+          contentMatches = false;
+        } else {
+          throw error;
+        }
+      }
+    }
+
+    if (!verified || !contentMatches) {
+      await this.repository.transitionMediaStatus(media.id, "processing", {
+        status: "failed",
+        failureReason: UPLOAD_VERIFY_FAILURE_REASON,
+        updatedAt: now()
+      });
+      try {
+        await this.storage.deleteObject(media.storedPath);
+      } catch {
+        // 忽略：清理失败不遮蔽校验失败语义。
+      }
+      await this.audit.record({
+        actorKind: "admin",
+        actorId: adminId,
+        action: "media.upload_confirm",
+        entityType: "content_media",
+        entityId: media.id,
+        requestId,
+        details: { status: "failed", reason: UPLOAD_VERIFY_FAILURE_REASON }
+      });
+      throw new DomainError(
+        "validation_failed",
+        `${UPLOAD_VERIFY_FAILURE_REASON}，请重新上传`
+      );
+    }
+
+    const outcome = await this.repository.transitionMediaStatus(
+      media.id,
+      "processing",
+      { status: "ready", failureReason: null, updatedAt: now() }
+    );
+    if (outcome === "not_found") {
+      throw new DomainError("resource_not_found", "素材不存在");
+    }
+    if (outcome === "version_conflict") {
+      // 并发 confirm 抢先完成：已是 ready 时按幂等重放处理。
+      const reread = await this.repository.findMedia(media.id);
+      if (reread !== null && reread.status === "ready") {
+        return { status: "completed", media: toMediaView(reread) };
+      }
+      throw new DomainError("version_conflict", "素材状态已变化，请重新读取");
+    }
+    const updated = await this.repository.findMedia(media.id);
+    if (updated === null) {
+      throw new DomainError("internal_error", "素材状态流转后读取失败");
+    }
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "media.upload_confirm",
+      entityType: "content_media",
+      entityId: media.id,
+      requestId,
+      details: { status: "ready" }
+    });
+    return { status: "completed", media: toMediaView(updated) };
+  }
+
+  /**
+   * 孤儿上传会话清理：status=processing 且 updated_at 早于阈值的行
+   * （客户端中断后残留），逐条删除存储对象 + 物理删行。
+   * 高影响操作：--yes 门禁在 application 层（requireConfirmation）。
+   */
+  async cleanupOrphans(
+    adminId: string,
+    input: { olderThanMinutes?: number | undefined } = {},
+    requestId?: string
+  ): Promise<{ cleaned: number }> {
+    const olderThanMinutes = input.olderThanMinutes ?? 60;
+    if (
+      !Number.isInteger(olderThanMinutes) ||
+      olderThanMinutes < 5 ||
+      olderThanMinutes > 10080
+    ) {
+      throw new DomainError(
+        "validation_failed",
+        "olderThanMinutes 必须是 5 到 10080 的整数"
+      );
+    }
+    const cutoff = new Date(Date.now() - olderThanMinutes * 60_000).toISOString();
+    const stale = await this.repository.listStaleProcessingMedia(cutoff);
+    for (const media of stale) {
+      try {
+        await this.storage.deleteObject(media.storedPath);
+      } catch {
+        // 忽略：对象可能从未上传成功；删行不因此被阻断。
+      }
+      await this.repository.deleteMediaRow(media.id);
+      await this.audit.record({
+        actorKind: "admin",
+        actorId: adminId,
+        action: "media.cleanup_orphan",
+        entityType: "content_media",
+        entityId: media.id,
+        requestId,
+        details: { filename: media.filename, olderThanMinutes }
+      });
+    }
+    return { cleaned: stale.length };
   }
 
   // ==== 分类 ====

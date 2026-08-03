@@ -8,6 +8,7 @@ import type {
   IdempotentCreateResult,
   KnowledgeGuardedUpdateResult,
   KnowledgeRow,
+  KnowledgeSourceMediaRow,
   ModelConfigRow,
   PlanGuardedUpdateResult,
   PlanRow,
@@ -16,6 +17,38 @@ import type {
 } from "../modules/agent-admin/agent-admin-ports.js";
 import type { AgentPlan } from "../modules/agent-admin/contracts.js";
 import type { KnowledgeStatus, PlanStatus } from "../modules/agent-admin/domain.js";
+
+interface MediaRowShape {
+  id: string;
+  kind: KnowledgeSourceMediaRow["kind"];
+  filename: string;
+  stored_path: string;
+  size_bytes: number;
+  mime_type: string | null;
+  sha256: string | null;
+  status: KnowledgeSourceMediaRow["status"];
+  failure_reason: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function toMediaRow(row: MediaRowShape): KnowledgeSourceMediaRow {
+  return {
+    id: row.id,
+    kind: row.kind,
+    filename: row.filename,
+    storedPath: row.stored_path,
+    sizeBytes: row.size_bytes,
+    mimeType: row.mime_type,
+    sha256: row.sha256,
+    status: row.status,
+    failureReason: row.failure_reason,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
+}
 
 interface KnowledgeRowShape {
   id: string;
@@ -281,6 +314,73 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   async findKnowledge(id: string): Promise<KnowledgeRow | null> {
     const row = this.findKnowledgeSync(id);
     return row === undefined ? null : toKnowledge(row);
+  }
+
+  /** 素材读取（add-from-media）：与 content-aux findMedia 同 SQL。 */
+  async findMedia(id: string): Promise<KnowledgeSourceMediaRow | null> {
+    const row = this.database.connection.prepare(`
+      SELECT id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+             status, failure_reason, created_by, created_at, updated_at
+      FROM content_resource_media WHERE id = ?
+    `).get(id) as unknown as MediaRowShape | undefined;
+    return row === undefined ? null : toMediaRow(row);
+  }
+
+  /**
+   * 从已就绪素材创建知识（远程上传路径）：知识行 + 分块 + 幂等行同一
+   * 事务；媒体行已在库不重复插入（source_media_id 以 mediaId 为准）。
+   * 幂等 scope/key 与 createKnowledgeSource 一致：同文件重复提交重放
+   * 原知识；verifyExists 保证已删除知识同键重放返回 stale_replay。
+   */
+  async createKnowledgeFromMedia(
+    adminId: string,
+    mediaId: string,
+    knowledge: KnowledgeRow & { chunks: ChunkInput[] },
+    idempotencyKey: string,
+    requestHash: string
+  ): Promise<IdempotentCreateResult<KnowledgeRow>> {
+    return this.database.transaction(() => {
+      const outcome = runIdempotentCreate(this.database.connection, {
+        table: "admin_idempotency",
+        actorColumn: "admin_id",
+        scopeColumn: "scope",
+        keyColumn: "idempotency_key",
+        actorId: adminId,
+        scope: "agent.knowledge.add",
+        key: idempotencyKey,
+        requestHash,
+        resultJson: JSON.stringify(knowledge),
+        createdAt: knowledge.createdAt,
+        verifyExists: (json) => {
+          const knowledgeId = (JSON.parse(json) as KnowledgeRow).id;
+          return this.database.connection.prepare(
+            "SELECT id FROM agent_knowledge_items WHERE id = ?"
+          ).get(knowledgeId) !== undefined;
+        },
+        insert: () => {
+          this.insertKnowledge(this.database.connection, {
+            ...knowledge,
+            sourceMediaId: mediaId
+          });
+        }
+      });
+      switch (outcome.kind) {
+        case "created":
+          return { kind: "created" as const, item: knowledge };
+        case "replayed":
+          return {
+            kind: "replayed" as const,
+            item: JSON.parse(outcome.resultJson) as KnowledgeRow
+          };
+        case "stale_replay":
+          return { kind: "stale_replay" as const };
+        case "idempotency_conflict":
+          return { kind: "conflict" as const };
+        case "date_conflict":
+          // 管理端未启用 date_conflict 语义，结构上不可达；归入冲突。
+          return { kind: "conflict" as const };
+      }
+    });
   }
 
   /** 事务内知识读取（与 findKnowledge 同 SQL）。 */

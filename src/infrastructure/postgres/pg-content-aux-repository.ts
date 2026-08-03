@@ -505,6 +505,106 @@ export class PgContentAuxRepository implements ContentAuxRepository {
     };
   }
 
+  // ---- 远程上传会话 ----
+
+  /**
+   * 按内容指纹查素材（上传会话去重）：ready 优先、processing 其次，
+   * 排序语义与 SQLite 版一致。
+   */
+  async findMediaBySha256(sha256: string): Promise<ContentMediaRow | null> {
+    const { rows } = await this.database.query<MediaRow>(
+      `SELECT ${MEDIA_COLUMNS}
+       FROM content_resource_media
+       WHERE sha256 = $1
+       ORDER BY CASE status WHEN 'ready' THEN 0 WHEN 'processing' THEN 1 ELSE 2 END,
+                created_at DESC, id ASC
+       LIMIT 1`,
+      [sha256]
+    );
+    const row = rows[0];
+    return row === undefined ? null : toMedia(row);
+  }
+
+  /** 远程上传会话草稿：status=processing 直入，不写幂等表。 */
+  async createMediaDraft(
+    adminId: string,
+    media: ContentMediaRow
+  ): Promise<void> {
+    await this.database.query(
+      `INSERT INTO content_resource_media(
+        id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+        status, failure_reason, created_by, created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+      [
+        media.id,
+        media.kind,
+        media.filename,
+        media.storedPath,
+        media.sizeBytes,
+        media.mimeType,
+        media.sha256,
+        media.status,
+        media.failureReason,
+        media.createdBy ?? adminId,
+        media.createdAt,
+        media.updatedAt
+      ]
+    );
+  }
+
+  /**
+   * 素材状态 CAS 流转：UPDATE 带状态谓词（expectedStatus），谓词不命中
+   * （并发流转）返回 version_conflict；行不存在返回 not_found。
+   */
+  async transitionMediaStatus(
+    id: string,
+    expectedStatus: MediaStatus,
+    next: {
+      status: MediaStatus;
+      failureReason: string | null;
+      updatedAt: string;
+    }
+  ): Promise<"updated" | "not_found" | "version_conflict"> {
+    return this.database.transaction(async (client) => {
+      const { rows } = await this.database.queryIn<{ status: string }>(
+        client,
+        "SELECT status FROM content_resource_media WHERE id = $1",
+        [id]
+      );
+      if (rows[0] === undefined) {
+        return "not_found";
+      }
+      const { rowCount } = await this.database.queryIn(
+        client,
+        `UPDATE content_resource_media
+         SET status = $1, failure_reason = $2, updated_at = $3
+         WHERE id = $4 AND status = $5`,
+        [next.status, next.failureReason, next.updatedAt, id, expectedStatus]
+      );
+      return rowCount === 1 ? "updated" : "version_conflict";
+    });
+  }
+
+  /** 孤儿上传会话：status=processing 且 updated_at 早于阈值的行。 */
+  async listStaleProcessingMedia(cutoffIso: string): Promise<ContentMediaRow[]> {
+    const { rows } = await this.database.query<MediaRow>(
+      `SELECT ${MEDIA_COLUMNS}
+       FROM content_resource_media
+       WHERE status = 'processing' AND updated_at < $1
+       ORDER BY updated_at ASC, id ASC`,
+      [cutoffIso]
+    );
+    return rows.map(toMedia);
+  }
+
+  /** 物理删除素材行（孤儿清理专用；无引用守卫，调用方限定 processing 行）。 */
+  async deleteMediaRow(id: string): Promise<void> {
+    await this.database.query(
+      "DELETE FROM content_resource_media WHERE id = $1",
+      [id]
+    );
+  }
+
   /** 事务内引用计数（与事务外读取共用同一 SQL，保持语义一致）。 */
   private async countMediaReferencesIn(
     client: PoolClient,

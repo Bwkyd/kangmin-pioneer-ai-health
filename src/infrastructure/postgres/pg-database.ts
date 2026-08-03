@@ -68,6 +68,10 @@ export class KangminPgDatabase {
       connectionTimeoutMillis: 5_000,
       idleTimeoutMillis: 30_000
     });
+    // pg 对空闲连接的服务端终止（如测试隔离库 DROP ... WITH (FORCE)、
+    // 服务端重启）发 error 事件；无监听会升级为 uncaughtException。
+    // 空闲连接被杀不需要进程级崩溃：活跃查询路径的错误本就各自抛出。
+    this.pool.on("error", () => {});
     this.ready = this.migrate();
     // 标记 rejection 已被处理：仓储方法尚未 await ready 时（如构造后
     // 直接关闭），避免 Node 报 unhandledRejection；后续 await 仍能

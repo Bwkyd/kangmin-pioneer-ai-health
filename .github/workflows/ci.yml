@@ -57,6 +57,18 @@ jobs:
         run: npm ci
         working-directory: src
 
+      - name: Start MinIO
+        # S3 契约测试与远程上传 E2E 依赖真实 S3 兼容端点；
+        # 二进制后台运行，健康检查通过后才进入测试。
+        run: |
+          curl -L https://dl.min.io/server/minio/release/linux-amd64/minio -o /tmp/minio
+          chmod +x /tmp/minio
+          MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
+            nohup /tmp/minio server /tmp/minio-data --address 127.0.0.1:9000 &
+          for i in $(seq 1 30); do
+            curl -sf http://127.0.0.1:9000/minio/health/live && break || sleep 1
+          done
+
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
         working-directory: src
@@ -68,3 +80,7 @@ jobs:
           # PostgreSQL 契约/应用级测试在该服务上自建一次性隔离库；
           # 未设置时这些测试自动 skip。
           KANGMIN_TEST_DATABASE_URL: postgres://kangmin:kangmin@localhost:5432/postgres
+          # S3 对象存储契约与远程上传 E2E 使用上面的 MinIO；
+          # 未设置时这些测试自动 skip。
+          KANGMIN_TEST_S3_ENDPOINT: http://127.0.0.1:9000
+          KANGMIN_TEST_S3_BUCKET: kangmin-test

@@ -17,6 +17,9 @@
 # Local task worktrees
 /.worktrees/
 
+# Local tooling binaries (e.g. MinIO for integration tests)
+/tools/
+
 # Environment and local credentials
 .env
 .env.*
