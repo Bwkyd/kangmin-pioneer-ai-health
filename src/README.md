@@ -37,7 +37,7 @@ auth     登录并管理普通管理员账号
 ```bash
 cd "/Users/chenqiqiang/work/抗敏先锋AI鼻健康管理系统/src"
 npm ci
-npm run check        # typecheck + 架构门禁 + 142 单元测试 + 浏览器 e2e
+npm run check        # typecheck + 架构门禁 + 189 单元测试 + 浏览器 e2e
 ```
 
 `npm run check` 全绿后，`dist/cli/kangmin.js` 与 `dist/cli/kangmin-admin.js`
@@ -55,6 +55,7 @@ npm run check        # typecheck + 架构门禁 + 142 单元测试 + 浏览器 e
 | `KANGMIN_ADMIN_TOKEN` | 管理员令牌（与患者令牌分离；登录后也可写入本地凭据文件） |
 | `KANGMIN_DEEPSEEK_API_KEY` | 模型 API 密钥；未配置时自由对话降级为结构化问答 |
 | `KANGMIN_ENV_PROVIDER_MODE` | 测试替身故障模式 `fixed`/`unavailable`/`timeout`（仅测试） |
+| `KANGMIN_PLAN_BROWSE_ENABLED` | 方案浏览开关（`1` 开放，默认关闭；临床规则包冻结前不放开） |
 | `KANGMIN_ADMIN_MEDIA_DIR` | 管理端素材目录，默认与数据库同目录的 `admin-media` |
 
 加密策略（组合根强制，测试锁定）：
@@ -120,7 +121,7 @@ record trend --from YYYY-MM-DD --to YYYY-MM-DD
 browse 命令：
 
 ```text
-browse
+browse [--location X]
 browse article list [--limit N] [--offset N]
 browse article categories
 browse article search <query>
@@ -136,6 +137,10 @@ browse environment current [--city X]
 browse environment forecast [--days N]
 browse environment refresh [--city X]
 ```
+
+裸 `browse` 首页聚合文章/视频/分类与环境区块：`--location` 指定城市时
+环境区块返回当前快照（`status: "ok"`）；未指定标注 `no_location`；数据源
+不可用标注 `unavailable` 并带原错误码（不伪造数据，不影响其余区块）。
 
 列表分页（article list / video list）：默认 limit 20、上限 100，超出上限被
 截断而非报错；结果含 limit/offset 字段，便于翻页。
@@ -376,7 +381,9 @@ batch_partial_failure / internal_error
   模拟测试（`agent test run`），正式患者输出为固定阻断文案。
 - **环境数据接口为测试替身**：`browse environment` 使用
   TestEnvironmentProvider（`KANGMIN_ENV_PROVIDER_MODE` 控制故障模式），
-  未接入真实供应商。
+  未接入真实供应商。组合根 fail-closed：仅 `local`/`integration` 或显式
+  `KANGMIN_ALLOW_DEV_SESSION=1`（且非 `staging`/`production`）启用测试替身，
+  其余环境环境命令返回 `provider_unavailable`（退出码 6），绝不返回假数据。
 - **幂等表合并待后续**：患者侧 `idempotency_records` 与管理侧
   `admin_idempotency` 两张表语义已统一（公共 runIdempotentCreate），
   物理合并为 `command_idempotency` 留待迁移 0013 独立发布。

@@ -1,3 +1,6 @@
+import type { ErrorCode } from "../../kernel/errors.js";
+import type { EnvironmentSnapshot } from "../environment/environment-ports.js";
+
 export type PublicContentKind = "article" | "video";
 
 export interface PublicContent {
@@ -15,6 +18,18 @@ export interface PublicContent {
   disclaimer: string;
 }
 
+/**
+ * browse 首页环境区块三态：
+ * - ok：取到当前环境快照；
+ * - no_location：未指定位置（裸 browse 未给 --location），首页不取数；
+ * - unavailable：环境数据源不可用（code 为原 DomainError 错误码），
+ *   明确标注状态，绝不伪造数据，也不拖垮首页其余区块。
+ */
+export type BrowseHomeEnvironment =
+  | { status: "ok"; current: EnvironmentSnapshot }
+  | { status: "no_location" }
+  | { status: "unavailable"; code: ErrorCode };
+
 export interface BrowseHome {
   articles: PublicContent[];
   videos: PublicContent[];
@@ -23,6 +38,7 @@ export interface BrowseHome {
     articles: string[];
     videos: string[];
   };
+  environment: BrowseHomeEnvironment;
 }
 
 /**

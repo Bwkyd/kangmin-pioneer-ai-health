@@ -2,17 +2,27 @@ import { DomainError } from "../../kernel/errors.js";
 import type { ContentReadRepository } from "./content-read-repository.js";
 import type {
   BrowseHome,
+  BrowseHomeEnvironment,
   BrowseSearchResults,
   CarePlanDetail,
   CarePlanSummary,
   PublicContent,
   PublicContentKind
 } from "./contracts.js";
+import type { EnvironmentSnapshot } from "../environment/environment-ports.js";
+
+/** browse 首页需要的最小环境能力（由应用层注入 EnvironmentService）。 */
+export interface BrowseEnvironmentPort {
+  current(location: string): Promise<EnvironmentSnapshot>;
+}
 
 export class BrowseService {
-  constructor(private readonly repository: ContentReadRepository) {}
+  constructor(
+    private readonly repository: ContentReadRepository,
+    private readonly environment: BrowseEnvironmentPort
+  ) {}
 
-  async home(): Promise<BrowseHome> {
+  async home(location?: string): Promise<BrowseHome> {
     const [articles, videos, articleCategories, videoCategories] =
       await Promise.all([
         this.repository.list("article"),
@@ -29,8 +39,29 @@ export class BrowseService {
       categories: {
         articles: articleCategories,
         videos: videoCategories
-      }
+      },
+      environment: await this.environmentBlock(location)
     };
+  }
+
+  /**
+   * 环境区块三态：未指定位置 → no_location（不取数）；DomainError →
+   * unavailable（环境数据源故障不拖垮首页其余区块）；非领域错误继续上抛。
+   */
+  private async environmentBlock(
+    location?: string
+  ): Promise<BrowseHomeEnvironment> {
+    if (location === undefined) {
+      return { status: "no_location" };
+    }
+    try {
+      return { status: "ok", current: await this.environment.current(location) };
+    } catch (error) {
+      if (error instanceof DomainError) {
+        return { status: "unavailable", code: error.code };
+      }
+      throw error;
+    }
   }
 
   async list(kind: PublicContentKind): Promise<PublicContent[]> {

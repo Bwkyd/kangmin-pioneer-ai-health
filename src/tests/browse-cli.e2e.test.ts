@@ -244,3 +244,44 @@ test("真实 CLI：存储不可用与空数据不同，browse 抛 storage_unavai
   assert.equal(body.ok, false);
   assert.equal(body.error.code, "storage_unavailable");
 });
+
+test("真实 CLI：staging 下环境命令 fail-closed，首页环境区块明确标注状态", () => {
+  const { databasePath } = fixture();
+  // staging 语义下明文开发降级失效：必须提供真实加密密钥才能启动
+  // （加密门禁既有行为）；这里专注验证环境 Provider 门禁。
+  const environment = {
+    KANGMIN_DB_PATH: databasePath,
+    KANGMIN_APP_ENV: "staging",
+    KANGMIN_ENCRYPTION_KEYS: `v1:${Buffer.alloc(32, 7).toString("base64")}`
+  };
+
+  // staging 下绝不返回测试桩固定假数据。
+  const current = run(
+    ["browse", "environment", "current", "--city", "成都", "--json"],
+    environment
+  );
+  assert.equal(current.status, 6, current.stderr);
+  assert.equal(parseJson(current).error.code, "provider_unavailable");
+
+  // 首页环境区块：--location 命中门禁 → unavailable + 原错误码，
+  // 不拖垮首页（退出码 0，文章区块正常）。
+  const home = run(["browse", "--location", "成都", "--json"], environment);
+  assert.equal(home.status, 0, home.stderr);
+  const homeBody = parseJson<{
+    articles: unknown[];
+    environment: { status: string; code?: string };
+  }>(home);
+  assert.ok(homeBody.data.articles.length > 0);
+  assert.deepEqual(homeBody.data.environment, {
+    status: "unavailable",
+    code: "provider_unavailable"
+  });
+
+  // 未指定 --location → no_location。
+  const homeNoLocation = run(["browse", "--json"], environment);
+  assert.equal(homeNoLocation.status, 0, homeNoLocation.stderr);
+  const noLocationBody = parseJson<{
+    environment: { status: string };
+  }>(homeNoLocation);
+  assert.deepEqual(noLocationBody.data.environment, { status: "no_location" });
+});
