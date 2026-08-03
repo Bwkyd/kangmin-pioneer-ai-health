@@ -24,6 +24,7 @@ import { BrowseService } from "../modules/browse/browse-service.js";
 import {
   listLimitOf,
   listOffsetOf,
+  optionalLocationOf,
   resourceIdOf,
   searchQueryOf
 } from "../modules/browse/domain.js";
@@ -114,16 +115,18 @@ export class KangminApplication {
   ) {
     this.sessions = sessions;
     this.records = new RecordService(recordRepository);
-    this.browse = new BrowseService(contentReadRepository);
+    // environment 先于 browse 构造：browse 首页环境区块经窄端口
+    // （BrowseEnvironmentPort）复用 EnvironmentService 的缓存语义。
+    this.environment = new EnvironmentService(
+      environmentProvider,
+      environmentCache
+    );
+    this.browse = new BrowseService(contentReadRepository, this.environment);
     this.agent = new AgentService(
       agentRepository,
       new RecordSnapshotAdapter(this.records)
     );
     this.accounts = accountService;
-    this.environment = new EnvironmentService(
-      environmentProvider,
-      environmentCache
-    );
     this.conversations = conversations;
   }
 
@@ -151,7 +154,7 @@ export class KangminApplication {
         case "browse":
           return success(
             command,
-            await this.browse.home(),
+            await this.browse.home(optionalLocationOf(input)),
             request.requestId
           );
         case "browse article list": {

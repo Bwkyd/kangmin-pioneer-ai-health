@@ -68,6 +68,24 @@ export function searchQueryOf(input: Record<string, unknown>): string {
   return trimmed;
 }
 
+/** 裸 browse 首页的可选位置：未提供返回 undefined；提供则必须是非空字符串。 */
+export function optionalLocationOf(
+  input: Record<string, unknown>
+): string | undefined {
+  const value = input.location;
+  if (value === undefined) {
+    return undefined;
+  }
+  if (typeof value !== "string" || value.trim() === "") {
+    throw new DomainError(
+      "validation_failed",
+      "location 必须是非空字符串",
+      { details: { field: "location" } }
+    );
+  }
+  return value.trim();
+}
+
 /** show 命令的资源 ID：必填非空。 */
 export function resourceIdOf(input: Record<string, unknown>): string {
   const value = input.id;

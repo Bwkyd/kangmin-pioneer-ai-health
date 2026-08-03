@@ -49,7 +49,7 @@ record 命令：
   record trend --from YYYY-MM-DD --to YYYY-MM-DD
 
 browse 命令：
-  browse
+  browse [--location X]
   browse article list [--limit N] [--offset N]
   browse article categories
   browse article search <query>
@@ -64,6 +64,12 @@ browse 命令：
   browse environment current [--city X]
   browse environment forecast [--days N]
   browse environment refresh [--city X]
+
+裸 browse 首页聚合文章/视频/分类与环境区块：--location 指定城市时
+环境区块返回当前快照；未指定标注 no_location；数据源不可用标注
+unavailable（不伪造数据，不影响其余区块）。
+环境数据当前为测试替身：staging/production（且未显式开发降级）下
+环境命令 fail-closed 返回 provider_unavailable（退出码 6）。
 
 browse 列表分页（article list / video list）：默认 limit 20、上限 100，
 超出上限被截断而非报错；结果含 limit/offset 字段，便于翻页。
@@ -198,6 +204,7 @@ const OPTION_NAMES: Record<string, string> = {
   "--limit": "limit",
   "--offset": "offset",
   "--city": "city",
+  "--location": "location",
   "--days": "days",
   "--message": "message",
   "--conversation": "conversationId",
@@ -399,7 +406,14 @@ function parseBrowse(
   json: boolean
 ): ParsedCommand {
   const input: Record<string, unknown> = {};
-  if (resource === undefined) {
+  // 裸 browse（可带 --location 等选项）：首页聚合文章/视频/分类与环境区块。
+  if (resource === undefined || resource.startsWith("--")) {
+    parseOptions(
+      input,
+      [resource, maybeAction, positional, ...rest].filter(
+        (value): value is string => value !== undefined
+      )
+    );
     return { command: "browse", input, json, help: false };
   }
 
