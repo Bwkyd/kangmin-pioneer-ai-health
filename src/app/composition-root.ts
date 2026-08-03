@@ -145,7 +145,8 @@ function developmentFallbackAllowed(environment: NodeJS.ProcessEnv): boolean {
  * - 缺 KANGMIN_DATABASE_URL → config_missing（禁止回退 SQLite）；
  * - 缺 KANGMIN_S3_BUCKET → config_missing（禁止回退本地素材目录）；
  * - KANGMIN_ENV_PROVIDER_MODE 已设置（测试替身故障模式开关）→ config_missing；
- * - 环境 Provider 仍是 TestEnvironmentProvider（尚未接真实供应商）
+ * - 环境 Provider 仍是 TestEnvironmentProvider（尚未接真实供应商）或
+ *   UnavailableEnvironmentProvider（R1 门禁占位，同样非真实供应商）
  *   → config_missing；
  * - KANGMIN_ALLOW_DEV_SESSION=1 → config_missing（连开发会话开关都
  *   不允许出现，路由层拒绝之外再压一道）。
@@ -185,10 +186,13 @@ export function assertProductionStorage(
       "staging/production 不允许设置 KANGMIN_ENV_PROVIDER_MODE（测试替身故障模式开关）"
     );
   }
-  if (context.environmentProvider instanceof TestEnvironmentProvider) {
+  if (
+    context.environmentProvider instanceof TestEnvironmentProvider ||
+    context.environmentProvider instanceof UnavailableEnvironmentProvider
+  ) {
     throw new DomainError(
       "config_missing",
-      "staging/production 必须接入真实环境数据供应商（当前仍为测试替身）"
+      "staging/production 必须接入真实环境数据供应商（当前为测试替身或不可用占位）"
     );
   }
 }
@@ -283,18 +287,21 @@ function encryptionReadinessProbe(
   };
 }
 
-/** 环境 Provider 探针：测试替身不算生产就绪。 */
+/** 环境 Provider 探针：测试替身或 R1 门禁不可用占位都不算生产就绪。 */
 function environmentProviderReadinessProbe(
   provider: EnvironmentProviderPort
 ): ReadinessProbe {
+  const isPlaceholder =
+    provider instanceof TestEnvironmentProvider ||
+    provider instanceof UnavailableEnvironmentProvider;
   return {
     name: "environment-provider",
     run: () =>
       Promise.resolve(
-        provider instanceof TestEnvironmentProvider
+        isPlaceholder
           ? {
               status: "not_configured",
-              message: "环境数据接口为测试替身（未接真实供应商）"
+              message: "环境数据接口未接真实供应商（测试替身或不可用占位）"
             }
           : { status: "ok", message: "已接入环境数据供应商" }
       )

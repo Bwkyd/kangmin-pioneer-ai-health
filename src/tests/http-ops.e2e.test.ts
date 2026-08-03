@@ -173,7 +173,7 @@ test("生产组合根 fail-closed：缺 PG / 缺对象存储 / 测试替身 Prov
         assertConfigMissing(() => createApplication(databasePath));
       }
     );
-    // 存储齐全但环境 Provider 仍是测试替身（未接真实供应商的现状）。
+    // 存储齐全但环境 Provider 非真实供应商（测试替身或 R1 门禁不可用占位）。
     withProductionEnv({ KANGMIN_APP_ENV: appEnvironment }, () => {
       assertConfigMissing(() => createApplication(databasePath));
     });
