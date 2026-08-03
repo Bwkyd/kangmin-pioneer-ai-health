@@ -75,6 +75,7 @@ export KANGMIN_SESSION_TOKEN="<opaque patient token>"
 | `KANGMIN_API_TIMEOUT_MS` | 远程请求超时毫秒数，默认 15000，范围 100–120000 |
 | `KANGMIN_ALLOW_DEV_SESSION` | 开发降级开关（`1` 启用），显式 `staging`/`production` 时失效 |
 | `KANGMIN_DB_PATH` | 数据库文件路径，默认 `src/.local/kangmin-mvp.sqlite` |
+| `KANGMIN_DATABASE_URL` | PostgreSQL 连接串；配置后组合根使用 PostgreSQL 存储（自动执行版本化迁移），缺省保持 SQLite |
 | `KANGMIN_SESSION_TOKEN` | 患者会话令牌（CLI 不接收 `patient_id`/`user_id`） |
 | `KANGMIN_ADMIN_TOKEN` | 管理员令牌（与患者令牌分离；登录后也可写入本地凭据文件） |
 | `KANGMIN_DEEPSEEK_API_KEY` | 模型 API 密钥；未配置时自由对话降级为结构化问答 |
@@ -375,7 +376,8 @@ batch_partial_failure / internal_error
 ## 本地/集成数据库
 
 以下 SQLite 能力只描述当前本地和集成运行模式，不是生产存储验收结论。
-生产目标 PostgreSQL 与对象存储适配器仍属于后续阶段。
+对象存储适配器仍属于后续阶段；PostgreSQL 适配器已实现（见下节），
+生产组合根强制 PostgreSQL 的门禁在运维发布阶段完成。
 
 - 单文件 SQLite（默认 `src/.local/kangmin-mvp.sqlite`），WAL 模式、
   外键开启、busy 重试。
@@ -401,6 +403,29 @@ batch_partial_failure / internal_error
   抛 `config_missing`，绝不静默丢失数据（legacy-upgrade 测试锁定）。
 - 创建要求幂等键（`--idempotency-key`），同键重放返回原结果（含删除后
   重放的 `stale_replay`）；更新要求 `expectedRevision`。
+
+## PostgreSQL 存储
+
+配置 `KANGMIN_DATABASE_URL` 后，患者与管理端组合根使用 PostgreSQL
+（`pg` 驱动），SQLite 路径完全保留为本地/集成默认：
+
+- 基线迁移 `0001_baseline` 建立与 SQLite 迁移链终态等价的 35 张表
+  （TEXT 时间戳、INTEGER 布尔、部分唯一索引语义一致）；生产从空库
+  初始化，不迁移任何 SQLite 数据。
+- 迁移经 advisory lock 互斥、逐版本事务执行并写入 `schema_migrations`
+  账本；数据库出现比代码更新的未知版本时 fail-closed。
+- 全部 14 个仓储端口有 PostgreSQL 适配器，与 SQLite 实现跑独立契约
+  套件（107 个仓储契约 + 5 个应用级端到端用例）：患者隔离、幂等
+  重放、CAS revision、软删除、加密字段、审计强制写语义逐条对齐。
+- 并发差异的显式处理：序列化冲突/死锁/锁超时映射为可重试的
+  `storage_unavailable`（对齐 SQLite 的 BUSY 映射）；管理端引导与
+  最后-owner 守卫用表锁等价 SQLite 的 BEGIN IMMEDIATE 序列化。
+- 方案注册表与临床评估调用链已异步化（`PlanRegistryPort.
+  findApprovedPlan` 与内核 `evaluate` 返回 Promise），禁止以缓存
+  绕过每次评估的最新发布门禁。
+- 契约测试需 `KANGMIN_TEST_DATABASE_URL` 指向可建库的 PostgreSQL
+  （CI 由 postgres:16 service 提供）；测试在服务器上自建一次性
+  隔离库并在结束后删除，未配置时自动 skip。
 
 ## 已知限制
 

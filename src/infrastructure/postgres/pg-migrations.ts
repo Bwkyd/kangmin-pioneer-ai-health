@@ -1,0 +1,519 @@
+/**
+ * PostgreSQL 版本化迁移。
+ *
+ * 生产从空库初始化，因此基线 0001 直接建立 SQLite 迁移链推进到
+ * 0013 后的最终表结构（35 张表，由 SQLite schema_migrations 全量
+ * 应用后转译：去掉 STRICT、其余 CHECK/外键/部分唯一索引保持等价）。
+ * SQLite 特有的明文→加密回填迁移在 PostgreSQL 不存在（没有旧明文数据）。
+ *
+ * 语义约定与 SQLite 一致：
+ * - 时间戳统一 TEXT（ISO 8601 字符串），比较语义与既有查询一致；
+ * - 布尔以 INTEGER 0/1 存储；
+ * - JSON 载荷以 TEXT 存储，不启用 jsonb 自动解析。
+ */
+
+export interface PgMigration {
+  version: string;
+  statements: string[];
+}
+
+export const PG_MIGRATIONS: PgMigration[] = [
+  {
+    version: "0001_baseline",
+    statements: [
+      `CREATE TABLE patients (
+        id TEXT PRIMARY KEY,
+        development_subject TEXT UNIQUE,
+        created_at TEXT NOT NULL
+      )`,
+
+      `CREATE TABLE patient_sessions (
+        token_hash TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        client_kind TEXT NOT NULL DEFAULT 'development'
+          CHECK(client_kind IN ('development', 'mini_program', 'cli')),
+        revoked_at TEXT
+      )`,
+
+      `CREATE TABLE symptom_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        nasal_congestion INTEGER NOT NULL CHECK(nasal_congestion BETWEEN 0 AND 3),
+        nasal_itching INTEGER NOT NULL CHECK(nasal_itching BETWEEN 0 AND 3),
+        sneezing INTEGER NOT NULL CHECK(sneezing BETWEEN 0 AND 3),
+        runny_nose INTEGER NOT NULL CHECK(runny_nose BETWEEN 0 AND 3),
+        tnss_total INTEGER NOT NULL CHECK(tnss_total BETWEEN 0 AND 12),
+        notes_encrypted TEXT,
+        encryption_key_version TEXT,
+        deleted_at TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX symptom_records_patient_date
+        ON symptom_records(patient_id, local_date DESC)`,
+      `CREATE UNIQUE INDEX symptom_records_patient_date_active
+        ON symptom_records(patient_id, local_date) WHERE deleted_at IS NULL`,
+
+      `CREATE TABLE idempotency_records (
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        command_scope TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(patient_id, command_scope, idempotency_key)
+      )`,
+
+      `CREATE TABLE profiles (
+        patient_id TEXT PRIMARY KEY REFERENCES patients(id),
+        display_name_encrypted TEXT,
+        birth_date TEXT,
+        sex TEXT NOT NULL DEFAULT 'unspecified'
+          CHECK(sex IN ('female', 'male', 'other', 'unspecified')),
+        allergy_history_encrypted TEXT,
+        known_allergies_encrypted TEXT,
+        common_triggers_encrypted TEXT,
+        notes_encrypted TEXT,
+        encryption_key_version TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+
+      `CREATE TABLE exposure_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        factors_json TEXT NOT NULL,
+        other_description_encrypted TEXT,
+        notes_encrypted TEXT,
+        encryption_key_version TEXT,
+        deleted_at TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX exposure_records_patient_date
+        ON exposure_records(patient_id, local_date DESC)`,
+      `CREATE UNIQUE INDEX exposure_records_patient_date_active
+        ON exposure_records(patient_id, local_date) WHERE deleted_at IS NULL`,
+
+      `CREATE TABLE medication_records (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        local_date TEXT NOT NULL,
+        medication_name_encrypted TEXT NOT NULL,
+        dosage_encrypted TEXT,
+        actual_use_encrypted TEXT,
+        notes_encrypted TEXT,
+        encryption_key_version TEXT,
+        deleted_at TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX medication_records_patient_date
+        ON medication_records(patient_id, local_date DESC)`,
+
+      `CREATE TABLE patient_record_versions (
+        record_type TEXT NOT NULL
+          CHECK(record_type IN ('symptom', 'profile', 'exposure', 'medication')),
+        record_id TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        operation TEXT NOT NULL CHECK(operation IN ('create', 'update', 'delete')),
+        encrypted_snapshot TEXT NOT NULL,
+        encryption_key_version TEXT NOT NULL,
+        actor_kind TEXT NOT NULL CHECK(actor_kind IN ('patient', 'system')),
+        actor_id TEXT,
+        request_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(record_type, record_id, revision)
+      )`,
+
+      `CREATE TABLE audit_events (
+        id TEXT PRIMARY KEY,
+        actor_kind TEXT NOT NULL CHECK(actor_kind IN ('patient', 'admin', 'system')),
+        actor_id TEXT NOT NULL,
+        action TEXT NOT NULL,
+        entity_type TEXT NOT NULL,
+        entity_id TEXT NOT NULL,
+        entity_revision INTEGER,
+        request_id TEXT,
+        details_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX audit_events_entity
+        ON audit_events(entity_type, entity_id, created_at DESC)`,
+      `CREATE INDEX audit_events_actor
+        ON audit_events(actor_kind, actor_id, created_at DESC)`,
+
+      `CREATE TABLE patient_accounts (
+        patient_id TEXT PRIMARY KEY REFERENCES patients(id),
+        username_hash TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK(status IN ('active', 'deactivated', 'deletion_pending')),
+        nickname TEXT,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        last_active_at TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        username_masked TEXT NOT NULL DEFAULT ''
+      )`,
+
+      `CREATE TABLE patient_consents (
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        consent_type TEXT NOT NULL
+          CHECK(consent_type IN ('privacy', 'medical_boundary')),
+        sequence INTEGER NOT NULL CHECK(sequence >= 1),
+        decision TEXT NOT NULL
+          CHECK(decision IN ('granted', 'withdrawn')),
+        policy_version TEXT NOT NULL,
+        request_id TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(patient_id, consent_type, sequence)
+      )`,
+      `CREATE INDEX patient_consents_latest
+        ON patient_consents(patient_id, consent_type, sequence DESC)`,
+
+      `CREATE TABLE admin_accounts (
+        id TEXT PRIMARY KEY,
+        username TEXT NOT NULL UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL CHECK(role IN ('owner', 'admin')),
+        status TEXT NOT NULL DEFAULT 'active'
+          CHECK(status IN ('active', 'disabled')),
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+
+      `CREATE TABLE admin_sessions (
+        token_hash TEXT PRIMARY KEY,
+        admin_id TEXT NOT NULL REFERENCES admin_accounts(id),
+        expires_at TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        revoked_at TEXT,
+        revoked_reason TEXT
+      )`,
+      `CREATE INDEX admin_sessions_admin
+        ON admin_sessions(admin_id)`,
+
+      `CREATE TABLE admin_idempotency (
+        admin_id TEXT NOT NULL REFERENCES admin_accounts(id),
+        scope TEXT NOT NULL,
+        idempotency_key TEXT NOT NULL,
+        request_hash TEXT NOT NULL,
+        result_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(admin_id, scope, idempotency_key)
+      )`,
+
+      `CREATE TABLE admins (
+        id TEXT PRIMARY KEY,
+        development_subject TEXT UNIQUE,
+        role TEXT NOT NULL CHECK(role IN ('owner', 'admin')),
+        enabled INTEGER NOT NULL CHECK(enabled IN (0, 1)),
+        created_at TEXT NOT NULL
+      )`,
+
+      `CREATE TABLE content_categories (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL UNIQUE,
+        kind TEXT NOT NULL CHECK(kind IN ('article', 'video', 'message', 'general')),
+        description TEXT,
+        display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX content_categories_kind_order
+        ON content_categories(kind, display_order, name)`,
+
+      `CREATE TABLE content_resource_media (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('image', 'video', 'word', 'pdf', 'markdown')),
+        filename TEXT NOT NULL,
+        stored_path TEXT NOT NULL,
+        size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+        mime_type TEXT,
+        sha256 TEXT,
+        status TEXT NOT NULL DEFAULT 'processing'
+          CHECK(status IN ('processing', 'ready', 'failed', 'disabled')),
+        failure_reason TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX content_resource_media_created
+        ON content_resource_media(created_at DESC)`,
+
+      `CREATE TABLE content_items (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+        title TEXT NOT NULL,
+        category TEXT NOT NULL,
+        summary TEXT NOT NULL,
+        body TEXT,
+        source TEXT NOT NULL,
+        cover_url TEXT,
+        media_url TEXT,
+        status TEXT NOT NULL
+          CHECK(status IN ('draft', 'review', 'published', 'unpublished', 'failed')),
+        patient_visible INTEGER NOT NULL CHECK(patient_visible IN (0, 1)),
+        version_valid INTEGER NOT NULL CHECK(version_valid IN (0, 1)),
+        media_available INTEGER NOT NULL CHECK(media_available IN (0, 1)),
+        published_at TEXT,
+        updated_at TEXT NOT NULL,
+        revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+        created_by TEXT,
+        media_id TEXT REFERENCES content_resource_media(id),
+        cover_media_id TEXT REFERENCES content_resource_media(id),
+        instructions TEXT,
+        precautions TEXT,
+        disclaimer TEXT,
+        method_tags TEXT,
+        display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0)
+      )`,
+      `CREATE INDEX content_items_public_kind_updated
+        ON content_items(kind, status, patient_visible, updated_at DESC)`,
+
+      `CREATE TABLE content_messages (
+        id TEXT PRIMARY KEY,
+        title TEXT NOT NULL,
+        body TEXT NOT NULL,
+        summary TEXT,
+        category_id TEXT REFERENCES content_categories(id),
+        status TEXT NOT NULL CHECK(status IN ('draft', 'published', 'unpublished')),
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        published_at TEXT,
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX content_messages_status_created
+        ON content_messages(status, created_at DESC)`,
+
+      `CREATE TABLE agent_sessions (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        status TEXT NOT NULL
+          CHECK(status IN ('awaiting_answer', 'safety_blocked', 'completed')),
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        session_json TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX agent_sessions_patient_updated
+        ON agent_sessions(patient_id, updated_at DESC)`,
+
+      `CREATE TABLE agent_care_plans (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        current_revision INTEGER NOT NULL CHECK(current_revision >= 1),
+        enabled_revision INTEGER,
+        published_revision INTEGER,
+        revision INTEGER NOT NULL CHECK(revision >= 1)
+      )`,
+
+      `CREATE TABLE agent_care_plan_revisions (
+        plan_id TEXT NOT NULL REFERENCES agent_care_plans(id),
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        name TEXT NOT NULL,
+        summary TEXT,
+        steps_json TEXT,
+        disclaimer TEXT,
+        created_by_admin_id TEXT,
+        PRIMARY KEY(plan_id, revision)
+      )`,
+
+      `CREATE TABLE environment_snapshots (
+        id TEXT PRIMARY KEY,
+        provider TEXT NOT NULL,
+        cache_key TEXT NOT NULL,
+        city TEXT NOT NULL,
+        weather_json TEXT NOT NULL,
+        air_quality_json TEXT NOT NULL,
+        pollen_risk_json TEXT NOT NULL,
+        observed_at TEXT NOT NULL,
+        fetched_at TEXT NOT NULL,
+        expires_at TEXT NOT NULL,
+        source_label TEXT NOT NULL,
+        UNIQUE(provider, cache_key)
+      )`,
+
+      `CREATE TABLE agent_conversations (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT REFERENCES patients(id),
+        state TEXT NOT NULL
+          CHECK(state IN ('active', 'completed', 'abandoned')),
+        save_consent_id TEXT,
+        rule_package_version TEXT NOT NULL,
+        rule_package_hash TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        last_sequence INTEGER NOT NULL CHECK(last_sequence >= 0),
+        closed_at TEXT,
+        retention_until TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX agent_conversations_patient_updated
+        ON agent_conversations(patient_id, updated_at DESC)`,
+
+      `CREATE TABLE agent_messages (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+        sequence INTEGER NOT NULL CHECK(sequence >= 1),
+        role TEXT NOT NULL CHECK(role IN ('user', 'assistant', 'system_notice')),
+        decision_id TEXT,
+        content_encrypted TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        encryption_key_version TEXT NOT NULL,
+        created_at TEXT NOT NULL,
+        UNIQUE(session_id, sequence)
+      )`,
+
+      `CREATE TABLE agent_confirmed_answers (
+        session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+        field_code TEXT NOT NULL,
+        value TEXT NOT NULL
+          CHECK(value IN ('missing', 'unknown', 'yes', 'no', 'value')),
+        fact_value TEXT,
+        source TEXT NOT NULL,
+        rule_package_version TEXT NOT NULL,
+        rule_package_hash TEXT NOT NULL,
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        confirmed_at TEXT NOT NULL,
+        PRIMARY KEY(session_id, field_code)
+      )`,
+
+      `CREATE TABLE agent_candidates (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+        field_code TEXT NOT NULL,
+        proposed_value_encrypted TEXT,
+        encryption_key_version TEXT NOT NULL,
+        source_message_id TEXT,
+        state TEXT NOT NULL
+          CHECK(state IN ('proposed', 'adopted', 'ignored', 'expired')),
+        created_at TEXT NOT NULL,
+        decided_at TEXT
+      )`,
+
+      `CREATE TABLE agent_decisions (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+        decision_sequence INTEGER NOT NULL CHECK(decision_sequence >= 1),
+        session_revision INTEGER NOT NULL CHECK(session_revision >= 1),
+        input_snapshot_encrypted TEXT NOT NULL,
+        input_snapshot_hash TEXT NOT NULL,
+        outcome TEXT NOT NULL
+          CHECK(outcome IN ('blocked', 'need_more_information', 'non_applicable',
+                            'conflict', 'no_match', 'classified')),
+        stage TEXT NOT NULL
+          CHECK(stage IN ('safety', 'applicability', 'severity',
+                          'syndrome', 'plan_safety', 'completed')),
+        severity_code TEXT,
+        syndrome_code TEXT,
+        next_questions_json TEXT NOT NULL,
+        matched_rule_ids_json TEXT NOT NULL,
+        rule_package_version TEXT NOT NULL,
+        rule_package_hash TEXT NOT NULL,
+        plan_id TEXT,
+        plan_revision INTEGER,
+        created_at TEXT NOT NULL,
+        UNIQUE(session_id, decision_sequence)
+      )`,
+
+      `CREATE TABLE agent_feedback (
+        id TEXT PRIMARY KEY,
+        session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+        decision_id TEXT,
+        rating TEXT NOT NULL CHECK(rating IN ('helpful', 'unhelpful')),
+        reason_encrypted TEXT,
+        encryption_key_version TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+
+      `CREATE TABLE agent_knowledge_items (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        source TEXT,
+        description TEXT,
+        source_media_id TEXT REFERENCES content_resource_media(id),
+        size_bytes INTEGER NOT NULL CHECK(size_bytes >= 0),
+        mime_type TEXT,
+        sha256 TEXT,
+        status TEXT NOT NULL CHECK(status IN ('draft', 'processing', 'indexed', 'enabled', 'disabled', 'index_failed')),
+        parse_error TEXT,
+        chunk_count INTEGER NOT NULL DEFAULT 0 CHECK(chunk_count >= 0),
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX agent_knowledge_items_status
+        ON agent_knowledge_items(status)`,
+
+      `CREATE TABLE agent_knowledge_chunks (
+        knowledge_id TEXT NOT NULL REFERENCES agent_knowledge_items(id) ON DELETE CASCADE,
+        chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+        chunk_text TEXT NOT NULL,
+        PRIMARY KEY(knowledge_id, chunk_index)
+      )`,
+
+      `CREATE TABLE agent_plans (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        syndrome TEXT NOT NULL,
+        method TEXT NOT NULL,
+        steps_json TEXT NOT NULL,
+        precautions TEXT NOT NULL,
+        risks TEXT NOT NULL,
+        contraindications TEXT NOT NULL,
+        applicable_age TEXT,
+        video_resource_id TEXT REFERENCES content_items(id),
+        display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0),
+        status TEXT NOT NULL CHECK(status IN ('draft', 'enabled', 'disabled')),
+        revision INTEGER NOT NULL CHECK(revision >= 1),
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX agent_plans_syndrome_status
+        ON agent_plans(syndrome, status)`,
+
+      `CREATE TABLE agent_model_config (
+        id INTEGER PRIMARY KEY CHECK(id = 1),
+        provider TEXT NOT NULL DEFAULT 'openai-compatible',
+        model_name TEXT NOT NULL DEFAULT '',
+        timeout_seconds INTEGER NOT NULL DEFAULT 30 CHECK(timeout_seconds BETWEEN 1 AND 300),
+        max_output_tokens INTEGER NOT NULL DEFAULT 1024 CHECK(max_output_tokens BETWEEN 128 AND 32768),
+        knowledge_retrieval_enabled INTEGER NOT NULL DEFAULT 0 CHECK(knowledge_retrieval_enabled IN (0, 1)),
+        retrieval_count INTEGER NOT NULL DEFAULT 3 CHECK(retrieval_count BETWEEN 1 AND 20),
+        explanation_enabled INTEGER NOT NULL DEFAULT 1 CHECK(explanation_enabled IN (0, 1)),
+        api_key TEXT,
+        updated_by TEXT,
+        updated_at TEXT,
+        last_test_status TEXT,
+        last_test_at TEXT,
+        encryption_key_version TEXT
+      )`,
+
+      `CREATE TABLE agent_test_cases (
+        id TEXT PRIMARY KEY,
+        input_text TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('completed', 'failed')),
+        result_json TEXT NOT NULL,
+        created_by TEXT,
+        created_at TEXT NOT NULL
+      )`,
+      `CREATE INDEX agent_test_cases_created
+        ON agent_test_cases(created_at DESC)`
+    ]
+  }
+];

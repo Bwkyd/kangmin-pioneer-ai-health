@@ -272,7 +272,7 @@ export class ConversationService {
     }
 
     // 3. 固定规则内核评估（唯一临床裁决来源）。
-    const verdict = this.kernel.evaluate(facts);
+    const verdict = await this.kernel.evaluate(facts);
 
     // 4. 补问无法取得进展 → fail-closed（unknown 不等于 no）。
     const escalated = this.failClosedIfNoProgress(verdict, unknownAnswered);
@@ -646,7 +646,7 @@ export class ConversationService {
    * （评审 P1 kimi P1-6）。
    */
   private failClosedIfNoProgress(
-    verdict: ReturnType<ClinicalRuleKernelPort["evaluate"]>,
+    verdict: Awaited<ReturnType<ClinicalRuleKernelPort["evaluate"]>>,
     unknownAnswered: ReadonlySet<string>
   ): { content: string; contentHash: string } | null {
     if (verdict.outcome !== "need_more_information") {

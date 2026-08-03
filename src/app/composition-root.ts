@@ -35,6 +35,18 @@ import {
   parseEncryptionKeys,
   PlaintextEncryption
 } from "../infrastructure/aes-gcm-encryption.js";
+import {
+  KangminPgDatabase,
+  appliedPgMigrationVersions
+} from "../infrastructure/postgres/pg-database.js";
+import { PgAccountRepository } from "../infrastructure/postgres/pg-account-repository.js";
+import { PgAgentRepository } from "../infrastructure/postgres/pg-agent-repository.js";
+import { PgContentReadRepository } from "../infrastructure/postgres/pg-content-read-repository.js";
+import { PgConversationRepository } from "../infrastructure/postgres/pg-conversation-repository.js";
+import { PgEnvironmentCacheRepository } from "../infrastructure/postgres/pg-environment-cache-repository.js";
+import { PgPlanRegistry } from "../infrastructure/postgres/pg-plan-registry.js";
+import { PgRecordRepository } from "../infrastructure/postgres/pg-record-repository.js";
+import { PgSessionRepository } from "../infrastructure/postgres/pg-session-repository.js";
 import { SqliteAccountRepository } from "../infrastructure/sqlite-account-repository.js";
 import { SqliteAgentRepository } from "../infrastructure/sqlite-agent-repository.js";
 import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
@@ -73,6 +85,26 @@ export interface ApplicationOptions {
   planRegistry?: PlanRegistryPort | undefined;
   /** 显式覆盖 KANGMIN_APP_ENV（测试用）；未提供时读环境变量。 */
   appEnvironment?: AppEnvironment | undefined;
+  /**
+   * PostgreSQL 连接串；未提供时回退 KANGMIN_DATABASE_URL 环境变量。
+   * 配置后使用 PostgreSQL 存储，缺省保持 SQLite（local/integration）。
+   */
+  databaseUrl?: string | undefined;
+}
+
+/** 解析存储后端：显式参数优先，其次 KANGMIN_DATABASE_URL。 */
+export function resolveDatabaseUrl(
+  options: { databaseUrl?: string | undefined } = {},
+  environment: NodeJS.ProcessEnv = process.env
+): string | undefined {
+  const explicit = options.databaseUrl?.trim();
+  if (explicit !== undefined && explicit !== "") {
+    return explicit;
+  }
+  const fromEnvironment = environment.KANGMIN_DATABASE_URL?.trim();
+  return fromEnvironment === undefined || fromEnvironment === ""
+    ? undefined
+    : fromEnvironment;
 }
 
 /**
@@ -114,36 +146,101 @@ function defaultEnvironmentProvider(
   return new TestEnvironmentProvider();
 }
 
+/** 加密配置检查（SQLite 与 PostgreSQL doctor 共用）。 */
+function encryptionDoctorCheck(environment: NodeJS.ProcessEnv): DoctorCheck {
+  const keys = parseEncryptionKeys(environment.KANGMIN_ENCRYPTION_KEYS);
+  const plaintextAllowed = developmentFallbackAllowed(environment);
+  if (keys.length > 0) {
+    return {
+      name: "encryption",
+      status: "ok",
+      message: "已配置 AES-256-GCM 加密密钥（KANGMIN_ENCRYPTION_KEYS）"
+    };
+  }
+  if (plaintextAllowed) {
+    return {
+      name: "encryption",
+      status: "not_configured",
+      message:
+        "未配置加密密钥，使用明文开发降级（仅 local/integration 或显式 KANGMIN_ALLOW_DEV_SESSION=1）"
+    };
+  }
+  return {
+    name: "encryption",
+    status: "failed",
+    message: "未配置 KANGMIN_ENCRYPTION_KEYS，生产语义拒绝启动（fail-closed）"
+  };
+}
+
+/** 环境数据与模型检查（两种存储后端 doctor 共用的静态部分）。 */
+function staticDoctorChecks(environment: NodeJS.ProcessEnv): DoctorCheck[] {
+  return [
+    developmentFallbackAllowed(environment)
+      ? {
+          name: "environment-data",
+          status: "not_configured",
+          message: "环境数据接口为测试替身（后续阶段接入真实供应商）"
+        }
+      : {
+          name: "environment-data",
+          status: "not_configured",
+          message:
+            "环境数据供应商未配置：当前环境环境命令返回 provider_unavailable（fail-closed），待接入真实供应商"
+        },
+    environment.KANGMIN_DEEPSEEK_API_KEY
+      ? {
+          name: "model",
+          status: "ok",
+          message: "已配置模型 API 密钥（KANGMIN_DEEPSEEK_API_KEY）"
+        }
+      : {
+          name: "model",
+          status: "not_configured",
+          message: "未配置模型 API 密钥，自由对话将降级为结构化问答"
+        }
+  ];
+}
+
+function databaseDoctorCheck(migrations: readonly string[]): DoctorCheck {
+  return {
+    name: "database",
+    status: migrations.length === 0 ? "failed" : "ok",
+    message:
+      migrations.length === 0
+        ? "数据库没有任何已应用迁移"
+        : `已应用迁移：${migrations.join(", ")}`
+  };
+}
+
+/** PostgreSQL 后端 doctor：与 SQLite 版相同的检查集，数据库探针走 PG。 */
+export async function runPgPatientDoctor(
+  database: KangminPgDatabase,
+  environment: NodeJS.ProcessEnv
+): Promise<DoctorReport> {
+  const checks: DoctorCheck[] = [encryptionDoctorCheck(environment)];
+  try {
+    checks.push(databaseDoctorCheck(await appliedPgMigrationVersions(database)));
+  } catch {
+    // 与 SQLite 版一致：固定文案，不拼接底层错误细节（评审 B P2-12b）。
+    checks.push({
+      name: "database",
+      status: "failed",
+      message: "数据库打开或迁移失败，请检查存储与密钥配置"
+    });
+  }
+  checks.push(...staticDoctorChecks(environment));
+  return {
+    checks,
+    healthy: checks.every((check) => check.status !== "failed")
+  };
+}
+
 /** doctor 只检查连接与配置状态，不修改任何配置。 */
 export function runPatientDoctor(
   databasePath: string,
   environment: NodeJS.ProcessEnv
 ): DoctorReport {
-  const checks: DoctorCheck[] = [];
-
-  const keys = parseEncryptionKeys(environment.KANGMIN_ENCRYPTION_KEYS);
-  const plaintextAllowed = developmentFallbackAllowed(environment);
-  if (keys.length > 0) {
-    checks.push({
-      name: "encryption",
-      status: "ok",
-      message: "已配置 AES-256-GCM 加密密钥（KANGMIN_ENCRYPTION_KEYS）"
-    });
-  } else if (plaintextAllowed) {
-    checks.push({
-      name: "encryption",
-      status: "not_configured",
-      message:
-        "未配置加密密钥，使用明文开发降级（仅 local/integration 或显式 KANGMIN_ALLOW_DEV_SESSION=1）"
-    });
-  } else {
-    checks.push({
-      name: "encryption",
-      status: "failed",
-      message:
-        "未配置 KANGMIN_ENCRYPTION_KEYS，生产语义拒绝启动（fail-closed）"
-    });
-  }
+  const checks: DoctorCheck[] = [encryptionDoctorCheck(environment)];
 
   // 密钥缺失时不阻止诊断数据库本身：以明文端口尝试打开，迁移中的
   // 加密回填在检测到旧明文数据时仍会抛 config_missing（安全优先）。
@@ -157,15 +254,7 @@ export function runPatientDoctor(
   try {
     const database = new KangminDatabase(databasePath, encryption);
     try {
-      const migrations = appliedMigrationVersions(database);
-      checks.push({
-        name: "database",
-        status: migrations.length === 0 ? "failed" : "ok",
-        message:
-          migrations.length === 0
-            ? "数据库没有任何已应用迁移"
-            : `已应用迁移：${migrations.join(", ")}`
-      });
+      checks.push(databaseDoctorCheck(appliedMigrationVersions(database)));
     } finally {
       database.close();
     }
@@ -179,34 +268,7 @@ export function runPatientDoctor(
     });
   }
 
-  if (developmentFallbackAllowed(environment)) {
-    checks.push({
-      name: "environment-data",
-      status: "not_configured",
-      message: "环境数据接口为测试替身（后续阶段接入真实供应商）"
-    });
-  } else {
-    checks.push({
-      name: "environment-data",
-      status: "not_configured",
-      message:
-        "环境数据供应商未配置：当前环境环境命令返回 provider_unavailable（fail-closed），待接入真实供应商"
-    });
-  }
-
-  if (environment.KANGMIN_DEEPSEEK_API_KEY) {
-    checks.push({
-      name: "model",
-      status: "ok",
-      message: "已配置模型 API 密钥（KANGMIN_DEEPSEEK_API_KEY）"
-    });
-  } else {
-    checks.push({
-      name: "model",
-      status: "not_configured",
-      message: "未配置模型 API 密钥，自由对话将降级为结构化问答"
-    });
-  }
+  checks.push(...staticDoctorChecks(environment));
 
   return {
     checks,
@@ -223,21 +285,54 @@ export function createApplication(
       ? process.env
       : { ...process.env, KANGMIN_APP_ENV: options.appEnvironment };
   const encryption = options.encryption ?? resolveEncryption(environment);
-  const database = new KangminDatabase(databasePath, encryption);
-  const sessions = new SessionService(new SqliteSessionRepository(database));
   const environmentProvider =
     options.environmentProvider ?? defaultEnvironmentProvider(environment);
+  const modelAdapter = new DeepSeekModelAdapter({
+    apiKey: process.env.KANGMIN_DEEPSEEK_API_KEY
+  });
+  const extraction: ModelExtractionPort = options.extraction ?? modelAdapter;
+  const explanation: ModelExplanationPort = options.explanation ?? modelAdapter;
+
+  const databaseUrl = resolveDatabaseUrl(options, environment);
+  if (databaseUrl !== undefined) {
+    const database = new KangminPgDatabase(databaseUrl);
+    const sessions = new SessionService(new PgSessionRepository(database));
+    // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
+    // 注册表数据源接通统一方案表 agent_plans。
+    const planRegistry: PlanRegistryPort =
+      options.planRegistry ?? new PgPlanRegistry(database);
+    const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+    const conversations = new ConversationService(
+      new PgConversationRepository(database),
+      kernel,
+      extraction,
+      explanation,
+      encryption
+    );
+    return new KangminApplication(
+      sessions,
+      new PgRecordRepository(database, encryption),
+      new PgContentReadRepository(database),
+      new PgAgentRepository(database),
+      new AccountService(new PgAccountRepository(database), sessions),
+      environmentProvider,
+      new PgEnvironmentCacheRepository(database),
+      conversations,
+      () => {
+        void database.close();
+      },
+      () => runPgPatientDoctor(database, environment)
+    );
+  }
+
+  const database = new KangminDatabase(databasePath, encryption);
+  const sessions = new SessionService(new SqliteSessionRepository(database));
 
   // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
   // 注册表数据源接通统一方案表 agent_plans，供模拟测试与冻结后的正式评估使用。
   const planRegistry: PlanRegistryPort =
     options.planRegistry ?? new SqlitePlanRegistry(database);
   const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
-  const modelAdapter = new DeepSeekModelAdapter({
-    apiKey: process.env.KANGMIN_DEEPSEEK_API_KEY
-  });
-  const extraction: ModelExtractionPort = options.extraction ?? modelAdapter;
-  const explanation: ModelExplanationPort = options.explanation ?? modelAdapter;
   const conversations = new ConversationService(
     new SqliteConversationRepository(database),
     kernel,

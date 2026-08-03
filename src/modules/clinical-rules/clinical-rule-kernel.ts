@@ -70,7 +70,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     this.rulePackageStatus = pack.status;
   }
 
-  evaluate(facts: readonly ConfirmedFact[]): ClinicalVerdict {
+  async evaluate(facts: readonly ConfirmedFact[]): Promise<ClinicalVerdict> {
     const source = new MapFactSource(facts);
 
     const safety = this.evaluateSafety(source);
@@ -114,7 +114,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
 
         // 决策凭证需要跨阶段累积命中规则（如 ["SEV-05","T1"]）。
         const allMatched = [...severity.matchedRuleIds, ...syndrome.matchedRuleIds];
-        const plan = this.evaluatePlanSafety(withSyndrome, allMatched);
+        const plan = await this.evaluatePlanSafety(withSyndrome, allMatched);
         if (plan !== null) {
           return plan;
         }
@@ -232,17 +232,17 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
   }
 
   /** 方案安全：仅在证型已分类后执行；无已批准方案时直接完成（planId=null）。 */
-  private evaluatePlanSafety(
+  private async evaluatePlanSafety(
     source: MapFactSource,
     matchedSoFar: readonly string[]
-  ): ClinicalVerdict | null {
+  ): Promise<ClinicalVerdict | null> {
     const syndrome = source.get("syndrome_code");
     const severity = source.get("severity_code");
     if (syndrome === null || severity === null) {
       return null;
     }
 
-    const plan = this.planRegistry.findApprovedPlan({
+    const plan = await this.planRegistry.findApprovedPlan({
       syndromeCode: String(syndrome.value),
       severityCode: severity.value as SeverityCode
     });

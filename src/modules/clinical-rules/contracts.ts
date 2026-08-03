@@ -84,15 +84,19 @@ export interface ApprovedPlan {
 }
 
 export interface PlanRegistryPort {
+  /**
+   * 异步签名：PostgreSQL 适配器只能异步返回；禁止通过缓存或预加载
+   * 绕过每次评估时的最新发布门禁查询。
+   */
   findApprovedPlan(input: {
     syndromeCode: string;
     severityCode: SeverityCode;
-  }): ApprovedPlan | null;
+  }): Promise<ApprovedPlan | null>;
 }
 
 export interface ClinicalRuleKernelPort {
   readonly rulePackageVersion: string;
   readonly rulePackageHash: string;
   readonly rulePackageStatus: RulePackageStatus;
-  evaluate(facts: readonly ConfirmedFact[]): ClinicalVerdict;
+  evaluate(facts: readonly ConfirmedFact[]): Promise<ClinicalVerdict>;
 }
