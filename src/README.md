@@ -60,10 +60,13 @@ KANGMIN_APP_ENV=local KANGMIN_ALLOW_DEV_SESSION=1 node dist/http/server.js
 
 demo 简化点（均如实呈现，不伪造服务端能力）：安全评估面板只将"危险
 信号"组提交确定性安全外壳会话（`agent start/continue` 的 urgentHelp），
-其余分组留在本地；聊天自由对话仍是静态演示脚本（未接 `agent exec`）；
-健康档案为扁平字段（结构化过敏史与诱因投影无对应命令，显示"暂无"）；
-用药按日期记录（无时分）；"学一学"入口暂指向内置科普 tab（/discover
-未迁移）；"我的"页为静态演示（account 注册/登录未接入）。
+其余分组留在本地；chat 自由对话已接 `agent exec`（无模型 key 时如实
+展示结构化问诊与 system_notice 降级提示，conversationId 存 sessionStorage
+刷新后续聊），多步演示脚本仅由快捷选项触发；首页/我的统计区接
+`record overview`（无数据显示空态，不写死）；健康档案为扁平字段
+（结构化过敏史与诱因投影无对应命令，显示"暂无"）；用药按日期记录
+（无时分）；"学一学"科普页（legacy /discover）已迁入薄壳；"我的"页
+账户区仍为静态演示（account 注册/登录未接入）。
 
 ### 远程命令服务（预发/生产必选）
 

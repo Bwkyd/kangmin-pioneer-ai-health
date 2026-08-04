@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-import { runSafetyAssessment, type SafetyAssessmentResult } from "./agent";
+import { runAgentTurn, runSafetyAssessment, type AgentTurnResult, type SafetyAssessmentResult } from "./agent";
+import { CommandError } from "./command-client";
 import DiscoverView from "./DiscoverView";
 import {
   AllergenExposure,
@@ -12,6 +13,7 @@ import {
   emptyMedication,
   emptySymptomScores,
   getHealthProfile,
+  getRecordOverview,
   hasCompleteSymptomScores,
   HealthProfile,
   HealthProfileDraft,
@@ -22,6 +24,7 @@ import {
   MedicationDraft,
   MedicationRecord,
   OTHER_ALLERGEN,
+  RecordOverview,
   saveAllergenExposure,
   saveHealthProfile,
   saveMedication,
@@ -44,7 +47,48 @@ type Tab =
 type Message =
   | { id: number; role: "ai" | "user"; kind: "text"; text: string }
   | { id: number; role: "ai"; kind: "thinking" }
+  | { id: number; role: "ai"; kind: "notice"; text: string }
+  | { id: number; role: "ai"; kind: "verdict"; text: string }
   | { id: number; role: "ai"; kind: "source"; title: string; detail: string };
+
+/** chat 自由对话的 conversationId 持久化键（sessionStorage：刷新后续接，关页即清）。 */
+const AGENT_CONVERSATION_KEY = "kangmin.agent.conversationId";
+
+/** verdict.outcome 的中文如实标注（不做临床美化；未知值原样展示代码）。 */
+const OUTCOME_LABELS: Record<string, string> = {
+  blocked: "安全阻断",
+  need_more_information: "需补充信息",
+  non_applicable: "不适用",
+  conflict: "信息冲突",
+  no_match: "未匹配",
+  classified: "已评估",
+};
+
+function verdictText(verdict: NonNullable<AgentTurnResult["verdict"]>): string {
+  const parts = [`结论：${OUTCOME_LABELS[verdict.outcome] ?? verdict.outcome}`];
+  if (verdict.severityCode !== null) parts.push(`严重度：${verdict.severityCode}`);
+  if (verdict.syndromeCode !== null) parts.push(`证型：${verdict.syndromeCode}`);
+  if (verdict.matchedRuleIds.length > 0) parts.push(`命中规则：${verdict.matchedRuleIds.join("、")}`);
+  parts.push(`规则包版本：${verdict.rulePackageVersion}`);
+  return parts.join("；");
+}
+
+/** 一轮 agent exec 结果展开为聊天消息：助手正文 + system_notice + 决策摘要（如实渲染）。 */
+function agentTurnMessages(turn: AgentTurnResult): Message[] {
+  const base = Date.now();
+  const messages: Message[] = [];
+  if (turn.message !== null) {
+    messages.push({ id: base, role: "ai", kind: "text", text: turn.message.content });
+  }
+  turn.notices.forEach((notice, index) => {
+    messages.push({ id: base + 1 + index, role: "ai", kind: "notice", text: notice.content });
+  });
+  // 决策/裁决类输出只在会话收口轮追加结构化摘要；补问轮的正文已是提问，不重复渲染。
+  if (turn.verdict !== null && turn.closed) {
+    messages.push({ id: base + 1000, role: "ai", kind: "verdict", text: verdictText(turn.verdict) });
+  }
+  return messages;
+}
 
 class RequestVersion {
   private value = 0;
@@ -287,6 +331,13 @@ function displayDate(value: string): string {
   return `${year}年${Number(month)}月${Number(day)}日`;
 }
 
+/** 紧凑日期（8月4日）：统计区小格展示最近评估日期。 */
+function shortDate(value: string): string {
+  const [, month, day] = value.split("-");
+  if (!month || !day) return value;
+  return `${Number(month)}月${Number(day)}日`;
+}
+
 function monthValue(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
 }
@@ -355,6 +406,17 @@ export default function App() {
   const [agentNotice, setAgentNotice] = useState("");
   const [agentResult, setAgentResult] = useState<AgentResult | null>(null);
   const [input, setInput] = useState("");
+  const [chatSending, setChatSending] = useState(false);
+  const [chatError, setChatError] = useState("");
+  const [chatRetryMessage, setChatRetryMessage] = useState<string | null>(null);
+  // 自由对话会话 id：组件 state + sessionStorage 持久化，刷新后同一会话续接。
+  const [conversationId, setConversationId] = useState<string | null>(() => {
+    try {
+      return sessionStorage.getItem(AGENT_CONVERSATION_KEY);
+    } catch {
+      return null;
+    }
+  });
   const [scores, setScores] = useState<Array<number | null>>([...emptySymptomScores]);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
@@ -391,6 +453,8 @@ export default function App() {
   const [exposureReload, setExposureReload] = useState(0);
   const [exposureCreateKey, setExposureCreateKey] = useState<string | null>(null);
   const [profileLoadError, setProfileLoadError] = useState(false);
+  // 首页/我的页统计区共用的记录概览（record overview）；null 表示空态。
+  const [overview, setOverview] = useState<RecordOverview | null>(null);
   const chatEnd = useRef<HTMLDivElement>(null);
   const chartRef = useRef<HTMLCanvasElement>(null);
   const [profileRequest] = useState(() => new RequestVersion());
@@ -398,8 +462,12 @@ export default function App() {
   const [medicationRequest] = useState(() => new RequestVersion());
   const [exposureRequest] = useState(() => new RequestVersion());
   const [agentRequest] = useState(() => new RequestVersion());
+  const [overviewRequest] = useState(() => new RequestVersion());
+  const [chatRequest] = useState(() => new RequestVersion());
 
   const scoresComplete = hasCompleteSymptomScores(scores);
+  // record overview 空态口径：无最近症状日期或本月次数为 0 即按空态展示。
+  const hasOverviewData = overview !== null && overview.recentSymptomDate !== null && overview.monthRecordCount > 0;
   const totalScore = scores.reduce<number>((sum, score) => sum + (score ?? 0), 0);
   const exposureValidation = validateExposureDraft(exposureDraft);
   const symptomsByDate = new Map(symptoms.map((record) => [record.date, record]));
@@ -585,6 +653,26 @@ export default function App() {
     return () => { cancelled = true; };
   }, [tab, selectedDate, editingExposureId, exposureReload, exposureRequest]);
 
+  // 首页/我的页统计：进入两页时经 record overview 读取真值；加载中/失败
+  // 保持空态（overview 为 null），不阻塞页面。记录保存后返回两页会因
+  // tab 变化重新触发本 effect，与 profileRequest/exposureRequest 的
+  // refetch 模式一致。
+  useEffect(() => {
+    if (tab !== "home" && tab !== "profile") return;
+    let cancelled = false;
+    const requestVersion = overviewRequest.next();
+    getRecordOverview()
+      .then((data) => {
+        if (cancelled || !overviewRequest.isCurrent(requestVersion)) return;
+        setOverview(data);
+      })
+      .catch(() => {
+        if (cancelled || !overviewRequest.isCurrent(requestVersion)) return;
+        setOverview(null);
+      });
+    return () => { cancelled = true; };
+  }, [tab, overviewRequest]);
+
   const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
     setMessages((current) => [
       ...current,
@@ -671,21 +759,59 @@ export default function App() {
     addExchange(item.question, item.answer, step || 0, item.source);
   };
 
+  // chat 底部输入：接通 agent exec 真实对话。echoUser=false 用于失败重试
+  // （首轮已渲染用户气泡，重试不再重复追加）。
+  const sendChatMessage = async (value: string, echoUser = true) => {
+    const requestVersion = chatRequest.next();
+    setChatSending(true);
+    setChatError("");
+    setChatRetryMessage(null);
+    if (echoUser) {
+      setMessages((current) => [
+        ...current,
+        { id: Date.now(), role: "user", kind: "text", text: value },
+      ]);
+    }
+    setMessages((current) => [...current, { id: Date.now() + 1, role: "ai", kind: "thinking" }]);
+    try {
+      let storedId = conversationId;
+      let turn: AgentTurnResult;
+      try {
+        turn = await runAgentTurn(value, storedId ?? undefined);
+      } catch (error) {
+        // 本地持久化的 conversationId 已失效（服务侧数据重置或保留过期）：
+        // 丢弃后按新会话重试一次，不让旧 id 卡死输入。
+        if (storedId === null || !(error instanceof CommandError) || error.code !== "resource_not_found") throw error;
+        storedId = null;
+        turn = await runAgentTurn(value);
+      }
+      if (!chatRequest.isCurrent(requestVersion)) return;
+      setConversationId(turn.conversationId);
+      try {
+        sessionStorage.setItem(AGENT_CONVERSATION_KEY, turn.conversationId);
+      } catch {
+        // sessionStorage 不可用时仅在本次页面生命周期内续接。
+      }
+      setMessages((current) => [
+        ...current.filter((message) => message.kind !== "thinking"),
+        ...agentTurnMessages(turn),
+      ]);
+    } catch (error) {
+      if (!chatRequest.isCurrent(requestVersion)) return;
+      setMessages((current) => current.filter((message) => message.kind !== "thinking"));
+      setChatError(error instanceof Error ? error.message : "发送失败，请稍后重试");
+      setChatRetryMessage(value);
+    } finally {
+      if (chatRequest.isCurrent(requestVersion)) setChatSending(false);
+    }
+  };
+
   const sendCustom = (event: FormEvent) => {
     event.preventDefault();
     const value = input.trim();
-    if (!value) return;
+    if (!value || chatSending) return;
     setInput("");
-    if (step === 1) selectSymptom(value);
-    else if (step === 2) selectDuration(value);
-    else if (step === 3) selectWarning(value);
-    else
-      addExchange(
-        value,
-        "我已记录。自由描述会先进入安全确认，不能直接生成诊断或未经审核的操作方案。",
-        step,
-        "内部演示 · 内容待审核",
-      );
+    void sendChatMessage(value);
   };
 
   const editExposure = (record: AllergenExposure) => {
@@ -995,6 +1121,7 @@ export default function App() {
     medicationRequest.next();
     exposureRequest.next();
     agentRequest.next();
+    chatRequest.next();
     setMessages([
       {
         id: Date.now(),
@@ -1009,6 +1136,16 @@ export default function App() {
     setAgentStatus("idle");
     setAgentNotice("");
     setAgentResult(null);
+    // 自由对话一并重置：丢弃本地会话 id，下次发送开启新会话。
+    setChatSending(false);
+    setChatError("");
+    setChatRetryMessage(null);
+    setConversationId(null);
+    try {
+      sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
+    } catch {
+      // sessionStorage 不可用时无需清理。
+    }
     setAssessmentDone(false);
     setScores([...emptySymptomScores]);
     setEntryOpen(false);
@@ -1051,7 +1188,7 @@ export default function App() {
             <button className="icon-button" onClick={goBack} aria-label="返回">‹</button>
             <div className="real-title">
               <strong>{headerTitle}</strong>
-              {tab === "chat" && <span>内部交互演示</span>}
+              {tab === "chat" && <span>鼻健康智能助手</span>}
             </div>
             <button className="mini-program-menu" onClick={resetDemo} aria-label="更多">
               <span>•••</span><i />
@@ -1102,13 +1239,13 @@ export default function App() {
                   </button>
                 </section>
 
-                <section className="mini-trend" onClick={() => navigateTo("assessment")}>
-                  <div><small>趋势展示占位</small><h3>暂无真实健康记录</h3></div>
+                <section className="mini-trend" data-testid="home-overview" onClick={() => navigateTo("assessment")}>
+                  <div><small>{hasOverviewData ? "真实健康记录" : "趋势展示占位"}</small><h3>{hasOverviewData && overview !== null ? `连续记录 ${overview.consecutiveDays} 天 · 本月 ${overview.monthRecordCount} 次` : "暂无真实健康记录"}</h3></div>
                   <div className="sparkline" aria-hidden="true">
                     <i style={{ height: "84%" }} /><i style={{ height: "73%" }} /><i style={{ height: "64%" }} />
                     <i style={{ height: "55%" }} /><i className="active" style={{ height: "42%" }} />
                   </div>
-                  <span>查看演示 ›</span>
+                  <span>{hasOverviewData ? "查看记录 ›" : "查看演示 ›"}</span>
                 </section>
 
                 <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={openDiscover}>全部 ›</button></div>
@@ -1130,6 +1267,12 @@ export default function App() {
                   {messages.map((message) => {
                     if (message.kind === "thinking") {
                       return <div className="message-row ai-row" key={message.id}><div className="mini-avatar">岐</div><div className="bubble ai-bubble typing"><b /><b /><b /></div></div>;
+                    }
+                    if (message.kind === "notice") {
+                      return <div className="chat-notice" data-testid="chat-notice" role="status" key={message.id}>{message.text}</div>;
+                    }
+                    if (message.kind === "verdict") {
+                      return <div className="chat-verdict" data-testid="chat-verdict" key={message.id}><strong>本轮评估结果</strong>{message.text}</div>;
                     }
                     if (message.kind === "source") {
                       return <div className="source-card" key={message.id}><span>✓</span><div><strong>{message.title}</strong><small>{message.detail}</small></div><b>›</b></div>;
@@ -1201,10 +1344,19 @@ export default function App() {
                   )}
                   <div ref={chatEnd} />
                 </div>
+                {chatError && (
+                  <div className="record-notice error" role="alert">
+                    <strong>发送失败</strong>
+                    <span>{chatError}</span>
+                    {chatRetryMessage !== null && (
+                      <button type="button" disabled={chatSending} onClick={() => void sendChatMessage(chatRetryMessage, false)}>重试</button>
+                    )}
+                  </div>
+                )}
                 <form className="composer" onSubmit={sendCustom}>
                   <button type="button" aria-label="语音输入">⌁</button>
-                  <input aria-label="输入症状或问题" value={input} onChange={(event) => setInput(event.target.value)} placeholder="问问题或描述症状…" />
-                  <button className="send-button" type="submit" aria-label="发送">↑</button>
+                  <input aria-label="输入症状或问题" value={input} onChange={(event) => setInput(event.target.value)} placeholder={chatSending ? "正在发送…" : "问问题或描述症状…"} disabled={chatSending} />
+                  <button className="send-button" type="submit" aria-label="发送" disabled={chatSending}>{chatSending ? "…" : "↑"}</button>
                 </form>
               </div>
             )}
@@ -1429,10 +1581,10 @@ export default function App() {
                   <button aria-label="编辑个人资料">编辑</button>
                 </section>
 
-                <section className="profile-summary" aria-label="健康数据摘要">
-                  <div><strong>--</strong><span>连续记录/天</span></div>
-                  <div><strong>--</strong><span>本月记录/次</span></div>
-                  <div><strong>暂无</strong><span>最近评估</span></div>
+                <section className="profile-summary" aria-label="健康数据摘要" data-testid="profile-overview">
+                  <div><strong>{hasOverviewData && overview !== null ? overview.consecutiveDays : "--"}</strong><span>连续记录/天</span></div>
+                  <div><strong>{hasOverviewData && overview !== null ? overview.monthRecordCount : "--"}</strong><span>本月记录/次</span></div>
+                  <div><strong>{hasOverviewData && overview !== null && overview.lastTnss !== null ? `TNSS ${overview.lastTnss}/12` : "暂无"}</strong><span>{hasOverviewData && overview !== null && overview.recentSymptomDate !== null ? `最近评估 · ${shortDate(overview.recentSymptomDate)}` : "最近评估"}</span></div>
                 </section>
 
                 <section className="profile-section">
