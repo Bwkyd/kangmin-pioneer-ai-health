@@ -762,6 +762,9 @@ contractTest("匿名保留期：findAnonymousSession 过滤过期会话（issue-
 
 contractTest("匿名保留期清理：级联删除 5 子表 + 主表，绑定会话不受影响", async (database) => {
   const repository = new PgConversationRepository(database);
+  // 契约测试共享库：上方过滤用例残留了过期匿名会话，
+  // 先预清一次保证下方删除计数确定。
+  await repository.deleteExpiredAnonymousSessions(new Date().toISOString());
   await insertPatient(database, "c-patient-retention");
   const expiredAnonymous = sessionFixture("c-conv-clean-expired", {
     retentionUntil: "2020-01-01T00:00:00.000Z"
