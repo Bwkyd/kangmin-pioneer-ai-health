@@ -1,6 +1,7 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import { runSafetyAssessment, type SafetyAssessmentResult } from "./agent";
+import DiscoverView from "./DiscoverView";
 import {
   AllergenExposure,
   AllergenExposureDraft,
@@ -85,30 +86,6 @@ const knowledgeQuestions = [
     answer:
       "可以在固定时间做简短记录，关注喷嚏、流涕、鼻塞和鼻痒等变化。当前页面中的记录与趋势均为交互演示。",
     source: "内部演示内容 · 待医学审核",
-  },
-];
-
-const articles = [
-  {
-    tag: "日常防护",
-    title: "换季鼻敏感，先做好这 4 件小事",
-    summary: "从温差、卧室环境到外出防护，用简单方法减少鼻部刺激。",
-    read: "3 分钟",
-    tone: "mint",
-  },
-  {
-    tag: "安全提醒",
-    title: "鼻塞时，哪些情况需要及时就医？",
-    summary: "高热、剧烈头痛、呼吸困难等信号，不适合只靠居家调理。",
-    read: "2 分钟",
-    tone: "amber",
-  },
-  {
-    tag: "亲子健康",
-    title: "孩子总揉鼻子，家长该记录什么？",
-    summary: "记下时间、诱因和睡眠影响，比只说“最近鼻炎犯了”更有用。",
-    read: "4 分钟",
-    tone: "blue",
   },
 ];
 
@@ -378,7 +355,6 @@ export default function App() {
   const [agentNotice, setAgentNotice] = useState("");
   const [agentResult, setAgentResult] = useState<AgentResult | null>(null);
   const [input, setInput] = useState("");
-  const [articleOpen, setArticleOpen] = useState<number | null>(null);
   const [scores, setScores] = useState<Array<number | null>>([...emptySymptomScores]);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
@@ -1003,7 +979,7 @@ export default function App() {
     setTab(next);
   };
 
-  // 学一学内容页（legacy /discover）尚未迁入薄壳，先导向内置科普演示 tab。
+  // 学一学内容页（legacy /discover 已迁入薄壳）：已发布科普文章/视频/方案。
   const openDiscover = () => navigateTo("articles");
 
   const goBack = () => {
@@ -1064,7 +1040,7 @@ export default function App() {
             : tab === "allergenRecord"
               ? "过敏原记录"
             : tab === "articles"
-              ? "鼻健康科普"
+              ? "学一学"
               : "我的";
 
   return (
@@ -1098,7 +1074,7 @@ export default function App() {
                   </button>
                   <button className="learn-module" onClick={openDiscover}>
                     <span className="module-icon">学</span>
-                    <small>内容审核中</small>
+                    <small>已发布科普内容</small>
                     <strong>学一学</strong>
                     <p>了解鼻健康知识，掌握日常防护方法。</p>
                     <b>去学习 <i>→</i></b>
@@ -1122,7 +1098,7 @@ export default function App() {
                   </button>
                   <button onClick={openDiscover}>
                     <span className="feature-icon book-icon">知</span>
-                    <small>科普内容演示</small><strong>换季为何反复？</strong><i>查看示例</i>
+                    <small>鼻健康科普</small><strong>科普文章与视频</strong><i>去看看</i>
                   </button>
                 </section>
 
@@ -1136,9 +1112,9 @@ export default function App() {
                 </section>
 
                 <div className="section-heading"><div><small>为你推荐</small><h3>今天读点什么</h3></div><button onClick={openDiscover}>全部 ›</button></div>
-                <button className="article-feature" onClick={() => setArticleOpen(0)}>
-                  <div className="article-art"><span /><i>4</i></div>
-                  <div><small>日常防护 · 3 分钟</small><strong>换季鼻敏感，先做好这 4 件小事</strong><span>温差、卧室环境与外出防护</span></div>
+                <button className="article-feature" onClick={openDiscover}>
+                  <div className="article-art"><span /><i>学</i></div>
+                  <div><small>鼻健康科普</small><strong>学一学</strong><span>科普文章 · 操作视频 · 调理方案</span></div>
                 </button>
               </div>
             )}
@@ -1439,21 +1415,7 @@ export default function App() {
               </div>
             )}
 
-            {tab === "articles" && (
-              <div className="articles-view">
-                <div className="articles-hero"><small>健康专栏演示</small><h2>懂一点，鼻子舒服一点</h2><p>内容处于内部演示与审核阶段，不由模型自由生成。</p></div>
-                <div className="topic-chips"><button className="active">为你推荐</button><button>日常防护</button><button>亲子健康</button></div>
-                <div className="article-list">
-                  {articles.map((article, index) => (
-                    <button key={article.title} onClick={() => setArticleOpen(index)}>
-                      <div className={`article-thumb ${article.tone}`}><span>{index === 0 ? "护" : index === 1 ? "安" : "童"}</span></div>
-                      <div><small>{article.tag} · {article.read}</small><strong>{article.title}</strong><p>{article.summary}</p></div>
-                    </button>
-                  ))}
-                </div>
-                <div className="push-note"><span>铃</span><div><strong>内容提醒演示</strong><small>审核通过后再开放正式提醒</small></div></div>
-              </div>
-            )}
+            {tab === "articles" && <DiscoverView />}
 
             {tab === "profile" && (
               <div className="profile-view">
@@ -1487,7 +1449,7 @@ export default function App() {
                   </button>
                   <button onClick={openDiscover}>
                     <span className="profile-item-icon mint">科</span>
-                    <div><strong>鼻健康科普</strong><small>查看待审核的演示内容</small></div>
+                    <div><strong>鼻健康科普</strong><small>浏览已发布的科普内容</small></div>
                     <b>›</b>
                   </button>
                 </section>
@@ -1557,23 +1519,6 @@ export default function App() {
           )}
         </div>
       </section>
-
-      {articleOpen !== null && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="科普文章">
-          <article className="article-modal">
-            <button onClick={() => setArticleOpen(null)} aria-label="关闭文章">×</button>
-            <small>{articles[articleOpen].tag} · {articles[articleOpen].read}</small>
-            <h2>{articles[articleOpen].title}</h2>
-            <p className="lead">{articles[articleOpen].summary}</p>
-            <h3>先观察，再行动</h3>
-            <p>记录症状出现的时间、持续多久，以及是否影响睡眠和学习。连续记录比一次性的感受更有参考价值。</p>
-            <h3>减少常见刺激</h3>
-            <p>留意温差、冷空气、粉尘和气味刺激。保持居室清洁通风，外出时根据环境做好防护。</p>
-            <div className="article-warning"><strong>需要就医的情况</strong><span>如果伴随高热、剧烈头痛、呼吸困难或反复鼻出血，请及时前往正规医疗机构。</span></div>
-            <footer>内部演示内容 · 待团队与医学审核 · 不替代门诊诊断</footer>
-          </article>
-        </div>
-      )}
     </main>
   );
 }
