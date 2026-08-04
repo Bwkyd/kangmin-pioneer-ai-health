@@ -13,6 +13,7 @@ import { createApplication } from "../app/composition-root.js";
 import { DomainError } from "../kernel/errors.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { ExtractionCandidate } from "../modules/agent/model-ports.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 import type {
   ConversationSession,
   ConversationTurnResult
@@ -67,6 +68,7 @@ class NullExplanation {
 interface Fixture {
   application: ReturnType<typeof createApplication>;
   extraction: FixedExtraction;
+  databasePath: string;
 }
 
 async function fixture(
@@ -74,12 +76,13 @@ async function fixture(
   extractionFail: DomainError | null = null
 ): Promise<Fixture> {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-conv-"));
+  const databasePath = join(directory, "conv.sqlite");
   const extraction = new FixedExtraction(extractionRules, extractionFail);
-  const application = createApplication(join(directory, "conv.sqlite"), {
+  const application = createApplication(databasePath, {
     extraction,
     explanation: new NullExplanation()
   });
-  return { application, extraction };
+  return { application, extraction, databasePath };
 }
 
 async function exec(
@@ -96,7 +99,7 @@ async function exec(
   );
 }
 
-test("未登录一次性体验：匿名对话可进行但不保存、不可列出", async () => {
+test("未登录一次性体验：匿名对话保留期内可凭 ID 续接、不保存、不可列出", async () => {
   const { application } = await fixture();
   try {
     const first = await exec(application, { message: "我最近鼻塞" });
@@ -844,6 +847,305 @@ test("agent start --message 走消息驱动对话；裸 agent 仍为安全外壳
     assert.equal(shell.ok, true);
     const shellData = shell as { ok: true; data: { nextQuestion: { key: string } } };
     assert.equal(shellData.data.nextQuestion.key, "urgentHelp");
+  } finally {
+    application.close();
+  }
+});
+
+test("过期匿名会话凭 ID 恢复被拒绝：匿名续接与登录认领均 resource_not_found", async () => {
+  const { application, databasePath } = await fixture();
+  try {
+    // 保留期内凭 ID 续接成功（24h 匿名保留期语义，issue-155）。
+    const first = await exec(application, { message: "我最近鼻塞" });
+    assert.equal(first.state, "active");
+
+    // 直接把 retention_until 调到过去，模拟超过 24h 保留期。
+    const database = new KangminDatabase(databasePath);
+    try {
+      database.connection
+        .prepare(
+          "UPDATE agent_conversations SET retention_until = ? WHERE id = ?"
+        )
+        .run("2026-08-01T00:00:00.000Z", first.conversationId);
+    } finally {
+      database.close();
+    }
+
+    // 匿名续接：过期视为不存在。
+    const resumed = await application.execute({
+      command: "agent exec",
+      input: { message: "急救：否", conversationId: first.conversationId }
+    });
+    assert.equal(resumed.ok, false);
+    if (!resumed.ok) {
+      assert.equal(resumed.error.code, "resource_not_found");
+    }
+
+    // 登录患者认领过期匿名会话：同样不存在（过期不可认领绑定）。
+    const token =
+      (await application.sessions.createDevelopmentSession("conv-expired"))
+        .token;
+    const claimed = await application.execute({
+      command: "agent exec",
+      input: {
+        message: "",
+        conversationId: first.conversationId,
+        saveConsent: true
+      },
+      sessionToken: token
+    });
+    assert.equal(claimed.ok, false);
+    if (!claimed.ok) {
+      assert.equal(claimed.error.code, "resource_not_found");
+    }
+  } finally {
+    application.close();
+  }
+});
+
+/** 构造会话行（保留期/归属可变），供清理与过滤用例直接落库。 */
+function sessionRow(
+  id: string,
+  patientId: string | null,
+  retentionUntil: string
+): ConversationSession {
+  return {
+    id,
+    patientId,
+    state: "active",
+    saveConsentId: null,
+    rulePackageVersion: "draft-2026-07",
+    rulePackageHash: "rule-hash",
+    revision: 1,
+    lastSequence: 0,
+    closedAt: null,
+    retentionUntil,
+    createdAt: "2026-08-01T00:00:00.000Z",
+    updatedAt: "2026-08-01T00:00:00.000Z"
+  };
+}
+
+test("清理过期匿名会话：级联删除 5 子表 + 主表，保留期内匿名与绑定会话不受影响", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-conv-cleanup-"));
+  const databasePath = join(directory, "conv.sqlite");
+  const database = new KangminDatabase(databasePath);
+  const repository = new SqliteConversationRepository(database);
+  const encryption = new PlaintextEncryption();
+  const past = "2026-08-01T00:00:00.000Z";
+  const future = "2099-01-01T00:00:00.000Z";
+  try {
+    // 绑定会话需要 patients 行支撑外键。
+    database.connection
+      .prepare("INSERT INTO patients(id, created_at) VALUES (?, ?)")
+      .run("patient-bound", past);
+
+    await repository.createSession(sessionRow("conv-expired", null, past));
+    await repository.createSession(sessionRow("conv-fresh", null, future));
+    // 绑定会话（90 天占位保留期）：即使 retention_until 已过也不得被
+    // 匿名清理触碰。
+    await repository.createSession(
+      sessionRow("conv-bound", "patient-bound", past)
+    );
+
+    // 给过期匿名会话补齐 5 子表行。
+    const timestamp = "2026-08-01T00:00:00.000Z";
+    await repository.setConfirmedAnswer({
+      sessionId: "conv-expired",
+      fieldCode: "urgent_help",
+      value: "no",
+      factValue: null,
+      source: "patient_confirmation",
+      rulePackageVersion: "draft-2026-07",
+      rulePackageHash: "rule-hash",
+      revision: 1,
+      confirmedAt: timestamp
+    });
+    await repository.addCandidate({
+      id: "candidate-1",
+      sessionId: "conv-expired",
+      fieldCode: "thirst",
+      proposedValueEncrypted: null,
+      encryptionKeyVersion: "none",
+      sourceMessageId: null,
+      state: "proposed",
+      createdAt: timestamp,
+      decidedAt: null
+    });
+    await repository.saveDecision({
+      id: "decision-1",
+      sessionId: "conv-expired",
+      decisionSequence: 1,
+      sessionRevision: 1,
+      inputSnapshotEncrypted: encryption.encrypt("快照"),
+      inputSnapshotHash: "snapshot-hash",
+      outcome: "need_more_information",
+      stage: "safety",
+      severityCode: null,
+      syndromeCode: null,
+      nextQuestionsJson: "[]",
+      matchedRuleIdsJson: "[]",
+      rulePackageVersion: "draft-2026-07",
+      rulePackageHash: "rule-hash",
+      planId: null,
+      planRevision: null,
+      createdAt: timestamp
+    });
+    await repository.appendMessage({
+      id: "message-1",
+      sessionId: "conv-expired",
+      sequence: 1,
+      role: "assistant",
+      decisionId: "decision-1",
+      contentEncrypted: encryption.encrypt("回复"),
+      contentHash: "content-hash",
+      createdAt: timestamp
+    });
+    await repository.addFeedback({
+      id: "feedback-1",
+      sessionId: "conv-expired",
+      decisionId: "decision-1",
+      rating: "helpful",
+      reasonEncrypted: null,
+      createdAt: timestamp
+    });
+
+    const deleted = await repository.deleteExpiredAnonymousSessions(
+      new Date().toISOString()
+    );
+    assert.equal(deleted, 1);
+
+    // 主表：过期匿名删除；保留期内匿名与绑定会话保留。
+    assert.equal(await repository.findSession("conv-expired"), null);
+    assert.ok((await repository.findSession("conv-fresh")) !== null);
+    assert.ok((await repository.findSession("conv-bound")) !== null);
+
+    // 5 子表无过期残留。
+    for (const table of [
+      "agent_messages",
+      "agent_confirmed_answers",
+      "agent_candidates",
+      "agent_decisions",
+      "agent_feedback"
+    ]) {
+      const row = database.connection
+        .prepare(`SELECT COUNT(*) AS count FROM ${table} WHERE session_id = ?`)
+        .get("conv-expired") as unknown as { count: number };
+      assert.equal(row.count, 0, table);
+    }
+
+    // findAnonymousSession 保留期过滤：过期查不到，保留期内可查。
+    assert.equal(await repository.findAnonymousSession("conv-expired"), null);
+    assert.ok((await repository.findAnonymousSession("conv-fresh")) !== null);
+  } finally {
+    database.close();
+  }
+});
+
+test("组合根启动时 best-effort 清理过期匿名会话", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-conv-startup-"));
+  const databasePath = join(directory, "conv.sqlite");
+  // 预置过期匿名会话后关闭，模拟上次运行留下的过期数据。
+  const seed = new KangminDatabase(databasePath);
+  await new SqliteConversationRepository(seed).createSession(
+    sessionRow("conv-startup-expired", null, "2026-08-01T00:00:00.000Z")
+  );
+  seed.close();
+
+  const application = createApplication(databasePath, {
+    extraction: new FixedExtraction([]),
+    explanation: new NullExplanation()
+  });
+  try {
+    // SQLite 驱动同步执行：启动清理在 createApplication 返回前已落库。
+    const verify = new KangminDatabase(databasePath);
+    try {
+      const row = verify.connection
+        .prepare(
+          "SELECT COUNT(*) AS count FROM agent_conversations WHERE id = ?"
+        )
+        .get("conv-startup-expired") as unknown as { count: number };
+      assert.equal(row.count, 0);
+    } finally {
+      verify.close();
+    }
+  } finally {
+    application.close();
+  }
+});
+
+test("绑定保存写入真实 agent_session_save 授权记录，save_consent_id 指向该记录", async () => {
+  const { application, databasePath } = await fixture();
+  try {
+    const anonymous = await exec(application, { message: "我最近鼻塞" });
+    const session = await application.sessions.createDevelopmentSession(
+      "conv-consent"
+    );
+    const bound = await exec(
+      application,
+      {
+        message: "",
+        conversationId: anonymous.conversationId,
+        saveConsent: true
+      },
+      session.token
+    );
+    assert.equal(bound.saved, true);
+
+    const database = new KangminDatabase(databasePath);
+    try {
+      const conversation = database.connection
+        .prepare("SELECT save_consent_id FROM agent_conversations WHERE id = ?")
+        .get(anonymous.conversationId) as unknown as {
+        save_consent_id: string | null;
+      };
+      const consents = database.connection
+        .prepare(
+          `SELECT id, decision FROM patient_consents
+           WHERE patient_id = ? AND consent_type = 'agent_session_save'`
+        )
+        .all(session.patientId) as unknown as Array<{
+        id: string;
+        decision: string;
+      }>;
+      // 不再写随机 UUID：save_consent_id 等于真实授权记录 id。
+      assert.equal(consents.length, 1);
+      assert.equal(consents[0]?.decision, "granted");
+      assert.equal(conversation.save_consent_id, consents[0]?.id);
+    } finally {
+      database.close();
+    }
+  } finally {
+    application.close();
+  }
+});
+
+test("agent_session_save 撤回后绑定被拒绝（consent_required）", async () => {
+  const { application, databasePath } = await fixture();
+  try {
+    const anonymous = await exec(application, { message: "我最近鼻塞" });
+    const session = await application.sessions.createDevelopmentSession(
+      "conv-withdrawn"
+    );
+    await writeConsentForTest(
+      databasePath,
+      session.patientId,
+      "agent_session_save",
+      "withdrawn"
+    );
+    const denied = await application.execute({
+      command: "agent exec",
+      input: {
+        message: "",
+        conversationId: anonymous.conversationId,
+        saveConsent: true
+      },
+      sessionToken: session.token
+    });
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.error.code, "consent_required");
+      assert.match(denied.error.message, /account consent update/u);
+    }
   } finally {
     application.close();
   }

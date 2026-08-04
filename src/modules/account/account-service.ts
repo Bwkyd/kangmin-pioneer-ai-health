@@ -28,16 +28,25 @@ const LOGIN_FAILURE_MESSAGE = "用户名或密码错误";
 
 const CONSENT_TYPES: readonly ConsentType[] = [
   "privacy",
-  "medical_boundary"
+  "medical_boundary",
+  "health_data",
+  "agent_session_save",
+  "location"
 ];
 const CONSENT_DECISIONS: readonly ConsentDecision[] = [
   "granted",
   "withdrawn"
 ];
 
+/**
+ * 当前隐私说明版本：consent 门禁自动补记的授权记录（如 Agent 会话保存）
+ * 复用同一版本；隐私说明正文见 PRIVACY_POLICY。
+ */
+export const CURRENT_POLICY_VERSION = "2026-08-01.1";
+
 /** 隐私说明（患者 CLI 设计 §9.5）：静态文本，不读库、不需要登录。 */
 const PRIVACY_POLICY = {
-  policyVersion: "2026-08-01.1",
+  policyVersion: CURRENT_POLICY_VERSION,
   statement: `抗敏先锋隐私与医疗边界说明
 
 一、数据用途

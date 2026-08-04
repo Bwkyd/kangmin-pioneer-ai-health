@@ -81,7 +81,8 @@ agent 命令（两条管线，路由按输入区分）：
                                    非交互自由对话（--json 机器集成）
   agent conversations list         自由对话会话列表
   agent conversations show <id>    自由对话会话详情
-  agent continue <session-id> --expected-revision <n> --question urgentHelp --answer yes|no|unknown
+  agent continue [session-id] --expected-revision <n> --question urgentHelp --answer yes|no|unknown
+                                   缺省 session-id 时续接最近待答会话（需登录）
   agent resume <session-id>        恢复确定性安全会话
   agent sessions list|show         确定性安全会话列表/详情
   agent feedback <id> --rating helpful|unhelpful [--reason <文本>]
@@ -96,7 +97,7 @@ account 命令：
   account profile show
   account profile update [--nickname <昵称>]
   account consent show
-  account consent update --type privacy|medical_boundary
+  account consent update --type privacy|medical_boundary|health_data|agent_session_save|location
       --decision granted|withdrawn --policy-version <版本> --request-id <ID>
   account privacy
   account data export|deletion-request|request-status|deactivate
@@ -145,7 +146,7 @@ _kangmin() {
   local group="\${words[2]}"
   local -a sub
   case "\$group" in
-    agent) sub=('start:开始会话' 'exec:非交互对话' 'continue:继续安全会话' 'resume:恢复安全会话' 'sessions:安全会话列表/详情' 'conversations:自由对话列表/详情' 'feedback:对话反馈') ;;
+    agent) sub=('start:开始会话' 'exec:非交互对话' 'continue:继续安全会话（缺省 ID 续最近待答）' 'resume:恢复安全会话' 'sessions:安全会话列表/详情' 'conversations:自由对话列表/详情' 'feedback:对话反馈') ;;
     record) sub=('symptom:症状/TNSS 记录' 'profile:健康档案' 'exposure:暴露记录' 'medication:用药记录' 'overview:健康概览' 'calendar:日历' 'trend:趋势') ;;
     browse) sub=('article:科普文章' 'video:视频内容' 'plan:通用方案' 'search:跨内容搜索' 'environment:环境快照') ;;
     account) sub=('register:注册' 'login:登录' 'status:登录状态' 'logout:退出' 'profile:资料' 'consent:同意管理' 'privacy:隐私政策') ;;
@@ -559,8 +560,16 @@ function parse(argv: string[]): ParsedCommand {
       return { command: resource === undefined ? "agent" : "agent start", input, json, help: false };
     }
     if (resource === "continue" || resource === "resume") {
+      // 裸 agent continue（设计 §6.5 契约）：不带 ID 续接最近待答会话；
+      // agent resume 仍必须显式带 ID。
       if (maybeAction === undefined || maybeAction.startsWith("--")) {
-        input.__parseError = `agent ${resource} 需要会话 ID`;
+        if (resource === "resume") {
+          input.__parseError = "agent resume 需要会话 ID";
+        } else {
+          parseOptions(input, [maybeAction, positional, ...rest].filter(
+            (value): value is string => value !== undefined
+          ));
+        }
       } else {
         input.id = maybeAction;
         parseOptions(input, [positional, ...rest].filter(

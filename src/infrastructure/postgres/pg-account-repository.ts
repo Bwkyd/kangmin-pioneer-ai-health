@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { DomainError } from "../../kernel/errors.js";
 import type {
   AccountRepository,
@@ -24,6 +26,7 @@ interface AccountRow {
 }
 
 interface ConsentRow {
+  id: string;
   patient_id: string;
   consent_type: ConsentType;
   sequence: number;
@@ -55,6 +58,7 @@ function toAccount(row: AccountRow): AccountSnapshot {
 
 function toConsent(row: ConsentRow): ConsentRecord {
   return {
+    id: row.id,
     patientId: row.patient_id,
     consentType: row.consent_type,
     sequence: row.sequence,
@@ -195,7 +199,7 @@ export class PgAccountRepository implements AccountRepository {
   }
 
   async appendConsent(
-    input: Omit<ConsentRecord, "sequence">
+    input: Omit<ConsentRecord, "id" | "sequence">
   ): Promise<ConsentRecord> {
     return this.database.transaction(async (client) => {
       // MAX(int4) 在 pg 驱动下返回 number，无需强转。
@@ -210,13 +214,15 @@ export class PgAccountRepository implements AccountRepository {
       );
       // COALESCE 保证聚合恒有一行；noUncheckedIndexedAccess 下用 ?? 1 兜底。
       const sequence = nextRow.rows[0]?.next_sequence ?? 1;
+      const id = randomUUID();
       await this.database.queryIn(
         client,
         `INSERT INTO patient_consents(
-          patient_id, consent_type, sequence, decision,
+          id, patient_id, consent_type, sequence, decision,
           policy_version, request_id, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
         [
+          id,
           input.patientId,
           input.consentType,
           sequence,
@@ -227,6 +233,7 @@ export class PgAccountRepository implements AccountRepository {
         ]
       );
       return {
+        id,
         patientId: input.patientId,
         consentType: input.consentType,
         sequence,
@@ -240,7 +247,7 @@ export class PgAccountRepository implements AccountRepository {
 
   async listConsents(patientId: string): Promise<ConsentRecord[]> {
     const { rows } = await this.database.query<ConsentRow>(
-      `SELECT patient_id, consent_type, sequence, decision,
+      `SELECT id, patient_id, consent_type, sequence, decision,
              policy_version, request_id, created_at
        FROM patient_consents
        WHERE patient_id = $1
@@ -248,6 +255,23 @@ export class PgAccountRepository implements AccountRepository {
       [patientId]
     );
     return rows.map(toConsent);
+  }
+
+  async findLatestConsent(
+    patientId: string,
+    consentType: ConsentType
+  ): Promise<ConsentRecord | null> {
+    const { rows } = await this.database.query<ConsentRow>(
+      `SELECT id, patient_id, consent_type, sequence, decision,
+             policy_version, request_id, created_at
+       FROM patient_consents
+       WHERE patient_id = $1 AND consent_type = $2
+       ORDER BY sequence DESC
+       LIMIT 1`,
+      [patientId, consentType]
+    );
+    const row = rows[0];
+    return row === undefined ? null : toConsent(row);
   }
 
   private snapshotAfterInsert(input: CreateAccountInput): AccountSnapshot {

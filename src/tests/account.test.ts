@@ -372,11 +372,35 @@ test("consent 按 sequence 追加，撤回后 status 反映最新决策，类型
     assert.equal(boundaryShown?.sequence, 1);
     assert.equal(shownData.history.length, 4);
 
-    // 非法类型与非法决策被拒绝。
+    // 5 类同意全部可更新（issue-155 扩类：health_data/agent_session_save/
+    // location 与既有 privacy/medical_boundary 同属合法类型）。
+    for (const [index, consentType] of [
+      "health_data",
+      "agent_session_save",
+      "location"
+    ].entries()) {
+      const accepted = await application.execute({
+        command: "account consent update",
+        input: {
+          consentType,
+          decision: "granted",
+          policyVersion: "2026-08-01.1",
+          requestId: `req-consent-extra-${index}`
+        },
+        sessionToken: token
+      });
+      assert.equal(accepted.ok, true, `${consentType} 应被接受`);
+      assert.equal(
+        dataOf<{ item: { sequence: number } }>(accepted).item.sequence,
+        1
+      );
+    }
+
+    // 非法类型与非法决策仍被拒绝。
     const badType = await application.execute({
       command: "account consent update",
       input: {
-        consentType: "location",
+        consentType: "unknown_type",
         decision: "granted",
         policyVersion: "v1",
         requestId: "req-bad"

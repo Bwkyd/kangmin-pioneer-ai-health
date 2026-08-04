@@ -9,6 +9,7 @@ import test from "node:test";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
@@ -90,9 +91,12 @@ test("真实远程 CLI：患者/管理员隔离、协议校验和服务重启持
   const directory = mkdtempSync(join(tmpdir(), "kangmin-remote-cli-"));
   const databasePath = join(directory, "remote.sqlite");
   const patientBootstrap = createApplication(databasePath);
-  const patientToken =
-    (await patientBootstrap.sessions.createDevelopmentSession("remote-patient")).token;
+  const patientSession =
+    await patientBootstrap.sessions.createDevelopmentSession("remote-patient");
   patientBootstrap.close();
+  // record 写入需 health_data 授权（issue-155 fail-closed）。
+  await writeConsentForTest(databasePath, patientSession.patientId, "health_data");
+  const patientToken = patientSession.token;
   const adminBootstrap = createAdminApplication(databasePath, {
     mediaDirectory: join(directory, "media")
   });

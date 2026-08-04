@@ -18,6 +18,7 @@ import {
   requiredStringArray
 } from "../kernel/validation.js";
 import { AccountService } from "../modules/account/account-service.js";
+import type { ConsentGatePort } from "../modules/account/consent-ports.js";
 import { SessionService } from "../modules/account/session-service.js";
 import type { ContentReadRepository } from "../modules/browse/content-read-repository.js";
 import { BrowseService } from "../modules/browse/browse-service.js";
@@ -109,6 +110,7 @@ export class KangminApplication {
     environmentProvider: EnvironmentProviderPort,
     environmentCache: EnvironmentCacheRepository,
     conversations: ConversationService,
+    consentGate: ConsentGatePort,
     private readonly closeResources: () => void = () => {},
     private readonly doctorProvider: DoctorCheckProvider = async () => ({
       checks: [],
@@ -117,7 +119,7 @@ export class KangminApplication {
     objectStorage?: ObjectStoragePort | undefined
   ) {
     this.sessions = sessions;
-    this.records = new RecordService(recordRepository);
+    this.records = new RecordService(recordRepository, consentGate);
     // environment 先于 browse 构造：browse 首页环境区块经窄端口
     // （BrowseEnvironmentPort）复用 EnvironmentService 的缓存语义。
     this.environment = new EnvironmentService(
@@ -368,7 +370,9 @@ export class KangminApplication {
           return success(
             command,
             await this.agent.continue(patientId, {
-              id: requiredString(input, "id"),
+              // id 缺省 = 裸 continue（设计 §6.5）：续接最近待答会话，
+              // 由 AgentService 经 findLatestAwaiting 解析。
+              id: this.optionalString(input, "id"),
               expectedRevision: positiveInteger(input, "expectedRevision"),
               question: this.agentQuestion(input.question),
               answer: this.triStateAnswer(input.answer)

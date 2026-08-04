@@ -8,6 +8,7 @@ import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
 // 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption
@@ -27,8 +28,11 @@ test("同一命令经 CLI 与 HTTP 返回一致契约（成功路径）", async 
   const directory = mkdtempSync(join(tmpdir(), "kangmin-contract-"));
   const databasePath = join(directory, "records.sqlite");
   const application = createApplication(databasePath);
-  const token =
-    (await application.sessions.createDevelopmentSession("contract-patient")).token;
+  const session =
+    await application.sessions.createDevelopmentSession("contract-patient");
+  // record 写入需 health_data 授权（issue-155 fail-closed）。
+  await writeConsentForTest(databasePath, session.patientId, "health_data");
+  const token = session.token;
 
   const server = createKangminHttpServer(application);
   await new Promise<void>((resolve) => {

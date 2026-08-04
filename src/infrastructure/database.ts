@@ -1066,6 +1066,56 @@ const MIGRATIONS: Migration[] = [
         WHERE media_id IS NOT NULL;
       `);
     }
+  },
+  {
+    // consent 扩 5 类 + patient_consents 单列 id（issue-155）：SQLite 修改
+    // CHECK 约束只能重建表；id 供 agent_conversations.save_consent_id 引用
+    // 真实授权记录（旧 CHECK 只有 privacy/medical_boundary 两类）。
+    version: "0015_consent_expansion",
+    apply: (connection) => {
+      // 防御性跳过：手工/异常库无 patient_consents（与 0013/0014 同款模式），
+      // 不误伤升级。
+      const table = connection.prepare(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'patient_consents'"
+      ).get();
+      if (table === undefined) {
+        return;
+      }
+      connection.exec(`
+        CREATE TABLE patient_consents_new (
+          id TEXT NOT NULL,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          consent_type TEXT NOT NULL
+            CHECK(consent_type IN ('privacy', 'medical_boundary', 'health_data',
+                                   'agent_session_save', 'location')),
+          sequence INTEGER NOT NULL CHECK(sequence >= 1),
+          decision TEXT NOT NULL
+            CHECK(decision IN ('granted', 'withdrawn')),
+          policy_version TEXT NOT NULL,
+          request_id TEXT NOT NULL,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(patient_id, consent_type, sequence)
+        ) STRICT;
+
+        -- 既有行回填确定性 id：主键（patient_id, consent_type, sequence）
+        -- 唯一 ⇒ 派生 id 唯一。
+        INSERT INTO patient_consents_new(
+          id, patient_id, consent_type, sequence, decision,
+          policy_version, request_id, created_at
+        )
+        SELECT patient_id || ':' || consent_type || ':' || sequence,
+          patient_id, consent_type, sequence, decision,
+          policy_version, request_id, created_at
+        FROM patient_consents;
+
+        DROP TABLE patient_consents;
+        ALTER TABLE patient_consents_new RENAME TO patient_consents;
+
+        CREATE INDEX patient_consents_latest
+        ON patient_consents(patient_id, consent_type, sequence DESC);
+        CREATE UNIQUE INDEX patient_consents_id ON patient_consents(id);
+      `);
+    }
   }
 ];
 
