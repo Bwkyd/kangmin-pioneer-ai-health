@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from "node:crypto";
 
 import { DomainError } from "../../kernel/errors.js";
+import type { ConsentGatePort } from "../account/consent-ports.js";
 import type {
   CalendarProjection,
   CreateExposureInput,
@@ -66,13 +67,33 @@ function consecutiveDayCount(dates: readonly string[]): number {
 }
 
 export class RecordService {
-  constructor(private readonly repository: RecordRepository) {}
+  constructor(
+    private readonly repository: RecordRepository,
+    private readonly consentGate: ConsentGatePort
+  ) {}
+
+  /**
+   * 健康数据使用授权前置（issue-155，fail-closed）：record 全部写入口
+   * 先取 health_data 最新 consent 决策，无记录或最新决策非 granted 一律
+   * 拒绝（consent_required）；只读投影（list/show/overview/calendar/trend）
+   * 不受影响。
+   */
+  private async requireHealthDataConsent(patientId: string): Promise<void> {
+    const decision = await this.consentGate.latestDecision(patientId, "health_data");
+    if (decision !== "granted") {
+      throw new DomainError(
+        "consent_required",
+        "需要健康数据使用授权：请先执行 account consent update --type health_data --decision granted"
+      );
+    }
+  }
 
   async createSymptom(
     patientId: string,
     input: CreateSymptomInput,
     requestId?: string
   ): Promise<SymptomRecord> {
+    await this.requireHealthDataConsent(patientId);
     // 幂等键哈希白名单：必须与 record 的业务字段一致。
     // 新增业务字段时必须同步加入，否则同键重放会被误判为冲突。
     const requestHash = stableHash({
@@ -153,6 +174,7 @@ export class RecordService {
     input: UpdateSymptomInput,
     requestId?: string
   ): Promise<SymptomRecord> {
+    await this.requireHealthDataConsent(patientId);
     requireUpdateFields(
       input.nasalCongestion !== undefined ||
         input.nasalItching !== undefined ||
@@ -215,6 +237,7 @@ export class RecordService {
     input: DeleteRecordInput,
     requestId?: string
   ): Promise<void> {
+    await this.requireHealthDataConsent(patientId);
     await this.runDelete(
       patientId,
       input,
@@ -253,6 +276,7 @@ export class RecordService {
     input: UpdateProfileInput,
     requestId?: string
   ): Promise<HealthProfile> {
+    await this.requireHealthDataConsent(patientId);
     requireUpdateFields(
       input.displayName !== undefined ||
         input.birthDate !== undefined ||
@@ -313,6 +337,7 @@ export class RecordService {
     input: CreateExposureInput,
     requestId?: string
   ): Promise<ExposureRecord> {
+    await this.requireHealthDataConsent(patientId);
     validateFactors(input.factors, input.otherDescription);
     // 幂等键哈希白名单：必须与 record 的业务字段一致。
     const requestHash = stableHash({
@@ -380,6 +405,7 @@ export class RecordService {
     input: UpdateExposureInput,
     requestId?: string
   ): Promise<ExposureRecord> {
+    await this.requireHealthDataConsent(patientId);
     requireUpdateFields(
       input.factors !== undefined ||
         input.otherDescription !== undefined ||
@@ -432,6 +458,7 @@ export class RecordService {
     input: DeleteRecordInput,
     requestId?: string
   ): Promise<void> {
+    await this.requireHealthDataConsent(patientId);
     await this.runDelete(
       patientId,
       input,
@@ -451,6 +478,7 @@ export class RecordService {
     input: CreateMedicationInput,
     requestId?: string
   ): Promise<MedicationRecord> {
+    await this.requireHealthDataConsent(patientId);
     // 幂等键哈希白名单：必须与 record 的业务字段一致。
     const requestHash = stableHash({
       localDate: input.localDate,
@@ -513,6 +541,7 @@ export class RecordService {
     input: UpdateMedicationInput,
     requestId?: string
   ): Promise<MedicationRecord> {
+    await this.requireHealthDataConsent(patientId);
     requireUpdateFields(
       input.medicationName !== undefined ||
         input.dosage !== undefined ||
@@ -564,6 +593,7 @@ export class RecordService {
     input: DeleteRecordInput,
     requestId?: string
   ): Promise<void> {
+    await this.requireHealthDataConsent(patientId);
     await this.runDelete(
       patientId,
       input,

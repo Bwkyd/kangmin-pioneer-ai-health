@@ -186,7 +186,8 @@ agent exec <文本> [--conversation <id>] [--save-consent]
                                  非交互自由对话（--json 机器集成）
 agent conversations list         自由对话会话列表
 agent conversations show <id>    自由对话会话详情
-agent continue <session-id> --expected-revision <n> --question urgentHelp --answer yes|no|unknown
+agent continue [session-id] --expected-revision <n> --question urgentHelp --answer yes|no|unknown
+                                 缺省 session-id 时续接最近待答会话（需登录）
 agent resume <session-id>        恢复确定性安全会话
 agent sessions list|show         确定性安全会话列表/详情
 agent feedback <id> --rating helpful|unhelpful [--reason <文本>]
@@ -203,7 +204,7 @@ account logout
 account profile show
 account profile update [--nickname <昵称>] --expected-revision <n>
 account consent show
-account consent update --type privacy|medical_boundary
+account consent update --type privacy|medical_boundary|health_data|agent_session_save|location
     --decision granted|withdrawn --policy-version <版本> --request-id <ID>
 account privacy
 account data export|deletion-request|request-status|deactivate

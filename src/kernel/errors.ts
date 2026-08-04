@@ -26,6 +26,7 @@ export type ErrorCode =
   | "idempotency_conflict"
   | "stale_replay"
   | "confirmation_required"
+  | "consent_required"
   | "config_missing"
   | "capability_unavailable"
   | "safety_blocked"
@@ -53,6 +54,7 @@ const EXIT_CODES: Record<ErrorCode, number> = {
   idempotency_conflict: 4,
   stale_replay: 4,
   confirmation_required: 5,
+  consent_required: 5,
   config_missing: 5,
   capability_unavailable: 6,
   safety_blocked: 8,
@@ -81,6 +83,8 @@ const HTTP_STATUS: Record<ErrorCode, number> = {
   idempotency_conflict: 409,
   stale_replay: 409,
   confirmation_required: 409,
+  // 授权缺失是对当前患者授权状态的拒绝：403（而非 409 资源状态冲突）。
+  consent_required: 403,
   config_missing: 503,
   capability_unavailable: 503,
   safety_blocked: 403,

@@ -161,6 +161,21 @@ contractTest("患者全流程：注册→登录→症状记录幂等/CAS/删除�
   patientToken = login.token;
   assert.ok(patientToken.length > 0);
 
+  // record 写入需 health_data 授权（issue-155 fail-closed）：正式账号经
+  // account consent update 授权。
+  dataOf(
+    await application.execute({
+      command: "account consent update",
+      input: {
+        consentType: "health_data",
+        decision: "granted",
+        policyVersion: "2026-08-01.1",
+        requestId: "req-pg-consent-health"
+      },
+      sessionToken: patientToken
+    })
+  );
+
   const symptomInput = {
     localDate: "2026-07-31",
     nasalCongestion: 2,

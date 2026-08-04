@@ -61,13 +61,17 @@ export class AgentService {
   async continue(
     patientId: string,
     input: {
-      id: string;
+      /** 缺省时续接最近待答会话（裸 agent continue，设计 §6.5）。 */
+      id?: string | undefined;
       expectedRevision: number;
       question: AgentQuestion["key"];
       answer: TriStateAnswer;
     }
   ): Promise<AgentSession> {
-    const current = await this.get(patientId, input.id);
+    const current =
+      input.id === undefined
+        ? await this.latestAwaiting(patientId)
+        : await this.get(patientId, input.id);
     if (current.revision !== input.expectedRevision) {
       throw this.versionConflict(input.expectedRevision, current.revision);
     }
@@ -102,6 +106,22 @@ export class AgentService {
     const session = await this.repository.find(patientId, id);
     if (session === null) {
       throw new DomainError("resource_not_found", "Agent 会话不存在");
+    }
+    return session;
+  }
+
+  /**
+   * 裸 continue 的会话解析（仅限已登录患者：匿名调用在 dispatcher 已被
+   * authentication_required 拦截，agent_sessions.patient_id NOT NULL，
+   * 安全会话无匿名实例）。
+   */
+  private async latestAwaiting(patientId: string): Promise<AgentSession> {
+    const session = await this.repository.findLatestAwaiting(patientId);
+    if (session === null) {
+      throw new DomainError(
+        "resource_not_found",
+        "没有待回答的会话，请先 agent start"
+      );
     }
     return session;
   }

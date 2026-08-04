@@ -59,6 +59,19 @@ export class PgAgentRepository implements AgentRepository {
     return rows.map(parse);
   }
 
+  async findLatestAwaiting(patientId: string): Promise<AgentSession | null> {
+    const { rows } = await this.database.query<AgentSessionRow>(
+      `SELECT revision, session_json
+       FROM agent_sessions
+       WHERE patient_id = $1 AND status = 'awaiting_answer'
+       ORDER BY updated_at DESC
+       LIMIT 1`,
+      [patientId]
+    );
+    const row = rows[0];
+    return row === undefined ? null : parse(row);
+  }
+
   async update(
     patientId: string,
     expectedRevision: number,

@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import { DomainError } from "../kernel/errors.js";
 import { KangminDatabase } from "./database.js";
 import type {
@@ -24,6 +26,7 @@ interface AccountRow {
 }
 
 interface ConsentRow {
+  id: string;
   patient_id: string;
   consent_type: ConsentType;
   sequence: number;
@@ -55,6 +58,7 @@ function toAccount(row: AccountRow): AccountSnapshot {
 
 function toConsent(row: ConsentRow): ConsentRecord {
   return {
+    id: row.id,
     patientId: row.patient_id,
     consentType: row.consent_type,
     sequence: row.sequence,
@@ -198,7 +202,7 @@ export class SqliteAccountRepository implements AccountRepository {
   }
 
   async appendConsent(
-    input: Omit<ConsentRecord, "sequence">
+    input: Omit<ConsentRecord, "id" | "sequence">
   ): Promise<ConsentRecord> {
     return this.database.transaction(() => {
       const nextRow = this.database.connection
@@ -211,14 +215,16 @@ export class SqliteAccountRepository implements AccountRepository {
         next_sequence: number;
       };
       const sequence = nextRow.next_sequence;
+      const id = randomUUID();
       this.database.connection
         .prepare(`
           INSERT INTO patient_consents(
-            patient_id, consent_type, sequence, decision,
+            id, patient_id, consent_type, sequence, decision,
             policy_version, request_id, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
+          id,
           input.patientId,
           input.consentType,
           sequence,
@@ -228,6 +234,7 @@ export class SqliteAccountRepository implements AccountRepository {
           input.createdAt
         );
       return {
+        id,
         patientId: input.patientId,
         consentType: input.consentType,
         sequence,
@@ -242,7 +249,7 @@ export class SqliteAccountRepository implements AccountRepository {
   async listConsents(patientId: string): Promise<ConsentRecord[]> {
     const rows = this.database.connection
       .prepare(`
-        SELECT patient_id, consent_type, sequence, decision,
+        SELECT id, patient_id, consent_type, sequence, decision,
                policy_version, request_id, created_at
         FROM patient_consents
         WHERE patient_id = ?
@@ -250,6 +257,23 @@ export class SqliteAccountRepository implements AccountRepository {
       `)
       .all(patientId) as unknown as ConsentRow[];
     return rows.map(toConsent);
+  }
+
+  async findLatestConsent(
+    patientId: string,
+    consentType: ConsentType
+  ): Promise<ConsentRecord | null> {
+    const row = this.database.connection
+      .prepare(`
+        SELECT id, patient_id, consent_type, sequence, decision,
+               policy_version, request_id, created_at
+        FROM patient_consents
+        WHERE patient_id = ? AND consent_type = ?
+        ORDER BY sequence DESC
+        LIMIT 1
+      `)
+      .get(patientId, consentType) as unknown as ConsentRow | undefined;
+    return row === undefined ? null : toConsent(row);
   }
 
   private snapshotAfterInsert(input: CreateAccountInput): AccountSnapshot {

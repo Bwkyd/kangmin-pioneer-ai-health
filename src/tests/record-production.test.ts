@@ -8,6 +8,7 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 import {
   AesGcmEncryption,
   parseEncryptionKeys,
@@ -65,6 +66,9 @@ async function fixture(encryption: EncryptionPort = aes()): Promise<{
   const session = await application.sessions.createDevelopmentSession(
     "patient-enc"
   );
+  // record 写入需 health_data 授权（issue-155 fail-closed）：dev 会话患者
+  // 无本地账号，授权经仓储层补记（见 consent-fixture）。
+  await writeConsentForTest(databasePath, session.patientId, "health_data");
   return {
     directory,
     databasePath,
@@ -634,16 +638,17 @@ test("本地明文降级写入 plaintext-dev 版本，库内可核对", async ()
     encryption: new PlaintextEncryption()
   });
   try {
-    const token =
-      (await application.sessions.createDevelopmentSession("patient-plain"))
-        .token;
+    const session =
+      await application.sessions.createDevelopmentSession("patient-plain");
+    // record 写入需 health_data 授权（issue-155 fail-closed）。
+    await writeConsentForTest(databasePath, session.patientId, "health_data");
     await application.execute({
       command: "record symptom add",
       input: {
         ...symptomInput,
         idempotencyKey: "plaintext-dev-row"
       },
-      sessionToken: token
+      sessionToken: session.token
     });
     const raw = new DatabaseSync(databasePath, { readOnly: true });
     try {

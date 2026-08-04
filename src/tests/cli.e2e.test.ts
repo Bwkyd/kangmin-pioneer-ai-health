@@ -11,6 +11,7 @@ import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
 import { seedContent } from "./content-fixture.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
 // 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption
@@ -52,9 +53,12 @@ test("真实 CLI 子进程跨重启持久化，JSON stdout 保持纯净", async 
   const directory = mkdtempSync(join(tmpdir(), "kangmin-cli-"));
   const databasePath = join(directory, "records.sqlite");
   const bootstrap = createApplication(databasePath);
-  const token =
-    (await bootstrap.sessions.createDevelopmentSession("patient-cli")).token;
+  const session =
+    await bootstrap.sessions.createDevelopmentSession("patient-cli");
   bootstrap.close();
+  // record 写入需 health_data 授权（issue-155 fail-closed）。
+  await writeConsentForTest(databasePath, session.patientId, "health_data");
+  const token = session.token;
 
   const environment = {
     KANGMIN_DB_PATH: databasePath,
@@ -137,15 +141,18 @@ async function e2eFixture(): Promise<{
   const directory = mkdtempSync(join(tmpdir(), "kangmin-cli-"));
   const databasePath = join(directory, "records.sqlite");
   const bootstrap = createApplication(databasePath);
-  const token =
-    (await bootstrap.sessions.createDevelopmentSession("patient-cli")).token;
+  const session =
+    await bootstrap.sessions.createDevelopmentSession("patient-cli");
   bootstrap.close();
+  // record 写入需 health_data 授权（issue-155 fail-closed）：dev 会话患者
+  // 无本地账号，授权经仓储层补记（见 consent-fixture）。
+  await writeConsentForTest(databasePath, session.patientId, "health_data");
   return {
     directory,
     databasePath,
     environment: {
       KANGMIN_DB_PATH: databasePath,
-      KANGMIN_SESSION_TOKEN: token
+      KANGMIN_SESSION_TOKEN: session.token
     }
   };
 }
@@ -474,6 +481,61 @@ test("Agent 真实 CLI 子进程完成安全会话并跨进程恢复", async () 
     resumedBody.data.decisionEvidence.rulePackVersion,
     "agent-safety-shell-v1"
   );
+});
+
+test("裸 agent continue（缺省 ID）续接最近待答会话；无待答 exit 3；匿名 exit 9", async () => {
+  const { environment } = await e2eFixture();
+
+  // 无待答会话：裸 continue → resource_not_found（exit 3）。
+  const empty = run([
+    "agent", "continue",
+    "--expected-revision", "1",
+    "--question", "urgentHelp",
+    "--answer", "no",
+    "--json"
+  ], environment);
+  assert.equal(empty.status, 3, empty.stderr);
+  assert.equal(
+    (JSON.parse(empty.stdout) as { error: { code: string } }).error.code,
+    "resource_not_found"
+  );
+
+  const start = run(["agent", "start", "--json"], environment);
+  assert.equal(start.status, 0, start.stderr);
+  const started = JSON.parse(start.stdout) as { data: { id: string } };
+
+  // 缺省 ID：CLI 解析放行，续接最近待答会话。
+  const bare = run([
+    "agent", "continue",
+    "--expected-revision", "1",
+    "--question", "urgentHelp",
+    "--answer", "yes",
+    "--json"
+  ], environment);
+  assert.equal(bare.status, 0, bare.stderr);
+  const bareBody = JSON.parse(bare.stdout) as {
+    data: { id: string; status: string };
+  };
+  assert.equal(bareBody.data.id, started.data.id);
+  assert.equal(bareBody.data.status, "safety_blocked");
+
+  // 匿名裸 continue → authentication_required（exit 9，保持不变）。
+  const anonymous = run([
+    "agent", "continue",
+    "--expected-revision", "1",
+    "--question", "urgentHelp",
+    "--answer", "no",
+    "--json"
+  ], { KANGMIN_DB_PATH: environment.KANGMIN_DB_PATH ?? "" });
+  assert.equal(anonymous.status, 9);
+  assert.equal(
+    (JSON.parse(anonymous.stdout) as { error: { code: string } }).error.code,
+    "authentication_required"
+  );
+
+  // agent resume 仍必须显式带 ID（解析错误 exit 2）。
+  const resume = run(["agent", "resume", "--json"], environment);
+  assert.equal(resume.status, 2);
 });
 
 test("Agent 对话命令通过真实 CLI：exec/feedback/快捷入口；患者侧 test run 关闭", () => {

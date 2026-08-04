@@ -6,6 +6,7 @@ import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
 import type { CommandResult } from "../kernel/result.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 import type {
 
   CalendarProjection,
@@ -35,12 +36,17 @@ async function fixture(): Promise<{
   tokenB: string;
 }> {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-app-"));
-  const application = createApplication(join(directory, "records.sqlite"));
-  const tokenA =
-    (await application.sessions.createDevelopmentSession("patient-a")).token;
-  const tokenB =
-    (await application.sessions.createDevelopmentSession("patient-b")).token;
-  return { application, tokenA, tokenB };
+  const databasePath = join(directory, "records.sqlite");
+  const application = createApplication(databasePath);
+  const sessionA =
+    await application.sessions.createDevelopmentSession("patient-a");
+  const sessionB =
+    await application.sessions.createDevelopmentSession("patient-b");
+  // record 写入需 health_data 授权（issue-155 fail-closed）：dev 会话患者
+  // 无本地账号，授权经仓储层补记（见 consent-fixture）。
+  await writeConsentForTest(databasePath, sessionA.patientId, "health_data");
+  await writeConsentForTest(databasePath, sessionB.patientId, "health_data");
+  return { application, tokenA: sessionA.token, tokenB: sessionB.token };
 }
 
 const symptomInput = {
@@ -52,6 +58,57 @@ const symptomInput = {
   notes: "换季后加重",
   idempotencyKey: "symptom-20260731"
 };
+
+test("record 写入前置：health_data 未授权与撤回一律 consent_required（fail-closed）", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-consent-gate-"));
+  const databasePath = join(directory, "records.sqlite");
+  const application = createApplication(databasePath);
+  try {
+    const session =
+      await application.sessions.createDevelopmentSession("patient-consent");
+    const write = () =>
+      application.execute({
+        command: "record symptom add",
+        input: symptomInput,
+        sessionToken: session.token
+      });
+
+    // 无任何授权记录 = 未授权 = 拒绝，并提示先授权。
+    const denied = await write();
+    assert.equal(denied.ok, false);
+    if (!denied.ok) {
+      assert.equal(denied.error.code, "consent_required");
+      assert.match(denied.error.message, /account consent update/u);
+    }
+
+    // 授权后放行。
+    await writeConsentForTest(databasePath, session.patientId, "health_data");
+    const allowed = await write();
+    assert.equal(allowed.ok, true, allowed.ok ? "" : allowed.error.code);
+
+    // 撤回后最新决策为 withdrawn → 再被拒（追加式语义）。
+    await writeConsentForTest(
+      databasePath,
+      session.patientId,
+      "health_data",
+      "withdrawn"
+    );
+    const revoked = await write();
+    assert.equal(revoked.ok, false);
+    if (!revoked.ok) {
+      assert.equal(revoked.error.code, "consent_required");
+    }
+
+    // 只读投影不受门禁影响。
+    const listed = await application.execute({
+      command: "record symptom list",
+      sessionToken: session.token
+    });
+    assert.equal(listed.ok, true);
+  } finally {
+    application.close();
+  }
+});
 
 test("Record 创建、查询和更新形成单一患者闭环", async () => {
   const { application, tokenA } = await fixture();

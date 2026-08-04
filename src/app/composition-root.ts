@@ -84,7 +84,9 @@ export {
 } from "../infrastructure/structured-logger.js";
 import { AccountService } from "../modules/account/account-service.js";
 import { SessionService } from "../modules/account/session-service.js";
+import { ConsentGateAdapter } from "./consent-gate-adapter.js";
 import { ConversationService } from "../modules/agent/conversation-service.js";
+import type { ConversationRepository } from "../modules/agent/conversation-repository.js";
 import type {
   ModelExplanationPort,
   ModelExtractionPort
@@ -598,6 +600,23 @@ export function createApplication(
 }
 
 /**
+ * 启动时 best-effort 清理过期匿名会话（issue-155 匿名 24h 保留期执行）：
+ * 失败只记 stderr，绝不阻断启动。
+ */
+function cleanupExpiredAnonymousSessions(
+  repository: ConversationRepository
+): void {
+  void repository
+    .deleteExpiredAnonymousSessions(new Date().toISOString())
+    .catch((error: unknown) => {
+      console.error(
+        "过期匿名会话启动清理失败（不影响启动）",
+        error instanceof Error ? error.message : String(error)
+      );
+    });
+}
+
+/**
  * 带运维语义的应用装配：除应用实例外，同时返回 /ready 就绪探针
  * （探针闭包复用同一数据库连接，不另开连接池）。
  */
@@ -649,23 +668,30 @@ export function createApplicationWithOps(
     const planRegistry: PlanRegistryPort =
       options.planRegistry ?? new PgPlanRegistry(database);
     const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+    const accountRepository = new PgAccountRepository(database);
+    const conversationRepository = new PgConversationRepository(database);
+    // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
+    const consentGate = new ConsentGateAdapter(accountRepository);
     const conversations = new ConversationService(
-      new PgConversationRepository(database),
+      conversationRepository,
       kernel,
       extraction,
       explanation,
-      encryption
+      encryption,
+      consentGate
     );
+    cleanupExpiredAnonymousSessions(conversationRepository);
     return {
       application: new KangminApplication(
         sessions,
         new PgRecordRepository(database, encryption),
         new PgContentReadRepository(database),
         new PgAgentRepository(database),
-        new AccountService(new PgAccountRepository(database), sessions),
+        new AccountService(accountRepository, sessions),
         environmentProvider,
         new PgEnvironmentCacheRepository(database),
         conversations,
+        consentGate,
         () => {
           void database.close();
         },
@@ -687,13 +713,19 @@ export function createApplicationWithOps(
   const planRegistry: PlanRegistryPort =
     options.planRegistry ?? new SqlitePlanRegistry(database);
   const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+  const accountRepository = new SqliteAccountRepository(database);
+  const conversationRepository = new SqliteConversationRepository(database);
+  // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
+  const consentGate = new ConsentGateAdapter(accountRepository);
   const conversations = new ConversationService(
-    new SqliteConversationRepository(database),
+    conversationRepository,
     kernel,
     extraction,
     explanation,
-    encryption
+    encryption,
+    consentGate
   );
+  cleanupExpiredAnonymousSessions(conversationRepository);
 
   return {
     application: new KangminApplication(
@@ -705,10 +737,11 @@ export function createApplicationWithOps(
         planBrowseEnabled: environment.KANGMIN_PLAN_BROWSE_ENABLED === "1"
       }),
       new SqliteAgentRepository(database),
-      new AccountService(new SqliteAccountRepository(database), sessions),
+      new AccountService(accountRepository, sessions),
       environmentProvider,
       new SqliteEnvironmentCacheRepository(database),
       conversations,
+      consentGate,
       () => {
         database.close();
       },
