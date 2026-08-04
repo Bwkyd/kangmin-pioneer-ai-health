@@ -11,8 +11,8 @@
     "kangmin-admin": "./dist/cli/kangmin-admin.js"
   },
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/copy-web-assets.mjs",
-    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && vite build web",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "lint": "node scripts/architecture-check.mjs",
     "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",
     "check": "npm run typecheck && npm run lint && npm test",
@@ -24,8 +24,14 @@
   "devDependencies": {
     "@types/node": "^24.10.0",
     "@types/pg": "^8.20.3",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "playwright": "^1.60.0",
-    "typescript": "^5.9.3"
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.9.3",
+    "vite": "^8.2.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1101.0",

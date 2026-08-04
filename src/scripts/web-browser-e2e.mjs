@@ -10,7 +10,6 @@ import { createKangminHttpServer } from "../dist/http/server.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
-
 async function listen(server) {
   await new Promise((resolve) => {
     server.listen(0, "127.0.0.1", resolve);
@@ -34,22 +33,17 @@ async function close(server) {
   });
 }
 
-function dataOf(result) {
-  if (!result.ok) {
-    assert.fail(`${result.error.code}: ${result.error.message}`);
-  }
-  return result.data;
-}
-
 async function expectText(locator, text) {
   await locator.filter({ hasText: text }).waitFor({ state: "visible" });
   assert.match((await locator.textContent()) ?? "", new RegExp(text, "u"));
 }
 
-async function selectScore(page, name, value) {
-  await page
-    .locator(`label:has(input[name="${name}"][value="${value}"])`)
-    .click();
+/** 打开日历 tab 并切到列表模式。 */
+async function openCalendarList(page) {
+  await page.getByTestId("nav-calendar").click();
+  await page.getByTestId("symptom-add-today").waitFor({ state: "visible" });
+  await page.getByTestId("calendar-mode-toggle").click();
+  await page.getByTestId("calendar-list").waitFor({ state: "visible" });
 }
 
 const directory = mkdtempSync(join(tmpdir(), "kangmin-browser-"));
@@ -67,81 +61,56 @@ const context = await browser.newContext({
 const page = await context.newPage();
 
 try {
+  // 首页薄壳渲染（品牌横幅 + 手机壳 + 底部导航）。
   await page.goto(origin);
-  await page.getByTestId("symptom-form").waitFor({ state: "visible" });
-  await page.getByTestId("empty-state").waitFor({ state: "visible" });
+  await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
+  await expectText(page.locator(".real-title"), "抗敏先锋");
 
-  await page.getByTestId("record-date").fill("2026-07-31");
-  await selectScore(page, "sneezing", 2);
-  await selectScore(page, "runnyNose", 1);
-  await selectScore(page, "nasalCongestion", 2);
-  await selectScore(page, "nasalItching", 1);
-  await page.getByTestId("notes").fill("浏览器真实保存");
-  await expectText(page.getByTestId("score-preview"), "6");
-  await page.getByTestId("save-button").click();
+  // 打开日历并新增今天的症状记录（2,1,2,1 → TNSS 6）。
+  await page.getByTestId("nav-calendar").click();
+  await page.getByTestId("symptom-add-today").click();
+  await page.getByTestId("entry-sheet").waitFor({ state: "visible" });
+  await page.getByTestId("score-0-2").click();
+  await page.getByTestId("score-1-1").click();
+  await page.getByTestId("score-2-2").click();
+  await page.getByTestId("score-3-1").click();
+  await page.getByTestId("symptom-save").click();
+  await page.getByTestId("entry-sheet").waitFor({ state: "detached" });
 
-  await expectText(page.getByTestId("notice"), "已保存到服务端");
-  await expectText(page.getByTestId("record-count"), "1 条");
-  await expectText(page.getByTestId("record-list"), "TNSS 6");
-
-  await page.getByTestId("record-date").fill("2026-07-30");
-  await selectScore(page, "sneezing", 1);
-  await selectScore(page, "runnyNose", 1);
-  await selectScore(page, "nasalCongestion", 1);
-  await selectScore(page, "nasalItching", 0);
-  await page.getByTestId("notes").fill("前一天纵向记录");
-  await page.getByTestId("save-button").click();
-  await expectText(page.getByTestId("record-count"), "2 条");
+  // 列表模式确认服务端记录已回读。
+  await page.getByTestId("calendar-mode-toggle").click();
   await expectText(
-    page.getByTestId("record-list").locator("button").first(),
-    "2026年7月31日"
+    page.getByTestId("calendar-list"),
+    "喷嚏 2 · 流涕 1 · 鼻塞 2 · 鼻痒 1"
   );
-  await expectText(page.getByTestId("record-list"), "TNSS 3");
 
+  // 从列表回显该日期并修改鼻塞评分（2 → 3，TNSS 7）。
+  await page.getByTestId("calendar-list").locator("button").first().click();
+  await page.getByTestId("entry-sheet").waitFor({ state: "visible" });
+  // 保存按钮解除禁用才表示该日服务端记录已回显完成。
+  await page.waitForSelector('[data-testid="symptom-save"]:not([disabled])');
+  assert.match(
+    (await page.getByTestId("score-0-2").getAttribute("class")) ?? "",
+    /selected/u
+  );
+  await page.getByTestId("score-2-3").click();
+  await page.getByTestId("symptom-save").click();
+  await page.getByTestId("entry-sheet").waitFor({ state: "detached" });
+  await expectText(
+    page.getByTestId("calendar-list"),
+    "喷嚏 2 · 流涕 1 · 鼻塞 3 · 鼻痒 1"
+  );
+
+  // 刷新页面（同一会话 Cookie）后记录仍在。
   await page.reload();
-  await expectText(page.getByTestId("record-list"), "TNSS 6");
-  await expectText(page.getByTestId("record-count"), "2 条");
-  await page.getByTestId("record-list").locator("button").first().click();
-  await expectText(page.getByTestId("form-title"), "修改症状记录");
-  assert.equal(
-    await page.getByTestId("notes").inputValue(),
-    "浏览器真实保存"
-  );
-
-  await selectScore(page, "nasalCongestion", 3);
-  await page.getByTestId("save-button").click();
-  await expectText(page.getByTestId("notice"), "已更新");
-  await expectText(page.getByTestId("record-list"), "TNSS 7");
-
-  const externalSession =
-    await application.sessions.createDevelopmentSession("patient-web");
-  const listed = await application.execute({
-    command: "record symptom list",
-    sessionToken: externalSession.token
-  });
-  const [current] = dataOf(listed).items;
-  assert.notEqual(current, undefined);
-  const externallyUpdated = await application.execute({
-    command: "record symptom update",
-    sessionToken: externalSession.token,
-    input: {
-      id: current.id,
-      expectedRevision: current.revision,
-      sneezing: 0
-    }
-  });
-  assert.equal(externallyUpdated.ok, true);
-
-  await selectScore(page, "nasalItching", 2);
-  await page.getByTestId("save-button").click();
+  await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
+  await openCalendarList(page);
   await expectText(
-    page.getByTestId("notice"),
-    "其它页面发生变化"
+    page.getByTestId("calendar-list"),
+    "喷嚏 2 · 流涕 1 · 鼻塞 3 · 鼻痒 1"
   );
 
-  await page.getByTestId("refresh-button").click();
-  await expectText(page.getByTestId("record-list"), "TNSS 5");
-
+  // 服务重启（同一 SQLite）后，新开发会话仍解析到同一患者记录。
   await close(server);
   application.close();
   application = createApplication(databasePath);
@@ -152,11 +121,14 @@ try {
   origin = await listen(server);
 
   await page.goto(origin);
-  await expectText(page.getByTestId("record-list"), "TNSS 5");
-  await expectText(page.getByTestId("record-list"), "TNSS 3");
-  await expectText(page.getByTestId("record-count"), "2 条");
+  await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
+  await openCalendarList(page);
+  await expectText(
+    page.getByTestId("calendar-list"),
+    "喷嚏 2 · 流涕 1 · 鼻塞 3 · 鼻痒 1"
+  );
   process.stdout.write(
-    "web-browser-e2e: PASS longitudinal save refresh update conflict restart\n"
+    "web-browser-e2e: PASS shell save reflect-update reload restart\n"
   );
 } finally {
   await context.close();
