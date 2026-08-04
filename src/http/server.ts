@@ -283,7 +283,7 @@ async function staticAsset(
     response.setHeader("x-frame-options", "DENY");
     response.setHeader(
       "content-security-policy",
-      "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
+      "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'"
     );
     response.end(body);
   } catch (error) {
@@ -300,6 +300,18 @@ async function staticAsset(
       )
     );
   }
+}
+
+/** 静态资源 content-type：Vite 构建产物（带哈希的 js/css）与公共图片。 */
+function staticContentType(filename: string): string {
+  if (filename.endsWith(".js")) return "text/javascript; charset=utf-8";
+  if (filename.endsWith(".css")) return "text/css; charset=utf-8";
+  if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) return "image/jpeg";
+  if (filename.endsWith(".png")) return "image/png";
+  if (filename.endsWith(".svg")) return "image/svg+xml";
+  if (filename.endsWith(".webp")) return "image/webp";
+  if (filename.endsWith(".woff2")) return "font/woff2";
+  return "application/octet-stream";
 }
 
 function routeNotFound(response: ServerResponse): void {
@@ -533,28 +545,37 @@ export function createKangminHttpServer(
       return;
     }
 
+    // Vite 构建产物：/assets/ 下带内容哈希的 js/css（文件名白名单防穿越）。
     if (
       request.method === "GET" &&
-      requestUrl.pathname === "/assets/app.js"
+      requestUrl.pathname.startsWith("/assets/")
     ) {
-      await staticAsset(
-        response,
-        webRoot,
-        "app.js",
-        "text/javascript; charset=utf-8"
-      );
+      const filename = requestUrl.pathname.slice("/assets/".length);
+      if (/^[A-Za-z0-9._-]+$/u.test(filename)) {
+        await staticAsset(
+          response,
+          webRoot,
+          `assets/${filename}`,
+          staticContentType(filename)
+        );
+        return;
+      }
+      routeNotFound(response);
       return;
     }
 
+    // 公共静态资源（品牌横幅、站点图标）。
     if (
       request.method === "GET" &&
-      requestUrl.pathname === "/assets/styles.css"
+      (requestUrl.pathname === "/brand-banner.jpg" ||
+        requestUrl.pathname === "/favicon.svg")
     ) {
+      const filename = requestUrl.pathname.slice(1);
       await staticAsset(
         response,
         webRoot,
-        "styles.css",
-        "text/css; charset=utf-8"
+        filename,
+        staticContentType(filename)
       );
       return;
     }

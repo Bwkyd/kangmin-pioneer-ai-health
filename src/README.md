@@ -2,8 +2,10 @@
 
 与 `legacy/` 隔离的新应用核心，通过两个 CLI 交付：患者端 `kangmin`
 与管理端 `kangmin-admin`。CLI 可作为远程命令服务的薄客户端；本地 SQLite
-模式保留给开发和集成测试。当前只交付 CLI，不包含前端套壳，也不表示
-PostgreSQL、对象存储或正式身份认证已经完成。
+模式保留给开发和集成测试。`web/` 是患者薄前端壳（Vite + React 静态构建，
+产物由 HTTP 服务托管），只通过 `/v1/patient/commands` 命令协议交互，
+当前覆盖 legacy 用户端主界面 demo（症状/档案/暴露/用药记录与安全评估
+外壳）；不表示 PostgreSQL、对象存储或正式身份认证已经完成。
 
 ## 产品概述
 
@@ -42,6 +44,26 @@ npm run check        # typecheck + 架构门禁 + 单元/集成测试 + 浏览�
 
 `npm run check` 全绿后，`dist/cli/kangmin.js` 与 `dist/cli/kangmin-admin.js`
 即为可执行入口（也可 `npm link` 后用 `kangmin` / `kangmin-admin` 直跑）。
+
+### 患者 Web 薄壳（demo）
+
+`web/` 是 Vite + React 静态工程，移植自 legacy 用户端主界面（首页/聊天/
+过敏日历/健康档案/过敏原记录/科普/我的 七个 tab），只通过
+`POST /v1/patient/commands` 命令协议读写，前端零业务逻辑。
+`npm run build` 时 Vite 把产物输出到 `dist/web/`，由 HTTP 服务托管：
+
+```bash
+npm run build
+KANGMIN_APP_ENV=local KANGMIN_ALLOW_DEV_SESSION=1 node dist/http/server.js
+# 打开 http://127.0.0.1:8787（开发会话自动引导；正式登录尚未接入）
+```
+
+demo 简化点（均如实呈现，不伪造服务端能力）：安全评估面板只将"危险
+信号"组提交确定性安全外壳会话（`agent start/continue` 的 urgentHelp），
+其余分组留在本地；聊天自由对话仍是静态演示脚本（未接 `agent exec`）；
+健康档案为扁平字段（结构化过敏史与诱因投影无对应命令，显示"暂无"）；
+用药按日期记录（无时分）；"学一学"入口暂指向内置科普 tab（/discover
+未迁移）；"我的"页为静态演示（account 注册/登录未接入）。
 
 ### 远程命令服务（预发/生产必选）
 

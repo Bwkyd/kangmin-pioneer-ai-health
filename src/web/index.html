@@ -1,146 +1,17 @@
 <!doctype html>
 <html lang="zh-CN">
   <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#f6fbf8">
-    <title>抗敏先锋 · 症状记录</title>
-    <link rel="stylesheet" href="/assets/styles.css">
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+    <meta
+      name="description"
+      content="抗敏先锋鼻健康记录：症状评分、过敏原自述与健康档案。结果仅供参考，最终方案请以门诊诊断为准。"
+    />
+    <title>抗敏先锋 AI 鼻健康管理系统</title>
   </head>
   <body>
-    <main class="patient-shell">
-      <header class="topbar">
-        <div>
-          <p class="eyebrow">抗敏先锋</p>
-          <h1>鼻健康记录</h1>
-        </div>
-        <span class="privacy-badge">本人可见</span>
-      </header>
-
-      <section class="intro-card" aria-labelledby="record-heading">
-        <div>
-          <p class="eyebrow">今天感觉怎么样？</p>
-          <h2 id="record-heading">记录四项鼻部症状</h2>
-          <p>选择喷嚏、流涕、鼻塞和鼻痒程度，系统会在服务端计算 TNSS 总分。</p>
-        </div>
-        <div class="score-orb" aria-live="polite">
-          <strong data-testid="score-preview">—</strong>
-          <span>TNSS 预览</span>
-        </div>
-      </section>
-
-      <section
-        class="notice hidden"
-        data-testid="notice"
-        role="status"
-        aria-live="polite"
-      ></section>
-
-      <section class="record-card">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">症状与日期</p>
-            <h2 data-testid="form-title">新增症状记录</h2>
-          </div>
-          <button
-            class="text-button"
-            type="button"
-            data-testid="refresh-button"
-          >重新读取</button>
-        </div>
-
-        <label class="date-field">
-          <span>记录日期</span>
-          <input type="date" data-testid="record-date">
-        </label>
-
-        <form data-testid="symptom-form">
-          <div class="score-list">
-            <fieldset data-score="sneezing">
-              <legend><span>喷嚏</span><small>频次与持续情况</small></legend>
-              <div class="score-options" role="radiogroup" aria-label="喷嚏评分">
-                <label><input type="radio" name="sneezing" value="0"><span>0<small>无</small></span></label>
-                <label><input type="radio" name="sneezing" value="1"><span>1<small>轻</small></span></label>
-                <label><input type="radio" name="sneezing" value="2"><span>2<small>中</small></span></label>
-                <label><input type="radio" name="sneezing" value="3"><span>3<small>重</small></span></label>
-              </div>
-            </fieldset>
-
-            <fieldset data-score="runnyNose">
-              <legend><span>流涕</span><small>清涕或鼻分泌物</small></legend>
-              <div class="score-options" role="radiogroup" aria-label="流涕评分">
-                <label><input type="radio" name="runnyNose" value="0"><span>0<small>无</small></span></label>
-                <label><input type="radio" name="runnyNose" value="1"><span>1<small>轻</small></span></label>
-                <label><input type="radio" name="runnyNose" value="2"><span>2<small>中</small></span></label>
-                <label><input type="radio" name="runnyNose" value="3"><span>3<small>重</small></span></label>
-              </div>
-            </fieldset>
-
-            <fieldset data-score="nasalCongestion">
-              <legend><span>鼻塞</span><small>对呼吸和睡眠的影响</small></legend>
-              <div class="score-options" role="radiogroup" aria-label="鼻塞评分">
-                <label><input type="radio" name="nasalCongestion" value="0"><span>0<small>无</small></span></label>
-                <label><input type="radio" name="nasalCongestion" value="1"><span>1<small>轻</small></span></label>
-                <label><input type="radio" name="nasalCongestion" value="2"><span>2<small>中</small></span></label>
-                <label><input type="radio" name="nasalCongestion" value="3"><span>3<small>重</small></span></label>
-              </div>
-            </fieldset>
-
-            <fieldset data-score="nasalItching">
-              <legend><span>鼻痒</span><small>发痒和揉鼻需求</small></legend>
-              <div class="score-options" role="radiogroup" aria-label="鼻痒评分">
-                <label><input type="radio" name="nasalItching" value="0"><span>0<small>无</small></span></label>
-                <label><input type="radio" name="nasalItching" value="1"><span>1<small>轻</small></span></label>
-                <label><input type="radio" name="nasalItching" value="2"><span>2<small>中</small></span></label>
-                <label><input type="radio" name="nasalItching" value="3"><span>3<small>重</small></span></label>
-              </div>
-            </fieldset>
-          </div>
-
-          <label class="notes-field">
-            <span>备注（可选）</span>
-            <textarea
-              rows="3"
-              maxlength="300"
-              placeholder="例如：换季后加重，夜间鼻塞"
-              data-testid="notes"
-            ></textarea>
-          </label>
-
-          <button
-            class="primary-button"
-            type="submit"
-            data-testid="save-button"
-            disabled
-          >保存症状记录</button>
-        </form>
-      </section>
-
-      <section class="history-section" aria-labelledby="history-heading">
-        <div class="section-heading">
-          <div>
-            <p class="eyebrow">日历与历史</p>
-            <h2 id="history-heading">症状记录</h2>
-          </div>
-          <span data-testid="record-count">0 条</span>
-        </div>
-        <div class="empty-state" data-testid="empty-state">
-          <span>＋</span>
-          <p>还没有症状记录</p>
-          <small>完成上方四项评分后，记录会保存在服务端。</small>
-        </div>
-        <div class="record-list" data-testid="record-list"></div>
-      </section>
-    </main>
-
-    <nav class="bottom-nav" aria-label="患者端主导航">
-      <button type="button" disabled><span>⌂</span><small>首页</small></button>
-      <button type="button" disabled><span>◇</span><small>问助手</small></button>
-      <button type="button" class="central-add" data-testid="central-add"><span>＋</span><small>记录</small></button>
-      <button type="button" class="active" data-testid="calendar-nav"><span>▦</span><small>日历</small></button>
-      <button type="button" disabled><span>○</span><small>我的</small></button>
-    </nav>
-
-    <script type="module" src="/assets/app.js"></script>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
