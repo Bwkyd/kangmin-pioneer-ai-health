@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
 
@@ -11,6 +13,13 @@ import { KangminDatabase } from "../dist/infrastructure/database.js";
 import { SqliteAccountRepository } from "../dist/infrastructure/sqlite-account-repository.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+
+const adminCli = fileURLToPath(
+  new URL("../dist/cli/kangmin-admin.js", import.meta.url)
+);
+const adminSessionScript = fileURLToPath(
+  new URL("../dist/dev/create-admin-session.js", import.meta.url)
+);
 
 async function listen(server) {
   await new Promise((resolve) => {
@@ -146,8 +155,93 @@ try {
     page.getByTestId("calendar-list"),
     "喷嚏 2 · 流涕 1 · 鼻塞 3 · 鼻痒 1"
   );
+
+  // ---- 学一学（discover）内容页 ----
+  // 空库下进入"学一学"：文章 tab 展示空态；方案 tab 在 candidate 门禁下
+  // browse plan list 返回空是设计行为，如实提示暂未开放。
+  await page.locator(".bottom-nav button", { hasText: "首页" }).click();
+  await page.locator(".learn-module").click();
+  await page.getByTestId("discover-view").waitFor({ state: "visible" });
+  await expectText(
+    page.getByTestId("discover-empty"),
+    "暂无已发布内容，发布后将出现在这里"
+  );
+  await page.locator(".discover-tabs button", { hasText: "调理方案" }).click();
+  await expectText(page.getByTestId("discover-empty"), "方案内容暂未开放");
+
+  // 管理 CLI 造数（与 e2e 服务同一 SQLite；local/integration 的开发管理员
+  // 会话由 KANGMIN_ALLOW_DEV_ADMIN_SESSION 放行，令牌经环境变量传入）。
+  const adminEnv = {
+    ...process.env,
+    KANGMIN_APP_ENV: "integration",
+    KANGMIN_ALLOW_DEV_SESSION: "1",
+    KANGMIN_ALLOW_DEV_ADMIN_SESSION: "1",
+    KANGMIN_DB_PATH: databasePath
+  };
+  const adminSession = JSON.parse(execFileSync(
+    process.execPath,
+    [adminSessionScript, "--subject", "e2e-discover-owner"],
+    { env: adminEnv, encoding: "utf8" }
+  ));
+  const runAdmin = (args) => {
+    const output = execFileSync(
+      process.execPath,
+      [adminCli, ...args, "--json"],
+      {
+        env: { ...adminEnv, KANGMIN_ADMIN_TOKEN: adminSession.adminToken },
+        encoding: "utf8"
+      }
+    );
+    const result = JSON.parse(output);
+    assert.equal(result.ok, true, `admin 造数失败：${output}`);
+    return result.data;
+  };
+  runAdmin([
+    "content", "category", "create",
+    "--name", "日常防护",
+    "--kind", "article"
+  ]);
+  const created = runAdmin([
+    "content", "article", "create",
+    "--title", "换季鼻敏感注意事项",
+    "--category", "日常防护",
+    "--idempotency-key", "e2e-discover-article"
+  ]);
+  runAdmin([
+    "content", "article", "update", created.id,
+    "--expected-revision", "1",
+    "--summary", "换季科普摘要",
+    "--body", "换季期间注意保暖和清洁，正文内容。",
+    "--source", "客户已审核来源"
+  ]);
+  runAdmin([
+    "content", "article", "publish", created.id,
+    "--expected-revision", "2",
+    "--yes"
+  ]);
+
+  // 切回文章 tab：已发布文章出现在列表，点卡片可见详情正文与免责声明。
+  await page.locator(".discover-tabs button", { hasText: "科普文章" }).click();
+  const articleCard = page.locator(".discover-grid article", {
+    hasText: "换季鼻敏感注意事项"
+  });
+  await articleCard.waitFor({ state: "visible" });
+  await articleCard.click();
+  await expectText(
+    page.getByTestId("discover-detail"),
+    "换季期间注意保暖和清洁，正文内容。"
+  );
+  await expectText(
+    page.locator(".discover-detail footer"),
+    "不代替门诊诊断"
+  );
+  await page.locator(".discover-detail > button").click();
+  await expectText(
+    page.locator(".discover-footer"),
+    "不能替代门诊诊断"
+  );
   process.stdout.write(
-    "web-browser-e2e: PASS shell save reflect-update reload restart\n"
+    "web-browser-e2e: PASS shell save reflect-update reload restart discover\n"
   );
 } finally {
   await context.close();
