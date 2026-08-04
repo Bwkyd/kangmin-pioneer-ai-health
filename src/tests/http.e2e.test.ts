@@ -483,7 +483,9 @@ test("GET /v1/media/:id：已发布引用发字节流，未发布/不存在/非�
 
     const cover = await fetch(`${origin}/v1/media/${coverId}`);
     assert.equal(cover.status, 200);
-    assert.equal(cover.headers.get("content-type"), "image/*");
+    // 库存 mime 是上传白名单通配形式（image/*）：路由层按对象键扩展名
+    // （storedPath `<med_id>/cover.png`）映射为具体类型下发（issue-160）。
+    assert.equal(cover.headers.get("content-type"), "image/png");
     assert.equal(cover.headers.get("cache-control"), "public, max-age=3600");
     assert.equal(
       Number(cover.headers.get("content-length")),
@@ -493,7 +495,7 @@ test("GET /v1/media/:id：已发布引用发字节流，未发布/不存在/非�
 
     const clip = await fetch(`${origin}/v1/media/${videoMediaId}`);
     assert.equal(clip.status, 200);
-    assert.equal(clip.headers.get("content-type"), "video/*");
+    assert.equal(clip.headers.get("content-type"), "video/mp4");
     assert.deepEqual(Buffer.from(await clip.arrayBuffer()), mp4Bytes);
 
     // 素材被停用（直接改库模拟）→ 非 ready 不服务。

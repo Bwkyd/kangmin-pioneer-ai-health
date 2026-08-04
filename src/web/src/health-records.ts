@@ -287,6 +287,23 @@ export async function listSymptoms(date?: string): Promise<SymptomRecord[]> {
   return date ? records.filter((record) => record.date === date) : records;
 }
 
+// ---- 记录概览（record overview）：首页/我的页统计区共用 ----
+
+/** 与 src/modules/record/contracts.ts 的 OverviewData 对应，原样透传。 */
+export type RecordOverview = {
+  recentSymptomDate: string | null;
+  monthRecordCount: number;
+  consecutiveDays: number;
+  lastTnss: number | null;
+  recentExposureDate: string | null;
+  recentMedicationDate: string | null;
+  dataRead: "ok";
+};
+
+export async function getRecordOverview(): Promise<RecordOverview> {
+  return command<RecordOverview>("record overview");
+}
+
 export async function saveSymptom(draft: SymptomDraft, current: SymptomRecord | null): Promise<SymptomRecord> {
   const scores = {
     sneezing: draft.scores.sneezing,

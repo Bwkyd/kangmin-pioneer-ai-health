@@ -94,6 +94,17 @@ try {
   await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
   await expectText(page.locator(".real-title"), "抗敏先锋");
 
+  // ---- 首页/我的统计（record overview）：无记录账户为空态 ----
+  await expectText(page.getByTestId("home-overview"), "暂无真实健康记录");
+  await page.locator(".bottom-nav button", { hasText: "我的" }).click();
+  const emptyOverview = page.getByTestId("profile-overview");
+  await emptyOverview.waitFor({ state: "visible" });
+  const emptyCells = emptyOverview.locator("div");
+  assert.match((await emptyCells.nth(0).textContent()) ?? "", /^--连续记录\/天$/u);
+  assert.match((await emptyCells.nth(1).textContent()) ?? "", /^--本月记录\/次$/u);
+  assert.match((await emptyCells.nth(2).textContent()) ?? "", /^暂无最近评估$/u);
+  await page.locator(".bottom-nav button", { hasText: "首页" }).click();
+
   // 打开日历并新增今天的症状记录（2,1,2,1 → TNSS 6）。
   await page.getByTestId("nav-calendar").click();
   await page.getByTestId("symptom-add-today").click();
@@ -128,6 +139,19 @@ try {
     page.getByTestId("calendar-list"),
     "喷嚏 2 · 流涕 1 · 鼻塞 3 · 鼻痒 1"
   );
+
+  // ---- 首页/我的统计（record overview）：保存后显示真值 ----
+  // 今天一条症状记录（TNSS 7）：连续 1 天、本月 1 次、最近评估 TNSS 7/12。
+  await page.locator(".bottom-nav button", { hasText: "首页" }).click();
+  await expectText(page.getByTestId("home-overview"), "连续记录 1 天 · 本月 1 次");
+  await page.locator(".bottom-nav button", { hasText: "我的" }).click();
+  const filledOverview = page.getByTestId("profile-overview");
+  const filledCells = filledOverview.locator("div");
+  await expectText(filledOverview, "TNSS 7/12");
+  assert.match((await filledCells.nth(0).textContent()) ?? "", /^1连续记录\/天$/u);
+  assert.match((await filledCells.nth(1).textContent()) ?? "", /^1本月记录\/次$/u);
+  assert.match((await filledCells.nth(2).textContent()) ?? "", /最近评估 · \d{1,2}月\d{1,2}日$/u);
+  await page.locator(".bottom-nav button", { hasText: "首页" }).click();
 
   // 刷新页面（同一会话 Cookie）后记录仍在。
   await page.reload();
@@ -240,8 +264,46 @@ try {
     page.locator(".discover-footer"),
     "不能替代门诊诊断"
   );
+
+  // ---- chat 底部输入接 agent exec（真对话）----
+  // dev 无模型 key：降级模式下助手回复为结构化问诊提问，并带固定
+  // system_notice 降级提示；conversationId 经 sessionStorage 持久化续聊。
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  const chatInput = page.locator('input[aria-label="输入症状或问题"]');
+  await chatInput.waitFor({ state: "visible" });
+  await chatInput.fill("我最近鼻塞，晚上比较严重");
+  await page.locator(".send-button").click();
+  await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
+  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).first().waitFor({ state: "visible" });
+  await expectText(page.getByTestId("chat-notice"), "智能提取服务暂不可用");
+  const conversationId = await page.evaluate(() =>
+    sessionStorage.getItem("kangmin.agent.conversationId")
+  );
+  assert.ok(conversationId, "首轮发送后应持久化 conversationId");
+
+  // 续聊：携带同一 conversationId，助手回复仍出现且会话 id 不变。
+  await chatInput.fill("还有打喷嚏和流清鼻涕");
+  await page.locator(".send-button").click();
+  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).nth(1).waitFor({ state: "visible" });
+  assert.equal(
+    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
+    conversationId
+  );
+
+  // 刷新后同 conversationId 续接，会话不丢。
+  await page.reload();
+  await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  await chatInput.waitFor({ state: "visible" });
+  await chatInput.fill("症状早上更明显");
+  await page.locator(".send-button").click();
+  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).first().waitFor({ state: "visible" });
+  assert.equal(
+    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
+    conversationId
+  );
   process.stdout.write(
-    "web-browser-e2e: PASS shell save reflect-update reload restart discover\n"
+    "web-browser-e2e: PASS shell save reflect-update reload restart discover overview-stats chat-exec\n"
   );
 } finally {
   await context.close();

@@ -279,6 +279,8 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   font-size: 13px;
   line-height: 1.65;
   box-shadow: 0 2px 6px rgba(17, 54, 44, .04);
+  /* 服务端助手输出含换行的结构化提问，按行展示。 */
+  white-space: pre-line;
 }
 .ai-bubble {
   background: #fff;
@@ -295,6 +297,30 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .typing b { width: 5px; height: 5px; background: #91a59d; border-radius: 50%; animation: blink 1s infinite; }
 .typing b:nth-child(2) { animation-delay: .15s; }
 .typing b:nth-child(3) { animation-delay: .3s; }
+
+/* 服务端 system_notice（如提取服务降级提示）：固定文案，如实展示。 */
+.chat-notice {
+  margin: -4px 0 13px 34px;
+  padding: 7px 10px;
+  border: 1px solid #ecdfba;
+  border-radius: 10px;
+  background: #fff9e8;
+  color: #8a6d2f;
+  font-size: 10px;
+  line-height: 1.55;
+}
+/* agent exec 决策摘要：收口轮次的结构化结果，如实渲染。 */
+.chat-verdict {
+  margin: -4px 0 13px 34px;
+  padding: 8px 11px;
+  border: 1px solid #dbe8e1;
+  border-radius: 10px;
+  background: #f7fbf9;
+  color: #4d675d;
+  font-size: 10px;
+  line-height: 1.6;
+}
+.chat-verdict strong { display: block; color: #1e5a4a; }
 
 .start-card {
   width: calc(100% - 34px);
@@ -458,6 +484,8 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .composer input { flex: 1; min-width: 0; padding: 10px 12px; border: 0; outline: 0; border-radius: 11px; background: #f1f4f2; font-size: 12px; }
 .composer input::placeholder { color: #9ca9a4; }
 .send-button { width: 33px; height: 33px; border: 0; border-radius: 10px; background: var(--green); color: white; cursor: pointer; }
+.send-button:disabled { cursor: wait; opacity: .6; }
+.composer input:disabled { opacity: .6; }
 
 .modal-backdrop {
   position: fixed;

@@ -14,6 +14,44 @@ import { command } from "./command-client";
 
 export type TriState = "yes" | "no" | "unknown";
 
+// ---- 自由对话（agent exec）：chat 页底部输入的真实会话通道 ----
+
+/** agent exec 单轮结果（与 src/modules/agent/conversation-contracts.ts 的 ConversationTurnResult 对应）。 */
+export interface AgentTurnResult {
+  conversationId: string;
+  state: "active" | "completed" | "abandoned";
+  /** 本轮助手输出；已结束的保存确认轮可能为 null。 */
+  message: {
+    role: string;
+    content: string;
+    contentHash: string;
+    decisionId: string | null;
+  } | null;
+  /** 代码生成的固定 system_notice（如模型提取降级提示），如实展示。 */
+  notices: Array<{ content: string; contentHash: string }>;
+  verdict: {
+    outcome: string;
+    severityCode: string | null;
+    syndromeCode: string | null;
+    nextQuestions: Array<{ fieldCode: string; prompt: string }>;
+    matchedRuleIds: string[];
+    rulePackageVersion: string;
+    rulePackageStatus: string;
+  } | null;
+  closed: boolean;
+}
+
+/** 发送一轮自由对话；带 conversationId 续接既有会话，缺省创建新会话。 */
+export async function runAgentTurn(
+  message: string,
+  conversationId?: string
+): Promise<AgentTurnResult> {
+  return command<AgentTurnResult>("agent exec", {
+    message,
+    ...(conversationId === undefined ? {} : { conversationId })
+  });
+}
+
 interface AgentSessionDto {
   id: string;
   status: "awaiting_answer" | "safety_blocked" | "completed";
