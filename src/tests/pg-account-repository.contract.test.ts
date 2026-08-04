@@ -323,3 +323,43 @@ test("appendConsent 患者不存在时外键约束生效（拒绝孤儿同意记
     })
   );
 });
+
+test("appendConsent 生成单列 id；findLatestConsent 取最新决策（issue-155）", {
+  skip: DATABASE_URL === undefined ? SKIP_REASON : false
+}, async () => {
+  const repository = new PgAccountRepository(requireDatabase());
+  const input = accountInput();
+  await repository.createAccount(input);
+
+  // 无任何记录 → null（fail-closed 语义由调用方决定）。
+  assert.equal(
+    await repository.findLatestConsent(input.patientId, "health_data"),
+    null
+  );
+
+  const granted = await repository.appendConsent({
+    patientId: input.patientId,
+    consentType: "health_data",
+    decision: "granted",
+    policyVersion: "v1",
+    requestId: `req-${randomUUID()}`,
+    createdAt: new Date().toISOString()
+  });
+  // 单列 id 由仓储生成（供 agent_conversations.save_consent_id 引用）。
+  assert.ok(granted.id.length > 0);
+
+  const withdrawn = await repository.appendConsent({
+    patientId: input.patientId,
+    consentType: "health_data",
+    decision: "withdrawn",
+    policyVersion: "v1",
+    requestId: `req-${randomUUID()}`,
+    createdAt: new Date().toISOString()
+  });
+  assert.notEqual(withdrawn.id, granted.id);
+
+  const latest = await repository.findLatestConsent(input.patientId, "health_data");
+  assert.equal(latest?.id, withdrawn.id);
+  assert.equal(latest?.decision, "withdrawn");
+  assert.equal(latest?.sequence, 2);
+});

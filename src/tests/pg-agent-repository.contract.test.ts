@@ -42,7 +42,9 @@ import {
 
 const databaseUrl = process.env.KANGMIN_TEST_DATABASE_URL;
 const TIMESTAMP = "2026-08-01T00:00:00.000Z";
-const RETENTION = "2026-09-01T00:00:00.000Z";
+// 远未来保留期：findAnonymousSession 带 retention_until > now 过滤
+//（issue-155），fixture 默认值必须始终落在保留期内。
+const RETENTION = "2099-01-01T00:00:00.000Z";
 
 const encryption = new PlaintextEncryption();
 
@@ -738,4 +740,104 @@ contractTest("方案注册表：method 无法映射时不输出属性键（unmat
     }),
     null
   );
+});
+
+contractTest("匿名保留期：findAnonymousSession 过滤过期会话（issue-155）", async (database) => {
+  const repository = new PgConversationRepository(database);
+  // 保留期内（远未来）可查；过期（过去时间）视为不存在。
+  const fresh = sessionFixture("c-conv-ret-fresh", {
+    retentionUntil: "2099-01-01T00:00:00.000Z"
+  });
+  const expired = sessionFixture("c-conv-ret-expired", {
+    retentionUntil: "2020-01-01T00:00:00.000Z"
+  });
+  await repository.createSession(fresh);
+  await repository.createSession(expired);
+
+  assert.deepEqual(await repository.findAnonymousSession(fresh.id), fresh);
+  assert.equal(await repository.findAnonymousSession(expired.id), null);
+  // 不带保留期语义的 findSession 仍可读（清理前的管理面可见性）。
+  assert.deepEqual(await repository.findSession(expired.id), expired);
+});
+
+contractTest("匿名保留期清理：级联删除 5 子表 + 主表，绑定会话不受影响", async (database) => {
+  const repository = new PgConversationRepository(database);
+  // 契约测试共享库：上方过滤用例残留了过期匿名会话，
+  // 先预清一次保证下方删除计数确定。
+  await repository.deleteExpiredAnonymousSessions(new Date().toISOString());
+  await insertPatient(database, "c-patient-retention");
+  const expiredAnonymous = sessionFixture("c-conv-clean-expired", {
+    retentionUntil: "2020-01-01T00:00:00.000Z"
+  });
+  const freshAnonymous = sessionFixture("c-conv-clean-fresh", {
+    retentionUntil: "2099-01-01T00:00:00.000Z"
+  });
+  // 绑定会话（patient_id 非空）即使 retention_until 已过也不受匿名清理影响。
+  const expiredBound = sessionFixture("c-conv-clean-bound", {
+    patientId: "c-patient-retention",
+    retentionUntil: "2020-01-01T00:00:00.000Z"
+  });
+  await repository.createSession(expiredAnonymous);
+  await repository.createSession(freshAnonymous);
+  await repository.createSession(expiredBound);
+
+  // 过期匿名会话的 5 子表行。
+  await repository.setConfirmedAnswer(answerFixture("c-conv-clean-expired", "urgent_help", 1));
+  await repository.addCandidate(candidateFixture("c-cand-clean", "c-conv-clean-expired"));
+  await repository.saveDecision(decisionFixture("c-dec-clean", "c-conv-clean-expired", 1));
+  await repository.appendMessage(messageFixture("c-msg-clean", "c-conv-clean-expired", 1, "c-dec-clean"));
+  await repository.addFeedback({
+    id: "c-fb-clean",
+    sessionId: "c-conv-clean-expired",
+    decisionId: "c-dec-clean",
+    rating: "helpful",
+    reasonEncrypted: null,
+    createdAt: TIMESTAMP
+  });
+
+  const deleted = await repository.deleteExpiredAnonymousSessions(
+    new Date().toISOString()
+  );
+  assert.equal(deleted, 1);
+
+  assert.equal(await repository.findSession("c-conv-clean-expired"), null);
+  assert.deepEqual(await repository.findSession("c-conv-clean-fresh"), freshAnonymous);
+  assert.deepEqual(await repository.findSession("c-conv-clean-bound"), expiredBound);
+  for (const child of [
+    "agent_messages",
+    "agent_confirmed_answers",
+    "agent_candidates",
+    "agent_decisions",
+    "agent_feedback"
+  ]) {
+    const { rows } = await database.query<{ count: string }>(
+      `SELECT COUNT(*) AS count FROM ${child} WHERE session_id = $1`,
+      ["c-conv-clean-expired"]
+    );
+    assert.equal(Number(rows[0]?.count ?? -1), 0, child);
+  }
+});
+
+contractTest("findLatestAwaiting：最近待答会话，排除已终止与他患者（裸 continue）", async (database) => {
+  const repository = new PgAgentRepository(database);
+  await insertPatient(database, "c-agent-patient-d");
+  // 无会话 → null。
+  assert.equal(await repository.findLatestAwaiting("c-agent-patient-d"), null);
+
+  const older = agentSessionFixture("c-agent-d-1", 1, "2026-08-01T01:00:00.000Z");
+  const newer = agentSessionFixture("c-agent-d-2", 1, "2026-08-01T02:00:00.000Z");
+  await repository.create("c-agent-patient-d", older);
+  await repository.create("c-agent-patient-d", newer);
+  // 已终止会话不参与待答解析。
+  await repository.create("c-agent-patient-d", {
+    ...agentSessionFixture("c-agent-d-3", 1, "2026-08-01T03:00:00.000Z"),
+    status: "completed"
+  });
+  await repository.create(
+    "c-agent-patient-b",
+    agentSessionFixture("c-agent-b-9", 1, "2026-08-01T04:00:00.000Z")
+  );
+
+  const latest = await repository.findLatestAwaiting("c-agent-patient-d");
+  assert.deepEqual(latest, newer);
 });

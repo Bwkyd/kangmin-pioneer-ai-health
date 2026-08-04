@@ -107,12 +107,43 @@ export class PgConversationRepository implements ConversationRepository {
   }
 
   async findAnonymousSession(id: string): Promise<ConversationSession | null> {
+    // 过期匿名会话（retention_until <= now）视为不存在（issue-155：
+    // 24h 保留期执行，service 层自然得到 resource_not_found）。
     const { rows } = await this.database.query<ConversationRow>(
-      "SELECT * FROM agent_conversations WHERE id = $1 AND patient_id IS NULL",
-      [id]
+      `SELECT * FROM agent_conversations
+       WHERE id = $1 AND patient_id IS NULL AND retention_until > $2`,
+      [id, new Date().toISOString()]
     );
     const row = rows[0];
     return row === undefined ? null : parseSession(row);
+  }
+
+  async deleteExpiredAnonymousSessions(now: string): Promise<number> {
+    return this.database.transaction(async (client) => {
+      // 级联删除 5 张子表（schema 无 ON DELETE CASCADE），再删主表；
+      // 绑定会话（patient_id 非空）不受匿名清理影响。
+      const expired =
+        "SELECT id FROM agent_conversations WHERE patient_id IS NULL AND retention_until <= $1";
+      for (const child of [
+        "agent_messages",
+        "agent_confirmed_answers",
+        "agent_candidates",
+        "agent_decisions",
+        "agent_feedback"
+      ]) {
+        await this.database.queryIn(
+          client,
+          `DELETE FROM ${child} WHERE session_id IN (${expired})`,
+          [now]
+        );
+      }
+      const result = await this.database.queryIn(
+        client,
+        "DELETE FROM agent_conversations WHERE patient_id IS NULL AND retention_until <= $1",
+        [now]
+      );
+      return result.rowCount ?? 0;
+    });
   }
 
   async findPatientSession(

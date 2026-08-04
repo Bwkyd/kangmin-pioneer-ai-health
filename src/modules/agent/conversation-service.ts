@@ -25,6 +25,7 @@ import type {
 } from "../clinical-rules/contracts.js";
 import { DomainError } from "../../kernel/errors.js";
 import type { EncryptionPort } from "../../kernel/encryption.js";
+import type { ConsentGatePort } from "../account/consent-ports.js";
 import { parseStructuredAnswers } from "./answer-parser.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type {
@@ -101,7 +102,8 @@ export class ConversationService {
     private readonly kernel: ClinicalRuleKernelPort,
     private readonly extraction: ModelExtractionPort,
     private readonly explanation: ModelExplanationPort,
-    private readonly encryption: EncryptionPort
+    private readonly encryption: EncryptionPort,
+    private readonly consentGate: ConsentGatePort
   ) {}
 
   /** 单轮对话：创建或续接会话、评估、校验输出、保存决策凭证。 */
@@ -126,10 +128,29 @@ export class ConversationService {
     if (session.patientId === null && input.patientId !== null) {
       // 匿名会话被已登录患者继续：必须再次确认保存，绝不自动绑定。
       if (input.saveConsent === true) {
+        // Agent 会话保存授权前置（issue-155）：最新 agent_session_save
+        // 决策为 withdrawn 时拒绝绑定（fail-closed）。
+        const saveDecision = await this.consentGate.latestDecision(
+          input.patientId,
+          "agent_session_save"
+        );
+        if (saveDecision === "withdrawn") {
+          throw new DomainError(
+            "consent_required",
+            "Agent 会话保存授权已撤回：请先执行 account consent update --type agent_session_save --decision granted"
+          );
+        }
+        // 追加真实授权记录，save_consent_id 指向该记录 id
+        //（修复前写随机 UUID，从不落 patient_consents）。
+        const consent = await this.consentGate.appendGranted({
+          patientId: input.patientId,
+          consentType: "agent_session_save",
+          requestId: `agent-session-save:${session.id}`
+        });
         const bound: ConversationSession = {
           ...session,
           patientId: input.patientId,
-          saveConsentId: randomUUID(),
+          saveConsentId: consent.id,
           retentionUntil: this.boundRetention(timestamp),
           // 绑定是所有权变更：必须推进 revision，CAS 才会拒绝并发旧请求
           // （评审 P1 codex #8：保留原 revision 时，旧请求可用相同

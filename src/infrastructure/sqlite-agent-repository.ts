@@ -60,6 +60,19 @@ export class SqliteAgentRepository implements AgentRepository {
     return rows.map(parse);
   }
 
+  async findLatestAwaiting(patientId: string): Promise<AgentSession | null> {
+    const row = this.database.connection
+      .prepare(`
+        SELECT revision, session_json
+        FROM agent_sessions
+        WHERE patient_id = ? AND status = 'awaiting_answer'
+        ORDER BY updated_at DESC
+        LIMIT 1
+      `)
+      .get(patientId) as unknown as AgentSessionRow | undefined;
+    return row === undefined ? null : parse(row);
+  }
+
   async update(
     patientId: string,
     expectedRevision: number,

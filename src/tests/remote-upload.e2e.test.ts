@@ -139,6 +139,12 @@ async function runAdminCli(
   const status = await new Promise<number | null>((resolve) => {
     child.once("exit", (code) => resolve(code));
   });
+  // 失败诊断：--json 模式下错误信封在 stdout，而断言消息只带 stderr
+  // （进度输出），非零退出时把 stdout 打进测试日志，否则 CI 里
+  // 看不到真实错误码（issue-155 排障教训）。
+  if (status !== 0) {
+    console.error(`[runAdminCli] exit=${String(status)} stdout: ${stdout}`);
+  }
   return { status, stdout, stderr };
 }
 

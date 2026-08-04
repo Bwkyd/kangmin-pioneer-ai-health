@@ -9,6 +9,8 @@ import { chromium } from "playwright";
 
 import { createApplication } from "../dist/app/composition-root.js";
 import { createKangminHttpServer } from "../dist/http/server.js";
+import { KangminDatabase } from "../dist/infrastructure/database.js";
+import { SqliteAccountRepository } from "../dist/infrastructure/sqlite-account-repository.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
@@ -58,6 +60,23 @@ async function openCalendarList(page) {
 const directory = mkdtempSync(join(tmpdir(), "kangmin-browser-"));
 const databasePath = join(directory, "records.sqlite");
 let application = createApplication(databasePath);
+// record 写入需 health_data 授权（issue-155 fail-closed）：薄壳固定使用
+// subject "patient-web" 的开发会话（web/app.js），直接经仓储补记授权。
+const seeded =
+  await application.sessions.createDevelopmentSession("patient-web");
+const seedDatabase = new KangminDatabase(databasePath);
+try {
+  await new SqliteAccountRepository(seedDatabase).appendConsent({
+    patientId: seeded.patientId,
+    consentType: "health_data",
+    decision: "granted",
+    policyVersion: "2026-08-01.1",
+    requestId: "web-e2e-seed",
+    createdAt: new Date().toISOString()
+  });
+} finally {
+  seedDatabase.close();
+}
 let server = createKangminHttpServer(application, {
   appEnvironment: "integration",
   allowDevelopmentSession: true

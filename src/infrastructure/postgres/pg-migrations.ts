@@ -528,5 +528,24 @@ export const PG_MIGRATIONS: PgMigration[] = [
       `UPDATE content_items SET media_url = '/v1/media/' || media_id
        WHERE media_id IS NOT NULL`
     ]
+  },
+  {
+    // consent 扩 5 类 + patient_consents 单列 id（issue-155）：PG 直接
+    // DROP/ADD CONSTRAINT 放宽 CHECK；id 回填为确定性派生值（主键唯一 ⇒
+    // id 唯一），供 agent_conversations.save_consent_id 引用真实授权记录。
+    version: "0003_consent_expansion",
+    statements: [
+      `ALTER TABLE patient_consents
+       DROP CONSTRAINT patient_consents_consent_type_check`,
+      `ALTER TABLE patient_consents
+       ADD CONSTRAINT patient_consents_consent_type_check
+       CHECK(consent_type IN ('privacy', 'medical_boundary', 'health_data',
+                              'agent_session_save', 'location'))`,
+      `ALTER TABLE patient_consents ADD COLUMN id TEXT`,
+      `UPDATE patient_consents
+       SET id = patient_id || ':' || consent_type || ':' || sequence::text`,
+      `ALTER TABLE patient_consents ALTER COLUMN id SET NOT NULL`,
+      `CREATE UNIQUE INDEX patient_consents_id ON patient_consents(id)`
+    ]
   }
 ];

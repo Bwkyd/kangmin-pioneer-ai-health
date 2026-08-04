@@ -38,10 +38,20 @@ export type CommitTurnOutcome =
 export interface ConversationRepository {
   createSession(session: ConversationSession): Promise<void>;
   findSession(id: string): Promise<ConversationSession | null>;
-  /** 仅查找匿名（patient_id IS NULL）会话：登录患者绑定前置会话的唯一入口。 */
+  /**
+   * 仅查找匿名（patient_id IS NULL）会话：登录患者绑定前置会话的唯一入口。
+   * 过期匿名会话（retention_until <= now）视为不存在（issue-155：
+   * 24h 保留期执行；过期不可续聊、不可认领绑定、不可反馈）。
+   */
   findAnonymousSession(id: string): Promise<ConversationSession | null>;
   findPatientSession(patientId: string, id: string): Promise<ConversationSession | null>;
   listPatientSessions(patientId: string): Promise<ConversationSession[]>;
+  /**
+   * 清理过期匿名会话（issue-155）：单事务按序删除 5 张子表
+   * （schema 无 ON DELETE CASCADE）再删主表，返回删除的主表行数。
+   * 绑定会话（patient_id 非空）不受匿名清理影响。
+   */
+  deleteExpiredAnonymousSessions(now: string): Promise<number>;
   updateSession(
     expectedRevision: number,
     session: ConversationSession

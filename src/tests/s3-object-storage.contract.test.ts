@@ -169,6 +169,32 @@ test("预签名票据直传全流程：PUT → verifyObject true → getObject �
   await storage.deleteObject(key);
 });
 
+test("预签名票据在桶不存在时自动建桶（直传不依赖外部建桶顺序）", { skip: SKIP }, async () => {
+  assert.ok(ENDPOINT !== undefined, SKIP_REASON);
+  // 唯一桶名：MinIO/CI 环境保证不存在，直接守卫
+  // "createUploadTicket 先建桶再签名"（issue-155 CI 404 回归）。
+  const storage = new S3ObjectStorage({
+    bucket: `kangmin-fresh-${randomUUID().slice(0, 8)}`,
+    endpoint: ENDPOINT,
+    region: "us-east-1",
+    accessKeyId: "minioadmin",
+    secretAccessKey: "minioadmin"
+  });
+  const body = randomBytes(256);
+  const ticket = await storage.createUploadTicket({
+    key: "fresh/probe.bin",
+    contentType: "application/octet-stream",
+    sizeBytes: body.length,
+    sha256: sha256Hex(body)
+  });
+  const response = await fetch(ticket.url, {
+    method: ticket.method,
+    headers: ticket.headers,
+    body: new Uint8Array(body)
+  });
+  assert.ok(response.ok, `直传失败：HTTP ${String(response.status)}`);
+});
+
 test("票据直传后 verifyObject 使用其他 sha256 返回 false", { skip: SKIP }, async () => {
   const storage = createStorage();
   const key = testKey("ticket-mismatch.bin");

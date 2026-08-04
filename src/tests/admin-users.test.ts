@@ -13,6 +13,7 @@ import { createApplication } from "../app/composition-root.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { LoginResult } from "../modules/admin/admin-auth-service.js";
 import type { UserSummary } from "../modules/user-admin/contracts.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 
 function dataOf<T>(result: CommandResult): T {
   if (!result.ok) {
@@ -38,6 +39,8 @@ async function fixture(): Promise<{
     for (const subject of ["patient-a", "patient-b"]) {
       const session = await patientApp.sessions.createDevelopmentSession(subject);
       patientIds.push(session.patientId);
+      // record 写入需 health_data 授权（issue-155 fail-closed）。
+      await writeConsentForTest(databasePath, session.patientId, "health_data");
       await patientApp.execute({
         command: "record symptom add",
         sessionToken: session.token,

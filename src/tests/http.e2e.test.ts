@@ -9,6 +9,7 @@ import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { seedContent } from "./content-fixture.js";
+import { writeConsentForTest } from "./consent-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
 // 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption
@@ -43,9 +44,13 @@ async function close(server: ReturnType<typeof createKangminHttpServer>) {
 
 test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-http-"));
-  const application = createApplication(join(directory, "records.sqlite"));
-  const token =
-    (await application.sessions.createDevelopmentSession("patient-http")).token;
+  const databasePath = join(directory, "records.sqlite");
+  const application = createApplication(databasePath);
+  const session =
+    await application.sessions.createDevelopmentSession("patient-http");
+  // record 写入需 health_data 授权（issue-155 fail-closed）。
+  await writeConsentForTest(databasePath, session.patientId, "health_data");
+  const token = session.token;
   const server = createKangminHttpServer(application);
   const origin = await listen(server);
 
@@ -92,6 +97,48 @@ test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", 
       }
     );
     assert.equal(unauthenticated.status, 401);
+  } finally {
+    await close(server);
+    application.close();
+  }
+});
+
+test("record 写入缺 health_data 授权：HTTP 403 + consent_required", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-http-consent-"));
+  const application = createApplication(join(directory, "records.sqlite"));
+  const token =
+    (await application.sessions.createDevelopmentSession("patient-no-consent"))
+      .token;
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
+
+  try {
+    // 未授权（fail-closed）：consent_required 映射 403（issue-155）。
+    const denied = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        command: "record symptom add",
+        input: {
+          localDate: "2026-07-30",
+          nasalCongestion: 1,
+          nasalItching: 1,
+          sneezing: 2,
+          runnyNose: 0,
+          idempotencyKey: "http-consent-1"
+        }
+      })
+    });
+    assert.equal(denied.status, 403);
+    const deniedBody = await denied.json() as {
+      ok: boolean;
+      error: { code: string };
+    };
+    assert.equal(deniedBody.ok, false);
+    assert.equal(deniedBody.error.code, "consent_required");
   } finally {
     await close(server);
     application.close();
@@ -179,7 +226,13 @@ test("Agent 通过 HTTP 命令契约执行同一安全状态机", async () => {
 
 test("患者薄壳通过受保护的 HttpOnly 开发会话调用同一命令端点", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-web-http-"));
-  const application = createApplication(join(directory, "records.sqlite"));
+  const databasePath = join(directory, "records.sqlite");
+  const application = createApplication(databasePath);
+  // record 写入需 health_data 授权（issue-155 fail-closed）：开发会话患者
+  // 与 /dev/session 同 subject 复用同一患者行，授权经仓储层补记。
+  const seeded =
+    await application.sessions.createDevelopmentSession("patient-browser");
+  await writeConsentForTest(databasePath, seeded.patientId, "health_data");
   const server = createKangminHttpServer(application, {
     appEnvironment: "integration",
     allowDevelopmentSession: true
