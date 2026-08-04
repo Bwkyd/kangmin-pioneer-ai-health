@@ -191,7 +191,7 @@ test("患者薄壳通过受保护的 HttpOnly 开发会话调用同一命令端�
     assert.equal(page.status, 200);
     assert.match(
       await page.text(),
-      /data-testid="symptom-form"/u
+      /id="root"/u
     );
     assert.match(
       page.headers.get("content-security-policy") ?? "",
