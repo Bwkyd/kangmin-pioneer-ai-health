@@ -104,6 +104,25 @@ export class S3ObjectStorage implements ObjectStoragePort {
     }
   }
 
+  /**
+   * 预签名前的建桶保证：签名本身是离线计算，不会触发
+   * withBucketRetry 的懒创建路径，需要显式建桶。
+   */
+  private async ensureBucketForSigning(): Promise<void> {
+    if (this.bucketEnsured) {
+      return;
+    }
+    await this.client
+      .send(new CreateBucketCommand({ Bucket: this.bucket }))
+      .catch((error: unknown) => {
+        // 与 withBucketRetry 同款：并发/既有桶仅 BucketAlreadyOwnedByYou 可忽略。
+        if (errorName(error) !== "BucketAlreadyOwnedByYou") {
+          throw error;
+        }
+      });
+    this.bucketEnsured = true;
+  }
+
   async putObject(input: {
     key: string;
     body: Buffer;
@@ -194,6 +213,10 @@ export class S3ObjectStorage implements ObjectStoragePort {
       ChecksumSHA256: checksumBase64
     });
     try {
+      // getSignedUrl 是离线计算、不经 withBucketRetry：必须先确保
+      // bucket 存在，否则客户端直传会拿到 404 NoSuchBucket
+      //（issue-155：CI 全新 MinIO 上远程上传 e2e 确定性失败）。
+      await this.ensureBucketForSigning();
       const url = await getSignedUrl(this.client, command, {
         expiresIn: UPLOAD_TICKET_TTL_SECONDS
       });
