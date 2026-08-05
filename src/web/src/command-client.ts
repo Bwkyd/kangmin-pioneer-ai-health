@@ -79,7 +79,9 @@ async function createDevelopmentSession(): Promise<boolean> {
       method: "POST",
       credentials: "same-origin",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ subject: "patient-web" })
+      // 预览身份由服务端生成并写入 HttpOnly Cookie，前端不再提交固定
+      // subject，避免不同浏览器共享同一患者记录。
+      body: JSON.stringify({})
     });
     return response.ok;
   } catch {
@@ -87,8 +89,17 @@ async function createDevelopmentSession(): Promise<boolean> {
   }
 }
 
-/** 每次页面生命周期只引导一次开发会话，避免并发请求重复创建。 */
+/** 同一时刻只引导一次开发会话，会话过期后可再次恢复。 */
 let sessionBootstrap: Promise<boolean> | null = null;
+
+async function ensureDevelopmentSession(): Promise<boolean> {
+  sessionBootstrap ??= createDevelopmentSession();
+  try {
+    return await sessionBootstrap;
+  } finally {
+    sessionBootstrap = null;
+  }
+}
 
 export async function command<T>(
   name: string,
@@ -98,8 +109,7 @@ export async function command<T>(
     return await postCommand<T>(name, input);
   } catch (error) {
     if (error instanceof CommandError && error.code === "authentication_required") {
-      sessionBootstrap ??= createDevelopmentSession();
-      if (await sessionBootstrap) {
+      if (await ensureDevelopmentSession()) {
         return postCommand<T>(name, input);
       }
     }

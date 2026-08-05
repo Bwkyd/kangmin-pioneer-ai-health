@@ -35,6 +35,11 @@ import {
   validateExposureDraft,
 } from "./health-records";
 import { REHAB_METHOD_DEFINITIONS } from "./rehab-methods";
+import {
+  grantPreviewConsent,
+  loadPreviewConsent,
+  type PreviewConsent
+} from "./preview-consent";
 
 type Tab =
   | "home"
@@ -390,6 +395,13 @@ function symptomLabel(totalScore: number): string {
 }
 
 export default function App() {
+  const [previewConsentStatus, setPreviewConsentStatus] = useState<
+    "checking" | "required" | "granting" | "ready" | "error"
+  >("checking");
+  const [previewConsent, setPreviewConsent] = useState<PreviewConsent | null>(null);
+  const [previewConsentAccepted, setPreviewConsentAccepted] = useState(false);
+  const [previewConsentReload, setPreviewConsentReload] = useState(0);
+  const [previewConsentError, setPreviewConsentError] = useState("");
   const [tab, setTab] = useState<Tab>("home");
   const [messages, setMessages] = useState<Message[]>([
     {
@@ -482,6 +494,27 @@ export default function App() {
           : null;
 
   useEffect(() => {
+    let cancelled = false;
+    setPreviewConsentStatus("checking");
+    setPreviewConsentError("");
+    loadPreviewConsent()
+      .then((consent) => {
+        if (cancelled) return;
+        setPreviewConsent(consent);
+        setPreviewConsentStatus(consent.granted ? "ready" : "required");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setPreviewConsent(null);
+        setPreviewConsentStatus("error");
+        setPreviewConsentError(
+          error instanceof Error ? error.message : "体验环境暂时无法连接"
+        );
+      });
+    return () => { cancelled = true; };
+  }, [previewConsentReload]);
+
+  useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, step]);
 
@@ -553,6 +586,7 @@ export default function App() {
   }, [tab, assessmentDone, totalScore, symptoms, calendarMonth]);
 
   useEffect(() => {
+    if (previewConsentStatus !== "ready") return;
     if (tab !== "healthProfile") return;
     let cancelled = false;
     const requestVersion = profileRequest.next();
@@ -598,9 +632,10 @@ export default function App() {
         : profile ? "已读取服务端健康档案" : "暂无健康档案，请填写后保存");
     })();
     return () => { cancelled = true; };
-  }, [tab, profileReload, profileRequest, exposureRequest, medicationRequest]);
+  }, [tab, profileReload, profileRequest, exposureRequest, medicationRequest, previewConsentStatus]);
 
   useEffect(() => {
+    if (previewConsentStatus !== "ready") return;
     if (tab !== "assessment" || entryOpen) return;
     let cancelled = false;
     const requestVersion = symptomRequest.next();
@@ -618,9 +653,10 @@ export default function App() {
         setSymptomNotice(error instanceof Error ? error.message : "症状历史暂时无法读取");
       });
     return () => { cancelled = true; };
-  }, [tab, entryOpen, assessmentReload, symptomRequest]);
+  }, [tab, entryOpen, assessmentReload, symptomRequest, previewConsentStatus]);
 
   useEffect(() => {
+    if (previewConsentStatus !== "ready") return;
     if (tab !== "allergenRecord") return;
     let cancelled = false;
     const requestVersion = exposureRequest.next();
@@ -651,13 +687,14 @@ export default function App() {
         setExposureNotice(`${error instanceof Error ? error.message : "过敏原历史暂时无法读取"}，已冻结保存和编辑操作`);
       });
     return () => { cancelled = true; };
-  }, [tab, selectedDate, editingExposureId, exposureReload, exposureRequest]);
+  }, [tab, selectedDate, editingExposureId, exposureReload, exposureRequest, previewConsentStatus]);
 
   // 首页/我的页统计：进入两页时经 record overview 读取真值；加载中/失败
   // 保持空态（overview 为 null），不阻塞页面。记录保存后返回两页会因
   // tab 变化重新触发本 effect，与 profileRequest/exposureRequest 的
   // refetch 模式一致。
   useEffect(() => {
+    if (previewConsentStatus !== "ready") return;
     if (tab !== "home" && tab !== "profile") return;
     let cancelled = false;
     const requestVersion = overviewRequest.next();
@@ -671,7 +708,7 @@ export default function App() {
         setOverview(null);
       });
     return () => { cancelled = true; };
-  }, [tab, overviewRequest]);
+  }, [tab, overviewRequest, previewConsentStatus]);
 
   const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
     setMessages((current) => [
@@ -1179,6 +1216,99 @@ export default function App() {
             : tab === "articles"
               ? "学一学"
               : "我的";
+
+  const acceptPreviewConsent = async () => {
+    if (!previewConsentAccepted || previewConsent === null) return;
+    setPreviewConsentStatus("granting");
+    setPreviewConsentError("");
+    try {
+      await grantPreviewConsent(previewConsent.policyVersion);
+      setPreviewConsent({ ...previewConsent, granted: true });
+      setPreviewConsentStatus("ready");
+    } catch (error) {
+      setPreviewConsentStatus("error");
+      setPreviewConsentError(
+        error instanceof Error ? error.message : "授权没有完成，请重试"
+      );
+    }
+  };
+
+  if (previewConsentStatus !== "ready") {
+    const busy =
+      previewConsentStatus === "checking" ||
+      previewConsentStatus === "granting";
+    return (
+      <main className="demo-shell">
+        <section className="phone-wrap" aria-label="抗敏先锋客户反馈体验版">
+          <div className="phone preview-consent-phone">
+            <header className="phone-header real-header">
+              <div className="real-title preview-consent-title">
+                <strong>抗敏先锋</strong>
+                <span>客户反馈体验版</span>
+              </div>
+            </header>
+            <section className="preview-consent-view" data-testid="preview-consent">
+              <img src="/brand-banner.jpg" alt="抗敏先锋" />
+              <small>首次体验说明</small>
+              <h1>开始前，请确认体验授权</h1>
+              <p>
+                本体验会保存你主动填写的症状、用药、过敏原和健康档案，
+                只用于验证产品流程，不提供诊断或替代门诊建议。
+              </p>
+              <p className="preview-consent-warning">
+                请勿填写真实患者姓名、联系方式或其他可识别的隐私信息。
+              </p>
+              {previewConsent !== null && (
+                <label className="preview-consent-check">
+                  <input
+                    type="checkbox"
+                    checked={previewConsentAccepted}
+                    onChange={(event) =>
+                      setPreviewConsentAccepted(event.target.checked)
+                    }
+                  />
+                  <span>
+                    我已阅读并同意本次健康数据体验授权
+                    <small>政策版本 {previewConsent.policyVersion}</small>
+                  </span>
+                </label>
+              )}
+              {previewConsentStatus === "error" && (
+                <p className="preview-consent-error" role="alert">
+                  {previewConsentError}
+                </p>
+              )}
+              {previewConsentStatus === "error" && previewConsent === null ? (
+                <button
+                  type="button"
+                  className="preview-consent-submit"
+                  onClick={() =>
+                    setPreviewConsentReload((current) => current + 1)
+                  }
+                >
+                  重新连接
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  className="preview-consent-submit"
+                  data-testid="preview-consent-submit"
+                  disabled={busy || !previewConsentAccepted}
+                  onClick={() => void acceptPreviewConsent()}
+                >
+                  {busy ? "正在准备体验…" : "同意并开始体验"}
+                </button>
+              )}
+              <small className="preview-consent-retention">
+                体验身份 24 小时内有效；本轮客户确认结束后，
+                项目方统一清理测试数据。
+              </small>
+            </section>
+          </div>
+        </section>
+      </main>
+    );
+  }
 
   return (
     <main className="demo-shell">

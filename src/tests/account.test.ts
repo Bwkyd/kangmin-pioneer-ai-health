@@ -555,6 +555,30 @@ test("开发会话与本地账号会话并存：assurance 区分，开发会话�
     if (!devProfile.ok) {
       assert.equal(devProfile.error.code, "resource_not_found");
     }
+
+    // 预览身份没有正式账号资料，但必须能通过同一应用
+    // 服务明确记录健康数据授权，不得绕过业务层直写数据库。
+    const devConsent = await application.execute({
+      command: "account consent update",
+      sessionToken: devToken,
+      input: {
+        consentType: "health_data",
+        decision: "granted",
+        policyVersion: "2026-08-01.1",
+        requestId: "dev-preview-consent"
+      }
+    });
+    assert.equal(devConsent.ok, true);
+    const shown = await application.execute({
+      command: "account consent show",
+      sessionToken: devToken
+    });
+    assert.deepEqual(
+      dataOf<{ items: Array<{ consentType: string; decision: string }> }>(
+        shown
+      ).items.map((item) => [item.consentType, item.decision]),
+      [["health_data", "granted"]]
+    );
   } finally {
     application.close();
   }

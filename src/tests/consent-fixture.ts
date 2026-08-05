@@ -9,8 +9,8 @@ import type {
 
 /**
  * 测试辅助（issue-155 consent 前置）：直接经 SQLite 仓储追加 consent 决策。
- * 开发会话患者没有本地账号（account consent update 要求 patient_accounts
- * 行），测试里的授权/撤回只能走仓储层，落库记录与生产授权同构。
+ * 低层记录/代理测试可在同一 SQLite 直接补记授权，以便聚焦
+ * 被测服务；HTTP/Web 端到端测试必须通过 account consent update。
  */
 export async function writeConsentForTest(
   databasePath: string,

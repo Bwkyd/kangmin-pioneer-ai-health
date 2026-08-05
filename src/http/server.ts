@@ -38,6 +38,9 @@ import {
 const DEFAULT_BODY_LIMIT_BYTES = 64 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const SESSION_COOKIE = "kangmin_session";
+const PREVIEW_SUBJECT_COOKIE = "kangmin_preview_subject";
+const PREVIEW_SUBJECT_MAX_AGE_SECONDS = 24 * 60 * 60;
+const PREVIEW_SUBJECT_PATTERN = /^preview-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
 /** 限流路由类：strict 最严，upload 次之，commands 普通命令。 */
 type RateLimitClass = "strict" | "upload" | "commands";
@@ -236,6 +239,20 @@ function sessionToken(request: IncomingMessage): string | undefined {
     return authorization.slice("Bearer ".length);
   }
   return cookie(request, SESSION_COOKIE);
+}
+
+/**
+ * 客户预览身份只由服务端生成并保存在 HttpOnly Cookie：
+ * - 不接受前端传固定 subject，避免所有浏览器意外复用同一患者；
+ * - 会话 Cookie 过期后，24 小时内可凭预览身份 Cookie 重建会话并回到
+ *   同一患者；
+ * - Cookie 缺失或格式异常时生成新的不可枚举 UUID。
+ */
+function previewSubject(request: IncomingMessage): string {
+  const existing = cookie(request, PREVIEW_SUBJECT_COOKIE);
+  return existing !== undefined && PREVIEW_SUBJECT_PATTERN.test(existing)
+    ? existing
+    : `preview-${randomUUID()}`;
 }
 
 function bearerToken(request: IncomingMessage): string | undefined {
@@ -616,17 +633,24 @@ export function createKangminHttpServer(
 
       try {
         const body = await readJson(request, bodyLimitBytes);
-        if (!isRecord(body) || typeof body.subject !== "string") {
+        if (!isRecord(body)) {
           throw new DomainError(
             "command_invalid",
-            "开发会话请求必须包含 subject 字符串"
+            "开发会话请求必须是 JSON 对象"
           );
         }
+        const developmentSubject = previewSubject(request);
         const session =
-          await application.sessions.createDevelopmentSession(body.subject);
+          await application.sessions.createDevelopmentSession(
+            developmentSubject,
+            { ttlSeconds: 3600 }
+          );
         response.setHeader(
           "set-cookie",
-          `${SESSION_COOKIE}=${encodeURIComponent(session.token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600`
+          [
+            `${SESSION_COOKIE}=${encodeURIComponent(session.token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=3600`,
+            `${PREVIEW_SUBJECT_COOKIE}=${encodeURIComponent(developmentSubject)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${PREVIEW_SUBJECT_MAX_AGE_SECONDS}`
+          ]
         );
         json(
           response,
