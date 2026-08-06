@@ -135,11 +135,24 @@ test("deleteObject 幂等：重复删除不存在的 key 不报错", async () =>
   assert.equal(await storage.headObject(key), null);
 });
 
-test("createUploadTicket 抛 capability_unavailable", async () => {
+test("本地直传票据一次有效并校验文件指纹", async () => {
   const storage = createStorage();
-  await assert.rejects(storage.createUploadTicket(), (error: unknown) => {
+  const body = Buffer.from("# 本地知识\n");
+  const sha256 = createHash("sha256").update(body).digest("hex");
+  const ticket = await storage.createUploadTicket({
+    key: "med-4/guide.md",
+    contentType: "text/markdown",
+    sizeBytes: body.length,
+    sha256
+  });
+  assert.equal(ticket.url, "/v1/admin/upload");
+  const token = ticket.headers["x-kangmin-upload-ticket"];
+  assert.ok(token);
+  await storage.acceptUploadTicket({ token, body });
+  assert.deepEqual(await storage.getObject("med-4/guide.md"), body);
+  await assert.rejects(storage.acceptUploadTicket({ token, body }), (error: unknown) => {
     assert.ok(error instanceof DomainError);
-    assert.equal(error.code, "capability_unavailable");
+    assert.equal(error.code, "authentication_required");
     return true;
   });
 });

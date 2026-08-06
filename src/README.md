@@ -55,7 +55,8 @@ npm run check        # typecheck + 架构门禁 + 单元/集成测试 + 浏览�
 ```bash
 npm run build
 KANGMIN_APP_ENV=local KANGMIN_ALLOW_DEV_SESSION=1 node dist/http/server.js
-# 打开 http://127.0.0.1:8787（开发会话自动引导；正式登录尚未接入）
+# 患者页：http://127.0.0.1:8787/
+# 管理后台：http://127.0.0.1:8787/admin
 ```
 
 demo 简化点（均如实呈现，不伪造服务端能力）：安全评估面板只将"危险
@@ -76,6 +77,8 @@ demo 简化点（均如实呈现，不伪造服务端能力）：安全评估面
 GET  /v1/meta
 POST /v1/patient/commands
 POST /v1/admin/commands
+GET|POST|DELETE /v1/admin/session
+PUT  /v1/admin/upload  # 仅本地文件系统同源票据使用
 ```
 
 ```bash
@@ -285,6 +288,12 @@ auth admins list|add|enable|disable
 auth logout                    撤销当前会话
 ```
 
+首次使用管理后台前，先通过 `auth admins add --role owner` 引导主管理员
+（密码从 stdin 输入）。浏览器 `/admin` 登录后只保存 HttpOnly、
+SameSite=Strict 会话 Cookie；生产/预发环境同时带 Secure，不把管理 token
+写入 localStorage、sessionStorage、URL 或页面源码。Cookie 管理命令还要求
+同源 Origin，患者会话 Cookie 与管理会话 Cookie 使用不同名称和解析链路。
+
 发布/下架/删除/停用/启用等高影响操作需要 `--yes` 显式确认。
 
 ## JSON 契约
@@ -466,18 +475,19 @@ PostgreSQL 适配器已实现（见下节）；对象存储两种后端见"对�
 对象键约定 `<med_id>/<原始文件名>`，两种后端一致：
 
 - **本地文件系统后端（默认）**：未配置 `KANGMIN_S3_BUCKET` 时启用，服务端
-  直写到素材目录（`KANGMIN_ADMIN_MEDIA_DIR`），语义与改造前一致；
-  不支持远程直传——远程模式调用 `upload-init` 返回 `capability_unavailable`。
+  直写到素材目录（`KANGMIN_ADMIN_MEDIA_DIR`）；浏览器通过一次性同源票据
+  完成 PUT，票据不写入 URL、日志或浏览器存储。
 - **S3 兼容后端**：配置 `KANGMIN_S3_BUCKET`（及访问密钥）后启用，
   支持预签名直传；`KANGMIN_S3_ENDPOINT` 可指向 MinIO 等兼容实现。
 
 远程模式下 `content media upload <file>` 与 `agent knowledge add <file>`
 由 CLI 在本地编排三步，命令契约与本地模式一致：
 
-1. `content media upload-init`：申请预签名直传票据（扩展名白名单 +
+1. `content media upload-init`：申请直传票据（本地为同源一次性票据，S3
+   为预签名 URL；扩展名白名单 +
    大小上限 + sha256 形状校验）；同指纹素材已就绪时直接重放，不发新票据；
-2. HTTP PUT 直传对象存储：CLI 携带票据签名头直传字节，不经过命令服务，
-   服务端不接收客户端本地路径；失败映射可重试的 `service_unavailable`；
+2. HTTP PUT 直传存储：客户端携带票据头直传字节，不提交客户端本地路径；
+   S3 字节不经过命令服务，本地后端由固定同源上传路由接收；
 3. `content media upload-confirm`：服务端校验对象存在、大小与 sha256
    一致，并读取真实字节做魔数嗅探（类型双校验第二步）；任一失败即标记
    failed、删除对象并返回 `validation_failed`。

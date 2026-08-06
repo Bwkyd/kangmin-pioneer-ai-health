@@ -185,7 +185,7 @@ test("upload-init → 客户端直传 → upload-confirm 全链路（假 S3 后�
   }
 });
 
-test("本地文件系统后端 upload-init → capability_unavailable，不留草稿行", async () => {
+test("本地文件系统后端 upload-init 返回同源票据并登记草稿", async () => {
   const { app, token } = await fixture();
   try {
     const init = await app.execute({
@@ -193,14 +193,18 @@ test("本地文件系统后端 upload-init → capability_unavailable，不留�
       adminToken: token,
       input: { filename: "guide.md", sizeBytes: GUIDE.length, sha256: sha256Of(GUIDE) }
     });
-    assert.equal(init.ok, false);
-    if (!init.ok) assert.equal(init.error.code, "capability_unavailable");
+    assert.equal(init.ok, true);
+    if (init.ok) {
+      const data = init.data as InitUploading;
+      assert.equal(data.status, "uploading");
+      assert.equal(data.ticket.url, "/v1/admin/upload");
+      assert.ok(data.ticket.headers["x-kangmin-upload-ticket"]);
+    }
 
-    // 票据先于草稿行创建：本地后端下不产生 processing 残留。
-    const listed = dataOf<{ items: unknown[] }>(
+    const listed = dataOf<{ items: Array<{ status: string }> }>(
       await app.execute({ command: "content media list", adminToken: token })
     );
-    assert.equal(listed.items.length, 0);
+    assert.equal(listed.items[0]?.status, "processing");
   } finally {
     app.close();
   }
