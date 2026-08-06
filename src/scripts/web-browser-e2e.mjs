@@ -417,6 +417,8 @@ try {
   await publishedRow.getByRole("button", { name: "下架" }).click();
   await expectText(adminPage.getByRole("status"), "用户端已不可见");
   await patientCheckPage.reload();
+  await patientCheckPage.locator(".bottom-nav button", { hasText: "首页" }).click();
+  await patientCheckPage.locator(".learn-module").click();
   await patientCheckPage.getByTestId("discover-view").waitFor({ state: "visible" });
   assert.equal(await patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" }).count(), 0);
   await patientCheckPage.close();
