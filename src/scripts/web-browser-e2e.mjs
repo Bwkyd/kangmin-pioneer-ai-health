@@ -90,6 +90,56 @@ try {
   assert.match((await emptyCells.nth(0).textContent()) ?? "", /^--连续记录\/天$/u);
   assert.match((await emptyCells.nth(1).textContent()) ?? "", /^--本月记录\/次$/u);
   assert.match((await emptyCells.nth(2).textContent()) ?? "", /^暂无最近评估$/u);
+
+  // ---- 健康档案主线：空态、三类保存和刷新回读 ----
+  // 截图中的仿小程序胶囊和重复悬空“+”已移除，
+  // 底部只保留四个有明确去向的导航项。
+  assert.equal(await page.locator(".mini-program-menu").count(), 0);
+  assert.equal(await page.locator(".nav-add").count(), 0);
+  assert.equal(await page.locator(".bottom-nav button").count(), 4);
+  await page.getByRole("button", { name: "健康档案" }).click();
+  await page.getByTestId("health-profile-view").waitFor({ state: "visible" });
+  await expectText(page.getByTestId("profile-status"), "暂无健康档案");
+  assert.equal(
+    await page.locator(".health-profile-view .record-notice.error").count(),
+    0
+  );
+
+  await page.getByTestId("health-profile-edit").click();
+  await page.getByLabel("姓名或称呼").fill("体验用户");
+  await page.getByLabel("出生日期").fill("1990-01-02");
+  await page.getByLabel("性别").selectOption("female");
+  await page.getByLabel("过敏史").fill("花粉季节曾有鼻部不适");
+  await page.getByRole("button", { name: "保存健康档案" }).click();
+  await expectText(page.getByTestId("profile-status"), "健康档案已由服务端确认保存");
+  await expectText(page.getByTestId("health-profile-view"), "体验用户");
+
+  await page.getByTestId("exposure-add").click();
+  await page.getByRole("heading", { name: "记录接触过的因素" }).waitFor({ state: "visible" });
+  await page.getByRole("checkbox", { name: "花粉" }).check({ force: true });
+  await page.getByRole("button", { name: "保存记录" }).click();
+  await expectText(page.locator(".exposure-history"), "花粉");
+  await page.getByRole("button", { name: "返回" }).click();
+  await page.getByTestId("health-profile-view").waitFor({ state: "visible" });
+  await expectText(page.getByTestId("health-profile-view"), "花粉");
+
+  await page.getByTestId("medication-add").click();
+  await page.getByLabel("药物名称").fill("氯雷他定");
+  await page.getByRole("textbox", { name: "剂量", exact: true }).fill("10");
+  await page.getByRole("textbox", { name: "单位", exact: true }).fill("mg");
+  await page.getByRole("textbox", { name: "实际用量情况", exact: true }).fill("按医嘱服用一次");
+  await page.getByRole("button", { name: "保存记录" }).click();
+  await expectText(page.getByTestId("medication-history"), "氯雷他定");
+
+  // 刷新后回到默认首页，再进入档案应回读三类真实数据。
+  await page.reload();
+  await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
+  await page.locator(".bottom-nav button", { hasText: "我的" }).click();
+  await page.getByRole("button", { name: "健康档案" }).click();
+  await page.getByTestId("health-profile-view").waitFor({ state: "visible" });
+  await expectText(page.getByTestId("health-profile-view"), "体验用户");
+  await expectText(page.getByTestId("health-profile-view"), "花粉");
+  await expectText(page.getByTestId("medication-history"), "氯雷他定");
   await page.locator(".bottom-nav button", { hasText: "首页" }).click();
 
   // 打开日历并新增今天的症状记录（2,1,2,1 → TNSS 6）。
@@ -307,7 +357,7 @@ try {
     conversationId
   );
   process.stdout.write(
-    "web-browser-e2e: PASS fresh-consent isolation save reflect-update reload restart discover overview-stats chat-exec\n"
+    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication reload restart discover overview-stats chat-exec\n"
   );
 } finally {
   if (isolatedContext !== undefined) {
