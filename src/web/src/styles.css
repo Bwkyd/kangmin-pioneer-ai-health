@@ -503,7 +503,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   min-height: 62px;
   padding: 6px 9px 8px;
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 3px;
   background: rgba(255,255,255,.98);
   border-top: 1px solid #e2e8e4;
@@ -665,26 +665,6 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .bottom-nav button.active .nav-glyph::before,
 .bottom-nav button.active .nav-glyph::after {
   color: var(--green);
-}
-
-.bottom-nav .nav-add {
-  width: 52px;
-  height: 52px;
-  justify-self: center;
-  align-self: start;
-  margin-top: -22px;
-  border: 4px solid #f5f7f5;
-  border-radius: 50%;
-  background: var(--green);
-  color: #fff;
-  box-shadow: 0 8px 20px rgba(28, 117, 96, .28);
-}
-
-.bottom-nav .nav-add span {
-  height: auto;
-  font-size: 30px;
-  font-weight: 300;
-  line-height: 1;
 }
 
 .welcome-card {
@@ -1536,48 +1516,6 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   font-size: 7px;
 }
 
-.mini-program-menu {
-  width: 68px;
-  height: 31px;
-  padding: 0 8px;
-  justify-self: end;
-  display: grid;
-  grid-template-columns: 1fr 23px;
-  align-items: center;
-  border: 1px solid #e4e9e6;
-  border-radius: 18px;
-  background: #fff;
-  cursor: pointer;
-}
-
-.mini-program-menu span {
-  padding-right: 6px;
-  border-right: 1px solid #e5e9e7;
-  font-size: 11px;
-  letter-spacing: 1px;
-}
-
-.mini-program-menu i {
-  width: 16px;
-  height: 16px;
-  justify-self: end;
-  border: 4px solid #26342f;
-  border-radius: 50%;
-  position: relative;
-}
-
-.mini-program-menu i::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 4px;
-  height: 4px;
-  transform: translate(-50%, -50%);
-  border-radius: 50%;
-  background: #26342f;
-}
-
 /* 抗敏先锋品牌主题：深蓝负责专业感，黄橙红仅用于症状分级。 */
 .demo-shell,
 .phone-wrap,
@@ -1603,24 +1541,6 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 
 .real-title span {
   color: #cfe2fb;
-}
-
-.mini-program-menu {
-  border-color: rgba(255,255,255,.35);
-  background: rgba(255,255,255,.12);
-  color: #fff;
-}
-
-.mini-program-menu span {
-  border-right-color: rgba(255,255,255,.28);
-}
-
-.mini-program-menu i {
-  border-color: #fff;
-}
-
-.mini-program-menu i::after {
-  background: #fff;
 }
 
 .brand-banner {
@@ -2099,12 +2019,6 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 
 .bottom-nav button.active {
   background: #e7f0fb;
-}
-
-.bottom-nav .nav-add {
-  border-color: #f3f6fb;
-  background: #1e5aa3;
-  box-shadow: 0 8px 22px rgba(30, 90, 163, .3);
 }
 
 .entry-sheet {

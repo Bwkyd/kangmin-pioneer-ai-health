@@ -490,8 +490,12 @@ export default function App() {
       : !medicationDraft.dosageUnknown && (!medicationDraft.dosageValue.trim() || !medicationDraft.dosageUnit.trim())
         ? "请填写药物剂量和单位，或勾选剂量不详"
         : !medicationDraft.actualUseUnknown && !medicationDraft.actualUseDescription.trim()
-          ? "请填写实际用量情况，或勾选实际用量不详"
+        ? "请填写实际用量情况，或勾选实际用量不详"
           : null;
+  const allProfileReadsFailed =
+    profileLoadError &&
+    exposureStatus === "error" &&
+    medicationStatus === "error";
 
   useEffect(() => {
     let cancelled = false;
@@ -593,7 +597,23 @@ export default function App() {
     const exposureRequestVersion = exposureRequest.next();
     const medicationRequestVersion = medicationRequest.next();
     void (async () => {
-      const [profileResult, exposureResult, medicationResult] = await Promise.allSettled([getHealthProfile(), listAllergenExposures(), listMedications()]);
+      let readResults = await Promise.allSettled([
+        getHealthProfile(),
+        listAllergenExposures(),
+        listMedications()
+      ]);
+      // 服务启动/会话恢复的短暂窗口可能让三个读请求同时
+      // 失败；仅在全部失败时自动重试一次，不对部分错误伪造空态。
+      if (readResults.every((result) => result.status === "rejected")) {
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 350));
+        if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
+        readResults = await Promise.allSettled([
+          getHealthProfile(),
+          listAllergenExposures(),
+          listMedications()
+        ]);
+      }
+      const [profileResult, exposureResult, medicationResult] = readResults;
       if (cancelled || !profileRequest.isCurrent(requestVersion)) return;
       const profile = profileResult.status === "fulfilled" ? profileResult.value : null;
       const profileError = profileResult.status === "rejected";
@@ -1152,53 +1172,6 @@ export default function App() {
     else if (tab !== "home") setTab("home");
   };
 
-  const resetDemo = () => {
-    profileRequest.next();
-    symptomRequest.next();
-    medicationRequest.next();
-    exposureRequest.next();
-    agentRequest.next();
-    chatRequest.next();
-    setMessages([
-      {
-        id: Date.now(),
-        role: "ai",
-        kind: "text",
-        text: "你好，我是小岐。你可以描述症状、记录健康变化；我不会直接下诊断，康复建议会先做安全筛查，并且只使用已审核的内容。",
-      },
-    ]);
-    setStep(0);
-    setAgentAssessmentOpen(false);
-    setAgentDraft(createAgentDraft());
-    setAgentStatus("idle");
-    setAgentNotice("");
-    setAgentResult(null);
-    // 自由对话一并重置：丢弃本地会话 id，下次发送开启新会话。
-    setChatSending(false);
-    setChatError("");
-    setChatRetryMessage(null);
-    setConversationId(null);
-    try {
-      sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
-    } catch {
-      // sessionStorage 不可用时无需清理。
-    }
-    setAssessmentDone(false);
-    setScores([...emptySymptomScores]);
-    setEntryOpen(false);
-    setProfileStatus("idle");
-    setProfileNotice("");
-    setMedicationStatus("idle");
-    setMedicationNotice("");
-    setSymptomStatus("idle");
-    setSymptomNotice("");
-    setExposureStatus("idle");
-    setExposureNotice("");
-    setProfileEditing(false);
-    setExposureNotice("");
-    setTab("home");
-  };
-
   const activeOptions =
     step === 1 ? symptomOptions : step === 2 ? durationOptions : step === 3 ? warningOptions : [];
 
@@ -1320,9 +1293,6 @@ export default function App() {
               <strong>{headerTitle}</strong>
               {tab === "chat" && <span>鼻健康智能助手</span>}
             </div>
-            <button className="mini-program-menu" onClick={resetDemo} aria-label="更多">
-              <span>•••</span><i />
-            </button>
           </header>
 
           <div className="app-body">
@@ -1554,16 +1524,17 @@ export default function App() {
             )}
 
             {tab === "healthProfile" && (
-              <div className="health-profile-view">
+              <div className="health-profile-view" data-testid="health-profile-view">
                 <section className="record-page-intro">
                   <small>独立健康档案</small>
                   <h2>我的健康档案</h2>
                   <p>这里只展示和保存用户主动填写的记录，不推断诊断、病因或治疗方案。</p>
                 </section>
 
-                <div className={`record-notice ${profileStatus === "error" ? "error" : ""}`} role="status">
-                  <strong>{profileStatus === "loading" || profileStatus === "saving" ? "处理中" : profileLoadError ? "档案暂时无法读取" : profileStatus === "error" ? "保存未完成" : "档案状态"}</strong>
-                  <span>{profileNotice || "进入本页后从服务端读取健康档案"}</span>
+                <div className={`record-notice ${profileStatus === "error" ? "error" : ""}`} role="status" data-testid="profile-status">
+                  <strong>{profileStatus === "loading" || profileStatus === "saving" ? "处理中" : allProfileReadsFailed ? "健康记录暂时无法连接" : profileLoadError ? "档案暂时无法读取" : profileStatus === "error" ? "保存未完成" : "档案状态"}</strong>
+                  <span>{allProfileReadsFailed ? "服务端暂时不可用，本页不会把空白误当成真实空档案。" : profileNotice || "进入本页后从服务端读取健康档案"}</span>
+                  {allProfileReadsFailed && <button type="button" onClick={openHealthProfile}>重试</button>}
                 </div>
 
                 {profileEditing ? (
@@ -1588,11 +1559,11 @@ export default function App() {
                 ) : (
                   <>
                     <section className="health-record-card">
-                      <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>姓名、出生日期与性别</small></div><button disabled={profileLoadError} onClick={() => setProfileEditing(true)}>编辑</button></div>
+                      <div className="record-card-title"><span>基</span><div><h3>基础信息</h3><small>姓名、出生日期与性别</small></div><button data-testid="health-profile-edit" disabled={profileLoadError} onClick={() => setProfileEditing(true)}>编辑</button></div>
                       <div className="record-values">
-                        <p><span>姓名或称呼</span><strong>{healthProfile?.basicInfo.displayName || "待填写"}</strong></p>
-                        <p><span>出生日期</span><strong>{healthProfile?.basicInfo.birthDate || "待填写"}</strong></p>
-                        <p><span>性别</span><strong>{healthProfile?.basicInfo.sex === "female" ? "女" : healthProfile?.basicInfo.sex === "male" ? "男" : "待填写"}</strong></p>
+                        <p><span>姓名或称呼</span><strong>{profileLoadError ? "暂时无法读取" : healthProfile?.basicInfo.displayName || "待填写"}</strong></p>
+                        <p><span>出生日期</span><strong>{profileLoadError ? "暂时无法读取" : healthProfile?.basicInfo.birthDate || "待填写"}</strong></p>
+                        <p><span>性别</span><strong>{profileLoadError ? "暂时无法读取" : healthProfile?.basicInfo.sex === "female" ? "女" : healthProfile?.basicInfo.sex === "male" ? "男" : "待填写"}</strong></p>
                       </div>
                     </section>
                     <section className="health-record-card">
@@ -1600,9 +1571,9 @@ export default function App() {
                       <p className="record-empty">{profileLoadError ? "健康档案暂时无法读取" : healthProfile?.allergyHistory || "暂无已保存的过敏史"}</p>
                     </section>
                     <section className="health-record-card trigger-card">
-                      <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>区分档案内容与患者每日自述</small></div><button disabled={exposureStatus !== "ready"} onClick={() => startAllergenRecord(localDateValue(), "healthProfile")}>新增记录</button></div>
-                      {profileLoadError ? <p className="record-notice error"><strong>档案汇总暂时无法读取</strong><span>健康档案接口失败，但下面仍展示已独立读取的患者自述暴露记录。</span><button type="button" onClick={openHealthProfile}>重试</button></p> : healthProfile?.legacyCommonTriggers?.length ? <p className="record-notice"><strong>历史诱因待迁移</strong><span>{healthProfile.legacyCommonTriggers.join("、")} 是旧版档案字段，暂不作为患者自述或当前投影；请重新填写过敏原记录确认。</span></p> : null}
-                      {exposureStatus === "error" ? <div className="record-notice error" role="alert"><strong>过敏原历史暂时无法读取</strong><span>{exposureNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div> : exposureStatus === "loading" ? <p className="record-empty">正在读取患者自述暴露记录…</p> : <>
+                      <div className="record-card-title"><span>因</span><div><h3>常见诱因</h3><small>区分档案内容与患者每日自述</small></div><button data-testid="exposure-add" disabled={exposureStatus !== "ready"} onClick={() => startAllergenRecord(localDateValue(), "healthProfile")}>新增记录</button></div>
+                      {profileLoadError && !allProfileReadsFailed ? <p className="record-notice error"><strong>档案汇总暂时无法读取</strong><span>健康档案接口失败，但下面仍展示已独立读取的患者自述暴露记录。</span><button type="button" onClick={openHealthProfile}>重试</button></p> : !profileLoadError && healthProfile?.legacyCommonTriggers?.length ? <p className="record-notice"><strong>历史诱因待迁移</strong><span>{healthProfile.legacyCommonTriggers.join("、")} 是旧版档案字段，暂不作为患者自述或当前投影；请重新填写过敏原记录确认。</span></p> : null}
+                      {exposureStatus === "error" ? allProfileReadsFailed ? <p className="record-empty">服务恢复后可重新读取患者自述记录。</p> : <div className="record-notice error" role="alert"><strong>过敏原历史暂时无法读取</strong><span>{exposureNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div> : exposureStatus === "loading" ? <p className="record-empty">正在读取患者自述暴露记录…</p> : <>
                         {profileLoadError ? <p className="record-empty">档案汇总暂时不可用；可查看下方已读取的患者自述记录。</p> : healthProfile?.commonTriggers.length ? <div className="record-tags">{healthProfile.commonTriggers.map((item) => <span key={item.code}>{item.label}<small>患者自述 · 最近 {displayDate(item.latestDate)}</small></span>)}</div> : <p className="record-empty">暂无已持久化暴露记录生成的常见诱因</p>}
                         <div className="patient-records">
                           <strong>患者自述暴露记录</strong>
@@ -1618,8 +1589,8 @@ export default function App() {
                       </>}
                     </section>
                     <section className="health-record-card medication-card">
-                      <div className="record-card-title"><span>药</span><div><h3>用药记录</h3><small>记录日期、药物名称、剂量和实际用量</small></div><button type="button" disabled={medicationStatus !== "ready"} onClick={() => beginMedication()}>新增记录</button></div>
-                      {medicationStatus === "error" && <div className="record-notice error" role="alert"><strong>用药历史暂时无法读取</strong><span>{medicationNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div>}
+                      <div className="record-card-title"><span>药</span><div><h3>用药记录</h3><small>记录日期、药物名称、剂量和实际用量</small></div><button type="button" data-testid="medication-add" disabled={medicationStatus !== "ready"} onClick={() => beginMedication()}>新增记录</button></div>
+                      {medicationStatus === "error" && !allProfileReadsFailed && <div className="record-notice error" role="alert"><strong>用药历史暂时无法读取</strong><span>{medicationNotice}</span><button type="button" onClick={openHealthProfile}>重试</button></div>}
                       {medicationEditing && (
                         <form className="medication-form" onSubmit={submitMedication}>
                           <label>使用日期<input type="date" value={medicationDraft.takenAt} onChange={(event) => setMedicationDraft((current) => ({ ...current, takenAt: event.target.value }))} /></label>
@@ -1632,7 +1603,7 @@ export default function App() {
                           <div className="record-form-actions"><button type="button" disabled={medicationStatus === "saving"} onClick={() => { medicationRequest.next(); setMedicationCreateKey(null); setMedicationEditing(false); }}>取消</button><button type="submit" disabled={medicationStatus === "saving"}>{medicationStatus === "saving" ? "保存中…" : editingMedicationId ? "保存修改" : "保存记录"}</button></div>
                         </form>
                       )}
-                      {medicationStatus === "error" ? <p className="record-empty error-text">读取失败，不能判断当前是否没有用药记录；请先重试。</p> : medicationStatus === "loading" ? <p className="record-empty">正在读取服务端用药记录…</p> : medications.length > 0 ? <div className="medication-history">{medications.map((record) => <article key={record.id}><time>{displayDate(record.takenAt)}</time><strong>{record.medicationName}</strong><span>{record.dosage ?? "剂量不详"}</span><small>{record.actualUse ?? "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)} disabled={medicationStatus !== "ready"}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus !== "ready"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
+                      {medicationStatus === "error" ? <p className={`record-empty ${allProfileReadsFailed ? "" : "error-text"}`}>{allProfileReadsFailed ? "服务恢复后可重新读取用药记录。" : "读取失败，不能判断当前是否没有用药记录；请先重试。"}</p> : medicationStatus === "loading" ? <p className="record-empty">正在读取服务端用药记录…</p> : medications.length > 0 ? <div className="medication-history" data-testid="medication-history">{medications.map((record) => <article key={record.id}><time>{displayDate(record.takenAt)}</time><strong>{record.medicationName}</strong><span>{record.dosage ?? "剂量不详"}</span><small>{record.actualUse ?? "实际用量不详"}</small><div><button type="button" onClick={() => beginMedication(record)} disabled={medicationStatus !== "ready"}>编辑</button><button type="button" onClick={() => removeMedication(record)} disabled={medicationStatus !== "ready"}>删除</button></div></article>)}</div> : <p className="record-empty">暂无已保存的用药记录。</p>}
                     </section>
                   </>
                 )}
@@ -1763,7 +1734,6 @@ export default function App() {
           <nav className="bottom-nav" aria-label="主要功能">
             <button className={tab === "home" ? "active" : ""} onClick={() => navigateTo("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
             <button className={tab === "chat" ? "active" : ""} onClick={() => navigateTo("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
-            <button className="nav-add" onClick={() => { navigateTo("assessment"); openSymptomDate(localDateValue()); }} aria-label="新增症状记录"><span>＋</span></button>
             <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} aria-label="打开症状评估日历" data-navigation-purpose="symptom-calendar" data-testid="nav-calendar" title="症状评估日历" onClick={() => navigateTo("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
             <button className={tab === "profile" || tab === "healthProfile" ? "active" : ""} onClick={() => navigateTo("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
           </nav>
