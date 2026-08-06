@@ -253,15 +253,20 @@ try {
   );
 
   // ---- 学一学（discover）内容页 ----
-  // 空库下进入"学一学"：文章 tab 展示空态；方案 tab 在 candidate 门禁下
+  // 空库下进入"学一学"：默认进入成人视频分类目录；方案 tab 在 candidate 门禁下
   // browse plan list 返回空是设计行为，如实提示暂未开放。
   await page.locator(".bottom-nav button", { hasText: "首页" }).click();
   await page.locator(".learn-module").click();
   await page.getByTestId("discover-view").waitFor({ state: "visible" });
   await expectText(
     page.getByTestId("discover-empty"),
-    "暂无已发布内容，发布后将出现在这里"
+    "该分类暂无已发布视频"
   );
+  await expectText(page.getByTestId("discover-video-catalog"), "快速通窍方案");
+  await page.locator(".discover-category-rail button", { hasText: "调体方案" }).click();
+  await expectText(page.getByTestId("discover-video-catalog"), "肺气虚寒");
+  await page.getByRole("button", { name: "儿童方案" }).click();
+  await expectText(page.getByTestId("discover-video-catalog"), "调体方案");
   await page.locator(".discover-tabs button", { hasText: "调理方案" }).click();
   await expectText(page.getByTestId("discover-empty"), "方案内容暂未开放");
 
@@ -410,6 +415,7 @@ try {
   await patientCheckPage.locator(".bottom-nav button", { hasText: "首页" }).click();
   await patientCheckPage.locator(".learn-module").click();
   await patientCheckPage.getByTestId("discover-view").waitFor({ state: "visible" });
+  await patientCheckPage.locator(".discover-tabs button", { hasText: "科普文章" }).click();
   await patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" }).waitFor({ state: "visible" });
 
   await adminPage.bringToFront();
@@ -420,6 +426,7 @@ try {
   await patientCheckPage.locator(".bottom-nav button", { hasText: "首页" }).click();
   await patientCheckPage.locator(".learn-module").click();
   await patientCheckPage.getByTestId("discover-view").waitFor({ state: "visible" });
+  await patientCheckPage.locator(".discover-tabs button", { hasText: "科普文章" }).click();
   assert.equal(await patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" }).count(), 0);
   await patientCheckPage.close();
 
@@ -434,25 +441,35 @@ try {
 
   await adminPage.getByTestId("admin-nav-video").click();
   await adminPage.getByRole("button", { name: "新增视频" }).click();
-  await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("健康视频");
+  await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("成人快速通窍");
   await adminPage.getByRole("button", { name: "创建分类" }).click();
   const videoForm = adminPage.locator(".content-form");
   await expectText(adminPage.getByRole("status"), "分类已创建");
-  assert.equal(await videoForm.getByLabel("分类").inputValue(), "健康视频");
-  await videoForm.getByLabel("标题").fill("鼻腔护理演示视频");
+  assert.equal(await videoForm.getByLabel("分类").inputValue(), "成人快速通窍");
+  await videoForm.getByLabel("标题").fill("抗敏要穴之迎香穴（指腹擦迎香）");
   await videoForm.getByLabel("摘要").fill("客户试用版视频发布闭环");
   await videoForm.getByLabel("视频说明").fill("演示日常鼻腔护理步骤，实际操作请遵循专业人员指导。");
   await videoForm.getByLabel("来源").fill("客户确认材料");
   await videoForm.getByLabel("视频文件").selectOption({ label: "nasal-care.mp4" });
   await videoForm.getByLabel("免责声明").fill("仅供健康科普，不替代门诊诊断或治疗建议。");
   await videoForm.getByRole("button", { name: "保存草稿" }).click();
-  const videoRow = adminPage.locator("tbody tr", { hasText: "鼻腔护理演示视频" });
+  const videoRow = adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" });
   await videoRow.waitFor({ state: "visible" });
   await videoRow.getByRole("button", { name: "校验" }).click();
   await expectText(adminPage.getByRole("status"), "校验通过");
   await videoRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
-  await adminPage.locator("tbody tr", { hasText: "鼻腔护理演示视频" }).getByRole("button", { name: "下架" }).click();
+  const videoCheckPage = await context.newPage();
+  await videoCheckPage.goto(origin);
+  await videoCheckPage.locator(".bottom-nav button", { hasText: "首页" }).click();
+  await videoCheckPage.locator(".learn-module").click();
+  const publishedVideoCard = videoCheckPage.locator(".discover-video-list article", { hasText: "抗敏要穴之迎香穴" });
+  await publishedVideoCard.waitFor({ state: "visible" });
+  await publishedVideoCard.click();
+  await expectText(videoCheckPage.getByTestId("discover-detail"), "演示日常鼻腔护理步骤");
+  assert.equal(await videoCheckPage.locator(".discover-detail-video").count(), 1);
+  await videoCheckPage.close();
+  await adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" }).getByRole("button", { name: "下架" }).click();
 
   await adminPage.getByTestId("admin-nav-knowledge").click();
   await adminPage.getByLabel("知识来源").fill("客户试用资料");
