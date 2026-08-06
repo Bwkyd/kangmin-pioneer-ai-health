@@ -1262,6 +1262,69 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   backdrop-filter: blur(3px);
 }
 
+.preview-consent-phone { background: #f2f6fb; }
+.preview-consent-title { margin: 0 auto; text-align: center; }
+.preview-consent-view {
+  min-height: calc(100% - 55px);
+  padding: 28px 24px 32px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  color: #243f61;
+}
+.preview-consent-view > img {
+  width: 100%;
+  margin-bottom: 26px;
+  border-radius: 14px;
+  box-shadow: 0 12px 28px rgba(29, 72, 124, .16);
+}
+.preview-consent-view > small:first-of-type {
+  color: #1e5aa3;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+.preview-consent-view h1 { margin: 8px 0 12px; font-size: 22px; }
+.preview-consent-view > p { margin: 0; color: #60758e; font-size: 12px; line-height: 1.8; }
+.preview-consent-view .preview-consent-warning {
+  margin-top: 12px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  background: #fff5e5;
+  color: #8a5a14;
+}
+.preview-consent-check {
+  margin-top: 20px;
+  padding: 13px;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  border: 1px solid #d6e1ef;
+  border-radius: 12px;
+  background: #fff;
+  color: #334e6f;
+  font-size: 11px;
+  line-height: 1.5;
+  cursor: pointer;
+}
+.preview-consent-check input { margin-top: 2px; accent-color: #1e5aa3; }
+.preview-consent-check span { display: flex; flex-direction: column; }
+.preview-consent-check small { margin-top: 3px; color: #8291a2; font-size: 8px; }
+.preview-consent-error { margin-top: 12px !important; color: #a04436 !important; }
+.preview-consent-submit {
+  margin-top: 16px;
+  padding: 13px;
+  border: 0;
+  border-radius: 12px;
+  background: #1e5aa3;
+  color: #fff;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.preview-consent-submit:disabled { background: #b9c7d8; cursor: not-allowed; }
+.preview-consent-retention { margin-top: 12px; color: #8796a8; font-size: 8px; text-align: center; }
+
 .entry-sheet {
   width: 100%;
   max-height: 88%;

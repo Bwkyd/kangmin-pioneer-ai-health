@@ -10,8 +10,8 @@ import type { ConsentGatePort } from "../modules/account/consent-ports.js";
 /**
  * consent 门禁适配器（issue-155）：RecordService 写入前置校验与
  * ConversationService 绑定保存共用的窄端口实现，底层走 account 仓储。
- * 不经过 AccountService.consentUpdate（它要求本地账号存在；开发会话患者
- * 只有 patients 行，同样允许落授权记录——与生产语义一致地 fail-closed）。
+ * Agent 保存绑定等内部流程不经过 AccountService.consentUpdate；患者 Web
+ * 的明确授权仍走 AccountService，二者最终共用同一追加式 consent 仓储。
  */
 export class ConsentGateAdapter implements ConsentGatePort {
   constructor(private readonly accounts: AccountRepository) {}

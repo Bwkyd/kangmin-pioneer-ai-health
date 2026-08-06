@@ -42,6 +42,26 @@ async function close(server: ReturnType<typeof createKangminHttpServer>) {
   });
 }
 
+function setCookies(response: Response): string[] {
+  const headers = response.headers as Headers & {
+    getSetCookie?: () => string[];
+  };
+  const separate = headers.getSetCookie?.();
+  if (separate !== undefined && separate.length > 0) {
+    return separate;
+  }
+  const combined = response.headers.get("set-cookie");
+  return combined === null
+    ? []
+    : combined.split(/,(?=\s*[^;,]+=)/u).map((value) => value.trim());
+}
+
+function cookiePair(cookies: string[], name: string): string {
+  const value = cookies.find((cookie) => cookie.startsWith(`${name}=`));
+  assert.notEqual(value, undefined, `响应应设置 ${name}`);
+  return value?.split(";")[0] ?? "";
+}
+
 test("HTTP 适配器使用同一应用服务并执行真实身份和持久化", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-http-"));
   const databasePath = join(directory, "records.sqlite");
@@ -224,15 +244,10 @@ test("Agent 通过 HTTP 命令契约执行同一安全状态机", async () => {
   }
 });
 
-test("患者薄壳通过受保护的 HttpOnly 开发会话调用同一命令端点", async () => {
+test("客户预览从空库授权，刷新可恢复且两个浏览器互不串数据", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-web-http-"));
   const databasePath = join(directory, "records.sqlite");
   const application = createApplication(databasePath);
-  // record 写入需 health_data 授权（issue-155 fail-closed）：开发会话患者
-  // 与 /dev/session 同 subject 复用同一患者行，授权经仓储层补记。
-  const seeded =
-    await application.sessions.createDevelopmentSession("patient-browser");
-  await writeConsentForTest(databasePath, seeded.patientId, "health_data");
   const server = createKangminHttpServer(application, {
     appEnvironment: "integration",
     allowDevelopmentSession: true
@@ -254,14 +269,39 @@ test("患者薄壳通过受保护的 HttpOnly 开发会话调用同一命令端�
     const session = await fetch(`${origin}/dev/session`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ subject: "patient-browser" })
+      // 即使伪造固定 subject，服务端也必须忽略并自己生成身份。
+      body: JSON.stringify({ subject: "shared-attacker-value" })
     });
     assert.equal(session.status, 201);
-    const setCookie = session.headers.get("set-cookie");
-    assert.notEqual(setCookie, null);
-    assert.match(setCookie ?? "", /HttpOnly/u);
-    assert.match(setCookie ?? "", /SameSite=Strict/u);
-    const sessionCookie = setCookie?.split(";")[0] ?? "";
+    const firstCookies = setCookies(session);
+    assert.equal(firstCookies.length, 2);
+    for (const value of firstCookies) {
+      assert.match(value, /HttpOnly/u);
+      assert.match(value, /SameSite=Strict/u);
+    }
+    const sessionCookie = cookiePair(firstCookies, "kangmin_session");
+    const previewCookie = cookiePair(
+      firstCookies,
+      "kangmin_preview_subject"
+    );
+
+    const consent = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: {
+        cookie: sessionCookie,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({
+        command: "account consent update",
+        input: {
+          consentType: "health_data",
+          decision: "granted",
+          policyVersion: "2026-08-01.1",
+          requestId: "web-http-consent"
+        }
+      })
+    });
+    assert.equal(consent.status, 200);
 
     const created = await fetch(`${origin}/v1/commands`, {
       method: "POST",
@@ -297,6 +337,64 @@ test("患者薄壳通过受保护的 HttpOnly 开发会话调用同一命令端�
     };
     assert.equal(body.ok, true);
     assert.equal(body.data.items[0]?.tnssTotal, 6);
+
+    // 另一个浏览器使用同样的请求体也必须获得独立身份。
+    const secondSession = await fetch(`${origin}/dev/session`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ subject: "shared-attacker-value" })
+    });
+    assert.equal(secondSession.status, 201);
+    const secondCookies = setCookies(secondSession);
+    const secondSessionCookie = cookiePair(secondCookies, "kangmin_session");
+    const secondPreviewCookie = cookiePair(
+      secondCookies,
+      "kangmin_preview_subject"
+    );
+    assert.notEqual(secondPreviewCookie, previewCookie);
+
+    const isolatedList = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: {
+        cookie: secondSessionCookie,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ command: "record symptom list" })
+    });
+    assert.equal(isolatedList.status, 200);
+    const isolatedBody = await isolatedList.json() as {
+      data: { items: unknown[] };
+    };
+    assert.deepEqual(isolatedBody.data.items, []);
+
+    // 模拟会话 Cookie 丢失/过期：仅凭 24h 预览身份重建会话，
+    // 应回到第一个客户的原有记录。
+    const restoredSession = await fetch(`${origin}/dev/session`, {
+      method: "POST",
+      headers: {
+        cookie: previewCookie,
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({})
+    });
+    assert.equal(restoredSession.status, 201);
+    const restoredCookies = setCookies(restoredSession);
+    assert.equal(
+      cookiePair(restoredCookies, "kangmin_preview_subject"),
+      previewCookie
+    );
+    const restoredList = await fetch(`${origin}/v1/commands`, {
+      method: "POST",
+      headers: {
+        cookie: cookiePair(restoredCookies, "kangmin_session"),
+        "content-type": "application/json"
+      },
+      body: JSON.stringify({ command: "record symptom list" })
+    });
+    const restoredBody = await restoredList.json() as {
+      data: { items: Array<{ tnssTotal: number }> };
+    };
+    assert.equal(restoredBody.data.items[0]?.tnssTotal, 6);
   } finally {
     await close(server);
     application.close();

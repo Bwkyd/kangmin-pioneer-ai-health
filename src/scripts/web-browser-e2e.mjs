@@ -9,8 +9,6 @@ import { chromium } from "playwright";
 
 import { createApplication } from "../dist/app/composition-root.js";
 import { createKangminHttpServer } from "../dist/http/server.js";
-import { KangminDatabase } from "../dist/infrastructure/database.js";
-import { SqliteAccountRepository } from "../dist/infrastructure/sqlite-account-repository.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
@@ -60,23 +58,6 @@ async function openCalendarList(page) {
 const directory = mkdtempSync(join(tmpdir(), "kangmin-browser-"));
 const databasePath = join(directory, "records.sqlite");
 let application = createApplication(databasePath);
-// record 写入需 health_data 授权（issue-155 fail-closed）：薄壳固定使用
-// subject "patient-web" 的开发会话（web/app.js），直接经仓储补记授权。
-const seeded =
-  await application.sessions.createDevelopmentSession("patient-web");
-const seedDatabase = new KangminDatabase(databasePath);
-try {
-  await new SqliteAccountRepository(seedDatabase).appendConsent({
-    patientId: seeded.patientId,
-    consentType: "health_data",
-    decision: "granted",
-    policyVersion: "2026-08-01.1",
-    requestId: "web-e2e-seed",
-    createdAt: new Date().toISOString()
-  });
-} finally {
-  seedDatabase.close();
-}
 let server = createKangminHttpServer(application, {
   appEnvironment: "integration",
   allowDevelopmentSession: true
@@ -87,10 +68,16 @@ const context = await browser.newContext({
   viewport: { width: 390, height: 844 }
 });
 const page = await context.newPage();
+let isolatedContext;
 
 try {
-  // 首页薄壳渲染（品牌横幅 + 手机壳 + 底部导航）。
+  // 全新数据库首次进入必须先明确授权，测试不直写数据库造假。
   await page.goto(origin);
+  await page.getByTestId("preview-consent").waitFor({ state: "visible" });
+  await expectText(page.getByTestId("preview-consent"), "不提供诊断或替代门诊建议");
+  await expectText(page.getByTestId("preview-consent"), "客户确认结束后");
+  await page.getByRole("checkbox").check();
+  await page.getByTestId("preview-consent-submit").click();
   await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
   await expectText(page.locator(".real-title"), "抗敏先锋");
 
@@ -161,6 +148,23 @@ try {
     page.getByTestId("calendar-list"),
     "喷嚏 2 · 流涕 1 · 鼻塞 3 · 鼻痒 1"
   );
+
+  // 第二个浏览器必须重新授权，且不得看到第一个客户的记录。
+  isolatedContext = await browser.newContext({
+    viewport: { width: 390, height: 844 }
+  });
+  const isolatedPage = await isolatedContext.newPage();
+  await isolatedPage.goto(origin);
+  await isolatedPage.getByTestId("preview-consent").waitFor({ state: "visible" });
+  await isolatedPage.getByRole("checkbox").check();
+  await isolatedPage.getByTestId("preview-consent-submit").click();
+  await isolatedPage.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
+  await expectText(
+    isolatedPage.getByTestId("home-overview"),
+    "暂无真实健康记录"
+  );
+  await isolatedContext.close();
+  isolatedContext = undefined;
 
   // 服务重启（同一 SQLite）后，新开发会话仍解析到同一患者记录。
   await close(server);
@@ -303,9 +307,12 @@ try {
     conversationId
   );
   process.stdout.write(
-    "web-browser-e2e: PASS shell save reflect-update reload restart discover overview-stats chat-exec\n"
+    "web-browser-e2e: PASS fresh-consent isolation save reflect-update reload restart discover overview-stats chat-exec\n"
   );
 } finally {
+  if (isolatedContext !== undefined) {
+    await isolatedContext.close();
+  }
   await context.close();
   await browser.close();
   if (server.listening) {

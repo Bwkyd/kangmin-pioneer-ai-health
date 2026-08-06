@@ -355,9 +355,12 @@ export class AccountService {
     };
   }
 
-  /** 同意当前状态：每个类型只返回最新决策（追加日志中的末条）。 */
+  /**
+   * 同意当前状态：每个类型只返回最新决策（追加日志中的末条）。
+   * patientId 已由 SessionService 鉴权解析；开发预览患者虽然没有
+   * patient_accounts 行，也必须能查看和明确记录自己的健康数据授权。
+   */
   async consentShow(patientId: string): Promise<Record<string, unknown>> {
-    await this.accountOf(patientId);
     const history = await this.accounts.listConsents(patientId);
     const latest = new Map<ConsentType, ConsentRecord>();
     for (const record of history) {
@@ -369,7 +372,11 @@ export class AccountService {
     };
   }
 
-  /** 同意更新：按 sequence 追加新决策，绝不覆写或删除历史决策。 */
+  /**
+   * 同意更新：按 sequence 追加新决策，绝不覆写或删除历史决策。
+   * SessionService 已保证调用者是该 patientId；不额外要求正式账号行，
+   * 使受控开发预览会话可以走与正式账号同一 consent 应用服务。
+   */
   async consentUpdate(
     patientId: string,
     input: {
@@ -401,7 +408,6 @@ export class AccountService {
         { details: { field: "requestId" } }
       );
     }
-    await this.accountOf(patientId);
     const appended = await this.accounts.appendConsent({
       patientId,
       consentType,
