@@ -437,6 +437,8 @@ try {
   await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("健康视频");
   await adminPage.getByRole("button", { name: "创建分类" }).click();
   const videoForm = adminPage.locator(".content-form");
+  await expectText(adminPage.getByRole("status"), "分类已创建");
+  assert.equal(await videoForm.getByLabel("分类").inputValue(), "健康视频");
   await videoForm.getByLabel("标题").fill("鼻腔护理演示视频");
   await videoForm.getByLabel("摘要").fill("客户试用版视频发布闭环");
   await videoForm.getByLabel("视频说明").fill("演示日常鼻腔护理步骤，实际操作请遵循专业人员指导。");

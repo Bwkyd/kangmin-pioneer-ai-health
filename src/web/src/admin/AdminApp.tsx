@@ -197,7 +197,11 @@ function ContentManager({ kind, items, media, categories, busy, run }: { kind: C
   async function createCategory() {
     const name = newCategory.trim();
     if (name === "") return;
-    await run(async () => { await adminCommand("content category create", { name, kind, displayOrder: 0 }); setNewCategory(""); setDraft({ ...draft, category: name }); }, "分类已创建");
+    await run(async () => {
+      await adminCommand("content category create", { name, kind, displayOrder: 0 });
+    }, "分类已创建");
+    setNewCategory("");
+    setDraft((current) => ({ ...current, category: name }));
   }
   async function preview(item: ContentItem) {
     await run(async () => {
