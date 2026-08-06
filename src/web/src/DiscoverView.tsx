@@ -1,6 +1,7 @@
 /**
- * 学一学内容视图（legacy /discover 迁入薄壳）：科普文章 / 操作视频 /
- * 调理方案三个 tab，数据全部来自 browse 只读命令的已发布内容。
+ * 学一学内容视图：视频优先，按成人/儿童和方案类别导航。
+ * 列表和详情仍全部来自 browse 只读命令的已发布内容，
+ * 分类目录只负责导航，不会把待审核内容伪装成可播放视频。
  * 方案 tab 在 candidate 门禁下 list 返回空是设计行为，如实展示
  * “暂未开放”；任何读取失败只提示重试，不用假数据填充。
  */
@@ -9,7 +10,6 @@ import { useEffect, useRef, useState } from "react";
 
 import {
   listCarePlans,
-  listContentCategories,
   listPublicContent,
   showCarePlan,
   showPublicContent,
@@ -17,15 +17,21 @@ import {
   type CarePlanSummary,
   type PublicContent
 } from "./discover";
+import {
+  belongsToCategory,
+  LEARNING_CATALOGS,
+  type LearningAudience
+} from "./learning-catalog";
 
 type DiscoverTab = "article" | "video" | "plan";
 
 export default function DiscoverView() {
-  const [tab, setTab] = useState<DiscoverTab>("article");
+  const [tab, setTab] = useState<DiscoverTab>("video");
   const [items, setItems] = useState<PublicContent[]>([]);
   const [plans, setPlans] = useState<CarePlanSummary[]>([]);
-  const [categories, setCategories] = useState<string[]>([]);
-  const [category, setCategory] = useState("all");
+  const [audience, setAudience] = useState<LearningAudience>("adult");
+  const [category, setCategory] = useState("adult-quick-content");
+  const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [notice, setNotice] = useState("");
   const [selectedContent, setSelectedContent] = useState<PublicContent | null>(null);
@@ -38,8 +44,7 @@ export default function DiscoverView() {
     contentRequest.current = requestVersion;
     setSelectedContent(null);
     setSelectedPlan(null);
-    setCategory("all");
-    setCategories([]);
+    setQuery("");
     setItems([]);
     setPlans([]);
     setNotice("");
@@ -51,13 +56,9 @@ export default function DiscoverView() {
           if (contentRequest.current !== requestVersion) return;
           setPlans(planItems);
         } else {
-          const [contentItems, categoryItems] = await Promise.all([
-            listPublicContent(tab),
-            tab === "video" ? listContentCategories("video") : Promise.resolve([])
-          ]);
+          const contentItems = await listPublicContent(tab);
           if (contentRequest.current !== requestVersion) return;
           setItems(contentItems);
-          setCategories(categoryItems);
         }
         setStatus("ready");
       } catch (error) {
@@ -97,31 +98,89 @@ export default function DiscoverView() {
     }
   }
 
-  const visibleItems = tab === "video" && category !== "all"
-    ? items.filter((item) => item.category === category)
-    : items;
+  const activeCatalog = LEARNING_CATALOGS.find((item) => item.id === audience) ?? LEARNING_CATALOGS[0];
+  const activeSection = activeCatalog.sections.find((section) => section.categories.some((item) => item.id === category)) ?? activeCatalog.sections[0];
+  const activeCategory = activeSection.categories.find((item) => item.id === category) ?? activeSection.categories[0];
+  const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
+  const visibleItems = items.filter((item) => {
+    if (tab === "video" && !belongsToCategory(item, activeCategory)) return false;
+    if (!normalizedQuery) return true;
+    return `${item.title} ${item.summary} ${item.category}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
+  });
+
+  function chooseAudience(nextAudience: LearningAudience) {
+    const nextCatalog = LEARNING_CATALOGS.find((item) => item.id === nextAudience) ?? LEARNING_CATALOGS[0];
+    setAudience(nextAudience);
+    setCategory(nextCatalog.sections[0].categories[0].id);
+  }
 
   return (
-    <div className="discover-view" data-testid="discover-view">
+    <div className={`discover-view ${tab === "video" ? "video-catalog-view" : ""}`} data-testid="discover-view">
       <nav className="discover-tabs" aria-label="内容类型">
-        <button type="button" className={tab === "article" ? "active" : ""} onClick={() => setTab("article")}>科普文章</button>
         <button type="button" className={tab === "video" ? "active" : ""} onClick={() => setTab("video")}>操作视频</button>
+        <button type="button" className={tab === "article" ? "active" : ""} onClick={() => setTab("article")}>科普文章</button>
         <button type="button" className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}>调理方案</button>
       </nav>
 
       {tab === "video" && (
-        <div className="discover-filter-row" aria-label="视频分类筛选">
-          <button type="button" className={category === "all" ? "active" : ""} aria-pressed={category === "all"} onClick={() => setCategory("all")}>全部</button>
-          {categories.map((item) => (
-            <button type="button" key={item} className={category === item ? "active" : ""} aria-pressed={category === item} onClick={() => setCategory(item)}>{item}</button>
-          ))}
-        </div>
+        <>
+          <label className="discover-search">
+            <span aria-hidden="true">⌕</span>
+            <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索穴位、手法或症状" aria-label="搜索学一学视频" />
+          </label>
+          <div className="discover-audience" aria-label="适用人群">
+            {LEARNING_CATALOGS.map((catalog) => (
+              <button type="button" key={catalog.id} className={audience === catalog.id ? "active" : ""} aria-pressed={audience === catalog.id} onClick={() => chooseAudience(catalog.id)}>{catalog.label}</button>
+            ))}
+          </div>
+          <p className="discover-catalog-note">按客户确认的内容目录分类，仅用于查找已发布内容，不代表诊断或证型判断。</p>
+        </>
       )}
 
       {notice && <p className={`discover-notice ${status === "error" ? "error-text" : ""}`} role="alert">{notice}</p>}
       {status === "loading" && <p className="discover-notice">正在读取已发布内容…</p>}
 
-      {status === "ready" && tab !== "plan" && visibleItems.length > 0 && (
+      {status === "ready" && tab === "video" && (
+        <section className="discover-catalog" data-testid="discover-video-catalog">
+          <aside className="discover-category-rail" aria-label="视频方案分类">
+            {activeCatalog.sections.map((section) => (
+              <button type="button" key={section.id} className={activeSection.id === section.id ? "active" : ""} aria-pressed={activeSection.id === section.id} onClick={() => setCategory(section.categories[0].id)}>{section.label}</button>
+            ))}
+          </aside>
+          <div className="discover-category-content">
+            <header>
+              <div><small>{activeCatalog.label}</small><h2>{activeSection.label}</h2></div>
+              <span>{visibleItems.length} 个已发布</span>
+            </header>
+            {activeSection.categories.length > 1 && (
+              <nav className="discover-subcategories" aria-label={`${activeSection.label}二级分类`}>
+                {activeSection.categories.map((item) => (
+                  <button type="button" key={item.id} className={activeCategory.id === item.id ? "active" : ""} aria-pressed={activeCategory.id === item.id} onClick={() => setCategory(item.id)}>{item.label}</button>
+                ))}
+              </nav>
+            )}
+            {visibleItems.length > 0 ? (
+              <div className="discover-video-list">
+                {visibleItems.map((item) => (
+                  <article key={item.id} role="button" tabIndex={0} onClick={() => void openContent(item)} onKeyDown={(event) => { if (event.key === "Enter") void openContent(item); }}>
+                    <span className="discover-play" aria-hidden="true">▶</span>
+                    <div><h3>{item.title}</h3><p>{item.summary || "点击查看视频与文字介绍"}</p><small>视频 · 图文介绍</small></div>
+                    <b aria-hidden="true">›</b>
+                  </article>
+                ))}
+              </div>
+            ) : (
+              <div className="discover-category-empty" data-testid="discover-empty">
+                <span aria-hidden="true">▷</span>
+                <h3>{query.trim() ? "没有找到匹配的已发布视频" : "该分类暂无已发布视频"}</h3>
+                <p>后台发布并通过审核后，视频和文字介绍将显示在这里。</p>
+              </div>
+            )}
+          </div>
+        </section>
+      )}
+
+      {status === "ready" && tab === "article" && visibleItems.length > 0 && (
         <section className="discover-grid">
           {visibleItems.map((item) => (
             <article
@@ -137,9 +196,6 @@ export default function DiscoverView() {
               )}
               <h2>{item.title}</h2>
               <p>{item.summary || "点击查看内容详情"}</p>
-              {item.kind === "video" && item.mediaUrl && (
-                <video controls preload="metadata" src={item.mediaUrl} onClick={(event) => event.stopPropagation()} />
-              )}
             </article>
           ))}
         </section>
@@ -170,9 +226,9 @@ export default function DiscoverView() {
         </section>
       )}
 
-      {status === "ready" && tab !== "plan" && visibleItems.length === 0 && (
+      {status === "ready" && tab === "article" && visibleItems.length === 0 && (
         <section className="discover-empty" data-testid="discover-empty">
-          <h2>{tab === "video" && category !== "all" ? "暂无该分类的已发布视频" : "暂无已发布内容，发布后将出现在这里"}</h2>
+          <h2>暂无已发布内容，发布后将出现在这里</h2>
         </section>
       )}
 
