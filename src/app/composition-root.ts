@@ -157,11 +157,11 @@ export function defaultMediaDirectory(databasePath: string): string {
  * 首次实际读写时才创建目录，保持既有 doctor 行为。
  */
 class LazyLocalObjectStorage implements ObjectStoragePort {
-  private inner: ObjectStoragePort | undefined;
+  private inner: LocalFilesystemObjectStorage | undefined;
 
   constructor(private readonly rootDirectory: string) {}
 
-  private storage(): ObjectStoragePort {
+  private storage(): LocalFilesystemObjectStorage {
     this.inner ??= new LocalFilesystemObjectStorage(this.rootDirectory);
     return this.inner;
   }
@@ -193,6 +193,10 @@ class LazyLocalObjectStorage implements ObjectStoragePort {
     sha256: string;
   }): Promise<ObjectUploadTicket> {
     return this.storage().createUploadTicket(input);
+  }
+
+  acceptUploadTicket(input: { token: string; body: Buffer }): Promise<void> {
+    return this.storage().acceptUploadTicket(input);
   }
 
   verifyObject(input: {

@@ -8,6 +8,7 @@ import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 import { createApplication } from "../dist/app/composition-root.js";
+import { createAdminApplicationWithOps } from "../dist/app/admin-composition-root.js";
 import { createKangminHttpServer } from "../dist/http/server.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
@@ -57,10 +58,23 @@ async function openCalendarList(page) {
 
 const directory = mkdtempSync(join(tmpdir(), "kangmin-browser-"));
 const databasePath = join(directory, "records.sqlite");
+const mediaDirectory = join(directory, "admin-media");
 let application = createApplication(databasePath);
+let adminOps = createAdminApplicationWithOps(databasePath, { mediaDirectory });
+const ownerCreated = await adminOps.application.execute({
+  command: "auth admins add",
+  input: {
+    username: "browser-owner",
+    password: "browser-owner-password",
+    role: "owner"
+  }
+});
+assert.equal(ownerCreated.ok, true, "浏览器 E2E 应创建真实主管理员");
 let server = createKangminHttpServer(application, {
   appEnvironment: "integration",
-  allowDevelopmentSession: true
+  allowDevelopmentSession: true,
+  adminApplication: adminOps.application,
+  adminObjectStorage: adminOps.objectStorage
 });
 let origin = await listen(server);
 const browser = await chromium.launch({ headless: true });
@@ -219,10 +233,14 @@ try {
   // 服务重启（同一 SQLite）后，新开发会话仍解析到同一患者记录。
   await close(server);
   application.close();
+  adminOps.application.close();
   application = createApplication(databasePath);
+  adminOps = createAdminApplicationWithOps(databasePath, { mediaDirectory });
   server = createKangminHttpServer(application, {
     appEnvironment: "integration",
-    allowDevelopmentSession: true
+    allowDevelopmentSession: true,
+    adminApplication: adminOps.application,
+    adminObjectStorage: adminOps.objectStorage
   });
   origin = await listen(server);
 
@@ -356,8 +374,102 @@ try {
     await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
     conversationId
   );
+
+  // ---- 管理 Web：真实账号、HttpOnly 会话、文章发布闭环、知识上传 ----
+  const adminPage = await context.newPage();
+  await adminPage.goto(`${origin}/admin`);
+  await adminPage.getByTestId("admin-username").fill("browser-owner");
+  await adminPage.getByTestId("admin-password").fill("browser-owner-password");
+  await adminPage.getByTestId("admin-login").click();
+  await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
+  assert.deepEqual(await adminPage.evaluate(() => ({
+    local: Object.keys(localStorage).filter((key) => /admin|token/iu.test(key)),
+    session: Object.keys(sessionStorage).filter((key) => /admin|token/iu.test(key))
+  })), { local: [], session: [] });
+
+  await adminPage.getByTestId("admin-nav-article").click();
+  await adminPage.getByRole("button", { name: "新增文章" }).click();
+  await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("客户试用");
+  await adminPage.getByRole("button", { name: "创建分类" }).click();
+  await expectText(adminPage.getByRole("status"), "分类已创建");
+  const articleForm = adminPage.locator(".content-form");
+  await articleForm.getByLabel("标题").fill("后台发布闭环测试文章");
+  await articleForm.getByLabel("摘要").fill("用于确认管理后台发布和下架真实生效");
+  await articleForm.getByLabel("正文").fill("这是由管理后台保存的客户试用内容。");
+  await articleForm.getByLabel("来源").fill("客户确认材料");
+  await articleForm.getByRole("button", { name: "保存草稿" }).click();
+  const articleRow = adminPage.locator("tbody tr", { hasText: "后台发布闭环测试文章" });
+  await articleRow.waitFor({ state: "visible" });
+  await articleRow.getByRole("button", { name: "校验" }).click();
+  await expectText(adminPage.getByRole("status"), "校验通过");
+  await articleRow.getByRole("button", { name: "发布" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端现在可见");
+
+  const patientCheckPage = await context.newPage();
+  await patientCheckPage.goto(origin);
+  await patientCheckPage.locator(".bottom-nav button", { hasText: "首页" }).click();
+  await patientCheckPage.locator(".learn-module").click();
+  await patientCheckPage.getByTestId("discover-view").waitFor({ state: "visible" });
+  await patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" }).waitFor({ state: "visible" });
+
+  await adminPage.bringToFront();
+  const publishedRow = adminPage.locator("tbody tr", { hasText: "后台发布闭环测试文章" });
+  await publishedRow.getByRole("button", { name: "下架" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端已不可见");
+  await patientCheckPage.reload();
+  await patientCheckPage.getByTestId("discover-view").waitFor({ state: "visible" });
+  assert.equal(await patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" }).count(), 0);
+  await patientCheckPage.close();
+
+  await adminPage.getByTestId("admin-nav-media").click();
+  await adminPage.getByLabel("选择素材").setInputFiles({
+    name: "nasal-care.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from([0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0])
+  });
+  await adminPage.getByRole("button", { name: "上传素材" }).click();
+  await adminPage.locator(".media-grid article", { hasText: "nasal-care.mp4" }).waitFor({ state: "visible" });
+
+  await adminPage.getByTestId("admin-nav-video").click();
+  await adminPage.getByRole("button", { name: "新增视频" }).click();
+  await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("健康视频");
+  await adminPage.getByRole("button", { name: "创建分类" }).click();
+  const videoForm = adminPage.locator(".content-form");
+  await videoForm.getByLabel("标题").fill("鼻腔护理演示视频");
+  await videoForm.getByLabel("摘要").fill("客户试用版视频发布闭环");
+  await videoForm.getByLabel("视频说明").fill("演示日常鼻腔护理步骤，实际操作请遵循专业人员指导。");
+  await videoForm.getByLabel("来源").fill("客户确认材料");
+  await videoForm.getByLabel("视频文件").selectOption({ label: "nasal-care.mp4" });
+  await videoForm.getByLabel("免责声明").fill("仅供健康科普，不替代门诊诊断或治疗建议。");
+  await videoForm.getByRole("button", { name: "保存草稿" }).click();
+  const videoRow = adminPage.locator("tbody tr", { hasText: "鼻腔护理演示视频" });
+  await videoRow.waitFor({ state: "visible" });
+  await videoRow.getByRole("button", { name: "校验" }).click();
+  await expectText(adminPage.getByRole("status"), "校验通过");
+  await videoRow.getByRole("button", { name: "发布" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端现在可见");
+  await adminPage.locator("tbody tr", { hasText: "鼻腔护理演示视频" }).getByRole("button", { name: "下架" }).click();
+
+  await adminPage.getByTestId("admin-nav-knowledge").click();
+  await adminPage.getByLabel("知识来源").fill("客户试用资料");
+  await adminPage.getByLabel("选择知识文件").setInputFiles({
+    name: "browser-guide.md",
+    mimeType: "text/markdown",
+    buffer: Buffer.from("# 鼻健康清洁指南\n\n换季时保持室内清洁并按医嘱处理症状。")
+  });
+  await adminPage.getByRole("button", { name: "上传知识" }).click();
+  const knowledgeRow = adminPage.locator("tbody tr", { hasText: "browser-guide.md" });
+  await knowledgeRow.waitFor({ state: "visible" });
+  await knowledgeRow.getByRole("button", { name: "建立索引" }).click();
+  await adminPage.locator("tbody tr", { hasText: "browser-guide.md" }).getByRole("button", { name: "启用" }).click();
+  await adminPage.getByPlaceholder("输入客户可能询问的问题").fill("换季如何清洁");
+  await adminPage.getByRole("button", { name: "测试检索" }).click();
+  await expectText(adminPage.locator(".search-results"), "保持室内清洁");
+  await adminPage.reload();
+  await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
+  await adminPage.close();
   process.stdout.write(
-    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication reload restart discover overview-stats chat-exec\n"
+    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication reload restart discover overview-stats chat-exec admin-cookie article-publish-unpublish video-upload-publish-unpublish knowledge-upload-index-search\n"
   );
 } finally {
   if (isolatedContext !== undefined) {
@@ -369,4 +481,5 @@ try {
     await close(server);
   }
   application.close();
+  adminOps.application.close();
 }

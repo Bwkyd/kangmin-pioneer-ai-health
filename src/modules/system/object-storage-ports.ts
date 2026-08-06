@@ -42,8 +42,7 @@ export interface ObjectStoragePort {
 
   /**
    * 申请预签名直传票据（远程模式第一步）。
-   * 本地文件系统实现不支持直传，抛 capability_unavailable——
-   * 远程上传必须配对 S3 兼容后端（生产组合根约束，运维阶段强制）。
+   * 本地文件系统返回同源一次性票据；S3 返回预签名 URL。
    */
   createUploadTicket(input: {
     key: string;
@@ -52,6 +51,15 @@ export interface ObjectStoragePort {
     /** 客户端计算的十六进制 SHA-256；票据把校验义务绑定进签名头。 */
     sha256: string;
   }): Promise<ObjectUploadTicket>;
+
+  /**
+   * 可选的同源直传接收器。本地文件系统实现用一次性票据接收浏览器 PUT；
+   * S3 实现没有该方法，浏览器直接请求预签名 URL。
+   */
+  acceptUploadTicket?(input: {
+    token: string;
+    body: Buffer;
+  }): Promise<void>;
 
   /**
    * 完成确认前的完整性校验：对象存在、大小一致、SHA-256（hex）一致。

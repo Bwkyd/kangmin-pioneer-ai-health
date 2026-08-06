@@ -1,10 +1,10 @@
 /**
  * 本地文件系统对象存储（local/integration）。
  * 以 mediaDirectory 为根，key 为相对路径（`<med_id>/<文件名>`），
- * 语义与对象存储端口一致；不支持预签名直传（远程上传必须配对
- * S3 兼容后端）。
+ * 语义与对象存储端口一致；浏览器上传通过 HTTP 层消费的一次性同源
+ * 票据进入本地目录，不接受客户端提交服务器文件路径。
  */
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import {
   mkdirSync,
   readFileSync,
@@ -25,6 +25,13 @@ import type {
 
 export class LocalFilesystemObjectStorage implements ObjectStoragePort {
   private readonly root: string;
+  private readonly uploadTickets = new Map<string, {
+    key: string;
+    contentType: string;
+    sizeBytes: number;
+    sha256: string;
+    expiresAt: number;
+  }>();
 
   constructor(rootDirectory: string) {
     this.root = resolve(rootDirectory);
@@ -111,11 +118,46 @@ export class LocalFilesystemObjectStorage implements ObjectStoragePort {
     }
   }
 
-  async createUploadTicket(): Promise<ObjectUploadTicket> {
-    throw new DomainError(
-      "capability_unavailable",
-      "本地文件系统存储不支持预签名直传；远程上传需配置 S3 兼容对象存储"
-    );
+  async createUploadTicket(input: {
+    key: string;
+    contentType: string;
+    sizeBytes: number;
+    sha256: string;
+  }): Promise<ObjectUploadTicket> {
+    const now = Date.now();
+    for (const [token, ticket] of this.uploadTickets) {
+      if (ticket.expiresAt <= now) this.uploadTickets.delete(token);
+    }
+    const token = randomBytes(32).toString("hex");
+    const expiresAt = now + 15 * 60_000;
+    this.uploadTickets.set(token, { ...input, expiresAt });
+    return {
+      objectKey: input.key,
+      url: "/v1/admin/upload",
+      method: "PUT",
+      headers: {
+        "content-type": input.contentType,
+        "x-kangmin-upload-ticket": token
+      },
+      expiresAt: new Date(expiresAt).toISOString()
+    };
+  }
+
+  async acceptUploadTicket(input: { token: string; body: Buffer }): Promise<void> {
+    const ticket = this.uploadTickets.get(input.token);
+    this.uploadTickets.delete(input.token);
+    if (ticket === undefined || ticket.expiresAt <= Date.now()) {
+      throw new DomainError("authentication_required", "上传票据无效或已过期");
+    }
+    const sha256 = createHash("sha256").update(input.body).digest("hex");
+    if (input.body.length !== ticket.sizeBytes || sha256 !== ticket.sha256) {
+      throw new DomainError("validation_failed", "上传内容与申请票据不一致");
+    }
+    await this.putObject({
+      key: ticket.key,
+      body: input.body,
+      contentType: ticket.contentType
+    });
   }
 
   async verifyObject(input: {

@@ -297,9 +297,8 @@ export class ContentAuxService {
    * processing 行 → 复用该行重发票据（中断重试）；failed 行或不存在 →
    * 新建 processing 草稿（createMediaDraft）并签发新票据。
    *
-   * 本地文件系统后端不支持直传：createUploadTicket 抛
-   * capability_unavailable 原样透传（远程上传必须配对 S3 兼容后端）；
-   * 票据先于草稿行创建，本地后端下不留 processing 残留行。
+   * 本地文件系统返回由 HTTP 层消费的一次性同源票据，S3 返回预签名
+   * 直传 URL；两者都先签发票据再创建 processing 草稿。
    */
   async uploadInit(
     adminId: string,

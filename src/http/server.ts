@@ -30,15 +30,18 @@ import {
   COMMAND_SCHEMA_VERSION,
   type CommandServiceMeta
 } from "../kernel/protocol.js";
+import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
 
 /**
  * 请求体大小上限默认值：保持既有 64 KiB 契约（http.e2e 既有断言）。
  * 生产入口 main() 按 KANGMIN_HTTP_BODY_LIMIT 覆盖，缺省放宽到 1 MiB。
  */
 const DEFAULT_BODY_LIMIT_BYTES = 64 * 1024;
+const DEFAULT_UPLOAD_BODY_LIMIT_BYTES = 200 * 1024 * 1024;
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 const SESSION_COOKIE = "kangmin_session";
 const PREVIEW_SUBJECT_COOKIE = "kangmin_preview_subject";
+const ADMIN_SESSION_COOKIE = "kangmin_admin_session";
 const PREVIEW_SUBJECT_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PREVIEW_SUBJECT_PATTERN = /^preview-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
@@ -70,6 +73,7 @@ export interface HttpServerOptions {
   allowDevelopmentSession?: boolean;
   webRoot?: URL;
   adminApplication?: KangminAdminApplication | undefined;
+  adminObjectStorage?: ObjectStoragePort | undefined;
   serviceVersion?: string | undefined;
   /** /ready 探针（组合根注入；缺省为空集，语义上不就绪项为零）。 */
   readinessProbes?: ReadinessProbe[];
@@ -260,6 +264,53 @@ function bearerToken(request: IncomingMessage): string | undefined {
   return authorization?.startsWith("Bearer ")
     ? authorization.slice("Bearer ".length)
     : undefined;
+}
+
+function adminToken(request: IncomingMessage): string | undefined {
+  return bearerToken(request) ?? cookie(request, ADMIN_SESSION_COOKIE);
+}
+
+function usesAdminCookie(request: IncomingMessage): boolean {
+  return bearerToken(request) === undefined && cookie(request, ADMIN_SESSION_COOKIE) !== undefined;
+}
+
+function hasSameOrigin(request: IncomingMessage): boolean {
+  const origin = request.headers.origin;
+  const host = request.headers.host;
+  if (origin === undefined || host === undefined) return false;
+  try {
+    return new URL(origin).host === host;
+  } catch {
+    return false;
+  }
+}
+
+async function readBytes(request: IncomingMessage, maxBodyBytes: number): Promise<Buffer> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  for await (const chunk of request) {
+    const buffer = Buffer.from(chunk);
+    size += buffer.length;
+    if (size > maxBodyBytes) {
+      throw new DomainError("payload_too_large", "上传文件超过大小限制");
+    }
+    chunks.push(buffer);
+  }
+  return Buffer.concat(chunks);
+}
+
+function adminCookie(token: string, environment: AppEnvironment): string {
+  const secure = environment === "staging" || environment === "production"
+    ? "; Secure"
+    : "";
+  return `${ADMIN_SESSION_COOKIE}=${encodeURIComponent(token)}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${12 * 3600}${secure}`;
+}
+
+function clearAdminCookie(environment: AppEnvironment): string {
+  const secure = environment === "staging" || environment === "production"
+    ? "; Secure"
+    : "";
+  return `${ADMIN_SESSION_COOKIE}=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0${secure}`;
 }
 
 function json(
@@ -562,6 +613,19 @@ export function createKangminHttpServer(
       return;
     }
 
+    if (
+      request.method === "GET" &&
+      (requestUrl.pathname === "/admin" || requestUrl.pathname === "/admin/")
+    ) {
+      await staticAsset(
+        response,
+        webRoot,
+        "admin.html",
+        "text/html; charset=utf-8"
+      );
+      return;
+    }
+
     // Vite 构建产物：/assets/ 下带内容哈希的 js/css（文件名白名单防穿越）。
     if (
       request.method === "GET" &&
@@ -578,6 +642,110 @@ export function createKangminHttpServer(
         return;
       }
       routeNotFound(response);
+      return;
+    }
+
+    if (requestUrl.pathname === "/v1/admin/session") {
+      if (options.adminApplication === undefined) {
+        json(response, 503, failure(
+          "auth session",
+          new DomainError("capability_unavailable", "管理命令服务未配置"),
+          requestId
+        ));
+        return;
+      }
+      try {
+        if (request.method === "GET") {
+          const result = await options.adminApplication.execute({
+            command: "auth status",
+            adminToken: cookie(request, ADMIN_SESSION_COOKIE),
+            requestId
+          });
+          json(response, result.ok ? 200 : httpStatusForCode(result.error.code), result);
+          return;
+        }
+        if (!hasSameOrigin(request)) {
+          throw new DomainError("permission_denied", "管理会话请求必须来自同源页面");
+        }
+        if (request.method === "POST") {
+          const body = await readJson(request, bodyLimitBytes);
+          if (!isRecord(body)) {
+            throw new DomainError("command_invalid", "登录请求格式无效");
+          }
+          const result = await options.adminApplication.execute({
+            command: "auth login",
+            input: body,
+            requestId
+          });
+          if (!result.ok) {
+            json(response, httpStatusForCode(result.error.code), result);
+            return;
+          }
+          const login = result.data as Record<string, unknown>;
+          const token = typeof login.token === "string" ? login.token : undefined;
+          if (token === undefined) {
+            throw new DomainError("internal_error", "管理会话创建失败");
+          }
+          response.setHeader("set-cookie", adminCookie(token, environment));
+          const { token: _token, ...safeLogin } = login;
+          json(response, 200, { ...result, data: safeLogin });
+          return;
+        }
+        if (request.method === "DELETE") {
+          const result = await options.adminApplication.execute({
+            command: "auth logout",
+            adminToken: cookie(request, ADMIN_SESSION_COOKIE),
+            requestId
+          });
+          response.setHeader("set-cookie", clearAdminCookie(environment));
+          json(response, result.ok ? 200 : httpStatusForCode(result.error.code), result);
+          return;
+        }
+      } catch (error) {
+        const result = failure("auth session", error, requestId);
+        json(response, httpStatusForCode(result.error.code), result);
+        return;
+      }
+      routeNotFound(response);
+      return;
+    }
+
+    if (request.method === "PUT" && requestUrl.pathname === "/v1/admin/upload") {
+      try {
+        if (!hasSameOrigin(request)) {
+          throw new DomainError("permission_denied", "素材上传必须来自同源管理页面");
+        }
+        if (options.adminApplication === undefined || options.adminObjectStorage === undefined) {
+          throw new DomainError("capability_unavailable", "管理素材上传服务未配置");
+        }
+        const status = await options.adminApplication.execute({
+          command: "auth status",
+          adminToken: cookie(request, ADMIN_SESSION_COOKIE),
+          requestId
+        });
+        if (!status.ok || (status.data as { loggedIn?: boolean }).loggedIn !== true) {
+          throw new DomainError("authentication_required", "请先登录管理后台");
+        }
+        const accept = options.adminObjectStorage.acceptUploadTicket;
+        if (accept === undefined) {
+          throw new DomainError("capability_unavailable", "当前素材存储不使用同源直传");
+        }
+        const header = request.headers["x-kangmin-upload-ticket"];
+        const token = Array.isArray(header) ? header[0] : header;
+        if (token === undefined || token === "") {
+          throw new DomainError("authentication_required", "缺少上传票据");
+        }
+        await accept.call(options.adminObjectStorage, {
+          token,
+          body: await readBytes(request, DEFAULT_UPLOAD_BODY_LIMIT_BYTES)
+        });
+        response.statusCode = 204;
+        response.setHeader("cache-control", "private, no-store");
+        response.end();
+      } catch (error) {
+        const result = failure("content media upload", error, requestId);
+        json(response, httpStatusForCode(result.error.code), result);
+      }
       return;
     }
 
@@ -681,6 +849,9 @@ export function createKangminHttpServer(
     }
 
     try {
+      if (adminCommandRoute && usesAdminCookie(request) && !hasSameOrigin(request)) {
+        throw new DomainError("permission_denied", "管理操作必须来自同源页面");
+      }
       const body = await readJson(request, bodyLimitBytes);
       if (!isRecord(body) || typeof body.command !== "string") {
         throw new DomainError(
@@ -758,7 +929,7 @@ export function createKangminHttpServer(
           : await options.adminApplication.execute({
               command: body.command,
               input: body.input ?? {},
-              adminToken: bearerToken(request),
+              adminToken: adminToken(request),
               requestId
             })
         : await application.execute({
@@ -809,6 +980,7 @@ async function main(): Promise<void> {
   );
   let application;
   let adminApplication;
+  let adminObjectStorage: ObjectStoragePort | undefined;
   let readinessProbes: ReadinessProbe[] = [];
   try {
     // 组合根负责生产 fail-closed 校验与探针装配；server 不直接触碰仓储。
@@ -821,6 +993,7 @@ async function main(): Promise<void> {
       )
     });
     adminApplication = adminOps.application;
+    adminObjectStorage = adminOps.objectStorage;
     readinessProbes = [
       patientOps.readinessProbes.database,
       adminOps.readinessProbes.objectStorage,
@@ -844,6 +1017,7 @@ async function main(): Promise<void> {
     allowDevelopmentSession:
       process.env.KANGMIN_ALLOW_DEV_SESSION === "1",
     adminApplication,
+    adminObjectStorage,
     readinessProbes,
     // 生产默认 1 MiB（KANGMIN_HTTP_BODY_LIMIT 可覆盖）；直接创建
     // server 的调用方保持 64 KiB 既有默认契约。

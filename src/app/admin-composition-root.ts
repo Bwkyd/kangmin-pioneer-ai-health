@@ -289,6 +289,7 @@ export interface AdminReadinessProbes {
 export interface AdminApplicationWithOps {
   application: KangminAdminApplication;
   readinessProbes: AdminReadinessProbes;
+  objectStorage: ObjectStoragePort;
 }
 
 export function createAdminApplication(
@@ -346,7 +347,8 @@ export function createAdminApplicationWithOps(
         },
         () => pgDoctorChecks(database, objectStorage, mediaDirectory)
       ),
-      readinessProbes
+      readinessProbes,
+      objectStorage
     };
   }
 
@@ -374,6 +376,7 @@ export function createAdminApplicationWithOps(
       },
       () => doctorChecks(database, objectStorage, mediaDirectory)
     ),
-    readinessProbes
+    readinessProbes,
+    objectStorage
   };
 }
