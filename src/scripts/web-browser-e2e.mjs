@@ -465,7 +465,9 @@ try {
   const knowledgeRow = adminPage.locator("tbody tr", { hasText: "browser-guide.md" });
   await knowledgeRow.waitFor({ state: "visible" });
   await knowledgeRow.getByRole("button", { name: "建立索引" }).click();
+  await expectText(adminPage.getByRole("status"), "索引已建立");
   await adminPage.locator("tbody tr", { hasText: "browser-guide.md" }).getByRole("button", { name: "启用" }).click();
+  await expectText(adminPage.getByRole("status"), "知识已启用");
   await adminPage.getByPlaceholder("输入客户可能询问的问题").fill("换季如何清洁");
   await adminPage.getByRole("button", { name: "测试检索" }).click();
   await expectText(adminPage.locator(".search-results"), "保持室内清洁");
