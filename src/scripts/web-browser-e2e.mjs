@@ -106,11 +106,11 @@ try {
   assert.match((await emptyCells.nth(2).textContent()) ?? "", /^暂无最近评估$/u);
 
   // ---- 健康档案主线：空态、三类保存和刷新回读 ----
-  // 截图中的仿小程序胶囊和重复悬空“+”已移除，
-  // 底部只保留四个有明确去向的导航项。
+  // 仿小程序胶囊保持移除；底部恢复一个有明确动作的蓝色“+”，
+  // 点击后直接进入原有的当天症状录入弹层。
   assert.equal(await page.locator(".mini-program-menu").count(), 0);
-  assert.equal(await page.locator(".nav-add").count(), 0);
-  assert.equal(await page.locator(".bottom-nav button").count(), 4);
+  assert.equal(await page.locator(".nav-add").count(), 1);
+  assert.equal(await page.locator(".bottom-nav button").count(), 5);
   await page.getByRole("button", { name: "健康档案" }).click();
   await page.getByTestId("health-profile-view").waitFor({ state: "visible" });
   await expectText(page.getByTestId("profile-status"), "暂无健康档案");
@@ -130,6 +130,22 @@ try {
 
   await page.getByTestId("exposure-add").click();
   await page.getByRole("heading", { name: "记录接触过的因素" }).waitFor({ state: "visible" });
+  // 手机端日期选择应使用卡片完整宽度，不再与重复日期摘要各占一半。
+  const linkedDateCard = page.getByTestId("allergen-linked-date");
+  const linkedDateInput = linkedDateCard.getByLabel("记录日期");
+  const linkedDateCardBox = await linkedDateCard.boundingBox();
+  const linkedDateInputBox = await linkedDateInput.boundingBox();
+  assert.ok(linkedDateCardBox && linkedDateInputBox, "日期关联卡及输入框应可见");
+  assert.ok(
+    linkedDateInputBox.width / linkedDateCardBox.width >= 0.85,
+    "手机端日期输入应占满日期关联卡可用宽度"
+  );
+  assert.equal(
+    await linkedDateCard.locator("strong").count(),
+    0,
+    "日期关联卡不应在输入框旁重复展示同一天"
+  );
+  await linkedDateCard.getByRole("button", { name: "查看当天症状" }).waitFor({ state: "visible" });
   await page.getByRole("checkbox", { name: "花粉" }).check({ force: true });
   await page.getByRole("button", { name: "保存记录" }).click();
   await expectText(page.locator(".exposure-history"), "花粉");

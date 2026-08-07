@@ -503,7 +503,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   min-height: 62px;
   padding: 6px 9px 8px;
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   gap: 3px;
   background: rgba(255,255,255,.98);
   border-top: 1px solid #e2e8e4;
@@ -665,6 +665,26 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .bottom-nav button.active .nav-glyph::before,
 .bottom-nav button.active .nav-glyph::after {
   color: var(--green);
+}
+
+.bottom-nav .nav-add {
+  width: 52px;
+  height: 52px;
+  justify-self: center;
+  align-self: start;
+  margin-top: -22px;
+  border: 4px solid #f3f6fb;
+  border-radius: 50%;
+  background: #1e5aa3;
+  color: #fff;
+  box-shadow: 0 8px 22px rgba(30, 90, 163, .3);
+}
+
+.bottom-nav .nav-add span {
+  height: auto;
+  font-size: 30px;
+  font-weight: 300;
+  line-height: 1;
 }
 
 .welcome-card {
@@ -1219,19 +1239,6 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .chart-legend span i { width: 7px; height: 7px; display: inline-block; margin-right: 4px; border-radius: 50%; background: var(--green); }
 .chart-legend small { color: #9aa6a2; font-size: 9px; }
 
-.calendar-add-inline {
-  width: 100%;
-  margin-top: 10px;
-  padding: 12px;
-  border: 0;
-  border-radius: 13px;
-  background: var(--green);
-  color: #fff;
-  font-size: 12px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
 .entry-sheet-backdrop {
   position: absolute;
   inset: 0;
@@ -1702,7 +1709,6 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .user-bubble,
 .feedback-button,
 .submit-assessment,
-.calendar-add-inline,
 .send-button {
   background: #1e5aa3;
 }
@@ -2005,13 +2011,13 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .sheet-allergen-link p { grid-column: 1 / -1; margin: 0; color: #776b54; font-size: 8px; }
 
 .allergen-intro { background: linear-gradient(135deg, #2d659f, #173f72); }
-.linked-date-card { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; align-items: end; }
+.linked-date-card { display: flex; flex-direction: column; align-items: stretch; gap: 10px; }
 .linked-date-card label { display: flex; flex-direction: column; gap: 5px; color: #647990; font-size: 9px; }
-.linked-date-card > div { display: flex; flex-direction: column; gap: 2px; }
-.linked-date-card > div span { color: #8392a4; font-size: 8px; }
-.linked-date-card > div strong { font-size: 11px; }
-.linked-date-card > div small { color: #9a6d12; font-size: 8px; }
-.linked-date-card > button { grid-column: 1 / -1; padding: 9px; border: 1px solid #ccdcef; border-radius: 10px; background: #eef4fb; color: #1e5aa3; font-size: 9px; font-weight: 700; cursor: pointer; }
+.linked-date-card input { min-width: 0; max-width: 100%; display: block; }
+.linked-symptom-status { padding: 0 2px; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.linked-symptom-status span { color: #8392a4; font-size: 8px; }
+.linked-symptom-status small { color: #9a6d12; font-size: 8px; text-align: right; }
+.linked-date-card > button { width: 100%; padding: 9px; border: 1px solid #ccdcef; border-radius: 10px; background: #eef4fb; color: #1e5aa3; font-size: 9px; font-weight: 700; cursor: pointer; }
 
 .allergen-form { padding-bottom: 15px; }
 .allergen-form fieldset { margin: 0; padding: 12px 0; border: 0; border-bottom: 1px solid #e9eef4; }

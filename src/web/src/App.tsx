@@ -1519,7 +1519,6 @@ export default function App() {
                   <div className="chart-legend"><span><i />过敏严重程度</span><small>仅根据用户主动保存的症状记录展示，不代表诊断。</small></div>
                 </article>
 
-                <button className="calendar-add-inline" data-testid="symptom-add-today" onClick={() => openSymptomDate(localDateValue())}>＋ 记录今天的症状</button>
               </div>
             )}
 
@@ -1620,9 +1619,9 @@ export default function App() {
                   <p>请选择当天回忆到的暴露。这是患者自述，不会自动判定为症状病因。</p>
                 </section>
 
-                <section className="linked-date-card" aria-label="关联日期">
+                <section className="linked-date-card" aria-label="关联日期" data-testid="allergen-linked-date">
                   <label>记录日期<input type="date" value={exposureDraft.date} onChange={(event) => selectExposureDate(event.target.value)} /></label>
-                  <div><span>关联症状日期</span><strong>{displayDate(exposureDraft.date)}</strong><small>{symptomsByDate.has(exposureDraft.date) ? "已有服务端症状记录" : "暂无真实症状记录"}</small></div>
+                  <div className="linked-symptom-status"><span>当天症状记录</span><small>{symptomsByDate.has(exposureDraft.date) ? "已有服务端症状记录" : "暂无真实症状记录"}</small></div>
                   <button type="button" onClick={() => openSymptomDate(exposureDraft.date)}>查看当天症状</button>
                 </section>
 
@@ -1734,6 +1733,7 @@ export default function App() {
           <nav className="bottom-nav" aria-label="主要功能">
             <button className={tab === "home" ? "active" : ""} onClick={() => navigateTo("home")}><span className="nav-glyph nav-home">⌂</span>首页</button>
             <button className={tab === "chat" ? "active" : ""} onClick={() => navigateTo("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
+            <button className="nav-add" data-testid="symptom-add-today" onClick={() => { navigateTo("assessment"); openSymptomDate(localDateValue()); }} aria-label="新增今天的症状记录"><span aria-hidden="true">＋</span></button>
             <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} aria-label="打开症状评估日历" data-navigation-purpose="symptom-calendar" data-testid="nav-calendar" title="症状评估日历" onClick={() => navigateTo("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
             <button className={tab === "profile" || tab === "healthProfile" ? "active" : ""} onClick={() => navigateTo("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
           </nav>
