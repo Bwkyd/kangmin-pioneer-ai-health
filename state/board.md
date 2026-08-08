@@ -15,7 +15,7 @@
 > 上述全部经 PR #172 合并（squash → `60d2105`），quality/image 检查全绿；作者拍板移除「不自动提交/推送」与「PR 必须人工评审」两条纪律（AI 可直接提交与合并），经 PR #174 合并（squash → `d7b51a9`）。
 > 教训：`git reset --hard` 曾误覆盖作者对 AGENTS.md/CLAUDE.md 的本地未提交修改（删除两条纪律），后按作者原意恢复；**resync 前须先检查工作区未提交改动并确认意图**，该经验已同步至 `state/memory/` 候选。
 > 验证：`npm run check` 全绿、legacy 127 测试通过、lint 通过、双文件一致性校验通过；本地 main 与 origin/main 已对齐（fetch --prune 无残留分支）。
-> 待办：`.githooks/pre-push` 钩子文件仍在（仅删手册条文），直推 main 仍会被拦，是否改钩子待作者决定。
+> 待办：`.githooks/pre-push` 钩子保留——手册仍保留 `ALLOW_MAIN_PUSH=1` 人工紧急通道条款，钩子拦截直推 main 正是该通道存在的意义，与手册自洽，无需改动（2026-08-08 作者确认）。
 
 > ## 🔍 初始化一致性复核与修复（2026-08-07 第八轮 · 未提交，基线 `4ac5d69`）
 > 统一 board 的每轮状态语义，清除 docs 中已删除的 meetings 和 `docs/客户资料/` 当前入口，规则来源改指向 `vault/truth/` 客户确认版本；`spce/` 与旧 `work/` 明确为本地保留资料，新内容分别进入 `docs/plan/` 与 `_work/`。
