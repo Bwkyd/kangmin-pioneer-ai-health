@@ -1,4 +1,0 @@
-interface:
-  display_name: "抗敏先锋对抗性审查"
-  short_description: "按项目风险检查重复、边界、并发、临床安全和旧功能回归"
-  default_prompt: "使用 $kangmin-adversarial-review 对本次抗敏先锋改动执行独立 P0/P1/P2 对抗性审查，输出证据、阻塞项和明确 PASS/FAIL。"
