@@ -10,6 +10,13 @@
 > 验证：`python3 scripts/structure-lint.py .`、`git diff --check`、一致性校验正负向单测均通过。
 > 提交：作者授权分三个 commit——`cbf2ad5`（钩子入库+手册同步）、`1da90ed`（work/ 归档+协议 v1.3）、`1a492ec`（lint 扩展+007 引用）；本文件与 `state/` 其余文件仍未入库，是否随 Git 同步待作者决定。
 
+> ## 📤 存量改动提交、PR 合并与纪律调整（2026-08-08 第十轮 · 已提交，基线 `4ac5d69`）
+> 作者授权将第九轮未入库内容连同存量改动一并提交：`483a2af`（仓库文档整理与结构迁移：docs 收敛新分类、旧 plans/decisions/runbooks/skills 与根 memory/ 删除、README 重写、.gitignore 重构、CONTRIBUTING.md 无引用删除）、`1bf34a9`（临床规则 sourceRefs 更新至 vault/truth，`npm run check` 全绿后提交）、`2b18753`（state/ 随 Git 同步入库）；随后 `6363885` 修复 CI 触发的 legacy 依赖高危漏洞 nanoid（`npm audit fix`，postcss moderate 暂不处理不阻塞门禁）。
+> 上述全部经 PR #172 合并（squash → `60d2105`），quality/image 检查全绿；作者拍板移除「不自动提交/推送」与「PR 必须人工评审」两条纪律（AI 可直接提交与合并），经 PR #174 合并（squash → `d7b51a9`）。
+> 教训：`git reset --hard` 曾误覆盖作者对 AGENTS.md/CLAUDE.md 的本地未提交修改（删除两条纪律），后按作者原意恢复；**resync 前须先检查工作区未提交改动并确认意图**，该经验已同步至 `state/memory/` 候选。
+> 验证：`npm run check` 全绿、legacy 127 测试通过、lint 通过、双文件一致性校验通过；本地 main 与 origin/main 已对齐（fetch --prune 无残留分支）。
+> 待办：`.githooks/pre-push` 钩子文件仍在（仅删手册条文），直推 main 仍会被拦，是否改钩子待作者决定。
+
 > ## 🔍 初始化一致性复核与修复（2026-08-07 第八轮 · 未提交，基线 `4ac5d69`）
 > 统一 board 的每轮状态语义，清除 docs 中已删除的 meetings 和 `docs/客户资料/` 当前入口，规则来源改指向 `vault/truth/` 客户确认版本；`spce/` 与旧 `work/` 明确为本地保留资料，新内容分别进入 `docs/plan/` 与 `_work/`。
 > 修复 Git 提交钩子，使 state/meta/docs/scripts 等治理文件可提交，同时继续拦截私密和本地目录；结构检查脚本改用 ASCII 文件名并补充导航断链、truth 来源链和废弃路径检查。根据现有项目记录，当前仍处于客户反馈验收阶段，入口为 `https://49.232.26.48`；本轮未重新核验线上可用性。商务记录为总额 2800 元、已收定金 1400 元，原件见 `vault/raw/business/`。
