@@ -1,565 +1,473 @@
-# 抗敏先锋 CLI-first 新实现（交付文档）
+# 抗敏先锋 CLI-first 主实现
 
-与 `legacy/` 隔离的新应用核心，通过两个 CLI 交付：患者端 `kangmin`
-与管理端 `kangmin-admin`。CLI 可作为远程命令服务的薄客户端；本地 SQLite
-模式保留给开发和集成测试。`web/` 是患者薄前端壳（Vite + React 静态构建，
-产物由 HTTP 服务托管），只通过 `/v1/patient/commands` 命令协议交互，
-当前覆盖 legacy 用户端主界面 demo（症状/档案/暴露/用药记录与安全评估
-外壳）；不表示 PostgreSQL、对象存储或正式身份认证已经完成。
+`src/` 是抗敏先锋当前主实现。它以同一组应用服务为核心，交付患者 CLI
+`kangmin`、管理 CLI `kangmin-admin`、HTTP 命令服务和患者 Web 薄壳，并
+提供 SQLite/PostgreSQL、文件系统/S3 和 DeepSeek 等可替换适配器。
 
-## 产品概述
+本文件描述当前可执行实现，不是生产就绪声明。开始修改前先读仓库根目录的
+[`AGENTS.md`](../AGENTS.md) 和 [`README.md`](../README.md)。如果本文与 CLI
+`--help`、代码或测试冲突，以当前可执行证据为准，并同步修正文档。
 
-### kangmin（患者 CLI，四组命令）
+## 快速导航
 
-```text
-agent    确定性安全会话（结构化问答）+ 自由对话管线
-record   管理自己的健康记录（症状/TNSS、档案、暴露、用药）
-browse   浏览环境与已发布内容（文章、视频、通用方案、环境快照）
-account  管理账号、授权和设置（注册/登录/同意/隐私）
-```
+| 目标 | 入口 |
+| --- | --- |
+| 安装、验证并启动本地 Web | [快速开始](#快速开始) |
+| 查看患者/管理命令 | [交付入口](#交付入口) |
+| 调用 HTTP 命令服务 | [HTTP 与 Web](#http-与-web) |
+| 配置本地、远程或生产环境 | [运行模式与配置](#运行模式与配置) |
+| 理解临床、身份和数据安全 | [安全与临床边界](#安全与临床边界) |
+| 判断当前未完成项 | [已知限制与上线阻塞](#已知限制与上线阻塞) |
+| 运行测试和 CI 对等检查 | [验证与交付](#验证与交付) |
 
-辅助命令：`--version`、`doctor`（数据库/存储/密钥配置检查）、
-`completion zsh`。
+## 当前状态
 
-### kangmin-admin（管理 CLI，四组命令）
+| 能力面 | 当前状态 | 边界 |
+| --- | --- | --- |
+| 患者 CLI | 已实现 `agent`、`record`、`browse`、`account` 四组 | 部分账号数据权利和通知能力明确未实现 |
+| 管理 CLI | 已实现 `content`、`agent`、`users`、`auth` 四组 | 高影响命令要求 `--yes` |
+| HTTP 命令服务 | 已实现患者/管理分路、协议校验、超时、限流和结构化日志 | 正式身份与真实环境数据供应商尚未接入 |
+| 患者 Web | 已实现 Vite + React 薄壳并调用真实命令协议 | 仍是 demo，部分账户和评估 UI 为简化形态 |
+| 数据库 | SQLite 本地模式与 PostgreSQL 适配器均已实现 | staging/production 禁止回退 SQLite |
+| 对象存储 | 本地文件系统与 S3 兼容后端均已实现 | staging/production 必须使用 S3 后端 |
+| 临床规则 | 确定性规则链和输出校验已实现 | 当前规则包是 `candidate`，正式分类输出硬阻断 |
+| 模型 | DeepSeek 适配器和无模型降级已实现 | 模型不能改变规则结果或补写诊断 |
+| 容器与供应链 | Dockerfile、生产依赖审计和 SBOM 已实现 | 当前生产启动仍受真实 Provider/身份/临床冻结阻塞 |
 
-```text
-content  管理文章、视频、素材和公告（编辑、预览、发布、下架）
-agent    管理知识库、调理方案、模型和模拟测试
-users    只读查看患者用户、会话和健康记录（脱敏）
-auth     登录并管理普通管理员账号
-```
-
-辅助命令：`help`、`doctor`、`--version`、`completion zsh`。
+不要用“命令可解析”“仓储类存在”或“某个窄测通过”替代真实链路验收。
 
 ## 快速开始
 
-需要 Node.js 22.13 或更新版本。
+需要 Node.js `22.13.0` 或更新版本。以下命令从 `src/` 目录执行：
 
 ```bash
 cd "/Users/chenqiqiang/work/抗敏先锋AI鼻健康管理系统/src"
 npm ci
-npm run check        # typecheck + 架构门禁 + 单元/集成测试 + 浏览器 e2e
+npx playwright install chromium
+npm run check
 ```
 
-`npm run check` 全绿后，`dist/cli/kangmin.js` 与 `dist/cli/kangmin-admin.js`
-即为可执行入口（也可 `npm link` 后用 `kangmin` / `kangmin-admin` 直跑）。
-
-### 患者 Web 薄壳（demo）
-
-`web/` 是 Vite + React 静态工程，移植自 legacy 用户端主界面（首页/聊天/
-过敏日历/健康档案/过敏原记录/科普/我的 七个 tab），只通过
-`POST /v1/patient/commands` 命令协议读写，前端零业务逻辑。
-`npm run build` 时 Vite 把产物输出到 `dist/web/`，由 HTTP 服务托管：
-
-```bash
-npm run build
-KANGMIN_APP_ENV=local KANGMIN_ALLOW_DEV_SESSION=1 node dist/http/server.js
-# 患者页：http://127.0.0.1:8787/
-# 管理后台：http://127.0.0.1:8787/admin
-```
-
-demo 简化点（均如实呈现，不伪造服务端能力）：安全评估面板只将"危险
-信号"组提交确定性安全外壳会话（`agent start/continue` 的 urgentHelp），
-其余分组留在本地；chat 自由对话已接 `agent exec`（无模型 key 时如实
-展示结构化问诊与 system_notice 降级提示，conversationId 存 sessionStorage
-刷新后续聊），多步演示脚本仅由快捷选项触发；首页/我的统计区接
-`record overview`（无数据显示空态，不写死）；健康档案为扁平字段
-（结构化过敏史与诱因投影无对应命令，显示"暂无"）；用药按日期记录
-（无时分）；"学一学"科普页（legacy /discover）已迁入薄壳；"我的"页
-账户区仍为静态演示（account 注册/登录未接入）。
-
-### 远程命令服务（预发/生产必选）
-
-两个 CLI 使用同一服务地址，但访问相互隔离的版本化路由：
+`npm run check` 依次执行：
 
 ```text
-GET  /v1/meta
-POST /v1/patient/commands
-POST /v1/admin/commands
-GET|POST|DELETE /v1/admin/session
-PUT  /v1/admin/upload  # 仅本地文件系统同源票据使用
+TypeScript 类型检查
+→ 架构依赖门禁
+→ TypeScript + Vite 生产构建
+→ Node 单元/集成/E2E 测试
+→ Playwright 浏览器 E2E
 ```
+
+构建完成后的入口：
 
 ```bash
-export KANGMIN_API_BASE_URL="https://api.example.com"
-export KANGMIN_API_TIMEOUT_MS="15000" # 可选，100–120000 毫秒
-export KANGMIN_SESSION_TOKEN="<opaque patient token>"
-# 管理 CLI 使用独立的 KANGMIN_ADMIN_TOKEN，患者令牌不能调用管理路由
+node dist/cli/kangmin.js --help
+node dist/cli/kangmin-admin.js --help
 ```
 
-设置 `KANGMIN_APP_ENV=staging` 或 `production` 时，如果没有
-`KANGMIN_API_BASE_URL`，CLI 会以 `config_missing` 失败，禁止静默回退到
-本地数据库。每次命令先校验 `/v1/meta` 的协议与 schema 版本；不兼容返回
-`protocol_incompatible`，网络不可达返回可重试的 `service_unavailable`。
+### 启动本地患者 Web 与 HTTP 服务
 
-### 本地/集成配置（fail-closed 语义）
+```bash
+KANGMIN_APP_ENV=local \
+KANGMIN_ALLOW_DEV_SESSION=1 \
+npm run start:http
+```
 
-| 环境变量 | 说明 |
-| --- | --- |
-| `KANGMIN_ENCRYPTION_KEYS` | AES-256-GCM 密钥链 `"v1:<base64>,v2:<base64>"`，首个为当前版本；配置后健康正文加密落库 |
-| `KANGMIN_APP_ENV` | `local` / `integration` / `staging` / `production`；显式预发/生产禁止本地回退 |
-| `KANGMIN_API_BASE_URL` | 远程命令服务根地址；预发/生产 CLI 必填，不得含凭据、查询或片段 |
-| `KANGMIN_API_TIMEOUT_MS` | 远程请求超时毫秒数，默认 15000，范围 100–120000 |
-| `KANGMIN_ALLOW_DEV_SESSION` | 开发降级开关（`1` 启用），显式 `staging`/`production` 时失效 |
-| `KANGMIN_DB_PATH` | 数据库文件路径，默认 `src/.local/kangmin-mvp.sqlite` |
-| `KANGMIN_DATABASE_URL` | PostgreSQL 连接串；配置后组合根使用 PostgreSQL 存储（自动执行版本化迁移），缺省保持 SQLite |
-| `KANGMIN_SESSION_TOKEN` | 患者会话令牌（CLI 不接收 `patient_id`/`user_id`） |
-| `KANGMIN_ADMIN_TOKEN` | 管理员令牌（与患者令牌分离；登录后也可写入本地凭据文件） |
-| `KANGMIN_DEEPSEEK_API_KEY` | 模型 API 密钥；未配置时自由对话降级为结构化问答 |
-| `KANGMIN_ENV_PROVIDER_MODE` | 测试替身故障模式 `fixed`/`unavailable`/`timeout`（仅测试） |
-| `KANGMIN_PLAN_BROWSE_ENABLED` | 方案浏览开关（`1` 开放，默认关闭；临床规则包冻结前不放开） |
-| `KANGMIN_ADMIN_MEDIA_DIR` | 管理端素材目录，默认与数据库同目录的 `admin-media` |
-| `KANGMIN_S3_BUCKET` | S3 兼容对象存储桶名；配置后管理端素材/知识文件改用 S3 后端（缺省为本地文件系统后端） |
-| `KANGMIN_S3_ENDPOINT` | S3 兼容端点地址（如 MinIO）；缺省走 AWS 默认端点 |
-| `KANGMIN_S3_REGION` | S3 区域，默认 `us-east-1` |
-| `KANGMIN_S3_ACCESS_KEY_ID` | S3 访问密钥 ID；配置 `KANGMIN_S3_BUCKET` 时必填，缺失 `config_missing` |
-| `KANGMIN_S3_SECRET_ACCESS_KEY` | S3 访问密钥；配置 `KANGMIN_S3_BUCKET` 时必填，缺失 `config_missing` |
-| `KANGMIN_MEDIA_MAX_BYTES` | 素材文件大小上限（字节），默认 200MB；超限 `validation_failed` |
-| `KANGMIN_KNOWLEDGE_MAX_BYTES` | 知识源文件大小上限（字节），默认 50MB；超限 `validation_failed` |
+默认打开 `http://127.0.0.1:8787`。裸机默认只监听回环地址；Dockerfile 会
+显式设置 `KANGMIN_HTTP_HOST=0.0.0.0`。
 
-加密策略（组合根强制，测试锁定）：
+可用探针：
 
-1. 配置了 `KANGMIN_ENCRYPTION_KEYS` → AES-256-GCM，健康正文加密落库；
-2. 未配置密钥，且 `KANGMIN_APP_ENV` 为 `local`/`integration`，或显式
-   `KANGMIN_ALLOW_DEV_SESSION=1`（且非 `staging`/`production`）→
-   明文开发降级（`plaintext-dev` 版本，生产语义下读取会被拒绝）；
-3. 其余任何环境（含默认）→ 启动失败 `config_missing`（退出码 5），
-   绝不在缺少密钥时明文启动。检测到旧明文数据但无密钥时同样拒绝启动。
+```bash
+curl -s http://127.0.0.1:8787/live
+curl -s http://127.0.0.1:8787/ready
+```
+
+`/live` 只证明进程存活。`/ready` 会检查数据库、对象存储、加密、环境
+Provider 和规则包；任何一项 `failed` 或 `not_configured` 都返回 503。
+当前规则包未冻结，因此不要期待开发环境的 `/ready` 必然为 200。`/health`
+是兼容端点，不能替代 `/ready` 作为生产就绪证据。
 
 ### 建立本地开发会话
 
 患者会话：
 
 ```bash
-KANGMIN_ALLOW_DEV_SESSION=1 npm run dev:session -- --subject patient-a
-# 输出 sessionToken；放入环境变量，不要写入命令参数、仓库或日志
-export KANGMIN_SESSION_TOKEN="<opaque token>"
+KANGMIN_APP_ENV=local \
+KANGMIN_ALLOW_DEV_SESSION=1 \
+npm run dev:session -- --subject patient-a
+
+export KANGMIN_SESSION_TOKEN="<上一步输出的 sessionToken>"
 ```
 
 管理会话：
 
 ```bash
 KANGMIN_APP_ENV=local \
+KANGMIN_ALLOW_DEV_SESSION=1 \
 KANGMIN_ALLOW_DEV_ADMIN_SESSION=1 \
 npm run dev:admin-session -- --subject owner-a
-# 或正式引导：auth admins add --role owner（密码从 stdin）+ auth login
-export KANGMIN_ADMIN_TOKEN="<opaque admin token>"
+
+export KANGMIN_ADMIN_TOKEN="<上一步输出的 adminToken>"
 ```
 
-开发会话不是生产认证。生产模式即使设置开关也拒绝创建开发会话。
+开发会话只允许 local/integration。令牌不要写进仓库、命令参数、截图或日志。
 
-## 命令手册
+## 交付入口
 
-### kangmin（患者）
+### `kangmin`：患者 CLI
 
 ```text
-kangmin                         启动交互式对话（体验版，匿名可用）
-kangmin agent                   确定性安全会话（结构化问答，需登录）
-kangmin record                  管理自己的健康记录
-kangmin browse                  浏览环境与已发布内容
-kangmin account                 管理账号、授权和设置
-
-辅助命令：
-  kangmin --version
-  kangmin doctor
-  kangmin completion zsh
+agent    确定性安全会话、自由对话、会话与反馈
+record   症状/TNSS、档案、暴露、用药、日历与趋势
+browse   已发布文章/视频、搜索、环境快照与受控方案浏览
+account  注册、登录、资料、同意与隐私
 ```
 
-record 命令：
+辅助命令：`--version`、`doctor`、`completion zsh`。精确命令、参数和当前
+能力声明以以下输出为准：
+
+```bash
+node dist/cli/kangmin.js --help
+```
+
+关键边界：
+
+- `agent test run` 属于管理端，不是患者命令；
+- `browse plan` 默认关闭，临床规则冻结前不得开放；
+- `account data export/deletion-request/request-status/deactivate` 以及提醒、
+  通知当前返回 `capability_unavailable`；
+- CLI 不接受 `patient_id` 或 `user_id`，身份由服务端会话令牌解析。
+
+### `kangmin-admin`：管理 CLI
 
 ```text
-record symptom add|list|show|update|delete
-record profile show|update
-record exposure add|list|show|update|delete
-record medication add|list|show|update|delete
-record overview
-record calendar --month YYYY-MM
-record trend --from YYYY-MM-DD --to YYYY-MM-DD
+content  文章、视频、素材、分类与公告
+agent    知识、方案、模型设置与模拟测试
+users    患者、会话、记录与活动的只读脱敏视图
+auth     管理员登录、状态和普通管理员账号管理
 ```
 
-browse 命令：
+辅助命令：`help`、`doctor`、`--version`、`completion zsh`。精确命令树：
 
-```text
-browse [--location X]
-browse article list [--limit N] [--offset N]
-browse article categories
-browse article search <query>
-browse article show <id>
-browse video list [--limit N] [--offset N]
-browse video categories
-browse video search <query>
-browse video show <id>
-browse plan list
-browse plan show <id>
-browse search <query>
-browse environment current [--city X]
-browse environment forecast [--days N]
-browse environment refresh [--city X]
+```bash
+node dist/cli/kangmin-admin.js --help
 ```
 
-裸 `browse` 首页聚合文章/视频/分类与环境区块：`--location` 指定城市时
-环境区块返回当前快照（`status: "ok"`）；未指定标注 `no_location`；数据源
-不可用标注 `unavailable` 并带原错误码（不伪造数据，不影响其余区块）。
+密码和模型 API Key 从 stdin 读取，不进入 argv。发布、下架、删除、启用、
+停用和孤儿上传清理等高影响操作要求 `--yes`。
 
-列表分页（article list / video list）：默认 limit 20、上限 100，超出上限被
-截断而非报错；结果含 limit/offset 字段，便于翻页。
+### 机器输出
 
-agent 命令（两条管线，路由按输入区分）：
-
-```text
-agent start                      确定性安全会话（结构化问答，需登录）
-agent start --message <文本>     自由对话管线（匿名可用，登录后确认可保存）
-agent exec <文本> [--conversation <id>] [--save-consent]
-                                 非交互自由对话（--json 机器集成）
-agent conversations list         自由对话会话列表
-agent conversations show <id>    自由对话会话详情
-agent continue [session-id] --expected-revision <n> --question urgentHelp --answer yes|no|unknown
-                                 缺省 session-id 时续接最近待答会话（需登录）
-agent resume <session-id>        恢复确定性安全会话
-agent sessions list|show         确定性安全会话列表/详情
-agent feedback <id> --rating helpful|unhelpful [--reason <文本>]
-agent test run --answer <field>=<state> 模拟链路（只验证不修改）
-```
-
-account 命令：
-
-```text
-account register --username <用户名> [--nickname <昵称>]
-account login --username <用户名>
-account status
-account logout
-account profile show
-account profile update [--nickname <昵称>] --expected-revision <n>
-account consent show
-account consent update --type privacy|medical_boundary|health_data|agent_session_save|location
-    --decision granted|withdrawn --policy-version <版本> --request-id <ID>
-account privacy
-account data export|deletion-request|request-status|deactivate
-    （本版本明确未实现）
-account reminder|notification
-    （本版本明确未实现）
-```
-
-### kangmin-admin（管理）
-
-```text
-kangmin-admin <命令组> <子命令> [选项]
-
-辅助命令：
-  kangmin-admin help
-  kangmin-admin doctor
-  kangmin-admin --version
-  kangmin-admin completion zsh
-```
-
-content 命令：
-
-```text
-content article  list|show|create|update|preview|publish|unpublish
-content video    list|show|create|update|preview|publish|unpublish
-content media    list|show|upload <file>|disable|delete
-content category list|show|create|update|disable
-content message  list|show|create|update|publish|unpublish
-```
-
-agent 命令：
-
-```text
-agent status
-agent knowledge list|show|add <file>|index|enable|disable|search-test <query>
-agent plan      list|show|create|update|preview|enable|disable|mappings
-agent model     show|update|test
-agent test      run|case <case-id>
-```
-
-users 命令：
-
-```text
-users list|show|sessions|records|activity
-```
-
-auth 命令：
-
-```text
-auth login --username <u>      密码从 stdin 读取（隐藏输入）
-auth status|whoami             当前登录状态与身份
-auth admins list|add|enable|disable
-auth logout                    撤销当前会话
-```
-
-首次使用管理后台前，先通过 `auth admins add --role owner` 引导主管理员
-（密码从 stdin 输入）。浏览器 `/admin` 登录后只保存 HttpOnly、
-SameSite=Strict 会话 Cookie；生产/预发环境同时带 Secure，不把管理 token
-写入 localStorage、sessionStorage、URL 或页面源码。Cookie 管理命令还要求
-同源 Origin，患者会话 Cookie 与管理会话 Cookie 使用不同名称和解析链路。
-
-发布/下架/删除/停用/启用等高影响操作需要 `--yes` 显式确认。
-
-## JSON 契约
-
-两个 CLI 加 `--json` 后 stdout 只输出一个 JSON 对象。所有响应共享
-`receipt`（操作凭证）与 `meta`（schema 版本/请求关联）字段。
-
-成功响应：
+两个 CLI 添加 `--json` 后，stdout 只输出一个 `CommandResult` JSON 对象；
+进度和诊断进入 stderr。成功与失败共享 `receipt` 和 `meta`，其中
+`requestId` 用于跨 CLI、HTTP、日志和审计关联。
 
 ```json
 {
   "ok": true,
-  "command": "record symptom add",
+  "command": "record symptom list",
   "status": "completed",
-  "data": {
-    "id": "4c1d4f9a-...",
-    "localDate": "2026-07-31",
-    "nasalCongestion": 2,
-    "nasalItching": 1,
-    "sneezing": 3,
-    "runnyNose": 2,
-    "tnssTotal": 8,
-    "revision": 1
-  },
+  "data": {},
   "receipt": {
-    "operationId": "c3a1f0b0-...",
-    "requestId": "a2e0d7c5-..."
+    "operationId": "<uuid>",
+    "requestId": "<uuid>"
   },
   "meta": {
     "schemaVersion": "1",
-    "requestId": "a2e0d7c5-...",
-    "timestamp": "2026-07-31T10:00:00.000Z"
+    "requestId": "<uuid>",
+    "timestamp": "<ISO-8601>"
   }
 }
 ```
 
-失败响应：
+失败结果使用 `status: "failed"`，并包含 `error.code`、`error.message`、
+`error.retryable` 和可选 `error.details`。
+
+## HTTP 与 Web
+
+HTTP 服务同时托管 Vite 构建产物和命令接口：
+
+| 方法与路径 | 用途 |
+| --- | --- |
+| `GET /`、`GET /assets/*` | 患者 Web 薄壳与静态资源 |
+| `GET /live` | 无依赖存活探针 |
+| `GET /ready` | 依赖就绪探针 |
+| `GET /v1/meta` | 协议、schema、服务版本与 audience |
+| `POST /v1/patient/commands` | 患者命令；Bearer 或 HttpOnly 开发 Cookie |
+| `POST /v1/admin/commands` | 管理命令；独立 Bearer 管理令牌 |
+| `GET /v1/media/<id>` | 已发布内容引用的公开媒体 |
+| `POST /dev/session` | 仅显式启用的 local/integration 开发会话 |
+
+`POST /v1/commands` 是兼容患者路由；新客户端应使用版本化的
+`/v1/patient/commands`。版本化请求必须包含：
 
 ```json
 {
-  "ok": false,
-  "command": "record symptom add",
-  "status": "failed",
-  "error": {
-    "code": "version_conflict",
-    "message": "记录已被其他操作更新，请刷新后重试",
-    "retryable": true
-  },
-  "receipt": {
-    "operationId": "c3a1f0b0-...",
-    "requestId": "a2e0d7c5-..."
-  },
-  "meta": {
-    "schemaVersion": "1",
-    "requestId": "a2e0d7c5-...",
-    "timestamp": "2026-07-31T10:00:00.000Z"
-  }
+  "schemaVersion": "1",
+  "command": "record overview",
+  "input": {},
+  "requestId": "<1 到 120 个字符>"
 }
 ```
 
-`doctor` 的 `data` 为 `{ "checks": [{ "name", "status", "message" }], "healthy" }`，
-healthy 时退出码 0，否则 6。
+服务端校验 schema 与关联号，按登录/上传/普通命令分级限流，并返回同一
+`requestId`。结构化请求日志不记录请求体、令牌或健康正文。
 
-### 退出码表（0–10 全表）
+### 患者 Web 薄壳
 
-| 退出码 | 语义 | 错误码 |
+`web/` 是 Vite + React 静态工程，只通过患者命令协议访问业务能力。当前已
+连接症状记录、健康档案、暴露、用药、概览、文章/视频和自由对话等真实
+命令；无数据时显示空态，不伪造统计。它仍是 demo：部分安全评估分组保留
+本地 UI 状态，账户区尚未接完整账号命令，正式身份也未接入。
+
+前端不得复制临床决策树、直接访问数据库或导入基础设施模块。
+
+## 架构与依赖方向
+
+```text
+kangmin CLI ───────────────┐
+患者 Web → HTTP 命令路由 ──┼→ Application Services → Modules / Ports
+kangmin-admin CLI ─────────┤                         ↓
+管理 HTTP 命令路由 ─────────┘                    Infrastructure
+                                              SQLite / PostgreSQL
+                                              Filesystem / S3
+                                              DeepSeek / Provider
+```
+
+目录职责：
+
+| 路径 | 职责 |
+| --- | --- |
+| `kernel/` | 结果、错误、协议、验证、凭据、加密端口 |
+| `modules/` | 业务领域、服务和端口；不得依赖外层适配器 |
+| `app/` | 应用服务、组合根与跨模块编排 |
+| `infrastructure/` | SQLite、PostgreSQL、S3、模型、环境和日志适配器 |
+| `cli/` | 两个命令行入口和参数/输出适配 |
+| `http/` | HTTP、静态资源、探针、限流和请求日志 |
+| `web/` | 患者 Web 薄壳 |
+| `tests/` | TypeScript 单元、契约、集成与 E2E 测试 |
+| `scripts/` | 架构门禁、构建清理、浏览器 E2E 与 SBOM |
+
+`npm run lint` 执行的架构门禁会阻止：
+
+- 任意新代码导入 `legacy/`；
+- `modules/` 依赖 infrastructure/CLI/HTTP/Web；
+- CLI、HTTP、dev 绕过组合根直连基础设施；
+- kernel 反向依赖应用层。
+
+## 运行模式与配置
+
+### 模式矩阵
+
+| 模式 | 数据/存储 | 允许的开发降级 | 远程 CLI |
+| --- | --- | --- | --- |
+| `local` | 默认 SQLite + 本地素材，也可显式 PostgreSQL/S3 | 允许开发会话、明文开发加密和测试环境 Provider | 可选 |
+| `integration` | 与 local 相同，供自动化测试 | 允许受控测试替身 | 可选 |
+| `staging` / `production` | 必须 PostgreSQL + S3 + AES 密钥 + 真实环境 Provider | 全部禁止 | CLI 必须配置 HTTPS 服务地址 |
+
+未设置 `KANGMIN_APP_ENV` 时按生产安全语义处理，不会静默进入开发模式。
+
+### 核心与远程 CLI
+
+| 变量 | 语义 |
+| --- | --- |
+| `KANGMIN_APP_ENV` | `local` / `integration` / `staging` / `production` |
+| `KANGMIN_API_BASE_URL` | 远程命令服务根地址；不得含凭据、查询或片段；staging/production 必须 HTTPS |
+| `KANGMIN_API_TIMEOUT_MS` | 远程请求超时，默认 15000，范围 100–120000 毫秒 |
+| `KANGMIN_SESSION_TOKEN` | 患者令牌 |
+| `KANGMIN_ADMIN_TOKEN` | 管理员令牌，与患者令牌隔离 |
+| `KANGMIN_DEEPSEEK_API_KEY` | 自由对话模型密钥；缺失时按代码定义降级 |
+| `KANGMIN_PLAN_BROWSE_ENABLED` | 方案浏览开关，默认关闭；临床冻结前不得开启 |
+| `KANGMIN_ALLOW_DEV_SESSION` | 开发会话/开发降级开关；staging/production 禁止 |
+| `KANGMIN_ALLOW_DEV_ADMIN_SESSION` | 仅开发管理员会话脚本使用，且要求 local/integration |
+| `KANGMIN_ENV_PROVIDER_MODE` | `fixed` / `unavailable` / `timeout` 测试替身；正式环境禁止 |
+
+设置 `KANGMIN_API_BASE_URL` 后，两个 CLI 先读取 `/v1/meta` 校验协议，再分别
+调用患者或管理命令路由。staging/production 未配置服务地址时 CLI 以
+`config_missing` 失败，禁止回退到本地数据库。
+
+### 数据、加密与对象存储
+
+| 变量 | 语义 |
+| --- | --- |
+| `KANGMIN_DB_PATH` | SQLite 路径，默认 `.local/kangmin-mvp.sqlite` |
+| `KANGMIN_DATABASE_URL` | PostgreSQL 连接串；配置后使用 PostgreSQL |
+| `KANGMIN_ENCRYPTION_KEYS` | AES-256-GCM 密钥链 `v1:<base64>,v2:<base64>`，首项为当前写入版本 |
+| `KANGMIN_ADMIN_MEDIA_DIR` | 本地素材目录，默认位于数据库同目录的 `admin-media/` |
+| `KANGMIN_S3_BUCKET` | S3 兼容桶；staging/production 必填 |
+| `KANGMIN_S3_ENDPOINT` | S3 兼容端点，例如 MinIO；未设时使用 AWS 默认端点 |
+| `KANGMIN_S3_REGION` | S3 region，默认 `us-east-1` |
+| `KANGMIN_S3_ACCESS_KEY_ID` | S3 访问密钥 ID |
+| `KANGMIN_S3_SECRET_ACCESS_KEY` | S3 私密访问密钥 |
+| `KANGMIN_MEDIA_MAX_BYTES` | 素材大小上限，默认 200 MiB |
+| `KANGMIN_KNOWLEDGE_MAX_BYTES` | 知识文件大小上限，默认 50 MiB |
+
+加密解析顺序：
+
+1. 有 `KANGMIN_ENCRYPTION_KEYS`：健康正文使用 AES-256-GCM；
+2. 无密钥但明确为 local/integration：允许 `plaintext-dev` 开发降级；
+3. 其他情况：`config_missing`，拒绝启动；
+4. 旧库存在待回填明文但没有密钥：拒绝迁移，不静默丢失或继续明文运行。
+
+### HTTP 运行参数
+
+| 变量 | 默认值 | 语义 |
+| --- | --- | --- |
+| `PORT` | `8787` | 监听端口 |
+| `KANGMIN_HTTP_HOST` | `127.0.0.1` | 裸机监听地址；容器设为 `0.0.0.0` |
+| `KANGMIN_HTTP_BODY_LIMIT` | 1 MiB | 生产入口请求体上限，字节 |
+| `KANGMIN_HTTP_TIMEOUT_MS` | 30000 | 单请求超时 |
+| `KANGMIN_RATE_LIMIT_STRICT_PER_MINUTE` | 10 | 开发会话与登录类命令每 IP/分钟 |
+| `KANGMIN_RATE_LIMIT_UPLOAD_PER_MINUTE` | 30 | 上传类命令每 IP/分钟 |
+| `KANGMIN_RATE_LIMIT_COMMANDS_PER_MINUTE` | 120 | 普通命令每 IP/分钟 |
+
+### 测试服务
+
+| 变量 | 用途 |
+| --- | --- |
+| `KANGMIN_TEST_DATABASE_URL` | PostgreSQL 契约测试；需要可创建临时数据库 |
+| `KANGMIN_TEST_S3_ENDPOINT` | S3 契约/E2E 的 MinIO 或兼容端点 |
+| `KANGMIN_TEST_S3_BUCKET` | S3 测试桶 |
+
+未设置这些变量时，对应可选契约测试会 skip；本地 `npm run check` 全绿不能
+表述为 PostgreSQL/S3 已在本机完成真实验证。CI 会提供 PostgreSQL 与 MinIO。
+
+## 数据与上传
+
+### SQLite 与 PostgreSQL
+
+- SQLite 是 local/integration 默认，启用 WAL、外键、busy 重试和版本化
+  `schema_migrations`；旧库按序升级；
+- PostgreSQL 适配患者和管理端仓储，使用版本化事务迁移和 advisory lock；
+- 两种实现共享端口契约，覆盖身份隔离、幂等、revision/CAS、软删除、加密和
+  审计语义；
+- 不在 README 固定迁移数量或测试数量；需要现状时读取
+  `infrastructure/database.ts`、`infrastructure/postgres/pg-migrations.ts`
+  和当前测试输出；
+- 配置 PostgreSQL 不会自动迁移已有 SQLite 数据，生产数据迁移需独立方案。
+
+### 本地文件系统与 S3
+
+管理素材和知识文件统一使用对象存储端口：
+
+- local/integration 未配置 S3 时使用本地素材目录；
+- 配置 S3 后支持预签名直传；
+- 远程 `content media upload` 和 `agent knowledge add` 使用
+  `upload-init → PUT → upload-confirm`；命令服务不接收客户端本地路径；
+- 扩展名、大小、对象存在性、SHA-256 和内容魔数双重校验均 fail-closed；
+- 中断产生的孤儿上传需显式执行带 `--yes` 的清理命令；
+- staging/production 缺少 S3 桶或凭据时拒绝启动。
+
+## 安全与临床边界
+
+- 患者与管理员令牌完全隔离；患者可使用 Bearer 或 HttpOnly 开发 Cookie，
+  管理路由只接受独立 Bearer 令牌；
+- CLI 不接受客户端身份或角色字段；服务端从会话解析主体和权限；
+- 密码、模型 API Key 和健康正文不进入 argv 或结构化请求日志；
+- 管理 CLI 本地凭据文件权限为 `0600`，并绑定其签发的本地/远程环境；
+- 健康正文按字段加密落库，列表、日志和管理员只读视图按最小必要原则输出；
+- 固定规则链先执行安全门禁、适用性、严重度和证型判断；
+- 模型只能提取候选、解释规则结果和检索已批准知识，不能新增或覆盖诊断；
+- `unknown` 不等于 `no`；高风险、冲突、信息不足、无命中和未批准规则均
+  fail-closed；
+- `clinical-rules-draft-v0` 当前为 `candidate`，只能用于管理端模拟测试；正式
+  患者分类输出必须返回临床冻结阻断；
+- 不把 `vault/raw/` 或 `vault/truth/` 的内容复制到 Web 公共资源、日志、Issue、PR
+  或响应。
+
+## 协议与退出码
+
+患者端与管理端共享 `kernel/errors.ts` 定义的错误码和退出码：
+
+| 退出码 | 类别 | 示例 |
 | --- | --- | --- |
 | 0 | 成功 | — |
 | 1 | 内部错误 | `internal_error` |
-| 2 | 命令/输入错误 | `command_invalid`、`invalid_json`、`payload_too_large` |
+| 2 | 命令/JSON/请求体错误 | `command_invalid`、`invalid_json`、`payload_too_large` |
 | 3 | 资源不存在 | `resource_not_found` |
-| 4 | 状态/版本/幂等冲突 | `version_conflict`、`date_conflict`、`idempotency_conflict`、`stale_replay` |
-| 5 | 前置条件或协议不兼容 | `confirmation_required`、`config_missing`、`more_information_required`、`protocol_incompatible` |
-| 6 | 远程服务、外部数据源或存储不可用 | `service_unavailable`、`capability_unavailable`、`storage_unavailable`、`provider_unavailable`、`provider_timeout`、`location_unavailable`、`projection_pending` |
-| 7 | 输入校验失败 | `validation_failed` |
+| 4 | 版本、日期、幂等或重放冲突 | `version_conflict`、`idempotency_conflict` |
+| 5 | 确认、同意、配置、信息或协议前置条件 | `confirmation_required`、`consent_required`、`config_missing`、`protocol_incompatible` |
+| 6 | 能力、存储、供应商或网络不可用 | `capability_unavailable`、`storage_unavailable`、`service_unavailable` |
+| 7 | 业务输入校验失败 | `validation_failed` |
 | 8 | 安全规则阻断 | `safety_blocked` |
 | 9 | 未登录或权限不足 | `authentication_required`、`permission_denied` |
 | 10 | 批量操作部分失败 | `batch_partial_failure` |
 
-错误响应中的 `error.retryable` 表示该错误是否可安全重试（如存储瞬时占用为
-true，版本冲突/校验失败为 false）。
+HTTP 状态与 CLI 退出码分别映射；例如协议不兼容为 HTTP 426/CLI 5，认证失败
+为 HTTP 401/CLI 9。是否可安全重试只看 `error.retryable`，不能仅按状态码猜测。
 
-### 错误码清单
+## 验证与交付
 
-患者端与管理端共享同一套错误码（见 `src/kernel/errors.ts`），共 25 个：
+### npm 脚本
 
-```text
-command_invalid / invalid_json / payload_too_large
-resource_not_found
-version_conflict / date_conflict / idempotency_conflict / stale_replay
-confirmation_required / config_missing / more_information_required / protocol_incompatible
-capability_unavailable / storage_unavailable
-service_unavailable / provider_unavailable / provider_timeout / location_unavailable / projection_pending
-validation_failed / safety_blocked
-authentication_required / permission_denied
-batch_partial_failure / internal_error
-```
+| 命令 | 内容 |
+| --- | --- |
+| `npm run typecheck` | Node 与 Web TypeScript 类型检查，不生成产物 |
+| `npm run lint` | 架构依赖门禁 |
+| `npm run build` | 清理 `dist/`，编译 TypeScript，构建 Web |
+| `npm test` | build + `dist/tests/*.test.js` + 浏览器 E2E |
+| `npm run check` | typecheck + lint + test |
+| `npm run start:http` | build 后启动 HTTP/Web 服务 |
+| `npm run sbom` | 生成不入库的 CycloneDX SBOM |
 
-## 安全边界
-
-- **密码不进 argv**：register/login（患者）与 auth login/admins add（管理）
-  的密码从 stdin 读取，交互终端隐藏回显；密码不会出现在命令行参数、历史
-  或日志中，非交互未提供时明确失败且不阻塞等待。
-- **身份服务端解析**：CLI 不接受 `patient_id`/`user_id`/`admin_id`/`role`；
-  患者身份从 `KANGMIN_SESSION_TOKEN`、管理员身份从 `KANGMIN_ADMIN_TOKEN`
-  或本地凭据文件解析。客户端提交身份字段返回 `permission_denied`。
-- **健康正文加密**：症状、档案、暴露、用药正文经 AES-256-GCM 加密落库
-  （库内不存明文）；无密钥且非开发环境时启动失败（fail-closed）。
-- **输出不含敏感信息**：患者 `account login` 的 human 模式（无 `--json`）
-  把会话令牌只写入 stderr（stdout 显示固定提示，不含令牌）；
-  `--json` 模式保留 `data.token` 供机器集成读取后写入
-  `KANGMIN_SESSION_TOKEN`（脚本勿把该输出落日志）；管理端 `auth login`
-  成功后令牌写入 0600 凭据文件并从响应中删除；users 只读投影对手机号
-  等标识脱敏（保留前 3 后 4），绝不返回完整手机号或用户名；健康正文
-  只经加密落库，不进日志与脱敏视图。
-- **临床红线**：临床规则包为 candidate，正式患者输出在临床冻结前硬阻断
-  （Agent 不输出证型、穴位、疗程或调理方案）；`unknown`、冲突、无命中
-  和信息不足不会被猜测补齐。
-- **读取失败与空数据区分**：存储/模型不可用映射为 `storage_unavailable` /
-  `provider_unavailable`（retryable 语义），绝不伪装成空数据。
-
-## 本地/集成数据库
-
-以下 SQLite 能力只描述当前本地和集成运行模式，不是生产存储验收结论。
-PostgreSQL 适配器已实现（见下节）；对象存储两种后端见"对象存储与上传"
-一节，生产组合根的存储门禁在运维发布阶段完成。
-
-- 单文件 SQLite（默认 `src/.local/kangmin-mvp.sqlite`），WAL 模式、
-  外键开启、busy 重试。
-- 版本化迁移账本 `schema_migrations`，当前 12 个迁移：
-
-```text
-0001_patient_record_baseline      患者、会话、症状/TNSS、幂等、档案
-0002_system_ledger                系统表（版本凭证/审计事件）
-0003_identity                     患者账号表
-0004_origin_main_tables           内容/管理员/幂等/agent 会话原始表
-0005_record_encryption_soft_delete 健康记录加密化 + 软删除
-0006_account_sessions_and_consents 本地账号会话与同意记录
-0007_browse_environment_plans     浏览内容/环境缓存/方案
-0008_agent_conversations          自由对话会话与轮次
-0009_admin_console                管理控制台表（文章/视频/素材/分类/知识/方案/模型）
-0010_admin_sessions_upgrade       管理员会话表升级
-0011_admin_idempotency_fk         管理员幂等表外键归位
-0012_admin_sessions_fk            旧库管理员会话外键改指 admin_accounts
-```
-
-- **升级路径**：旧库打开时自动按序执行未应用迁移（IF NOT EXISTS 无损
-  升级）；加密类迁移对旧明文数据做加密回填，检测到待回填明文但无密钥时
-  抛 `config_missing`，绝不静默丢失数据（legacy-upgrade 测试锁定）。
-- 创建要求幂等键（`--idempotency-key`），同键重放返回原结果（含删除后
-  重放的 `stale_replay`）；更新要求 `expectedRevision`。
-
-## PostgreSQL 存储
-
-配置 `KANGMIN_DATABASE_URL` 后，患者与管理端组合根使用 PostgreSQL
-（`pg` 驱动），SQLite 路径完全保留为本地/集成默认：
-
-- 基线迁移 `0001_baseline` 建立与 SQLite 迁移链终态等价的 35 张表
-  （TEXT 时间戳、INTEGER 布尔、部分唯一索引语义一致）；生产从空库
-  初始化，不迁移任何 SQLite 数据。
-- 迁移经 advisory lock 互斥、逐版本事务执行并写入 `schema_migrations`
-  账本；数据库出现比代码更新的未知版本时 fail-closed。
-- 全部 14 个仓储端口有 PostgreSQL 适配器，与 SQLite 实现跑独立契约
-  套件（107 个仓储契约 + 5 个应用级端到端用例）：患者隔离、幂等
-  重放、CAS revision、软删除、加密字段、审计强制写语义逐条对齐。
-- 并发差异的显式处理：序列化冲突/死锁/锁超时映射为可重试的
-  `storage_unavailable`（对齐 SQLite 的 BUSY 映射）；管理端引导与
-  最后-owner 守卫用表锁等价 SQLite 的 BEGIN IMMEDIATE 序列化。
-- 方案注册表与临床评估调用链已异步化（`PlanRegistryPort.
-  findApprovedPlan` 与内核 `evaluate` 返回 Promise），禁止以缓存
-  绕过每次评估的最新发布门禁。
-- 契约测试需 `KANGMIN_TEST_DATABASE_URL` 指向可建库的 PostgreSQL
-  （CI 由 postgres:16 service 提供）；测试在服务器上自建一次性
-  隔离库并在结束后删除，未配置时自动 skip。
-
-## 对象存储与上传
-
-管理端素材与知识源文件统一走对象存储端口（`modules/system/object-storage-ports.ts`），
-对象键约定 `<med_id>/<原始文件名>`，两种后端一致：
-
-- **本地文件系统后端（默认）**：未配置 `KANGMIN_S3_BUCKET` 时启用，服务端
-  直写到素材目录（`KANGMIN_ADMIN_MEDIA_DIR`）；浏览器通过一次性同源票据
-  完成 PUT，票据不写入 URL、日志或浏览器存储。
-- **S3 兼容后端**：配置 `KANGMIN_S3_BUCKET`（及访问密钥）后启用，
-  支持预签名直传；`KANGMIN_S3_ENDPOINT` 可指向 MinIO 等兼容实现。
-
-远程模式下 `content media upload <file>` 与 `agent knowledge add <file>`
-由 CLI 在本地编排三步，命令契约与本地模式一致：
-
-1. `content media upload-init`：申请直传票据（本地为同源一次性票据，S3
-   为预签名 URL；扩展名白名单 +
-   大小上限 + sha256 形状校验）；同指纹素材已就绪时直接重放，不发新票据；
-2. HTTP PUT 直传存储：客户端携带票据头直传字节，不提交客户端本地路径；
-   S3 字节不经过命令服务，本地后端由固定同源上传路由接收；
-3. `content media upload-confirm`：服务端校验对象存在、大小与 sha256
-   一致，并读取真实字节做魔数嗅探（类型双校验第二步）；任一失败即标记
-   failed、删除对象并返回 `validation_failed`。
-
-`agent knowledge add` 在确认就绪后追加 `agent knowledge add-from-media`
-创建知识（与本地 add 同幂等键，同文件重复提交重放原知识）。
-
-类型双校验（扩展名 + 内容魔数）与大小上限全程 fail-closed，本地直写与
-远程直传一致执行。客户端 init 后中断的孤儿会话（processing 草稿）由
-`content media cleanup-orphans [--older-than <分钟>] --yes` 清理：
-删除存储对象并移除草稿行，属高影响操作，未带 `--yes` 返回
-`confirmation_required`。
-
-## OCI 镜像与部署契约
-
-`src/Dockerfile` 为多阶段构建：builder 阶段 `npm ci && npm run build`
-（TypeScript 只在构建期编译），runner 阶段只携带 `dist/` 与
-`npm ci --omit=dev` 产出的生产依赖，以非 root 用户 `node` 运行，
-typescript、playwright 等 dev 依赖不进入运行时镜像。
+修改代码时先跑相关窄测试，再跑完整门禁。构建后可执行单个测试：
 
 ```bash
-docker build -t kangmin-cli:latest ./src
-docker run --rm -p 8787:8787 \
-  -e KANGMIN_APP_ENV=production \
-  -e KANGMIN_DATABASE_URL="postgres://..." \
-  -e KANGMIN_ENCRYPTION_KEYS="v1:<base64>" \
-  -e KANGMIN_S3_BUCKET="..." \
-  -e KANGMIN_S3_ACCESS_KEY_ID="..." \
-  -e KANGMIN_S3_SECRET_ACCESS_KEY="..." \
-  kangmin-cli:latest
+npm run build
+node --test dist/tests/<name>.test.js
 ```
 
-运行契约：
+CI 的 `quality` job 还会提供 PostgreSQL 16、MinIO 和 Playwright，执行全部
+`src` 门禁；仓库级 CI 同时检查 `legacy`。后续 `image` job 构建 OCI 镜像、
+执行容器 CLI 冒烟、审计生产依赖并上传 SBOM。
 
-- 入口 `node dist/http/server.js`，端口 8787（`EXPOSE 8787`）；镜像内
-  `HEALTHCHECK` 用 node fetch 打 `GET /live`（slim 镜像不含 curl）。
-- 生产必需环境变量：`KANGMIN_APP_ENV=production`、`KANGMIN_DATABASE_URL`
-  （PostgreSQL 连接串）、`KANGMIN_ENCRYPTION_KEYS`；素材/知识走 S3 时
-  另需 `KANGMIN_S3_BUCKET`、`KANGMIN_S3_ACCESS_KEY_ID`、
-  `KANGMIN_S3_SECRET_ACCESS_KEY`（`KANGMIN_S3_ENDPOINT`、
-  `KANGMIN_S3_REGION` 可选）。变量语义见上文"本地/集成配置"表。
-- 进程以非 root `node` 用户运行；配置 `KANGMIN_DATABASE_URL` 后不再写
-  本地 SQLite，根文件系统可按只读（`--read-only`）挂载。缺省 SQLite
-  路径 `.local/` 仅供开发，不是生产路径。
-- 服务当前监听 127.0.0.1（见 `src/http/server.ts`），容器内健康检查
-  直连该地址；对外发布由编排层（同 Pod 代理等）处理。
-
-SBOM 与依赖审计：
+### OCI 镜像
 
 ```bash
-npm run sbom                            # 生成 sbom.cyclonedx.json（CycloneDX，不入库）
-npm audit --omit=dev --audit-level=high # 生产依赖高危审计，非零即失败
+docker build -t kangmin-cli:local .
+docker run --rm --entrypoint node kangmin-cli:local \
+  dist/cli/kangmin.js --version
 ```
 
-CI 的 `image` 任务（依赖 `quality` 通过）构建镜像、容器内冒烟
-（`node dist/cli/kangmin.js --version`）、执行上述生产依赖审计，并把
-SBOM 作为 artifact 上传（保留 30 天）。
+Dockerfile 使用多阶段构建，运行阶段只保留 `dist/` 与生产依赖，以非 root
+`node` 用户运行，并为 `/live` 配置 HEALTHCHECK。
 
-## 已知限制
+镜像能构建和 CLI 冒烟通过，不表示当前服务可以 production 启动。不要复制
+一组占位生产变量后宣称部署完成；必须先解决下一节的真实 Provider、正式身份
+和临床冻结阻塞，并用 `/ready` 与真实外部依赖验收。
 
-- **Agent 正式输出在临床冻结前阻断**：规则包为 candidate，只能用于
-  模拟测试（`agent test run`），正式患者输出为固定阻断文案。
-- **环境数据接口为测试替身**：`browse environment` 使用
-  TestEnvironmentProvider（`KANGMIN_ENV_PROVIDER_MODE` 控制故障模式），
-  未接入真实供应商。组合根 fail-closed：仅 `local`/`integration` 或显式
-  `KANGMIN_ALLOW_DEV_SESSION=1`（且非 `staging`/`production`）启用测试替身，
-  其余环境环境命令返回 `provider_unavailable`（退出码 6），绝不返回假数据。
-- **幂等表合并待后续**：患者侧 `idempotency_records` 与管理侧
-  `admin_idempotency` 两张表语义已统一（公共 runIdempotentCreate），
-  物理合并为 `command_idempotency` 留待迁移 0013 独立发布。
-- **account 数据导出/删除/停用与提醒通知明确未实现**（返回
-  `capability_unavailable`，不伪造成功）。
-- **开发会话不是生产身份**：dev:session / dev:admin-session 仅限本地
-  开发，生产模式拒绝。
-- 新代码不得导入 `legacy/` 业务模块（架构门禁强制）。
+## 已知限制与上线阻塞
+
+- **临床规则未冻结**：当前包为 `candidate`，正式患者分类与方案输出阻断；
+- **真实环境数据供应商未接入**：local/integration 使用测试替身；
+  staging/production 组合根检测到替身或不可用 Provider 时拒绝启动；
+- **正式身份未接入**：当前有本地账号/会话和开发会话，但没有完成生产身份
+  提供方与患者 Web 登录闭环；
+- **患者 Web 仍是 demo**：部分安全评估和账户 UI 尚未完整映射命令；
+- **方案浏览默认关闭**：即使后台存在方案，患者端也必须经过临床发布门禁；
+- **部分账号能力未定义完成**：数据导出、删除请求状态、停用、提醒与通知返回
+  `capability_unavailable`；
+- **生产不能回退**：缺 PostgreSQL、S3、AES 密钥、真实环境 Provider，或出现
+  开发会话/测试 Provider 配置时，staging/production 必须失败；
+- **SQLite 数据不会自动搬迁到 PostgreSQL**：上线迁移需单独设计、演练和授权。
+
+## 可核验源码入口
+
+- [`package.json`](package.json)：构建、测试与运行脚本
+- [`cli/kangmin.ts`](cli/kangmin.ts)：患者 CLI 帮助和命令解析
+- [`cli/kangmin-admin.ts`](cli/kangmin-admin.ts)：管理 CLI 帮助和命令解析
+- [`http/server.ts`](http/server.ts)：HTTP 路由、探针、限流与日志
+- [`app/composition-root.ts`](app/composition-root.ts)：患者组合根与生产门禁
+- [`app/admin-composition-root.ts`](app/admin-composition-root.ts)：管理组合根
+- [`kernel/protocol.ts`](kernel/protocol.ts)：远程命令协议
+- [`kernel/errors.ts`](kernel/errors.ts)：错误码、HTTP 状态和 CLI 退出码
+- [`modules/clinical-rules/rule-package.ts`](modules/clinical-rules/rule-package.ts)：规则包状态与来源
+- [`modules/agent/output-validation.ts`](modules/agent/output-validation.ts)：模型输出校验
+- [`scripts/architecture-check.mjs`](scripts/architecture-check.mjs)：依赖方向门禁
+- [`tests/`](tests/)：当前行为证据
+- [仓库 CI](../.github/workflows/ci.yml)
+- [患者 CLI 架构](../docs/plan/004_kangmin-patient-cli-design.md)
+- [管理 CLI 架构](../docs/plan/005_kangmin-admin-cli-design.md)
+
+`dist/`、`.local/`、`node_modules/` 和 `sbom.cyclonedx.json` 是生成或本地内容，
+不得编辑或提交。

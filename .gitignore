@@ -1,4 +1,4 @@
-# Dependencies and generated output
+# 依赖与生成物
 /node_modules/
 /dist/
 /.next/
@@ -9,24 +9,37 @@
 /legacy/.next/
 /legacy/.vinext/
 /legacy/.wrangler/
+/src/node_modules/
+/src/dist/
+/src/.local/
 /coverage/
 /out/
 /outputs/
 /work/
 
-# Local task worktrees
+# 本地任务与工具
 /.worktrees/
-
-# Local tooling binaries (e.g. MinIO for integration tests)
 /tools/
 
-# Environment and local credentials
+# 三个忽略区
+/_build/
+/_work/
+/_archive/*
+!/_archive/*-delisted/
+!/_archive/*-delisted/**
+
+# 私密客户资料与作者私区
+/vault/
+/docs/客户资料/
+/notes/
+/spce/
+/examples/
+
+# 环境、凭据与系统噪声
 .env
 .env.*
 !.env.example
 *.pem
-
-# OS and tool noise
 .DS_Store
 *.log
 npm-debug.log*
@@ -34,8 +47,5 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 next-env.d.ts
-
-# Private customer material stays local and is never published by default.
-/docs/客户资料/
-/spce/
-/examples/
+__pycache__/
+*.pyc

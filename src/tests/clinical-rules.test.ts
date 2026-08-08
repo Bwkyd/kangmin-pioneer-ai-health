@@ -65,7 +65,10 @@ test("规则包元数据：版本、candidate 状态与稳定哈希", () => {
   assert.equal(kernel.rulePackageVersion, "clinical-rules-draft-v0");
   assert.equal(kernel.rulePackageStatus, "candidate");
   assert.match(kernel.rulePackageHash, /^[0-9a-f]{64}$/u);
-  assert.equal(DRAFT_RULE_PACKAGE.sourceRefs.length, 3);
+  assert.deepEqual(DRAFT_RULE_PACKAGE.sourceRefs, [
+    "vault/truth/clinical/assessment-rules.md",
+    "vault/truth/clinical/care-plans.md"
+  ]);
 });
 
 test("高危输入逐项阻断：高热/出血/皮损/孕期/儿童/急救/神经症状", async () => {
