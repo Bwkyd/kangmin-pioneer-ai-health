@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+private_or_local_paths=()
+
+while IFS= read -r path; do
+  case "$path" in
+    _archive/*-delisted/*)
+      ;;
+    .env.example|*/.env.example)
+      ;;
+    vault/*|docs/客户资料/*|notes/*|spce/*|work/*|examples/*|_build/*|_work/*|_archive/*|.env|.env.*|*/.env|*/.env.*|*.pem)
+      private_or_local_paths+=("$path")
+      ;;
+  esac
+done < <(git diff --cached --name-only --diff-filter=ACMRD)
+
+if (( ${#private_or_local_paths[@]} > 0 )); then
+  echo "Commit blocked: private or local-only paths are staged." >&2
+  printf '  %s\n' "${private_or_local_paths[@]}" >&2
+  echo "Unstage the listed paths; only reviewed *-delisted archives are exempt." >&2
+  exit 1
+fi

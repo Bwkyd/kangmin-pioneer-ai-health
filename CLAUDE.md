@@ -1,4 +1,4 @@
-# AGENTS.md - 抗敏先锋AI鼻健康管理系统开发必读（kangmin）
+# CLAUDE.md - 抗敏先锋AI鼻健康管理系统开发必读（kangmin）
 
 > Agent 在本仓工作前必读：`state/board.md` + `state/memory/MEMORY.md`。
 > 只放最关键的决策与纪律；目录语义展开见 `meta/kangmin_directory-protocol.md`（v1.2，唯一现行版）。
