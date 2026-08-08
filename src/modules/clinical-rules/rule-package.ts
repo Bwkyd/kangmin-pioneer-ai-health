@@ -1,11 +1,10 @@
 /**
  * Draft 规则包：clinical-rules-draft-v0（status=candidate，未临床冻结）。
  *
- * 规则来源（只读客户资料，全部引用见 sourceRefs）：
- * - 过敏性鼻炎辩证分级诊断库：§1 前置通用规则（仅接诊鼻鼽）、§3 四型辨证判定
- *   （5 条决策树规则）、§4 ARIA 严重度 4 问、§5 鉴别排除、§6 高危兜底提示；
- * - 03-技术资料-鼻鼽辨治规律与决策树研究：决策树“口渴”为根节点的证型规律；
- * - 证型→基础方案映射表：证型-方法安全（肺经伏热禁灸助热、皮损禁刮痧拔罐）。
+ * 当前开发和验收采用的客户确认资料引用见 sourceRefs：
+ * - assessment-rules：前置规则、证型决策树及急性期/缓解期判定；
+ * - care-plans：急性期方案和各证型调体方案。
+ * 开发侧补充的高风险兜底规则属于程序安全约束，不冒充客户资料原文。
  *
  * 临床红线：本包 status=candidate，正式患者输出路径必须硬阻断；
  * draft 规则只允许出现在 `agent test run` 模拟链路。
@@ -22,9 +21,8 @@ export const DRAFT_PACKAGE_VERSION = "clinical-rules-draft-v0";
 export const DRAFT_PACKAGE_STATUS = "candidate" as const;
 
 export const SOURCE_REFS: string[] = [
-  "docs/客户资料/42md转换/过敏性鼻炎辩证分级诊断库(2).md",
-  "docs/客户资料/42md转换/03-技术资料-鼻鼽辨治规律与决策树研究.md",
-  "docs/客户资料/42md转换/证型→基础方案映射表(1).md"
+  "vault/truth/clinical/assessment-rules.md",
+  "vault/truth/clinical/care-plans.md"
 ];
 
 const SAFETY_RULES: readonly ClinicalRule[] = [
