@@ -3,6 +3,12 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 上下文初始化复核与遗留处理（2026-08-09 第十一轮 · 已提交，基线 `877cc6d`）
+> 复核 CLAUDE.md 上下文初始化：CLAUDE.md 引用的关键文件（board、MEMORY、目录协议、AGENTS、docs/README）全部存在，目录速查路径有效，`structure-lint.py` 通过，CLAUDE/AGENTS 除首行外一致，hooksPath 与 state/meta/skills 均已入库。
+> 处理三处遗留：① `.claude/skills/` 内为 42plugin 第三方个人技能（dev-database-design、meta-42cog，license 42plugin-personal），非项目自产技能（自产技能按 `skills/README.md` 归根目录 `skills/`），加入 `.gitignore` 忽略，避免每轮污染 git status；② board 补记 #175/#176 提交（本记录）；③ 第十轮板面"git reset 教训候选"落地为 `state/memory/20260809-git-reset-check.md` 首条项目记忆并登记 MEMORY.md。
+> 验证：`python3 scripts/structure-lint.py .`、CLAUDE/AGENTS 一致性、`git diff --check` 均通过。
+> 提交：`d92f823`（教训入库+gitignore）；本 board 补记由下一 commit 完成。
+
 > ## 🔧 手册治理修正与 work/ 归档（2026-08-08 第九轮 · 未提交，基线 `4ac5d69`）
 > 审查 CLAUDE.md 手册发现矛盾与遗漏：钩子保护未入库、`ALLOW_MAIN_PUSH=1` 紧急通道未写入手册、AGENTS/CLAUDE 双份无同步规则、目录速查漏 product/changes、缺 `npm run check`、"_archive/ 全忽略"表述不准。作者拍板三项：`.githooks/` 入库、保留紧急通道但限作者显式授权、双份文件强制同步。
 > `work/` 分流归档（作者确认）：`delivery-status.md` → `_work/20260805-cli-delivery-status/`、六轮 DB 评审 → `_work/20260731-db-design-review/`、6 张演示截图 → `_archive/20260804-demo-screenshots/`，根目录 `work/` 已删除（该目录在 .gitignore 中，删除不可从 Git 找回）。
