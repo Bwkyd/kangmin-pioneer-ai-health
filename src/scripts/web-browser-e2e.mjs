@@ -358,26 +358,33 @@ try {
     "不能替代门诊诊断"
   );
 
-  // ---- chat 底部输入接 agent exec（真对话）----
-  // dev 无模型 key：降级模式下助手回复为结构化问诊提问，并带固定
-  // system_notice 降级提示；conversationId 经 sessionStorage 持久化续聊。
+  // ---- chat：内核补问渲染为客户问卷原题选项卡（真实 exec 链路）----
+  // dev 无模型 key：自由文本无确定性命中时走模型提取（失败降级 notice），
+  // 内核按空事实先问安全字段，前端渲染"是/否/不清楚"选项卡；
+  // conversationId 经 sessionStorage 持久化续聊。
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   const chatInput = page.locator('input[aria-label="输入症状或问题"]');
   await chatInput.waitFor({ state: "visible" });
   await chatInput.fill("我最近鼻塞，晚上比较严重");
   await page.locator(".send-button").click();
   await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
-  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).first().waitFor({ state: "visible" });
+  await page.locator(".question-card").first().waitFor({ state: "visible" });
+  // 固定降级 notice（v4 客户可读文案：引导点击选项按钮，不暴露内部术语）。
   await expectText(page.getByTestId("chat-notice"), "未识别到您的回答");
   const conversationId = await page.evaluate(() =>
     sessionStorage.getItem("kangmin.agent.conversationId")
   );
   assert.ok(conversationId, "首轮发送后应持久化 conversationId");
 
-  // 续聊：携带同一 conversationId，助手回复仍出现且会话 id 不变。
+  // 选项卡点击发送稳定选项值（fieldCode=state）：首个安全字段选"否"后，
+  // 服务端确定性映射并继续问下一项，卡片随轮次切换。
+  await page.locator(".question-card-options button", { hasText: "否" }).first().click();
+  await page.locator(".question-card", { hasText: "您是否体温超过 39℃" }).waitFor({ state: "visible" });
+
+  // 续聊：携带同一 conversationId，第二轮降级 notice 出现且会话 id 不变。
   await chatInput.fill("还有打喷嚏和流清鼻涕");
   await page.locator(".send-button").click();
-  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).nth(1).waitFor({ state: "visible" });
+  await page.getByTestId("chat-notice").nth(1).waitFor({ state: "visible" });
   assert.equal(
     await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
     conversationId
@@ -390,7 +397,7 @@ try {
   await chatInput.waitFor({ state: "visible" });
   await chatInput.fill("症状早上更明显");
   await page.locator(".send-button").click();
-  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).first().waitFor({ state: "visible" });
+  await page.getByTestId("chat-notice").waitFor({ state: "visible" });
   assert.equal(
     await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
     conversationId
