@@ -547,5 +547,25 @@ export const PG_MIGRATIONS: PgMigration[] = [
       `ALTER TABLE patient_consents ALTER COLUMN id SET NOT NULL`,
       `CREATE UNIQUE INDEX patient_consents_id ON patient_consents(id)`
     ]
+  },
+  {
+    // 智能体设计 v4（与 SQLite 0011/0012 对齐，评审 P2-4/codex P0-3）：
+    // agent_decisions.stage CHECK 加 screening/phase + phase_code/audience/
+    // rule_package_status 列（全可空回滚兼容）；agent_plans 加
+    // phase_code/audience 列（期别×人群双方案查询）。
+    version: "0004_agent_v4_stages",
+    statements: [
+      `ALTER TABLE agent_decisions
+       DROP CONSTRAINT agent_decisions_stage_check`,
+      `ALTER TABLE agent_decisions
+       ADD CONSTRAINT agent_decisions_stage_check
+       CHECK(stage IN ('safety', 'screening', 'phase', 'applicability',
+                       'severity', 'syndrome', 'plan_safety', 'completed'))`,
+      `ALTER TABLE agent_decisions ADD COLUMN phase_code TEXT`,
+      `ALTER TABLE agent_decisions ADD COLUMN audience TEXT`,
+      `ALTER TABLE agent_decisions ADD COLUMN rule_package_status TEXT`,
+      `ALTER TABLE agent_plans ADD COLUMN phase_code TEXT`,
+      `ALTER TABLE agent_plans ADD COLUMN audience TEXT`
+    ]
   }
 ];
