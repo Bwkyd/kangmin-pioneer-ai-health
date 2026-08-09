@@ -35,6 +35,9 @@
 /spce/
 /examples/
 
+# Claude Code 第三方插件技能（42plugin 安装，非项目自产）
+.claude/skills/
+
 # 环境、凭据与系统噪声
 .env
 .env.*
