@@ -13,6 +13,14 @@ import { createKangminHttpServer } from "../dist/http/server.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
+// 浏览器全链路会在同一进程内集中执行大量真实命令。单独提高测试实例额度，
+// 避免用例规模增长后误触生产默认限流；限流行为由 http-ops.e2e 独立验证。
+const browserE2eRateLimits = {
+  strictPerWindow: 1_000,
+  commandsPerWindow: 1_000,
+  uploadPerWindow: 1_000
+};
+
 const adminCli = fileURLToPath(
   new URL("../dist/cli/kangmin-admin.js", import.meta.url)
 );
@@ -87,7 +95,8 @@ let server = createKangminHttpServer(application, {
   appEnvironment: "integration",
   allowDevelopmentSession: true,
   adminApplication: adminOps.application,
-  adminObjectStorage: adminOps.objectStorage
+  adminObjectStorage: adminOps.objectStorage,
+  rateLimits: browserE2eRateLimits
 });
 let origin = await listen(server);
 const browser = await chromium.launch({ headless: true });
@@ -277,7 +286,8 @@ try {
     appEnvironment: "integration",
     allowDevelopmentSession: true,
     adminApplication: adminOps.application,
-    adminObjectStorage: adminOps.objectStorage
+    adminObjectStorage: adminOps.objectStorage,
+    rateLimits: browserE2eRateLimits
   });
   origin = await listen(server);
 
