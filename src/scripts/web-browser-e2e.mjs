@@ -473,6 +473,48 @@ try {
     conversationId
   );
 
+  // 客户六步树真实 UI 路径：Q10B → Q8C → Q6B → Q9B，必须按序显示
+  // 原题选项，并在 Q9B 立即判为肺气虚寒（不得误入肾阳不足）。
+  await page.getByTestId("chat-new").click();
+  await chatInput.fill(
+    "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 确诊过敏性鼻炎：是 未满12周岁：否"
+  );
+  await page.locator(".send-button").click();
+  await page.locator(".question-card", { hasText: "您打喷嚏的情况是" }).waitFor({ state: "visible" });
+  await page.locator(".question-card-options button", { hasText: "基本不打喷嚏" }).click();
+  await page.locator(".question-card", { hasText: "感冒样表现" }).waitFor({ state: "visible" });
+  await chatInput.fill("感冒样表现：否 鼻窦炎样表现：否");
+  await page.locator(".send-button").click();
+  await page.locator(".question-card", { hasText: "影响您的夜间睡眠质量" }).waitFor({ state: "visible" });
+  await chatInput.fill("影响睡眠：否 影响日常活动：否 影响工作学习：否 难以忍受：否");
+  await page.locator(".send-button").click();
+
+  await page.locator(".question-card", { hasText: "口干、想喝水" }).waitFor({ state: "visible" });
+  await page.locator(".question-card-options button", { hasText: "偶尔口干" }).click();
+  await page.locator(".question-card", { hasText: "疲倦、没力气" }).waitFor({ state: "visible" });
+  await page.locator(".question-card-options button", { hasText: "没有" }).click();
+  await page.locator(".question-card", { hasText: "怕风、怕冷" }).waitFor({ state: "visible" });
+  await page.locator(".question-card-options button", { hasText: "稍微有一点" }).click();
+  const q9Card = page.locator(".question-card", { hasText: "手脚是否经常冰凉" });
+  await q9Card.waitFor({ state: "visible" });
+  await q9Card.locator("button", { hasText: "天气冷的时候会凉" }).click();
+  await q9Card.waitFor({ state: "hidden" });
+  const sixStepResult = page.locator(".result-card", { hasText: "肺气虚寒" });
+  await sixStepResult.waitFor({ state: "visible" });
+  await page.locator(".conversation-ended").waitFor({ state: "visible" });
+  assert.match((await sixStepResult.textContent()) ?? "", /肺气虚寒/u);
+
+  // 刷新会先回首页；再次进入问助手时，历史消息已提前恢复，仍必须主动滚到
+  // 最新结果，不能停留在首轮安全题让患者误以为结果丢失。
+  await page.reload();
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  await page.locator(".result-card", { hasText: "肺气虚寒" }).waitFor({ state: "visible" });
+  await page.waitForFunction(() => {
+    const chat = document.querySelector(".chat");
+    return chat instanceof HTMLElement &&
+      chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 2;
+  });
+
   // ---- 管理 Web：真实账号、HttpOnly 会话、文章发布闭环、知识上传 ----
   const adminPage = await context.newPage();
   await adminPage.goto(`${origin}/admin`);

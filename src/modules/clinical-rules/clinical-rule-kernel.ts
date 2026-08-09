@@ -21,6 +21,7 @@ import type {
 } from "./contracts.js";
 import type { ClinicalRule, FactEntry, FactMap, RulePackage } from "./domain.js";
 import { evaluateRules } from "./domain.js";
+import { evaluateSyndromeDecisionTree } from "./syndrome-decision-tree.js";
 
 /** 单次裁决的补问上限（智能体设计 v4：逐题一问，多选题保真）。 */
 export const MAX_NEXT_QUESTIONS = 1;
@@ -170,7 +171,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
           }
         ]);
 
-        // 决策凭证需要跨阶段累积命中规则（如 ["SEV-05","T1a"]）。
+        // 决策凭证需要跨阶段累积命中规则（如 ["SEV-05","SDT-01-A"]）。
         const allMatched = [...severity.matchedRuleIds, ...syndrome.matchedRuleIds];
         const plan = await this.evaluatePlanSafety(withSyndrome, allMatched);
         if (plan !== null) {
@@ -387,6 +388,38 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     source: MapFactSource,
     severityCode: SeverityCode | null
   ): ClinicalVerdict | null {
+    if (this.pack.syndromeStrategy === "ordered_six_step") {
+      const result = evaluateSyndromeDecisionTree(source);
+      if (result.kind === "need_answer") {
+        return this.needMoreVerdict(
+          source,
+          "syndrome",
+          [result.question],
+          severityCode
+        );
+      }
+      if (result.kind === "invalid_answer") {
+        return this.verdict(
+          source,
+          "conflict",
+          "syndrome",
+          [],
+          "证型问卷答案与当前节点不兼容，请重新开始评估。",
+          severityCode,
+          null
+        );
+      }
+      return this.verdict(
+        source,
+        "classified",
+        "syndrome",
+        [result.leaf.ruleId],
+        result.leaf.message,
+        severityCode,
+        result.leaf.syndromeCode
+      );
+    }
+
     const report = evaluateRules(this.stageRules("syndrome"), source);
     const codes = [...new Set(report.matched.map((rule) => rule.code).filter(Boolean))];
 

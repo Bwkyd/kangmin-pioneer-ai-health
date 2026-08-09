@@ -35,7 +35,7 @@ export type RuleCondition =
   | CountCondition;
 
 export interface ClinicalRule {
-  /** 稳定规则 ID，如 SAF-02、SEV-01、T3。 */
+  /** 稳定规则 ID，如 SAF-02、SEV-01、SDT-04-B。 */
   id: string;
   stage: StageName;
   /** 命中时的裁决结果。 */
@@ -58,6 +58,8 @@ export interface RulePackage {
   sourceRefs: string[];
   rules: readonly ClinicalRule[];
   planSafetyRules: readonly ClinicalRule[];
+  /** 证型阶段使用客户确认的有序六步状态机；缺省时兼容通用规则评估。 */
+  syndromeStrategy?: "ordered_six_step" | undefined;
   /** 规则包内容哈希（加载时计算，不可人工维护）。 */
   checksum: string;
 }
@@ -87,7 +89,13 @@ export const FIELD_LABELS: Record<string, string> = {
   fear_wind: "怕风",
   cold_intolerance: "形寒肢冷",
   diagnosed_confirmed: "确诊过敏性鼻炎",
-  heat_imbalance: "怕热"
+  heat_imbalance: "怕热",
+  step1_q10: "第1步口干",
+  step2_q8: "第2步疲倦",
+  step3_q6: "第3步怕风怕冷",
+  step4_q9: "第4步手脚冰凉",
+  step5_q8_confirm: "第5步疲倦二次确认",
+  step6_q10_confirm: "第6步口干二次确认"
 };
 
 /** 严重度代码的固定中文标签。 */

@@ -1,5 +1,5 @@
-// 评估链路基准测试（智能体 v4）：真实 CLI 进程逐场景完整对话，断言证型/期别/人群/阻断。
-// 覆盖：七规则全路径（T1a/T1b/T2a/T2b/T3/T4/T5）+ no_match 兜底 +
+// 评估链路基准测试（clinical-rules-v2）：真实 CLI 进程逐场景完整对话。
+// 覆盖：客户六步树五类叶子与关键 B/C 分支 +
 // 期别（急性/缓解）+ 人群（成人/儿童）+ 边界（确诊转介/安全阻断/感冒鉴别）。
 // 用法：KANGMIN_ALLOW_DEV_SESSION=1 node scripts/benchmark-assessment.mjs <已 seed 的库>
 import { execFileSync } from "node:child_process";
@@ -23,52 +23,52 @@ const SEVERITY_NO = ["影响睡眠：否", "影响日常活动：否", "影响�
 
 const SCENARIOS = [
   {
-    id: "S1-t1a",
-    name: "肺经伏热·成人·急性（T1a：口渴+无热象）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=A", "q11=C"],
+    id: "S1-step1-a",
+    name: "肺经伏热·成人·急性（第1步 Q10A 立即结束）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=A"],
     expect: { outcome: "classified", phase: "急性发作期", syndrome: "肺经伏热" }
   },
   {
-    id: "S2-t1b",
-    name: "肺经伏热·成人·急性（T1b：口渴+怕热+无寒象）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=A", "q11=B", "q6=C", "q9=C"],
-    expect: { outcome: "classified", phase: "急性发作期", syndrome: "肺经伏热" }
+    id: "S2-step2-a",
+    name: "脾气虚弱·成人·急性（Q10B 后 Q8A）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=B", "q8=A"],
+    expect: { outcome: "classified", phase: "急性发作期", syndrome: "脾气虚弱" }
   },
   {
-    id: "S3-t2a",
-    name: "脾气虚弱·成人·缓解（T2a：疲倦+不渴+无热象）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q8=A", "q10=C", "q11=C"],
-    expect: { outcome: "classified", phase: "缓解期", syndrome: "脾气虚弱" }
+    id: "S3-step2-a-child",
+    name: "脾气虚弱·儿童·缓解（Q10C 后 Q8A）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：是", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=C", "q8=A"],
+    expect: { outcome: "classified", phase: "缓解期", syndrome: "脾气虚弱", child: true }
   },
   {
-    id: "S4-t2b",
-    name: "脾气虚弱·儿童·急性（T2b：疲倦+不渴+怕热+无寒象）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：是", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q8=A", "q10=C", "q11=B", "q6=C", "q9=C"],
-    expect: { outcome: "classified", phase: "急性发作期", syndrome: "脾气虚弱", child: true }
+    id: "S4-step4-b",
+    name: "肺气虚寒·成人·急性（Q9B 必须结束）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=B", "q8=B", "q6=A", "q9=B"],
+    expect: { outcome: "classified", phase: "急性发作期", syndrome: "肺气虚寒" }
   },
   {
-    id: "S5-t3",
-    name: "肺气虚寒·成人·缓解（T3：无四肢凉+无疲倦+不渴+无热象）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q9=C", "q8=C", "q10=C", "q11=C"],
+    id: "S5-step4-c",
+    name: "肺气虚寒·成人·缓解（Q9C 必须结束）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=C", "q8=C", "q6=C", "q9=C"],
     expect: { outcome: "classified", phase: "缓解期", syndrome: "肺气虚寒" }
   },
   {
-    id: "S6-t4",
-    name: "肾阳不足·成人·缓解（T4：四肢凉+无疲倦+不渴+无热象）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q9=A", "q8=C", "q10=C", "q11=C"],
+    id: "S6-step5-a",
+    name: "肾阳不足·成人·缓解（第5步 Q8A）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=B", "q8=B", "q6=B", "q9=A", "q8=A"],
     expect: { outcome: "classified", phase: "缓解期", syndrome: "肾阳不足" }
   },
   {
-    id: "S7-t5",
-    name: "寒热错杂·成人·急性（T5：怕热+怕风）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=A", "q11=B", "q6=B"],
+    id: "S7-step6-a",
+    name: "寒热错杂·成人·急性（第6步 Q10A）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=C", "q8=C", "q6=A", "q9=A", "q8=B", "q10=A"],
     expect: { outcome: "classified", phase: "急性发作期", syndrome: "寒热错杂" }
   },
   {
-    id: "S8-nomatch",
-    name: "no_match 兜底·成人·急性（怕热单独）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=C", "q11=B", "q6=C", "q9=C", "q8=C"],
-    expect: { outcome: "no_match", syndrome: null }
+    id: "S8-step6-b",
+    name: "肾阳不足·成人·急性（第6步 Q10B）",
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=B", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=B", "q8=C", "q6=C", "q9=A", "q8=C", "q10=B"],
+    expect: { outcome: "classified", phase: "急性发作期", syndrome: "肾阳不足" }
   },
   {
     id: "S9-diagnosed-no",
@@ -91,7 +91,7 @@ const SCENARIOS = [
   {
     id: "S12-remission-card",
     name: "缓解期结果卡完整（S5 同路径，断言模板）",
-    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q9=C", "q8=C", "q10=C", "q11=C"],
+    turns: [...SAFETY_NO, DIAGNOSED_YES, "未满12周岁：否", "q1=C", "感冒样表现：否", "鼻窦炎样表现：否", ...SEVERITY_NO, "q10=C", "q8=C", "q6=C", "q9=C"],
     expect: { outcome: "classified", phase: "缓解期", syndrome: "肺气虚寒", card: true }
   }
 ];
@@ -123,7 +123,13 @@ for (const scenario of SCENARIOS) {
       break;
     }
   }
-  if (earlyClosed) continue;
+  if (earlyClosed) {
+    if (last?.closed === true) {
+      fail += 1;
+      failures.push(`${scenario.id}: 在预期终点前提前结束`);
+    }
+    continue;
+  }
 
   const v = last.verdict ?? {};
   const content = last.message?.content ?? "";

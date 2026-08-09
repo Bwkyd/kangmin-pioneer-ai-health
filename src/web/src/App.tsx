@@ -11,6 +11,7 @@ import {
 } from "./agent";
 import { CommandError } from "./command-client";
 import { FIELD_TO_QUESTION } from "../../modules/agent/option-mapping";
+import { patientVisibleMessage } from "../../modules/agent/patient-visible-message";
 import DiscoverView from "./DiscoverView";
 import {
   AllergenExposure,
@@ -246,7 +247,13 @@ function restoredMessages(detail: AgentConversationDetail): Message[] {
         const result = message.content.includes("【急性发作期】") || message.content.includes("【缓解期】");
         return { id: message.id, role: "ai", kind: result ? "result" : "text", text: message.content };
       }
-      return { id: message.id, role: "user", kind: "text", text: message.content };
+      return {
+        id: message.id,
+        role: "user",
+        kind: "text",
+        // 兼容修复前已保存的内部协议载荷，历史对话不再显示 fieldCode=state。
+        text: patientVisibleMessage(message.content)
+      };
     })
   ];
 }
@@ -548,8 +555,9 @@ export default function App() {
   }, [historyOpen, historyReload, previewConsentStatus]);
 
   useEffect(() => {
+    if (tab !== "chat") return;
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, tab]);
 
   useEffect(() => {
     const canvas = chartRef.current;

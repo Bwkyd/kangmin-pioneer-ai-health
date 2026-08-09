@@ -130,6 +130,43 @@ async function exec(
   );
 }
 
+async function advanceToSyndrome(
+  application: ReturnType<typeof createApplication>,
+  token?: string
+): Promise<ConversationTurnResult> {
+  let turn = await exec(
+    application,
+    {
+      message:
+        "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 确诊过敏性鼻炎：是 未满12周岁：否"
+    },
+    token
+  );
+  turn = await exec(
+    application,
+    { message: "q1=C", conversationId: turn.conversationId },
+    token
+  );
+  turn = await exec(
+    application,
+    {
+      message: "感冒样表现：否 鼻窦炎样表现：否",
+      conversationId: turn.conversationId
+    },
+    token
+  );
+  turn = await exec(
+    application,
+    {
+      message: "影响睡眠：否 影响日常活动：否 影响工作学习：否 难以忍受：否",
+      conversationId: turn.conversationId
+    },
+    token
+  );
+  assert.equal(turn.verdict?.nextQuestions[0]?.fieldCode, "step1_q10");
+  return turn;
+}
+
 test("未登录一次性体验：匿名对话保留期内可凭 ID 续接、不保存、不可列出", async () => {
   const { application } = await fixture();
   try {
@@ -202,6 +239,141 @@ test("决策序号每会话独立从 1 连续递增，不与消息序号混用�
     assert.ok(show.lastDecision.nextQuestions.length > 0);
   } finally {
     application.close();
+  }
+});
+
+test("按钮内部载荷保存为患者可读中文，历史对话不显示字段编码", async () => {
+  const { application } = await fixture();
+  try {
+    const token =
+      (await application.sessions.createDevelopmentSession("conv-visible-answer")).token;
+    const first = await exec(application, { message: "我想了解我的鼻炎情况" }, token);
+    await exec(
+      application,
+      { message: "urgent_help=no", conversationId: first.conversationId },
+      token
+    );
+
+    const show = dataOf<{ messages: Array<{ role: string; content: string }> }>(
+      await application.execute({
+        command: "agent conversations show",
+        input: { id: first.conversationId },
+        sessionToken: token
+      })
+    );
+    const answers = show.messages.filter((message) => message.role === "user");
+    assert.equal(answers[1]?.content, "急救：否");
+    assert.equal(show.messages.some((message) => message.content.includes("urgent_help=no")), false);
+  } finally {
+    application.close();
+  }
+});
+
+test("六步树 E2E：严格逐节点推进、二次确认独立入库并得到寒热错杂", async () => {
+  const { application, databasePath } = await fixture();
+  const token =
+    (await application.sessions.createDevelopmentSession("conv-six-step")).token;
+  let turn = await advanceToSyndrome(application, token);
+  const steps: Array<[string, string]> = [
+    ["q10=B", "step2_q8"],
+    ["q8=C", "step3_q6"],
+    ["q6=B", "step4_q9"],
+    ["q9=A", "step5_q8_confirm"],
+    ["q8=B", "step6_q10_confirm"]
+  ];
+  try {
+    for (const [message, expectedNext] of steps) {
+      turn = await exec(
+        application,
+        { message, conversationId: turn.conversationId },
+        token
+      );
+      assert.equal(turn.closed, false, message);
+      assert.equal(turn.verdict?.nextQuestions[0]?.fieldCode, expectedNext, message);
+    }
+    turn = await exec(
+      application,
+      { message: "q10=A", conversationId: turn.conversationId },
+      token
+    );
+    assert.equal(turn.closed, true);
+    assert.equal(turn.verdict?.outcome, "classified");
+    assert.equal(turn.verdict?.syndromeCode, "COLD_HEAT_COMPLEX");
+    assert.ok(turn.message?.content.includes("寒热错杂"));
+
+    const show = dataOf<{ messages: Array<{ role: string; content: string }> }>(
+      await application.execute({
+        command: "agent conversations show",
+        input: { id: turn.conversationId },
+        sessionToken: token
+      })
+    );
+    assert.equal(
+      show.messages.some((message) => /q(?:6|8|9|10)=[A-C]/u.test(message.content)),
+      false
+    );
+  } finally {
+    application.close();
+  }
+
+  const database = new KangminDatabase(databasePath);
+  try {
+    const rows = database.connection
+      .prepare(
+        `SELECT field_code, value, fact_value
+         FROM agent_confirmed_answers
+         WHERE field_code LIKE 'step%'
+         ORDER BY confirmed_at, field_code`
+      )
+      .all() as Array<{ field_code: string; value: string; fact_value: string }>;
+    assert.equal(rows.length, 6);
+    assert.deepEqual(
+      new Map(rows.map((row) => [row.field_code, [row.value, row.fact_value]])),
+      new Map([
+        ["step1_q10", ["value", "B"]],
+        ["step2_q8", ["value", "C"]],
+        ["step3_q6", ["value", "B"]],
+        ["step4_q9", ["value", "A"]],
+        ["step5_q8_confirm", ["value", "B"]],
+        ["step6_q10_confirm", ["value", "A"]]
+      ])
+    );
+  } finally {
+    database.close();
+  }
+});
+
+test("旧规则未完成会话不能混入六步树继续", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-rule-upgrade-"));
+  const databasePath = join(directory, "upgrade.sqlite");
+  const legacy = createApplication(databasePath, {
+    extraction: new FixedExtraction([]),
+    explanation: new NullExplanation(),
+    rulePackage: {
+      ...DRAFT_RULE_PACKAGE,
+      version: "clinical-rules-v1-legacy",
+      checksum: "legacy-rule-package-hash"
+    }
+  });
+  const first = await exec(legacy, { message: "开始旧评估" });
+  legacy.close();
+
+  const current = createApplication(databasePath, {
+    extraction: new FixedExtraction([]),
+    explanation: new NullExplanation()
+  });
+  try {
+    const result = await current.execute({
+      command: "agent exec",
+      input: { message: "急救：否", conversationId: first.conversationId }
+    });
+    assert.equal(result.ok, false);
+    if (!result.ok) {
+      assert.equal(result.error.code, "protocol_incompatible");
+      assert.match(result.error.message, /新建对话/u);
+    }
+  } finally {
+    current.close();
   }
 });
 
@@ -428,7 +600,7 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
     assert.equal(turn.verdict?.stage, null);
 
     turn = await exec(application, {
-      message: "口渴：是 怕热：否 四肢不温：否 倦怠乏力：否",
+      message: "q10=A",
       conversationId: turn.conversationId
     });
     // 裁决为 classified（轻度 + 肺经伏热）……

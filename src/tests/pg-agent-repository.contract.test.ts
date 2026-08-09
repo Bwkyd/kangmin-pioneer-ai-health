@@ -469,6 +469,37 @@ contractTest("setConfirmedAnswer：同字段重复写为 upsert（幂等重放�
   assert.equal(urgent?.revision, 2);
 });
 
+contractTest("六步树节点答案：同题首次与二次确认可独立保存 A/B/C", async (database) => {
+  const repository = new PgConversationRepository(database);
+  const session = sessionFixture("c-conv-six-step");
+  await repository.createSession(session);
+
+  for (const [fieldCode, factValue] of [
+    ["step1_q10", "B"],
+    ["step2_q8", "C"],
+    ["step5_q8_confirm", "B"],
+    ["step6_q10_confirm", "A"]
+  ] as const) {
+    await repository.setConfirmedAnswer({
+      ...answerFixture(session.id, fieldCode, 1),
+      factValue,
+      rulePackageVersion: "clinical-rules-v2"
+    });
+  }
+
+  const answers = await repository.listConfirmedAnswers(session.id);
+  assert.equal(answers.length, 4);
+  assert.deepEqual(
+    new Map(answers.map((answer) => [answer.fieldCode, answer.factValue])),
+    new Map([
+      ["step1_q10", "B"],
+      ["step2_q8", "C"],
+      ["step5_q8_confirm", "B"],
+      ["step6_q10_confirm", "A"]
+    ])
+  );
+});
+
 contractTest("候选：listCandidates 按 created_at 升序，markCandidateDecided 落定状态", async (database) => {
   const repository = new PgConversationRepository(database);
   const session = sessionFixture("c-conv-cand-1");

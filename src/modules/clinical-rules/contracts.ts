@@ -70,7 +70,7 @@ export interface ClinicalVerdict {
   /** 本轮全部待补问字段（未截断）。截断只影响本轮展示数量，不影响
    *  fail-closed 进展判定——进展判定必须基于全集（评审 P1 kimi P1-6）。 */
   allQuestions: NextQuestion[];
-  /** 命中的规则 ID，如 ["SAF-02"]、["SEV-01","T3"]。 */
+  /** 命中的规则 ID，如 ["SAF-02"]、["SEV-01","SDT-04-B"]。 */
   matchedRuleIds: string[];
   /** 命中的固定阻断/转介文案（blocked/non_applicable 时有值）。 */
   message: string | null;
