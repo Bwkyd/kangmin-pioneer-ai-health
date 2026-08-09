@@ -9,4 +9,4 @@ metadata:
 
 **Why:** 2026-08-09 开发轮先按 board 旧记录假设部署目标，ssh 验证时发现 /opt/cezhang、kangmin-pioneer 都是别的东西；kangmin-cli 的 releases 按 commit hash 命名（4ac5d69/cc79ac5）才暴露真实部署路径。
 
-**How to apply:** 部署前 ssh 只读验证：`systemctl cat <服务名>` 看 ExecStart/WorkingDirectory/EnvironmentFile → 与本地项目 package.json scripts/结构比对 → 确认数据库路径与备份惯例（`data/backups/*-before-<sha>.sqlite`）→ 再构建打包。macOS 打包注意：bsdtar 无 `--transform` 用 `-s`；打包目录前排除 `.env.local`/`.DS_Store` 等敏感与噪音文件。
+**How to apply:** 部署前 ssh 只读验证：先从已成功的部署记录/终端会话反查“主机 + 用户 + 密钥指纹”组合，不凭私钥文件名推断适用主机；再用 `systemctl cat <服务名>` 看 ExecStart/WorkingDirectory/EnvironmentFile → 与本地项目 package.json scripts/结构比对 → 确认数据库路径与备份惯例（`data/backups/*-before-<sha>.sqlite`）→ 再构建打包。macOS 打包注意：bsdtar 无 `--transform` 用 `-s`；打包目录前排除 `.env.local`/`.DS_Store` 等敏感与噪音文件。
