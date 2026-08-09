@@ -16,7 +16,8 @@
 import type {
   ClinicalVerdict,
   ConfirmedFact,
-  NextQuestion
+  NextQuestion,
+  PlanBundle
 } from "../clinical-rules/contracts.js";
 
 export type ConversationState = "active" | "completed" | "abandoned";
@@ -110,6 +111,12 @@ export interface DecisionRow {
   stage: string;
   severityCode: string | null;
   syndromeCode: string | null;
+  /** 期别（Q1 派生）；智能体设计 v4 决策凭证。 */
+  phaseCode: "acute" | "remission" | null;
+  /** 人群（screening 派生）：child/adult。 */
+  audience: "child" | "adult" | null;
+  /** 决策时规则包状态（candidate/approved），供历史决策回溯解封判定。 */
+  rulePackageStatus: "candidate" | "approved" | null;
   nextQuestionsJson: string;
   matchedRuleIdsJson: string;
   rulePackageVersion: string;
@@ -167,11 +174,15 @@ export interface ConversationTurnResult {
     stage: string | null;
     severityCode: string | null;
     syndromeCode: string | null;
+    phaseCode: "acute" | "remission" | null;
+    audience: "child" | "adult" | null;
     nextQuestions: NextQuestion[];
     matchedRuleIds: string[];
     rulePackageVersion: string;
     rulePackageHash: string;
     rulePackageStatus: string;
+    /** 双方案包永不进患者侧（评审 P0-8：只从消息内容渲染）。 */
+    planBundle: PlanBundle | null;
   } | null;
   proposedCandidates: ProposedCandidateView[];
   /** 匿名会话被已登录患者继续时：必须再次确认保存，不能自动绑定。 */
@@ -197,6 +208,8 @@ export interface DecisionSummary {
   stage: string | null;
   severityCode: string | null;
   syndromeCode: string | null;
+  phaseCode: "acute" | "remission" | null;
+  audience: "child" | "adult" | null;
   matchedRuleIds: string[];
   rulePackageVersion: string;
   planId: string | null;

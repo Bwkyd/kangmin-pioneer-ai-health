@@ -136,6 +136,8 @@ function makePlanRow(id: string, overrides: Partial<PlanRow> = {}): PlanRow {
     id,
     name: `方案-${id}`,
     syndrome: "FEI_QI_XU_HAN",
+    phaseCode: null,
+    audience: null,
     method: "温肺散寒",
     stepsJson: JSON.stringify(["第一步", "第二步"]),
     precautions: "注意保暖",

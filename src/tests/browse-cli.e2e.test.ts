@@ -117,20 +117,22 @@ test("未登录真实 CLI：browse 全部只读命令成功执行", () => {
   assert.equal(listBody.ok, true);
   assert.deepEqual(listBody.data.items.map((item) => item.id), ["article-public"]);
 
-  // 评审 R2 P1 双门禁：临床规则包未冻结（candidate）时，管理端启用的
-  // 方案（status='enabled'）对患者浏览也不可见——list 为空、show 为
-  // resource_not_found、搜索不含方案。
+  // 评审 R2 P1 双门禁（P1-12 同源派生）：clinical-rules-v1 已冻结
+  // （approved），管理端启用（status='enabled'）的方案对患者浏览可见；
+  // 管理端门禁独立生效——draft 方案仍不可见、搜索含已启用方案。
   const plans = run(["browse", "plan", "list", "--json"], environment);
   assert.equal(plans.status, 0, plans.stderr);
   const plansBody = parseJson<{ items: Array<{ id: string }> }>(plans);
-  assert.deepEqual(plansBody.data.items, []);
+  assert.deepEqual(
+    plansBody.data.items.map((item) => item.id),
+    ["plan-published"]
+  );
 
   const planShow = run(
     ["browse", "plan", "show", "plan-published", "--json"],
     environment
   );
-  assert.equal(planShow.status, 3);
-  assert.equal(parseJson(planShow).error.code, "resource_not_found");
+  assert.equal(planShow.status, 0, planShow.stderr);
 
   const hiddenPlan = run(
     ["browse", "plan", "show", "plan-draft", "--json"],
@@ -149,7 +151,10 @@ test("未登录真实 CLI：browse 全部只读命令成功执行", () => {
     plans: Array<{ id: string }>;
   }>(search);
   assert.deepEqual(searchBody.data.videos.map((item) => item.id), ["video-public"]);
-  assert.deepEqual(searchBody.data.plans, []);
+  assert.deepEqual(
+    searchBody.data.plans.map((item) => item.id),
+    ["plan-published"]
+  );
 
   const home = run(["browse", "--json"], environment);
   assert.equal(home.status, 0, home.stderr);
@@ -165,11 +170,13 @@ test("未登录真实 CLI：browse 全部只读命令成功执行", () => {
   assert.equal(paginatedBody.data.limit, 5);
 });
 
-test("真实 CLI：门禁打开后 browse plan show 透出临床字段（issue-151）", () => {
+test("真实 CLI：规则包已冻结（approved）browse plan show 透出临床字段（issue-151）", () => {
   const { databasePath } = fixture();
+  // 门禁与规则包状态同源（评审 P1-12）：冻结包 approved 即放开，
+  // 不再需要 KANGMIN_PLAN_BROWSE_ENABLED 环境变量。
   const shown = run(
     ["browse", "plan", "show", "plan-published", "--json"],
-    { KANGMIN_DB_PATH: databasePath, KANGMIN_PLAN_BROWSE_ENABLED: "1" }
+    { KANGMIN_DB_PATH: databasePath }
   );
   assert.equal(shown.status, 0, shown.stderr);
   const body = parseJson<{

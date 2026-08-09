@@ -303,10 +303,11 @@ export class SqliteConversationRepository implements ConversationRepository {
             id, session_id, decision_sequence, session_revision,
             input_snapshot_encrypted, input_snapshot_hash,
             outcome, stage, severity_code, syndrome_code,
+            phase_code, audience, rule_package_status,
             next_questions_json, matched_rule_ids_json,
             rule_package_version, rule_package_hash,
             plan_id, plan_revision, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           decision.id,
@@ -319,6 +320,9 @@ export class SqliteConversationRepository implements ConversationRepository {
           decision.stage,
           decision.severityCode,
           decision.syndromeCode,
+          decision.phaseCode,
+          decision.audience,
+          decision.rulePackageStatus,
           decision.nextQuestionsJson,
           decision.matchedRuleIdsJson,
           decision.rulePackageVersion,
@@ -509,10 +513,11 @@ export class SqliteConversationRepository implements ConversationRepository {
           INSERT INTO agent_decisions(
             id, session_id, decision_sequence, session_revision,
             input_snapshot_encrypted, input_snapshot_hash, outcome, stage,
-            severity_code, syndrome_code, next_questions_json,
+            severity_code, syndrome_code, phase_code, audience,
+            rule_package_status, next_questions_json,
             matched_rule_ids_json, rule_package_version, rule_package_hash,
             plan_id, plan_revision, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           decision.id,
@@ -525,6 +530,9 @@ export class SqliteConversationRepository implements ConversationRepository {
           decision.stage,
           decision.severityCode,
           decision.syndromeCode,
+          decision.phaseCode,
+          decision.audience,
+          decision.rulePackageStatus,
           decision.nextQuestionsJson,
           decision.matchedRuleIdsJson,
           decision.rulePackageVersion,
@@ -553,6 +561,9 @@ export class SqliteConversationRepository implements ConversationRepository {
       stage: string;
       severity_code: string | null;
       syndrome_code: string | null;
+      phase_code: string | null;
+      audience: string | null;
+      rule_package_status: string | null;
       next_questions_json: string;
       matched_rule_ids_json: string;
       rule_package_version: string;
@@ -572,6 +583,10 @@ export class SqliteConversationRepository implements ConversationRepository {
       stage: row.stage,
       severityCode: row.severity_code,
       syndromeCode: row.syndrome_code,
+      phaseCode: (row.phase_code as "acute" | "remission" | null) ?? null,
+      audience: (row.audience as "child" | "adult" | null) ?? null,
+      rulePackageStatus:
+        (row.rule_package_status as "candidate" | "approved" | null) ?? null,
       nextQuestionsJson: row.next_questions_json,
       matchedRuleIdsJson: row.matched_rule_ids_json,
       rulePackageVersion: row.rule_package_version,

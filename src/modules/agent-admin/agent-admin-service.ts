@@ -37,8 +37,7 @@ import type {
 } from "./contracts.js";
 import type {
   KnowledgeStatus,
-  PlanStatus,
-  SyndromeMeta
+  PlanStatus
 } from "./domain.js";
 import type { SyndromeRegistryPort } from "./agent-admin-ports.js";
 
@@ -56,6 +55,14 @@ const MODEL_DEFAULTS = {
   retrievalCount: 3,
   explanationEnabled: true
 };
+
+/**
+ * 急性期方案在 syndrome 列的约定值（agent_plans.phase_code='acute' 的
+ * 伴生标记，双方案注册表按 phase_code 而非 syndrome 查询急性期方案）。
+ * 它不是固定证型，不得写入 FIXED_SYNDROMES；管理端生命周期校验需放行
+ * 此单值例外（评审 P1-7），其余证型仍必须命中固定证型白名单。
+ */
+const ACUTE_SYNDROME = "ACUTE";
 
 function newId(prefix: string): string {
   return `${prefix}_${randomUUID().replace(/-/g, "").slice(0, 12)}`;
@@ -501,6 +508,8 @@ export class AgentAdminService {
     input: {
       name: string;
       syndrome: string;
+      phaseCode?: "acute" | null;
+      audience?: "adult" | "child" | null;
     } & OptionalOf<{
       method: string;
       steps: string[];
@@ -526,6 +535,10 @@ export class AgentAdminService {
       id: newId("plan"),
       name,
       syndrome: input.syndrome,
+      // 期别×人群（智能体设计 v4，0012 迁移）：急性期方案 phaseCode='acute'
+      // 且 syndrome='ACUTE'（管理端特判放行），调体方案 phaseCode=null。
+      phaseCode: input.phaseCode === "acute" ? "acute" : null,
+      audience: input.audience ?? null,
       method: input.method?.trim() ?? "",
       steps: (input.steps ?? []).map((step) => step.trim()).filter((step) => step !== ""),
       precautions: input.precautions?.trim() ?? "",
@@ -598,6 +611,8 @@ export class AgentAdminService {
     changes: OptionalOf<{
       name: string;
       syndrome: string;
+      phaseCode: "acute" | null;
+      audience: "adult" | "child" | null;
       method: string;
       steps: string[];
       precautions: string;
@@ -622,6 +637,14 @@ export class AgentAdminService {
       ...current,
       name: changes.name ?? current.name,
       syndrome: changes.syndrome ?? current.syndrome,
+      phaseCode:
+        changes.phaseCode === undefined
+          ? current.phaseCode
+          : changes.phaseCode === "acute"
+            ? "acute"
+            : null,
+      audience:
+        changes.audience === undefined ? current.audience : changes.audience,
       method: changes.method ?? current.method,
       steps: changes.steps ?? current.steps,
       precautions: changes.precautions ?? current.precautions,
@@ -677,7 +700,9 @@ export class AgentAdminService {
     // （repository.setPlanStatusGuarded，评审 C 事务变式）：并发进程
     // 在另一事务下架视频时，本事务校验拒绝，不产生"已启用但依赖已
     // 下架"的中间状态。
+    // 急性期方案（syndrome='ACUTE'）跳过固定证型白名单校验（评审 P1-7）。
     const syndromeMissing =
+      plan.syndrome !== ACUTE_SYNDROME &&
       (await this.syndromes.find(plan.syndrome)) === null
         ? ["适用证型无效"]
         : [];
@@ -930,7 +955,12 @@ export class AgentAdminService {
     return { kind: "parsed", chunks: chunkText(text) };
   }
 
-  private async requireSyndrome(syndrome: string): Promise<SyndromeMeta> {
+  private async requireSyndrome(syndrome: string): Promise<void> {
+    // 急性期方案例外（评审 P1-7）：ACUTE 是 phase_code='acute' 的伴生
+    // 约定值而非固定证型，createPlan/updatePlan 均须放行其管理。
+    if (syndrome === ACUTE_SYNDROME) {
+      return;
+    }
     const found = await this.syndromes.find(syndrome);
     if (found === null) {
       throw new DomainError(
@@ -938,7 +968,6 @@ export class AgentAdminService {
         `证型不在固定证型列表：${syndrome}（不能新建或修改证型）`
       );
     }
-    return found;
   }
 
   /** 方案引用视频必须存在（外键约束 + 服务层校验），发布状态在启用时校验。 */
@@ -957,9 +986,12 @@ export class AgentAdminService {
    */
   private async validatePlanForEnable(plan: AgentPlan): Promise<string[]> {
     const missing: string[] = [];
-    const syndrome = await this.syndromes.find(plan.syndrome);
-    if (syndrome === null) {
-      missing.push("适用证型无效");
+    // 急性期方案（syndrome='ACUTE'）跳过固定证型白名单校验（评审 P1-7）。
+    if (plan.syndrome !== ACUTE_SYNDROME) {
+      const syndrome = await this.syndromes.find(plan.syndrome);
+      if (syndrome === null) {
+        missing.push("适用证型无效");
+      }
     }
     missing.push(...this.planContentMissing(plan));
     if (plan.videoResourceId !== null) {
@@ -1068,6 +1100,8 @@ export class AgentAdminService {
       id: plan.id,
       name: plan.name,
       syndrome: plan.syndrome,
+      phaseCode: plan.phaseCode,
+      audience: plan.audience,
       method: plan.method,
       stepsJson: JSON.stringify(plan.steps),
       precautions: plan.precautions,

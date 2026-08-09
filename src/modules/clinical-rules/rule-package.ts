@@ -1,14 +1,21 @@
 /**
- * Draft 规则包：clinical-rules-draft-v0（status=candidate，未临床冻结）。
+ * 临床规则包 clinical-rules-v1（status=approved，2026-08-09 冻结，作者拍板 7）。
+ *
+ * 冻结内容 = 智能体设计 v4 八项拍板 + 两轮评审闭环：
+ * - 问卷多选题保真（选项值映射表在 modules/agent/option-mapping.ts，前端不复制映射）；
+ * - 证型 v3 七规则（T1a/b、T2a/b、T3、T4、T5，32 组合穷举 31 唯一命中 + 1 no_match 兜底）；
+ * - 删 APP-01 症状计数转介（确诊题承担适用范围门禁）；
+ * - 删 SAF-07（儿童可用，人群题归 screening 阶段派生 audience）；
+ * - 新增 screening（确诊门禁 + 人群）与 phase（期别）阶段。
+ * 供医学审核事项见 docs/product/2026-08-09-智能体设计-决策记录.md 待确认清单。
  *
  * 当前开发和验收采用的客户确认资料引用见 sourceRefs：
  * - assessment-rules：前置规则、证型决策树及急性期/缓解期判定；
  * - care-plans：急性期方案和各证型调体方案。
  * 开发侧补充的高风险兜底规则属于程序安全约束，不冒充客户资料原文。
  *
- * 临床红线：本包 status=candidate，正式患者输出路径必须硬阻断；
- * draft 规则只允许出现在 `agent test run` 模拟链路。
- * approved 只能由开发发布流程在取得临床冻结证据后产生（架构 §16.2）。
+ * 临床红线：正式患者输出路径只允许 approved 包；规则变更须走开发发布流程
+ * （架构 §16.2），模型与后台无权修改本包。
  */
 
 import { createHash } from "node:crypto";
@@ -17,8 +24,8 @@ import type { ClinicalRule, RulePackage } from "./domain.js";
 
 export { FIELD_LABELS } from "./domain.js";
 
-export const DRAFT_PACKAGE_VERSION = "clinical-rules-draft-v0";
-export const DRAFT_PACKAGE_STATUS = "candidate" as const;
+export const DRAFT_PACKAGE_VERSION = "clinical-rules-v1";
+export const DRAFT_PACKAGE_STATUS = "approved" as const;
 
 export const SOURCE_REFS: string[] = [
   "vault/truth/clinical/assessment-rules.md",
@@ -109,51 +116,90 @@ const SAFETY_RULES: readonly ClinicalRule[] = [
       }
     ],
     conditions: [{ fieldCode: "pregnancy", state: "yes" }]
+  }
+];
+
+/** screening 阶段：确诊门禁（诊断库 §1①，作者拍板 3）+ 人群派生（作者拍板 4）。
+ *  unknown 特判在内核（A4）：仅 diagnosed_confirmed 白名单按 no→转介。 */
+const SCREENING_RULES: readonly ClinicalRule[] = [
+  {
+    id: "S-01",
+    stage: "screening",
+    outcome: "non_applicable",
+    message:
+      "本工具的调理方案仅适用于已确诊的过敏性鼻炎患者。您尚未确认由医生确诊过过敏性鼻炎，建议先到正规医院耳鼻喉科明确诊断，切勿盲目外治。",
+    nextQuestions: [
+      {
+        fieldCode: "diagnosed_confirmed",
+        prompt: "您是否由医生确诊过过敏性鼻炎？"
+      }
+    ],
+    conditions: [{ fieldCode: "diagnosed_confirmed", state: "no" }]
   },
   {
-    id: "SAF-07",
-    stage: "safety",
-    outcome: "blocked",
-    message:
-      "儿童调理方案尚未完成临床批准，本工具暂不提供儿童个性化方案，请咨询门诊。",
+    id: "S-02",
+    stage: "screening",
+    outcome: "classified",
+    code: "child",
+    message: null,
     nextQuestions: [
       {
         fieldCode: "child_under_12",
-        prompt: "您是否未满 12 周岁？"
+        prompt: "您是否未满 12 周岁？（未满 12 周岁按儿童方案提供建议）"
       }
     ],
     conditions: [{ fieldCode: "child_under_12", state: "yes" }]
+  },
+  {
+    id: "S-03",
+    stage: "screening",
+    outcome: "classified",
+    code: "adult",
+    message: null,
+    nextQuestions: [
+      {
+        fieldCode: "child_under_12",
+        prompt: "您是否未满 12 周岁？（未满 12 周岁按儿童方案提供建议）"
+      }
+    ],
+    conditions: [{ fieldCode: "child_under_12", state: "no" }]
+  }
+];
+
+/** phase 阶段：Q1 选项值映射 paroxysmal_sneezing → 期别（决定⑤：《前置规则》Q1 为准）。
+ *  仅作期别派生，不阻断；映射表见 option-mapping.ts。 */
+const PHASE_RULES: readonly ClinicalRule[] = [
+  {
+    id: "P-01",
+    stage: "phase",
+    outcome: "classified",
+    code: "acute",
+    message: null,
+    nextQuestions: [
+      {
+        fieldCode: "paroxysmal_sneezing",
+        prompt: "您打喷嚏的情况是？（频繁 / 偶尔为急性发作，基本不打为缓解期）"
+      }
+    ],
+    conditions: [{ fieldCode: "paroxysmal_sneezing", state: "yes" }]
+  },
+  {
+    id: "P-02",
+    stage: "phase",
+    outcome: "classified",
+    code: "remission",
+    message: null,
+    nextQuestions: [
+      {
+        fieldCode: "paroxysmal_sneezing",
+        prompt: "您打喷嚏的情况是？（频繁 / 偶尔为急性发作，基本不打为缓解期）"
+      }
+    ],
+    conditions: [{ fieldCode: "paroxysmal_sneezing", state: "no" }]
   }
 ];
 
 const APPLICABILITY_RULES: readonly ClinicalRule[] = [
-  {
-    // 诊断库 §1①：仅接诊过敏性鼻炎；主症（喷嚏、清涕、鼻痒、鼻塞）
-    // 不足两项时拒绝诊断。反转计数条件：<2 项主症时命中。
-    id: "APP-01",
-    stage: "applicability",
-    outcome: "non_applicable",
-    message:
-      "根据您的描述，目前症状不完全符合鼻鼽（过敏性鼻炎）的典型特征。本工具的调理方案仅适用于过敏性鼻炎及慢性鼻炎体质调理，建议您先到正规医院耳鼻喉科明确诊断，切勿盲目外治。",
-    nextQuestions: [
-      { fieldCode: "paroxysmal_sneezing", prompt: "您是否有阵发性喷嚏（数十个连发）？" },
-      { fieldCode: "watery_rhinorrhea", prompt: "您是否有大量清水样鼻涕？" },
-      { fieldCode: "nasal_itching", prompt: "您是否有鼻痒（可伴眼痒、咽痒）？" },
-      { fieldCode: "nasal_congestion", prompt: "您是否有鼻塞？" }
-    ],
-    conditions: [
-      {
-        fieldCodes: [
-          "paroxysmal_sneezing",
-          "watery_rhinorrhea",
-          "nasal_itching",
-          "nasal_congestion"
-        ],
-        minYes: 2
-      }
-    ],
-    inverted: true
-  },
   {
     id: "APP-02",
     stage: "applicability",
@@ -284,92 +330,167 @@ const SEVERITY_RULES: readonly ClinicalRule[] = [
 
 const SYNDROME_RULES: readonly ClinicalRule[] = [
   {
-    // T1 肺经伏热：口渴是核心（非黄涕），但口渴+四肢不温+无倦怠乏力
-    // 属于 T5 寒热错杂（决策树分支），故 T1 排除该组合。
-    id: "T1",
+    // T1a 肺经伏热（无热象分支）：口渴核心；热象缺省。
+    // v3 拆双规则实现“口渴∧¬(热象∧寒象)”排除语义（AI 决策 A1）。
+    id: "T1a",
     stage: "syndrome",
     outcome: "classified",
     code: "LUNG_HEAT",
     message: "肺经伏热，上犯鼻窍。",
     nextQuestions: [
       { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
-      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" },
-      { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" }
+      {
+        fieldCode: "heat_imbalance",
+        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
+      }
     ],
     conditions: [
       { fieldCode: "thirst", state: "yes" },
-      { anyOf: [{ fieldCode: "limbs_not_warm", state: "no" }, { fieldCode: "fatigue", state: "yes" }] }
+      { fieldCode: "heat_imbalance", state: "no" }
     ]
   },
   {
-    id: "T2",
+    // T1b 肺经伏热（热象分支）：口渴+怕热，但无寒象（怕风/四肢不温）——
+    // 有寒象则落 T5 寒热错杂。
+    id: "T1b",
+    stage: "syndrome",
+    outcome: "classified",
+    code: "LUNG_HEAT",
+    message: "肺经伏热，上犯鼻窍。",
+    nextQuestions: [
+      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
+      {
+        fieldCode: "heat_imbalance",
+        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
+      },
+      { fieldCode: "fear_wind", prompt: "您近一周是否怕风（吹风时鼻痒、喷嚏加重）？" },
+      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" }
+    ],
+    conditions: [
+      { fieldCode: "thirst", state: "yes" },
+      { fieldCode: "heat_imbalance", state: "yes" },
+      { fieldCode: "fear_wind", state: "no" },
+      { fieldCode: "limbs_not_warm", state: "no" }
+    ]
+  },
+  {
+    // T2a 脾气虚弱（无热象分支）：倦怠+不渴；热象缺省。
+    id: "T2a",
     stage: "syndrome",
     outcome: "classified",
     code: "SPLEEN_QI_DEF",
     message: "脾气虚弱，清阳不升。",
     nextQuestions: [
       { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" }
+      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
+      {
+        fieldCode: "heat_imbalance",
+        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
+      }
     ],
     conditions: [
       { fieldCode: "fatigue", state: "yes" },
-      { fieldCode: "thirst", state: "no" }
+      { fieldCode: "thirst", state: "no" },
+      { fieldCode: "heat_imbalance", state: "no" }
     ]
   },
   {
+    // T2b 脾气虚弱（热象分支）：倦怠+不渴+怕热，但无寒象。
+    id: "T2b",
+    stage: "syndrome",
+    outcome: "classified",
+    code: "SPLEEN_QI_DEF",
+    message: "脾气虚弱，清阳不升。",
+    nextQuestions: [
+      { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
+      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
+      {
+        fieldCode: "heat_imbalance",
+        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
+      },
+      { fieldCode: "fear_wind", prompt: "您近一周是否怕风（吹风时鼻痒、喷嚏加重）？" },
+      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" }
+    ],
+    conditions: [
+      { fieldCode: "fatigue", state: "yes" },
+      { fieldCode: "thirst", state: "no" },
+      { fieldCode: "heat_imbalance", state: "yes" },
+      { fieldCode: "fear_wind", state: "no" },
+      { fieldCode: "limbs_not_warm", state: "no" }
+    ]
+  },
+  {
+    // T3 肺气虚寒：四肢不温=no∧无倦怠∧不渴∧无热象（v4 修正：不再依赖怕风，
+    // 客户树第 5 步默认分支；评审 P1-5 既有漏判修复）。
     id: "T3",
     stage: "syndrome",
     outcome: "classified",
     code: "LUNG_QI_COLD",
     message: "肺气虚寒，卫表不固。",
     nextQuestions: [
-      { fieldCode: "fear_wind", prompt: "您近一周是否怕风（吹风时鼻痒、喷嚏加重）？" },
       { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" },
       { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" }
+      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
+      {
+        fieldCode: "heat_imbalance",
+        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
+      }
     ],
     conditions: [
-      { fieldCode: "fear_wind", state: "yes" },
       { fieldCode: "limbs_not_warm", state: "no" },
       { fieldCode: "fatigue", state: "no" },
-      { fieldCode: "thirst", state: "no" }
+      { fieldCode: "thirst", state: "no" },
+      { fieldCode: "heat_imbalance", state: "no" }
     ]
   },
   {
+    // T4 肾阳不足：四肢不温∧无倦怠∧不渴∧无热象（v4 修正：四肢凉替代
+    // 自造字段 cold_intolerance，AI 决策 A3：形寒肢冷仅信息收集）。
     id: "T4",
     stage: "syndrome",
     outcome: "classified",
     code: "KIDNEY_YANG_DEF",
     message: "肾阳不足，温煦失职。",
     nextQuestions: [
-      { fieldCode: "cold_intolerance", prompt: "您近一周是否形寒肢冷（特别怕冷，穿得比别人多）？" },
       { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" },
       { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" }
+      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
+      {
+        fieldCode: "heat_imbalance",
+        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
+      }
     ],
     conditions: [
-      { fieldCode: "cold_intolerance", state: "yes" },
       { fieldCode: "limbs_not_warm", state: "yes" },
       { fieldCode: "fatigue", state: "no" },
-      { fieldCode: "thirst", state: "no" }
+      { fieldCode: "thirst", state: "no" },
+      { fieldCode: "heat_imbalance", state: "no" }
     ]
   },
   {
-    // 寒热错杂：口渴+四肢不温+无倦怠乏力（最难掌握的组合）。
+    // T5 寒热错杂：怕热∧（怕风∨四肢不温）——热象+寒象并见（决定①字面，
+    // 客户树第 1 步优先，供医学审核）。32 组合穷举：唯一命中 12 组合。
     id: "T5",
     stage: "syndrome",
     outcome: "classified",
     code: "COLD_HEAT_COMPLEX",
     message: "寒热错杂，虚实并见。",
     nextQuestions: [
-      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" },
-      { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" }
+      {
+        fieldCode: "heat_imbalance",
+        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
+      },
+      { fieldCode: "fear_wind", prompt: "您近一周是否怕风（吹风时鼻痒、喷嚏加重）？" },
+      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" }
     ],
     conditions: [
-      { fieldCode: "limbs_not_warm", state: "yes" },
-      { fieldCode: "fatigue", state: "no" },
-      { fieldCode: "thirst", state: "yes" }
+      { fieldCode: "heat_imbalance", state: "yes" },
+      {
+        anyOf: [
+          { fieldCode: "fear_wind", state: "yes" },
+          { fieldCode: "limbs_not_warm", state: "yes" }
+        ]
+      }
     ]
   }
 ];
@@ -423,11 +544,17 @@ const base = {
   version: DRAFT_PACKAGE_VERSION,
   status: DRAFT_PACKAGE_STATUS,
   sourceRefs: SOURCE_REFS,
-  rules: SAFETY_RULES.concat(APPLICABILITY_RULES, SEVERITY_RULES, SYNDROME_RULES),
+  rules: SAFETY_RULES.concat(
+    SCREENING_RULES,
+    PHASE_RULES,
+    APPLICABILITY_RULES,
+    SEVERITY_RULES,
+    SYNDROME_RULES
+  ),
   planSafetyRules: PLAN_SAFETY_RULES
 };
 
-/** 运行时只读加载的候选规则包；approved 由开发发布流程产生。 */
+/** 运行时只读加载的已冻结规则包；变更须走开发发布流程（架构 §16.2）。 */
 export const DRAFT_RULE_PACKAGE: RulePackage = {
   ...base,
   checksum: packageChecksum(base)

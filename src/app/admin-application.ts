@@ -69,6 +69,26 @@ function opt(input: Record<string, unknown>, key: string): string | undefined {
   return optionalString(input, key) ?? undefined;
 }
 
+/** 期别入参收窄（智能体设计 v4）：仅 'acute' 有效，其他值按未设置。 */
+function phaseCodeOf(
+  input: Record<string, unknown>
+): "acute" | null | undefined {
+  const value = optionalString(input, "phaseCode");
+  return value === "acute" ? "acute" : value === undefined ? undefined : null;
+}
+
+/** 人群入参收窄：仅 'adult'/'child' 有效，其他值按未设置。 */
+function audienceOf(
+  input: Record<string, unknown>
+): "adult" | "child" | null | undefined {
+  const value = optionalString(input, "audience");
+  return value === "adult" || value === "child"
+    ? value
+    : value === undefined
+      ? undefined
+      : null;
+}
+
 /** 稳定序列化：对象按键排序（与 conversation-service 的 canonicalJson 一致）。 */
 function canonicalJson(value: unknown): string {
   if (Array.isArray(value)) {
@@ -657,6 +677,8 @@ export class KangminAdminApplication {
               {
                 name: requiredString(input, "name"),
                 syndrome: requiredString(input, "syndrome"),
+                phaseCode: phaseCodeOf(input) ?? null,
+                audience: audienceOf(input) ?? null,
                 method: opt(input, "method"),
                 steps: optionalStringArray(input, "steps"),
                 precautions: opt(input, "precautions"),
@@ -889,6 +911,8 @@ export class KangminAdminApplication {
     return {
       name: opt(input, "name"),
       syndrome: opt(input, "syndrome"),
+      phaseCode: phaseCodeOf(input) ?? null,
+      audience: audienceOf(input) ?? null,
       method: opt(input, "method"),
       steps: optionalStringArray(input, "steps"),
       precautions: opt(input, "precautions"),

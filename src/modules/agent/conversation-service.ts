@@ -27,6 +27,7 @@ import { DomainError } from "../../kernel/errors.js";
 import type { EncryptionPort } from "../../kernel/encryption.js";
 import type { ConsentGatePort } from "../account/consent-ports.js";
 import { parseStructuredAnswers } from "./answer-parser.js";
+import { parseOptionPayload } from "./option-mapping.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type {
   CandidateRow,
@@ -213,8 +214,27 @@ export class ConversationService {
 
     // 1. 确定性结构化回答（模型降级路径）：先收集，随轮次单事务提交
     //    （评审 B P1-2 原子化：不再逐条独立事务写库）。
+    //    问卷选项载荷（q1=B，多选题保真）与字段标签解析并列：选项载荷
+    //    命中时确定性映射（option-mapping.ts），严禁 message=""（空串解析
+    //    返回 [] 死循环，评审二轮 P0-1）。
     const pendingAnswers: ConfirmedAnswerRow[] = [];
-    for (const answer of parseStructuredAnswers(message, lastQuestions)) {
+    const optionHit = parseOptionPayload(message);
+    if (optionHit !== null && optionHit.field !== null && optionHit.state !== null) {
+      pendingAnswers.push({
+        sessionId: session.id,
+        fieldCode: optionHit.field,
+        value: optionHit.state,
+        factValue: null,
+        source: "patient_confirmation",
+        rulePackageVersion: session.rulePackageVersion,
+        rulePackageHash: session.rulePackageHash,
+        revision: session.revision,
+        confirmedAt: timestamp
+      });
+      unknownAnswered.delete(optionHit.field);
+    }
+    const parsedAnswers = parseStructuredAnswers(message, lastQuestions);
+    for (const answer of parsedAnswers) {
       const row: ConfirmedAnswerRow = {
         sessionId: session.id,
         fieldCode: answer.fieldCode,
@@ -249,9 +269,12 @@ export class ConversationService {
     const facts = answersToFacts(mergedAnswers);
 
     // 2. 模型提取待确认候选（失败只降级，绝不宽松解析）。
+    //    确定性解析命中（选项载荷或字段标签）时跳过 extraction：
+    //    避免每轮降级 notice 噪音（评审二轮 #3）。
     let extractionFailed = false;
     let extracted: ExtractionCandidate[] = [];
-    if (message !== "") {
+    const deterministicHit = optionHit !== null || parsedAnswers.length > 0;
+    if (!deterministicHit && message !== "") {
       try {
         extracted = await this.extraction.extractCandidates({
           message,
@@ -295,8 +318,26 @@ export class ConversationService {
     // 3. 固定规则内核评估（唯一临床裁决来源）。
     const verdict = await this.kernel.evaluate(facts);
 
+    // 3b. 已答 unknown 的字段不再追问（评审并发 P2-2）：逐题一问（MAX=1）
+    // 下，unknown 字段的问题每轮重出会形成同题无限循环。展示与
+    // fail-closed 判定基于过滤后的补问集；决策凭证仍存原始全集。
+    const displayVerdict: ClinicalVerdict =
+      verdict.outcome === "need_more_information"
+        ? {
+            ...verdict,
+            nextQuestions: verdict.nextQuestions.filter(
+              (question) => !unknownAnswered.has(question.fieldCode)
+            ),
+            allQuestions: verdict.allQuestions.filter(
+              (question) => !unknownAnswered.has(question.fieldCode)
+            )
+          }
+        : verdict;
+
     // 4. 补问无法取得进展 → fail-closed（unknown 不等于 no）。
-    const escalated = this.failClosedIfNoProgress(verdict, unknownAnswered);
+    //    过滤后 allQuestions 为空（全部字段已答 unknown）→ every() 对
+    //    空集为 true → 立即 fail-closed 收尾，不再循环。
+    const escalated = this.failClosedIfNoProgress(displayVerdict, unknownAnswered);
 
     // 5. 解释阶段：只有规则包 approved 时才调用模型解释；
     //    candidate 包正式输出被硬阻断，绝不输出个性化方案。
@@ -314,8 +355,10 @@ export class ConversationService {
         modelFields = null;
       }
     }
+    // 补问渲染用过滤后的展示集（已答 unknown 字段不再追问，P2-2）；
+    // 非补问裁决两版一致。
     const validated = renderValidatedOutput(
-      verdict,
+      displayVerdict,
       this.kernel.rulePackageStatus,
       modelFields
     );
@@ -341,6 +384,9 @@ export class ConversationService {
       stage: verdict.stage,
       severityCode: verdict.severityCode,
       syndromeCode: verdict.syndromeCode,
+      phaseCode: verdict.phaseCode,
+      audience: verdict.audience,
+      rulePackageStatus: this.kernel.rulePackageStatus,
       nextQuestionsJson: JSON.stringify(verdict.nextQuestions),
       matchedRuleIdsJson: JSON.stringify(verdict.matchedRuleIds),
       rulePackageVersion: session.rulePackageVersion,
@@ -470,8 +516,10 @@ export class ConversationService {
   }
 
   private summarizeDecision(decision: DecisionRow): DecisionSummary {
-    const trimmed =
-      this.kernel.rulePackageStatus !== "approved";
+    // 按决策行自身包状态裁剪（codex P1-2）：历史 candidate 决策在包
+    // 冻结后不得解封（证型/严重度/命中规则/planId 侧信道），
+    // 与 0011 迁移新增的 rule_package_status 列配合。
+    const trimmed = (decision.rulePackageStatus ?? "candidate") !== "approved";
     return {
       id: decision.id,
       decisionSequence: decision.decisionSequence,
@@ -484,6 +532,8 @@ export class ConversationService {
       // 结构化字段侧信道拼装完整方案（评审 P0-2，见 patientVerdict）。
       severityCode: trimmed ? null : decision.severityCode,
       syndromeCode: trimmed ? null : decision.syndromeCode,
+      phaseCode: trimmed ? null : decision.phaseCode,
+      audience: trimmed ? null : decision.audience,
       matchedRuleIds: trimmed ? [] : (JSON.parse(decision.matchedRuleIdsJson) as string[]),
       rulePackageVersion: decision.rulePackageVersion,
       planId: trimmed ? null : decision.planId,
@@ -520,11 +570,16 @@ export class ConversationService {
       stage: trimmed ? null : verdict.stage,
       severityCode: trimmed ? null : verdict.severityCode,
       syndromeCode: trimmed ? null : verdict.syndromeCode,
+      phaseCode: trimmed ? null : verdict.phaseCode,
+      audience: trimmed ? null : verdict.audience,
       nextQuestions: verdict.nextQuestions,
       matchedRuleIds: trimmed ? [] : verdict.matchedRuleIds,
       rulePackageVersion: verdict.rulePackageVersion,
       rulePackageHash: verdict.rulePackageHash,
-      rulePackageStatus: this.kernel.rulePackageStatus
+      rulePackageStatus: this.kernel.rulePackageStatus,
+      // planBundle 永不进患者侧（评审 P0-8）：前端只从消息内容渲染，
+      // 防 agent exec --json 拿完整方案拼装（三步拼装侧信道）。
+      planBundle: null
     };
   }
 
@@ -674,7 +729,15 @@ export class ConversationService {
       return null;
     }
     if (verdict.allQuestions.length === 0) {
-      return null;
+      // 补问集为空：内核 need_more 必带问题，空集只可能由
+      // unknownAnswered 过滤造成（评审并发 P2-2）——全部待答字段
+      // 已确认 unknown，无法取得进展 → fail-closed 收尾，避免
+      // "无问题可问但会话不结束"的卡死态。
+      const content =
+        verdict.stage === "safety"
+          ? FAIL_CLOSED_SAFETY_NOTICE
+          : FAIL_CLOSED_INFO_NOTICE;
+      return { content, contentHash: sha256(content) };
     }
     const allUnknown = verdict.allQuestions.every((question) =>
       unknownAnswered.has(question.fieldCode)

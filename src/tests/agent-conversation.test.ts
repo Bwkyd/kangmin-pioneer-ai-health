@@ -12,6 +12,8 @@ import test from "node:test";
 import { createApplication } from "../app/composition-root.js";
 import { DomainError } from "../kernel/errors.js";
 import type { CommandResult } from "../kernel/result.js";
+import type { RulePackage } from "../modules/clinical-rules/domain.js";
+import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { ExtractionCandidate } from "../modules/agent/model-ports.js";
 import { writeConsentForTest } from "./consent-fixture.js";
 import type {
@@ -81,6 +83,35 @@ async function fixture(
   const application = createApplication(databasePath, {
     extraction,
     explanation: new NullExplanation()
+  });
+  return { application, extraction, databasePath };
+}
+
+/**
+ * candidate 模拟包（防御语义验证）：冻结包已 approved，但 patientVerdict/
+ * summarizeDecision 的裁剪与 renderValidatedOutput 的临床阻断是保留的
+ * 防御路径（防未来解冻/回滚），用本包验证裁剪逻辑仍生效。
+ */
+function candidatePackage(): RulePackage {
+  return {
+    ...DRAFT_RULE_PACKAGE,
+    version: "clinical-rules-test-candidate",
+    status: "candidate"
+  };
+}
+
+/** candidate 包装配的应用（裁剪语义测试专用）。 */
+async function fixtureWithCandidate(
+  extractionRules: Array<{ match: string; candidate: ExtractionCandidate }> = [],
+  extractionFail: DomainError | null = null
+): Promise<Fixture> {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-conv-"));
+  const databasePath = join(directory, "conv.sqlite");
+  const extraction = new FixedExtraction(extractionRules, extractionFail);
+  const application = createApplication(databasePath, {
+    extraction,
+    explanation: new NullExplanation(),
+    rulePackage: candidatePackage()
   });
   return { application, extraction, databasePath };
 }
@@ -289,7 +320,7 @@ test("绑定匿名会话必须推进 revision：绑定只做所有权变更，CA
 });
 
 test("安全阻断：高危输入直接阻断并结束对话，输出固定文案", async () => {
-  const { application } = await fixture();
+  const { application } = await fixtureWithCandidate();
   try {
     const first = await exec(application, { message: "我最近鼻塞" });
     const blocked = await exec(application, {
@@ -323,7 +354,7 @@ test("安全阻断：高危输入直接阻断并结束对话，输出固定文�
 });
 
 test("unknown 不等于 no：安全字段 unknown 走补问，无法进展时 fail-closed", async () => {
-  const { application } = await fixture();
+  const { application } = await fixtureWithCandidate();
   try {
     const first = await exec(application, { message: "" });
     // 评审 R2：candidate 下 stage 归一为 null（不暴露"处于安全阶段"）。
@@ -361,12 +392,12 @@ test("unknown 不等于 no：安全字段 unknown 走补问，无法进展时 fa
 });
 
 test("正式输出阻断：candidate 规则包即使裁决 classified 也不输出个性化方案", async () => {
-  const { application } = await fixture([
+  const { application } = await fixtureWithCandidate([
     { match: "口渴", candidate: { fieldCode: "thirst", state: "yes", justification: "测试替身" } }
   ]);
   try {
     let turn = await exec(application, {
-      message: "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 未满12周岁：否"
+      message: "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 确诊过敏性鼻炎：是 未满12周岁：否"
     });
     // 评审 R2：candidate 下 stage 归一为 null（进展侧信道裁剪），
     // 流程位置改由 outcome/nextQuestions 确认。
@@ -386,7 +417,7 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
     assert.equal(turn.verdict?.stage, null);
 
     turn = await exec(application, {
-      message: "口渴：是 四肢不温：否 倦怠乏力：否",
+      message: "口渴：是 怕热：否 四肢不温：否 倦怠乏力：否",
       conversationId: turn.conversationId
     });
     // 裁决为 classified（轻度 + 肺经伏热）……
@@ -457,7 +488,7 @@ test("正式输出阻断：candidate 规则包即使裁决 classified 也不输�
 });
 
 test("模型不可用降级：空候选 + 固定 system_notice，规则结果仍然有效", async () => {
-  const { application } = await fixture(
+  const { application } = await fixtureWithCandidate(
     [],
     new DomainError("provider_unavailable", "DeepSeek 模型服务未配置")
   );
@@ -469,9 +500,10 @@ test("模型不可用降级：空候选 + 固定 system_notice，规则结果仍
     assert.ok(turn.message.content.includes("为了继续评估"));
     // 固定 system_notice 出现，且不绑定决策。
     assert.equal(turn.notices.length, 1);
+    // 客户可读文案（评审 P0-9：不暴露"智能提取服务"内部术语）。
     assert.equal(
       turn.notices[0]?.content,
-      "智能提取服务暂不可用，请直接回答系统提问（如“怕风：是”）。"
+      "未识别到您的回答，请点击下方选项按钮回答，或直接输入“是 / 否 / 不清楚”。"
     );
   } finally {
     application.close();
@@ -479,7 +511,7 @@ test("模型不可用降级：空候选 + 固定 system_notice，规则结果仍
 });
 
 test("模型提取候选：只返回待确认候选，不直接进入规则输入", async () => {
-  const { application } = await fixture([
+  const { application } = await fixtureWithCandidate([
     { match: "口渴", candidate: { fieldCode: "thirst", state: "yes", justification: "测试替身" } }
   ]);
   try {
@@ -532,10 +564,10 @@ test("模型候选 value/justification 绝不透传：患者只拿到 fieldCode 
 });
 
 test("fail-closed 基于未截断补问全集：4 问只答 2 问 unknown 不关闭，继续补问", async () => {
-  const { application } = await fixture();
+  const { application } = await fixtureWithCandidate();
   try {
     let turn = await exec(application, {
-      message: "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 未满12周岁：否"
+      message: "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 确诊过敏性鼻炎：是 未满12周岁：否"
     });
     assert.equal(turn.verdict?.stage, null);
 
@@ -545,13 +577,13 @@ test("fail-closed 基于未截断补问全集：4 问只答 2 问 unknown 不关
     });
     assert.equal(turn.verdict?.outcome, "need_more_information");
     assert.equal(turn.verdict?.stage, null);
-    // 单次最多展示 2 问（截断），但严重度待答全集为 4 问。
-    assert.equal(turn.verdict?.nextQuestions.length, 2);
+    // 单次只展示 1 问（逐题一问），但严重度待答全集为 4 问。
+    assert.equal(turn.verdict?.nextQuestions.length, 1);
 
-    // 患者只对本轮展示的 2 问答 unknown：全集尚有 2 问可问 →
+    // 患者只对本轮展示的 1 问答 unknown：全集尚有 3 问可问 →
     // 不得 fail-closed（评审 P1 kimi P1-6：截断不影响进展判定）。
     const partial = await exec(application, {
-      message: "影响睡眠：不知道 影响日常活动：不知道",
+      message: "影响睡眠：不知道",
       conversationId: turn.conversationId
     });
     assert.equal(partial.closed, false);
@@ -560,9 +592,9 @@ test("fail-closed 基于未截断补问全集：4 问只答 2 问 unknown 不关
     assert.ok(partial.message !== null);
     assert.ok(partial.message.content.includes("为了继续评估"));
 
-    // 剩余 2 问也答 unknown：全集 4 问全部 unknown → fail-closed。
+    // 剩余 3 问也答 unknown：全集 4 问全部 unknown → fail-closed。
     const exhausted = await exec(application, {
-      message: "影响工作学习：不知道 难以忍受：不知道",
+      message: "影响日常活动：不知道 影响工作学习：不知道 难以忍受：不知道",
       conversationId: turn.conversationId
     });
     assert.equal(exhausted.closed, true);
@@ -761,6 +793,9 @@ test("commitTurn 并发 CAS：旧 revision 提交返回 version_conflict 且无�
         stage: "safety",
         severityCode: null,
         syndromeCode: null,
+        phaseCode: null,
+        audience: null,
+        rulePackageStatus: null,
         nextQuestionsJson: "[]",
         matchedRuleIdsJson: "[]",
         rulePackageVersion: "draft-2026-07",
@@ -982,6 +1017,9 @@ test("清理过期匿名会话：级联删除 5 子表 + 主表，保留期内�
       stage: "safety",
       severityCode: null,
       syndromeCode: null,
+      phaseCode: null,
+      audience: null,
+      rulePackageStatus: null,
       nextQuestionsJson: "[]",
       matchedRuleIdsJson: "[]",
       rulePackageVersion: "draft-2026-07",

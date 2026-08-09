@@ -71,6 +71,8 @@ interface PlanRowShape {
   id: string;
   name: string;
   syndrome: string;
+  phase_code: "acute" | null;
+  audience: "adult" | "child" | null;
   method: string;
   steps_json: string;
   precautions: string;
@@ -135,6 +137,8 @@ function toPlan(row: PlanRowShape): AgentPlan {
     id: row.id,
     name: row.name,
     syndrome: row.syndrome,
+    phaseCode: row.phase_code,
+    audience: row.audience,
     method: row.method,
     steps: JSON.parse(row.steps_json) as string[],
     precautions: row.precautions,
@@ -535,14 +539,17 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   async createPlan(input: PlanRow): Promise<void> {
     this.database.connection.prepare(`
       INSERT INTO agent_plans(
-        id, name, syndrome, method, steps_json, precautions, risks,
-        contraindications, applicable_age, video_resource_id, display_order,
-        status, revision, created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        id, name, syndrome, phase_code, audience, method, steps_json,
+        precautions, risks, contraindications, applicable_age,
+        video_resource_id, display_order, status, revision, created_by,
+        created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.id,
       input.name,
       input.syndrome,
+      input.phaseCode,
+      input.audience,
       input.method,
       input.stepsJson,
       input.precautions,
@@ -590,14 +597,17 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
         insert: () => {
           this.database.connection.prepare(`
             INSERT INTO agent_plans(
-              id, name, syndrome, method, steps_json, precautions, risks,
-              contraindications, applicable_age, video_resource_id, display_order,
-              status, revision, created_by, created_at, updated_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              id, name, syndrome, phase_code, audience, method, steps_json,
+              precautions, risks, contraindications, applicable_age,
+              video_resource_id, display_order, status, revision, created_by,
+              created_at, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           `).run(
             plan.id,
             plan.name,
             plan.syndrome,
+            plan.phaseCode,
+            plan.audience,
             plan.method,
             plan.stepsJson,
             plan.precautions,
@@ -639,6 +649,8 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
       id: plan.id,
       name: plan.name,
       syndrome: plan.syndrome,
+      phase_code: plan.phaseCode,
+      audience: plan.audience,
       method: plan.method,
       steps_json: plan.stepsJson,
       precautions: plan.precautions,
@@ -657,9 +669,10 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
 
   async listPlans(status?: PlanStatus): Promise<AgentPlan[]> {
     const rows = this.database.connection.prepare(`
-      SELECT id, name, syndrome, method, steps_json, precautions, risks,
-             contraindications, applicable_age, video_resource_id, display_order,
-             status, revision, created_by, created_at, updated_at
+      SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+             precautions, risks, contraindications, applicable_age,
+             video_resource_id, display_order, status, revision, created_by,
+             created_at, updated_at
       FROM agent_plans
       ${status === undefined ? "" : "WHERE status = ?"}
       ORDER BY display_order ASC, updated_at DESC, id ASC
@@ -675,9 +688,10 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   /** 事务内方案读取（与 findPlan 同 SQL）。 */
   private findPlanSync(id: string): PlanRowShape | undefined {
     return this.database.connection.prepare(`
-      SELECT id, name, syndrome, method, steps_json, precautions, risks,
-             contraindications, applicable_age, video_resource_id, display_order,
-             status, revision, created_by, created_at, updated_at
+      SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+             precautions, risks, contraindications, applicable_age,
+             video_resource_id, display_order, status, revision, created_by,
+             created_at, updated_at
       FROM agent_plans WHERE id = ?
     `).get(id) as unknown as PlanRowShape | undefined;
   }
@@ -698,14 +712,16 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
       }
       this.database.connection.prepare(`
         UPDATE agent_plans SET
-          name = ?, syndrome = ?, method = ?, steps_json = ?, precautions = ?,
-          risks = ?, contraindications = ?, applicable_age = ?,
-          video_resource_id = ?, display_order = ?, status = ?,
-          updated_at = ?, revision = ?
+          name = ?, syndrome = ?, phase_code = ?, audience = ?, method = ?,
+          steps_json = ?, precautions = ?, risks = ?, contraindications = ?,
+          applicable_age = ?, video_resource_id = ?, display_order = ?,
+          status = ?, updated_at = ?, revision = ?
         WHERE id = ?
       `).run(
         plan.name,
         plan.syndrome,
+        plan.phaseCode,
+        plan.audience,
         plan.method,
         JSON.stringify(plan.steps),
         plan.precautions,
@@ -761,14 +777,16 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
       }
       this.database.connection.prepare(`
         UPDATE agent_plans SET
-          name = ?, syndrome = ?, method = ?, steps_json = ?, precautions = ?,
-          risks = ?, contraindications = ?, applicable_age = ?,
-          video_resource_id = ?, display_order = ?, status = ?,
-          updated_at = ?, revision = ?
+          name = ?, syndrome = ?, phase_code = ?, audience = ?, method = ?,
+          steps_json = ?, precautions = ?, risks = ?, contraindications = ?,
+          applicable_age = ?, video_resource_id = ?, display_order = ?,
+          status = ?, updated_at = ?, revision = ?
         WHERE id = ?
       `).run(
         plan.name,
         plan.syndrome,
+        plan.phaseCode,
+        plan.audience,
         plan.method,
         JSON.stringify(plan.steps),
         plan.precautions,
@@ -811,9 +829,10 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
       const updated = this.database.connection.prepare(`
-        SELECT id, name, syndrome, method, steps_json, precautions, risks,
-               contraindications, applicable_age, video_resource_id, display_order,
-               status, revision, created_by, created_at, updated_at
+        SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+               precautions, risks, contraindications, applicable_age,
+               video_resource_id, display_order, status, revision, created_by,
+               created_at, updated_at
         FROM agent_plans WHERE id = ?
       `).get(id) as unknown as PlanRowShape;
       return { kind: "updated" as const, plan: toPlan(updated) };
@@ -866,9 +885,10 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
       const updated = this.database.connection.prepare(`
-        SELECT id, name, syndrome, method, steps_json, precautions, risks,
-               contraindications, applicable_age, video_resource_id, display_order,
-               status, revision, created_by, created_at, updated_at
+        SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+               precautions, risks, contraindications, applicable_age,
+               video_resource_id, display_order, status, revision, created_by,
+               created_at, updated_at
         FROM agent_plans WHERE id = ?
       `).get(id) as unknown as PlanRowShape;
       return { kind: "updated" as const, plan: toPlan(updated) };
