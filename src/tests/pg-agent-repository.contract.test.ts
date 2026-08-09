@@ -740,7 +740,9 @@ contractTest("方案注册表：method 无法映射时不输出属性键（unmat
     method: "鼻腔冲洗",
     status: "enabled",
     displayOrder: 0,
-    revision: 2
+    revision: 2,
+    phaseCode: null,
+    audience: "adult"
   });
 
   const bundle = await registry.findApprovedPlanBundle({
