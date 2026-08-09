@@ -516,8 +516,10 @@ export class ConversationService {
   }
 
   private summarizeDecision(decision: DecisionRow): DecisionSummary {
-    const trimmed =
-      this.kernel.rulePackageStatus !== "approved";
+    // 按决策行自身包状态裁剪（codex P1-2）：历史 candidate 决策在包
+    // 冻结后不得解封（证型/严重度/命中规则/planId 侧信道），
+    // 与 0011 迁移新增的 rule_package_status 列配合。
+    const trimmed = (decision.rulePackageStatus ?? "candidate") !== "approved";
     return {
       id: decision.id,
       decisionSequence: decision.decisionSequence,

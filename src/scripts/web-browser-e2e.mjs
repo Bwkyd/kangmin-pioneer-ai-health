@@ -368,7 +368,7 @@ try {
   await page.locator(".send-button").click();
   await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
   await page.locator(".ai-bubble", { hasText: "为了继续评估" }).first().waitFor({ state: "visible" });
-  await expectText(page.getByTestId("chat-notice"), "智能提取服务暂不可用");
+  await expectText(page.getByTestId("chat-notice"), "未识别到您的回答");
   const conversationId = await page.evaluate(() =>
     sessionStorage.getItem("kangmin.agent.conversationId")
   );

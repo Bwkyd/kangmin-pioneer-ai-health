@@ -100,7 +100,9 @@ function questionText(verdict: ClinicalVerdict): string {
   return `为了继续评估，请回答以下问题：\n${lines.join("\n")}`;
 }
 
-/** 步骤文本：steps_json 可能是 JSON 数组（管理端），转逐行编号；非 JSON 原样。 */
+/** 步骤文本：steps_json 可能是 JSON 数组（管理端），转逐行编号；非 JSON 原样。
+ *  数组元素支持字符串或对象 {title, description}（codex P2-2：对象式步骤
+ *  存量契约，不得渲染 [object Object]）。 */
 function planSteps(plan: ApprovedPlan): string {
   if (plan.steps === "" || plan.steps === "[]") {
     return "";
@@ -109,7 +111,20 @@ function planSteps(plan: ApprovedPlan): string {
     const parsed = JSON.parse(plan.steps) as unknown;
     if (Array.isArray(parsed)) {
       return parsed
-        .map((step, index) => `${index + 1}. ${String(step)}`)
+        .map((step, index) => {
+          if (typeof step === "string") {
+            return `${index + 1}. ${step}`;
+          }
+          if (step !== null && typeof step === "object") {
+            const record = step as Record<string, unknown>;
+            const title = typeof record.title === "string" ? record.title : "";
+            const description =
+              typeof record.description === "string" ? record.description : "";
+            const text = [title, description].filter((part) => part !== "").join("：");
+            return `${index + 1}. ${text === "" ? JSON.stringify(step) : text}`;
+          }
+          return `${index + 1}. ${String(step)}`;
+        })
         .join("\n");
     }
   } catch {
