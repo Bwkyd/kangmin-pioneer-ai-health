@@ -12,6 +12,7 @@
 | [001](arch/001_deterministic-agent-mvp.md) | 2026-07-23 | 确定性鼻健康智能体 MVP |
 | [002](arch/002_server-driven-dynamic-followup.md) | 2026-07-23 | 服务端规则驱动动态补问 |
 | [003](arch/003_admin-content-governance.md) | 2026-07-24 | 单管理员内容治理后台 |
+| [004](arch/004_agent-v4-trial.md) | 2026-08-09 | 智能体设计 v4：对话式评估全链路真实化（客户 Web 试用交付） |
 
 ## 生产操作
 
