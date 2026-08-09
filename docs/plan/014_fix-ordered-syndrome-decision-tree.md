@@ -1,8 +1,8 @@
 # 修正有序六步证型决策树
 
-- 状态：已实施并通过本地全链路验证，待提交与部署
+- 状态：已实施、提交并部署客户试用环境，等待客户验收
 - 日期：2026-08-09
-- 代码基线：`50df413`；当前线上仍为旧 v3 扁平规则，本轮尚未部署
+- 代码基线：`50df413`；部署提交：`eba184f`；draft PR：#188
 - 客户依据：`vault/truth/clinical/syndrome-six-step-decision-tree.md`
 
 ## 目标
@@ -112,4 +112,6 @@ Q1/Q2/Q5/Q7/Q11 只生成辅助印证信息，不得覆盖叶子结果。
   问助手会恢复历史并自动定位到最新结果；
 - 本地浏览器 E2E、完整评估 smoke、12/12 CLI benchmark、全量 `npm run check`、
   `python3 scripts/structure-lint.py .` 与 `git diff --check` 均已通过；
-- 尚未 commit、PR、部署或迁移线上数据，线上仍使用旧版本。
+- 已推送 `agent/fix-six-step-tree` 并创建 draft PR #188；客户试用环境已部署
+  `eba184f`。部署前完成独立端口临时库预检，生产 SQLite 已备份，公网 E2E、
+  服务日志及静态资源 SHA-256 均核验通过；PR 尚未合并，等待客户验收。

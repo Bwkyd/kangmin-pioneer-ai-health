@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 六步树修复已提交并部署客户试用环境（2026-08-09 第二十六轮 · 部署 `eba184f`，PR #188）
+> 修复已拆为 `b50b964`（受约束问诊调研）与 `eba184f`（有序六步树、患者答案中文化、方案方法展示、刷新滚动恢复），推送分支 `agent/fix-six-step-tree` 并创建 draft PR #188：`https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/188`。未合并 PR，客户可先按试用环境实测。
+> 部署前新 release 在 8788 + 临时 SQLite 完成生产等价预检；停服后将生产 SQLite 备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260809-215946-before-b1ad92a/`，原子切换 `/srv/kangmin-cli/app` 到 `/srv/kangmin-cli/releases/eba184f750a87abbbd152c97a7478eb4a582ecfa`，旧 release 保留可回滚。`kangmin-cli` 为 active/running、`NRestarts=0`、部署后 warning/error 日志为空；`/live` 为 ok，`/ready` 的数据库/对象存储/规则包均为 ok，两项 local 环境既有 not_configured 与旧版一致。
+> 线上公网 E2E 从 `https://49.232.26.48` 完整走通：安全六问全否→已确诊→成人→Q1B→鉴别/严重度全否→Q10B→Q8C→Q6B→Q9B，严格逐节点进入并判定肺气虚寒；结果页含两组“方法（请选择其中一项）”及 7 个逐方法视频区，不含“手法：”“步骤：”或 `pregnancy=no`、`diagnosed_confirmed=yes`、`qN=X` 协议载荷。刷新回首页再进入问助手后结果恢复且滚动到底。公网 index/患者 JS/CSS 与本地构建 SHA-256 三项一致，旧库备份存在且大小正常。
+
 > ## ✅ 六步树移动端 E2E 复核并修复历史定位（2026-08-09 第二十五轮 · 未提交未部署，基线 `50df413`）
 > 再次运行完整浏览器 E2E 通过，并用 390×844 移动视口手工走通 Q10B → Q8C → Q6B → Q9B：结果为肺气虚寒；结果卡无“步骤/手法”旧标签，无 `pregnancy=no`、`qN=X` 等内部载荷，7 个方法均各自带操作视频区域；刷新后证型、方案和患者可读历史均可恢复，浏览器控制台无 warning/error。
 > 手工复核发现并修复一项自动测试原先未覆盖的真实问题：刷新回首页后再进入问助手，历史消息虽已恢复，但因滚动 effect 只监听 messages，聊天区停在首轮安全题。现滚动逻辑同时监听 chat tab，进入问助手即定位到最新结果；浏览器 E2E 新增“刷新→进入问助手→聊天区到达底部”断言。修复后手工读取 `.chat` 为 `remaining=-0.5px`（浮点舍入，等价底部），移动截图确认最新结果可见。
