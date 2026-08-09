@@ -1,12 +1,17 @@
 /**
  * Clinical Rule Kernel 实现。
  *
- * 固定执行顺序：安全 > 适用范围 > 严重度 > 证型 > 方案安全；
+ * 固定执行顺序（智能体设计 v4）：
+ *   安全 > 确诊门禁/人群派生 > 期别派生 > 适用范围 > 严重度 > 证型 > 方案安全；
  * 低优先级结果不能覆盖高优先级阻断。unknown/missing 一律不能
- * 让规则“通过”——要么补问，要么按裁决语义处理，绝不猜测。
+ * 让规则"通过"——要么补问，要么按裁决语义处理，绝不猜测。
+ *
+ * 例外仅一处（AI 决策 A4）：确诊题 diagnosed_confirmed 的 unknown 按
+ * no→转介门诊（白名单特判，严禁通用 unknown→no 击穿 SAF-01）。
  */
 
 import type {
+  ApprovedPlan,
   ClinicalRuleKernelPort,
   ClinicalVerdict,
   ConfirmedFact,
@@ -17,8 +22,8 @@ import type {
 import type { ClinicalRule, FactEntry, FactMap, RulePackage } from "./domain.js";
 import { evaluateRules } from "./domain.js";
 
-/** 单次裁决的补问上限（客户资料：单次问诊提问≤2 个）。 */
-export const MAX_NEXT_QUESTIONS = 2;
+/** 单次裁决的补问上限（智能体设计 v4：逐题一问，多选题保真）。 */
+export const MAX_NEXT_QUESTIONS = 1;
 
 class MapFactSource implements FactMap {
   private readonly map = new Map<string, FactEntry>();
@@ -78,17 +83,70 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       return safety;
     }
 
-    const applicability = this.evaluateApplicability(source);
+    // AI 决策 A4：确诊题白名单特判——unknown 按 no→转介门诊。
+    // 必须在原始 facts 上判断：MapFactSource 会跳过 unknown，规则评估
+    // 无法看到该状态（防止通用 unknown→no 击穿 SAF-01 等安全规则）。
+    const diagnosedFact = facts.find(
+      (fact) => fact.fieldCode === "diagnosed_confirmed"
+    );
+    if (diagnosedFact !== undefined && diagnosedFact.state === "unknown") {
+      const gateRule = this.pack.rules.find((rule) => rule.id === "S-01");
+      return this.verdict(
+        source,
+        "non_applicable",
+        "screening",
+        ["S-01"],
+        gateRule?.message ?? null,
+        null,
+        null
+      );
+    }
+
+    // screening：确诊门禁（转介）→ 人群派生（audience）。
+    const screening = this.evaluateScreening(source);
+    if (screening.verdict !== null) {
+      return screening.verdict;
+    }
+    let current =
+      screening.audience === null
+        ? source
+        : source.with([
+            {
+              fieldCode: "audience",
+              state: "value",
+              value: screening.audience,
+              source: "derived"
+            }
+          ]);
+
+    // phase：Q1 期别派生（acute/remission）。
+    const phase = this.evaluatePhase(current);
+    if (phase.verdict !== null) {
+      return phase.verdict;
+    }
+    current =
+      phase.phaseCode === null
+        ? current
+        : current.with([
+            {
+              fieldCode: "phase_code",
+              state: "value",
+              value: phase.phaseCode,
+              source: "derived"
+            }
+          ]);
+
+    const applicability = this.evaluateApplicability(current);
     if (applicability !== null) {
       return applicability;
     }
 
-    const severity = this.evaluateSeverity(source);
+    const severity = this.evaluateSeverity(current);
     if (severity !== null) {
       if (severity.outcome !== "classified") {
         return severity;
       }
-      const withSeverity = source.with([
+      const withSeverity = current.with([
         {
           fieldCode: "severity_code",
           state: "value",
@@ -112,7 +170,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
           }
         ]);
 
-        // 决策凭证需要跨阶段累积命中规则（如 ["SEV-05","T1"]）。
+        // 决策凭证需要跨阶段累积命中规则（如 ["SEV-05","T1a"]）。
         const allMatched = [...severity.matchedRuleIds, ...syndrome.matchedRuleIds];
         const plan = await this.evaluatePlanSafety(withSyndrome, allMatched);
         if (plan !== null) {
@@ -122,13 +180,22 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     }
 
     // 不可达的防御分支：不允许静默通过。
-    return this.verdict("no_match", "completed", [], null, null, null);
+    return this.verdict(
+      current,
+      "no_match",
+      "completed",
+      [],
+      null,
+      null,
+      null
+    );
   }
 
   private evaluateSafety(source: MapFactSource): ClinicalVerdict | null {
     const report = evaluateRules(this.stageRules("safety"), source);
     if (report.matched.length > 0) {
       return this.verdict(
+        source,
         "blocked",
         "safety",
         report.matched.map((rule) => rule.id),
@@ -138,15 +205,134 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       );
     }
     if (report.questions.length > 0) {
-      return this.needMoreVerdict("safety", report.questions);
+      return this.needMoreVerdict(source, "safety", report.questions);
     }
     return null;
+  }
+
+  /**
+   * screening 阶段（v4）：S-01 确诊门禁（no/unknown→转介门诊，A4 白名单
+   * 特判）+ S-02/S-03 人群派生（child/adult）。返回 verdict 与派生人群。
+   */
+  private evaluateScreening(source: MapFactSource): {
+    verdict: ClinicalVerdict | null;
+    audience: "child" | "adult" | null;
+  } {
+    const gate = evaluateRules(
+      this.stageRules("screening").filter((rule) => rule.id === "S-01"),
+      source
+    );
+    if (gate.matched.length > 0) {
+      return {
+        verdict: this.verdict(
+          source,
+          "non_applicable",
+          "screening",
+          gate.matched.map((rule) => rule.id),
+          gate.matched[0]?.message ?? null,
+          null,
+          null
+        ),
+        audience: null
+      };
+    }
+    if (gate.questions.length > 0) {
+      return {
+        verdict: this.needMoreVerdict(source, "screening", gate.questions),
+        audience: null
+      };
+    }
+
+    const crowdRules = this.stageRules("screening").filter(
+      (rule) => rule.id !== "S-01"
+    );
+    if (crowdRules.length === 0) {
+      // 最小/异常包无人群规则：不设 audience，直接通过（兼容旧测试包）。
+      return { verdict: null, audience: null };
+    }
+    const crowd = evaluateRules(crowdRules, source);
+    if (crowd.matched.length === 1) {
+      return {
+        verdict: null,
+        audience: (crowd.matched[0]?.code as "child" | "adult" | undefined) ?? null
+      };
+    }
+    if (crowd.matched.length > 1) {
+      return {
+        verdict: this.verdict(
+          source,
+          "conflict",
+          "screening",
+          crowd.matched.map((rule) => rule.id),
+          null,
+          null,
+          null
+        ),
+        audience: null
+      };
+    }
+    if (crowd.questions.length > 0) {
+      return {
+        verdict: this.needMoreVerdict(source, "screening", crowd.questions),
+        audience: null
+      };
+    }
+    // 防御：异常包无提问且无命中（理论上 S-02/S-03 必有一命中）。
+    return {
+      verdict: this.verdict(source, "no_match", "screening", [], null, null, null),
+      audience: null
+    };
+  }
+
+  /** phase 阶段（v4）：paroxysmal_sneezing → 期别派生（P-01/P-02）。 */
+  private evaluatePhase(source: MapFactSource): {
+    verdict: ClinicalVerdict | null;
+    phaseCode: "acute" | "remission" | null;
+  } {
+    const phaseRules = this.stageRules("phase");
+    if (phaseRules.length === 0) {
+      // 最小/异常包无期别规则：不设 phaseCode，直接通过。
+      return { verdict: null, phaseCode: null };
+    }
+    const report = evaluateRules(phaseRules, source);
+    if (report.matched.length === 1) {
+      return {
+        verdict: null,
+        phaseCode: (report.matched[0]?.code as "acute" | "remission" | undefined) ?? null
+      };
+    }
+    if (report.matched.length > 1) {
+      return {
+        verdict: this.verdict(
+          source,
+          "conflict",
+          "phase",
+          report.matched.map((rule) => rule.id),
+          null,
+          null,
+          null
+        ),
+        phaseCode: null
+      };
+    }
+    if (report.questions.length > 0) {
+      return {
+        verdict: this.needMoreVerdict(source, "phase", report.questions),
+        phaseCode: null
+      };
+    }
+    // 防御：paroxysmal_sneezing 必为 yes/no，异常包兜底。
+    return {
+      verdict: this.verdict(source, "no_match", "phase", [], null, null, null),
+      phaseCode: null
+    };
   }
 
   private evaluateApplicability(source: MapFactSource): ClinicalVerdict | null {
     const report = evaluateRules(this.stageRules("applicability"), source);
     if (report.matched.length > 0) {
       return this.verdict(
+        source,
         "non_applicable",
         "applicability",
         report.matched.map((rule) => rule.id),
@@ -156,7 +342,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       );
     }
     if (report.questions.length > 0) {
-      return this.needMoreVerdict("applicability", report.questions);
+      return this.needMoreVerdict(source, "applicability", report.questions);
     }
     return null;
   }
@@ -169,6 +355,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       const severityCode = codes[0] as SeverityCode;
       const matched = report.matched.filter((rule) => rule.code === severityCode);
       return this.verdict(
+        source,
         "classified",
         "severity",
         matched.map((rule) => rule.id),
@@ -180,6 +367,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     if (codes.length > 1) {
       // 多个不同严重度结论同时命中：不猜测。
       return this.verdict(
+        source,
         "conflict",
         "severity",
         report.matched.map((rule) => rule.id),
@@ -189,10 +377,10 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       );
     }
     if (report.questions.length > 0) {
-      return this.needMoreVerdict("severity", report.questions);
+      return this.needMoreVerdict(source, "severity", report.questions);
     }
     // 防御：SEV-05 覆盖全 no，理论上不可达；仍不猜测。
-    return this.verdict("no_match", "severity", [], null, null, null);
+    return this.verdict(source, "no_match", "severity", [], null, null, null);
   }
 
   private evaluateSyndrome(
@@ -206,6 +394,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       const syndromeCode = codes[0] as string;
       const matched = report.matched.filter((rule) => rule.code === syndromeCode);
       return this.verdict(
+        source,
         "classified",
         "syndrome",
         matched.map((rule) => rule.id),
@@ -217,6 +406,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     if (codes.length > 1) {
       // 多个证型同时精确命中：冲突，绝不猜测。
       return this.verdict(
+        source,
         "conflict",
         "syndrome",
         report.matched.map((rule) => rule.id),
@@ -226,12 +416,23 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       );
     }
     if (report.questions.length > 0) {
-      return this.needMoreVerdict("syndrome", report.questions, severityCode);
+      return this.needMoreVerdict(source, "syndrome", report.questions, severityCode);
     }
-    return this.verdict("no_match", "syndrome", [], null, severityCode, null);
+    // no_match 兜底（AI 决策 A2）：怕热单独（无寒象无口渴无疲倦）为罕见
+    // 组合，客户树无判定归属。安全侧提示门诊后转信息收集（不结束会话，
+    // conversation-service 对 no_match 渲染 message 后继续，见 execTurn）。
+    return this.verdict(
+      source,
+      "no_match",
+      "syndrome",
+      [],
+      "您的情况较特殊，暂无法匹配现有体质类型。本工具不提供个性化方案，建议到正规医院耳鼻喉科门诊进一步评估。",
+      severityCode,
+      null
+    );
   }
 
-  /** 方案安全：仅在证型已分类后执行；无已批准方案时直接完成（planId=null）。 */
+  /** 方案安全：仅在证型已分类后执行；双方案逐条独立评估，任一命中即阻断整包。 */
   private async evaluatePlanSafety(
     source: MapFactSource,
     matchedSoFar: readonly string[]
@@ -241,16 +442,28 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     if (syndrome === null || severity === null) {
       return null;
     }
-
-    const plan = await this.planRegistry.findApprovedPlan({
-      syndromeCode: String(syndrome.value),
-      severityCode: severity.value as SeverityCode
-    });
+    const phaseCode = (source.get("phase_code")?.value as "acute" | "remission") ?? null;
+    const audience = (source.get("audience")?.value as "child" | "adult") ?? null;
+    if (phaseCode === null || audience === null) {
+      // 防御：期别/人群必须先由 screening/phase 派生（正常流水线必达）。
+      return null;
+    }
     const severityCode = severity.value as SeverityCode;
     const syndromeCode = String(syndrome.value);
 
-    if (plan === null) {
+    const bundle = await this.planRegistry.findApprovedPlanBundle({
+      syndromeCode,
+      phaseCode,
+      audience
+    });
+    const plans: ApprovedPlan[] = [
+      bundle.acute,
+      bundle.constitution
+    ].filter((plan): plan is ApprovedPlan => plan !== null);
+
+    if (plans.length === 0) {
       return this.verdict(
+        source,
         "classified",
         "completed",
         [...matchedSoFar],
@@ -258,60 +471,73 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
         severityCode,
         syndromeCode,
         null,
+        null,
         null
       );
     }
 
-    const planFacts: ConfirmedFact[] = Object.entries(plan.attributes).map(
-      ([key, value]) => ({
-        fieldCode: key,
-        state: "value" as const,
-        value,
-        source: "approved_plan"
-      })
-    );
-    const report = evaluateRules(this.pack.planSafetyRules, source.with(planFacts));
-    if (report.matched.length > 0) {
-      return this.verdict(
-        "blocked",
-        "plan_safety",
-        [...matchedSoFar, ...report.matched.map((rule) => rule.id)],
-        report.matched[0]?.message ?? null,
-        severityCode,
-        syndromeCode,
-        plan.planId,
-        plan.planRevision
+    for (const plan of plans) {
+      const planFacts: ConfirmedFact[] = Object.entries(plan.attributes).map(
+        ([key, value]) => ({
+          fieldCode: key,
+          state: "value" as const,
+          value,
+          source: "approved_plan"
+        })
       );
+      const report = evaluateRules(this.pack.planSafetyRules, source.with(planFacts));
+      if (report.matched.length > 0) {
+        return this.verdict(
+          source,
+          "blocked",
+          "plan_safety",
+          [...matchedSoFar, ...report.matched.map((rule) => rule.id)],
+          report.matched[0]?.message ?? null,
+          severityCode,
+          syndromeCode,
+          plan.planId,
+          plan.planRevision,
+          null
+        );
+      }
+      if (report.questions.length > 0) {
+        return this.needMoreVerdict(source, "plan_safety", report.questions, severityCode);
+      }
     }
-    if (report.questions.length > 0) {
-      return this.needMoreVerdict("plan_safety", report.questions, severityCode);
-    }
+
+    // 全过：planBundle 供渲染；planId 落调体方案（AI 决策 A9 约定）。
     return this.verdict(
+      source,
       "classified",
       "completed",
       [...matchedSoFar],
       null,
       severityCode,
       syndromeCode,
-      plan.planId,
-      plan.planRevision
+      bundle.constitution?.planId ?? null,
+      bundle.constitution?.planRevision ?? null,
+      bundle
     );
   }
 
-  private stageRules(stage: "safety" | "applicability" | "severity" | "syndrome"): readonly ClinicalRule[] {
+  private stageRules(stage: "safety" | "screening" | "phase" | "applicability" | "severity" | "syndrome"): readonly ClinicalRule[] {
     return this.pack.rules.filter((rule) => rule.stage === stage);
   }
 
   private needMoreVerdict(
-    stage: "safety" | "applicability" | "severity" | "syndrome" | "plan_safety",
+    source: MapFactSource,
+    stage: "safety" | "screening" | "phase" | "applicability" | "severity" | "syndrome" | "plan_safety",
     questions: readonly NextQuestion[],
     severityCode: SeverityCode | null = null
   ): ClinicalVerdict {
+    const { phaseCode, audience } = this.derived(source);
     return {
       outcome: "need_more_information",
       stage,
       severityCode,
       syndromeCode: null,
+      phaseCode,
+      audience,
       nextQuestions: questions.slice(0, MAX_NEXT_QUESTIONS),
       // 未截断的全集：供 fail-closed 进展判定使用（截断只影响展示，
       // 不影响判定，评审 P1 kimi P1-6）。
@@ -320,12 +546,24 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       message: null,
       planId: null,
       planRevision: null,
+      planBundle: null,
       rulePackageVersion: this.rulePackageVersion,
       rulePackageHash: this.rulePackageHash
     };
   }
 
+  private derived(source: MapFactSource): {
+    phaseCode: "acute" | "remission" | null;
+    audience: "child" | "adult" | null;
+  } {
+    return {
+      phaseCode: (source.get("phase_code")?.value as "acute" | "remission") ?? null,
+      audience: (source.get("audience")?.value as "child" | "adult") ?? null
+    };
+  }
+
   private verdict(
+    source: MapFactSource,
     outcome: ClinicalVerdict["outcome"],
     stage: ClinicalVerdict["stage"],
     matchedRuleIds: string[],
@@ -333,19 +571,24 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     severityCode: SeverityCode | null,
     syndromeCode: string | null,
     planId: string | null = null,
-    planRevision: number | null = null
+    planRevision: number | null = null,
+    planBundle: ClinicalVerdict["planBundle"] = null
   ): ClinicalVerdict {
+    const { phaseCode, audience } = this.derived(source);
     return {
       outcome,
       stage,
       severityCode,
       syndromeCode,
+      phaseCode,
+      audience,
       nextQuestions: [],
       allQuestions: [],
       matchedRuleIds,
       message,
       planId,
       planRevision,
+      planBundle,
       rulePackageVersion: this.rulePackageVersion,
       rulePackageHash: this.rulePackageHash
     };

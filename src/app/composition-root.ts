@@ -93,6 +93,7 @@ import type {
 } from "../modules/agent/model-ports.js";
 import { ClinicalRuleKernel } from "../modules/clinical-rules/clinical-rule-kernel.js";
 import type { PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
+import type { RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
 
@@ -109,6 +110,8 @@ export interface ApplicationOptions {
   explanation?: ModelExplanationPort | undefined;
   /** 方案注册表端口；默认无任何已批准方案（规则包未冻结）。 */
   planRegistry?: PlanRegistryPort | undefined;
+  /** 临床规则包注入点（测试用）；默认加载冻结包 clinical-rules-v1。 */
+  rulePackage?: RulePackage | undefined;
   /** 显式覆盖 KANGMIN_APP_ENV（测试用）；未提供时读环境变量。 */
   appEnvironment?: AppEnvironment | undefined;
   /**
@@ -671,7 +674,10 @@ export function createApplicationWithOps(
     // 注册表数据源接通统一方案表 agent_plans。
     const planRegistry: PlanRegistryPort =
       options.planRegistry ?? new PgPlanRegistry(database);
-    const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+    const kernel = new ClinicalRuleKernel(
+      options.rulePackage ?? DRAFT_RULE_PACKAGE,
+      planRegistry
+    );
     const accountRepository = new PgAccountRepository(database);
     const conversationRepository = new PgConversationRepository(database);
     // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
@@ -716,7 +722,10 @@ export function createApplicationWithOps(
   // 注册表数据源接通统一方案表 agent_plans，供模拟测试与冻结后的正式评估使用。
   const planRegistry: PlanRegistryPort =
     options.planRegistry ?? new SqlitePlanRegistry(database);
-  const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+  const kernel = new ClinicalRuleKernel(
+    options.rulePackage ?? DRAFT_RULE_PACKAGE,
+    planRegistry
+  );
   const accountRepository = new SqliteAccountRepository(database);
   const conversationRepository = new SqliteConversationRepository(database);
   // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。

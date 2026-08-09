@@ -27,6 +27,7 @@ import { DomainError } from "../../kernel/errors.js";
 import type { EncryptionPort } from "../../kernel/encryption.js";
 import type { ConsentGatePort } from "../account/consent-ports.js";
 import { parseStructuredAnswers } from "./answer-parser.js";
+import { parseOptionPayload } from "./option-mapping.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type {
   CandidateRow,
@@ -213,8 +214,27 @@ export class ConversationService {
 
     // 1. 确定性结构化回答（模型降级路径）：先收集，随轮次单事务提交
     //    （评审 B P1-2 原子化：不再逐条独立事务写库）。
+    //    问卷选项载荷（q1=B，多选题保真）与字段标签解析并列：选项载荷
+    //    命中时确定性映射（option-mapping.ts），严禁 message=""（空串解析
+    //    返回 [] 死循环，评审二轮 P0-1）。
     const pendingAnswers: ConfirmedAnswerRow[] = [];
-    for (const answer of parseStructuredAnswers(message, lastQuestions)) {
+    const optionHit = parseOptionPayload(message);
+    if (optionHit !== null && optionHit.field !== null && optionHit.state !== null) {
+      pendingAnswers.push({
+        sessionId: session.id,
+        fieldCode: optionHit.field,
+        value: optionHit.state,
+        factValue: null,
+        source: "patient_confirmation",
+        rulePackageVersion: session.rulePackageVersion,
+        rulePackageHash: session.rulePackageHash,
+        revision: session.revision,
+        confirmedAt: timestamp
+      });
+      unknownAnswered.delete(optionHit.field);
+    }
+    const parsedAnswers = parseStructuredAnswers(message, lastQuestions);
+    for (const answer of parsedAnswers) {
       const row: ConfirmedAnswerRow = {
         sessionId: session.id,
         fieldCode: answer.fieldCode,
@@ -249,9 +269,12 @@ export class ConversationService {
     const facts = answersToFacts(mergedAnswers);
 
     // 2. 模型提取待确认候选（失败只降级，绝不宽松解析）。
+    //    确定性解析命中（选项载荷或字段标签）时跳过 extraction：
+    //    避免每轮降级 notice 噪音（评审二轮 #3）。
     let extractionFailed = false;
     let extracted: ExtractionCandidate[] = [];
-    if (message !== "") {
+    const deterministicHit = optionHit !== null || parsedAnswers.length > 0;
+    if (!deterministicHit && message !== "") {
       try {
         extracted = await this.extraction.extractCandidates({
           message,
@@ -341,6 +364,9 @@ export class ConversationService {
       stage: verdict.stage,
       severityCode: verdict.severityCode,
       syndromeCode: verdict.syndromeCode,
+      phaseCode: verdict.phaseCode,
+      audience: verdict.audience,
+      rulePackageStatus: this.kernel.rulePackageStatus,
       nextQuestionsJson: JSON.stringify(verdict.nextQuestions),
       matchedRuleIdsJson: JSON.stringify(verdict.matchedRuleIds),
       rulePackageVersion: session.rulePackageVersion,
@@ -484,6 +510,8 @@ export class ConversationService {
       // 结构化字段侧信道拼装完整方案（评审 P0-2，见 patientVerdict）。
       severityCode: trimmed ? null : decision.severityCode,
       syndromeCode: trimmed ? null : decision.syndromeCode,
+      phaseCode: trimmed ? null : decision.phaseCode,
+      audience: trimmed ? null : decision.audience,
       matchedRuleIds: trimmed ? [] : (JSON.parse(decision.matchedRuleIdsJson) as string[]),
       rulePackageVersion: decision.rulePackageVersion,
       planId: trimmed ? null : decision.planId,
@@ -520,11 +548,16 @@ export class ConversationService {
       stage: trimmed ? null : verdict.stage,
       severityCode: trimmed ? null : verdict.severityCode,
       syndromeCode: trimmed ? null : verdict.syndromeCode,
+      phaseCode: trimmed ? null : verdict.phaseCode,
+      audience: trimmed ? null : verdict.audience,
       nextQuestions: verdict.nextQuestions,
       matchedRuleIds: trimmed ? [] : verdict.matchedRuleIds,
       rulePackageVersion: verdict.rulePackageVersion,
       rulePackageHash: verdict.rulePackageHash,
-      rulePackageStatus: this.kernel.rulePackageStatus
+      rulePackageStatus: this.kernel.rulePackageStatus,
+      // planBundle 永不进患者侧（评审 P0-8）：前端只从消息内容渲染，
+      // 防 agent exec --json 拿完整方案拼装（三步拼装侧信道）。
+      planBundle: null
     };
   }
 

@@ -15,11 +15,12 @@
 import { createHash } from "node:crypto";
 
 import type {
+  ApprovedPlan,
   ClinicalVerdict,
+  PlanBundle,
   RulePackageStatus
 } from "../clinical-rules/contracts.js";
 import {
-  SEVERITY_LABELS,
   SYNDROME_LABELS,
   FIELD_LABELS
 } from "../clinical-rules/domain.js";
@@ -47,9 +48,10 @@ export const FAIL_CLOSED_SAFETY_NOTICE =
 export const FAIL_CLOSED_INFO_NOTICE =
   "您对必要问题表示无法确认，当前信息不足，无法继续评估。本工具不做猜测，请以门诊诊断为准。";
 
-/** 模型提取不可用时的固定 system_notice（代码生成，不绑定决策）。 */
+/** 模型提取不可用时的固定 system_notice（代码生成，不绑定决策）。
+ *  客户可读文案（评审 P0-9 修正：不暴露内部"智能提取服务"术语）。 */
 export const EXTRACTION_UNAVAILABLE_NOTICE =
-  "智能提取服务暂不可用，请直接回答系统提问（如“怕风：是”）。";
+  "未识别到您的回答，请点击下方选项按钮回答，或直接输入“是 / 否 / 不清楚”。";
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -98,6 +100,115 @@ function questionText(verdict: ClinicalVerdict): string {
   return `为了继续评估，请回答以下问题：\n${lines.join("\n")}`;
 }
 
+/** 步骤文本：steps_json 可能是 JSON 数组（管理端），转逐行编号；非 JSON 原样。 */
+function planSteps(plan: ApprovedPlan): string {
+  if (plan.steps === "" || plan.steps === "[]") {
+    return "";
+  }
+  try {
+    const parsed = JSON.parse(plan.steps) as unknown;
+    if (Array.isArray(parsed)) {
+      return parsed
+        .map((step, index) => `${index + 1}. ${String(step)}`)
+        .join("\n");
+    }
+  } catch {
+    // 非 JSON 原样输出。
+  }
+  return plan.steps;
+}
+
+/** 单方案区块（名称/手法/步骤/注意事项）；方案缺失输出待补充，不捏造正文。 */
+function planBlock(plan: ApprovedPlan | null): string {
+  if (plan === null) {
+    return "方案待补充（由后台完善后生效）。";
+  }
+  const lines: string[] = [plan.name];
+  if (plan.method !== "") {
+    lines.push(`手法：${plan.method}`);
+  }
+  const steps = planSteps(plan);
+  if (steps !== "") {
+    lines.push(`步骤：\n${steps}`);
+  }
+  if (plan.precautions !== "") {
+    lines.push(`注意事项：${plan.precautions}`);
+  }
+  return lines.join("\n");
+}
+
+function videoBlock(plan: ApprovedPlan | null): string {
+  return plan?.videoResourceId === null || plan?.videoResourceId === undefined
+    ? "视频暂未上传（医学审核后补充）。"
+    : "操作视频已提供（见视频资源）。";
+}
+
+const ACUTE_HEADER = (syndrome: string): string =>
+  `根据您的自测结果，您目前处于鼻炎的【急性发作期】\n` +
+  `您的体质类型为：【${syndrome}】\n` +
+  `您目前处于急性发作期，我们为您优先推荐快速缓解症状的治标方案，同时配套日常体质调理方案`;
+
+const REMISSION_HEADER = (syndrome: string): string =>
+  `根据您的自测结果，您目前处于鼻炎的【缓解期】\n` +
+  `您的体质类型为：【${syndrome}】\n` +
+  `此时应缓则治本，专注调理体质\n` +
+  `请您坚持执行调体方案，每周 2-3 次，鼻炎反复的根源在体质，体质改善了，复发自然减少\n` +
+  `如因受凉或接触过敏原导致症状突然复发，可采取急性期方案缓解症状`;
+
+const DISCLAIMER =
+  "⚠️ 温馨提示：本方案为居家辅助调理建议，不能替代专业医疗诊断";
+
+/** 急性期模板（《页面展示》纯文本化：去 ###/**，保留【】与换行）。 */
+function acuteTemplate(syndrome: string, bundle: PlanBundle | null): string {
+  return [
+    ACUTE_HEADER(syndrome),
+    "",
+    "【急性期症状缓解方案】",
+    "【文本】",
+    planBlock(bundle?.acute ?? null),
+    "【操作视频】",
+    videoBlock(bundle?.acute ?? null),
+    "",
+    "【体质调理固本方案】",
+    "【文本】",
+    planBlock(bundle?.constitution ?? null),
+    "【操作视频】",
+    videoBlock(bundle?.constitution ?? null),
+    "",
+    "【执行建议】",
+    "急性期方案：每日执行，直至症状明显缓解",
+    "调体方案：每周执行 2-3 次，建议长期坚持",
+    "两种方案可同一天执行，互不冲突（建议先做急性期通窍，再做调体固本）",
+    "",
+    DISCLAIMER
+  ].join("\n");
+}
+
+/** 缓解期模板（《页面展示》纯文本化）。 */
+function remissionTemplate(syndrome: string, bundle: PlanBundle | null): string {
+  return [
+    REMISSION_HEADER(syndrome),
+    "",
+    "【体质调理固本方案】",
+    "【文本】",
+    planBlock(bundle?.constitution ?? null),
+    "【操作视频】",
+    videoBlock(bundle?.constitution ?? null),
+    "",
+    "【急性期方案】",
+    "【文本】",
+    planBlock(bundle?.acute ?? null),
+    "【操作视频】",
+    videoBlock(bundle?.acute ?? null),
+    "",
+    "【执行建议】",
+    "调体方案每周 2-3 次。配合规律作息、适度运动、忌口生冷辛辣",
+    "花 1 分钟填写症状记录，系统将自动生成趋势图，帮助您看到改善曲线",
+    "",
+    DISCLAIMER
+  ].join("\n");
+}
+
 /**
  * 渲染某次裁决的最终患者可见输出。
  * modelFields 传入时先校验，非法则回退固定模板。
@@ -124,18 +235,25 @@ export function renderValidatedOutput(
     case "conflict":
       return output("conflict", CONFLICT_MESSAGE, fields);
     case "no_match":
-      return output("no_match", NO_MATCH_MESSAGE, fields);
+      // 内核可能携带兜底文案（如怕热单独组合提示门诊，AI 决策 A2）。
+      return output("no_match", verdict.message ?? NO_MATCH_MESSAGE, fields);
     case "classified": {
       // 临床红线：规则包未 approved 前，正式输出路径一律阻断。
       if (packageStatus !== "approved") {
         return output("clinical_freeze", CLINICAL_FREEZE_BLOCK, fields);
       }
-      const severity = SEVERITY_LABELS[verdict.severityCode ?? ""] ?? "未定";
       const syndrome = SYNDROME_LABELS[verdict.syndromeCode ?? ""] ?? "未定";
+      // 两套模板按《页面展示》（客户确认版本，vault/truth/product/
+      // assessment-page-content.md）纯文本化；期别由 Q1 派生（P-01/P-02）。
       const content =
-        `根据您的确认：严重度【${severity}】，证型【${syndrome}】。` +
-        `本结果由固定规则产生，仅供参考，最终方案请以门诊诊断为准。`;
-      return output("classified_summary", content, fields);
+        verdict.phaseCode === "acute"
+          ? acuteTemplate(syndrome, verdict.planBundle)
+          : remissionTemplate(syndrome, verdict.planBundle);
+      return output(
+        verdict.phaseCode === "acute" ? "acute_result" : "remission_result",
+        content,
+        fields
+      );
     }
   }
 }

@@ -258,9 +258,11 @@ test("组合根探针装配：SQLite 本地环境数据库 ok，其余如实 not
       (await ops.readinessProbes.environmentProvider.run()).status,
       "not_configured"
     );
+    // 规则包已临床冻结（智能体设计 v4：approved + clinical-rules-v1）：
+    // 探针如实报告 ok（部署验收口径：/ready 预期仅 rule-package 翻 ok）。
     const rulePackage = await ops.readinessProbes.rulePackage.run();
-    assert.equal(rulePackage.status, "not_configured");
-    assert.match(rulePackage.message, /candidate/u);
+    assert.equal(rulePackage.status, "ok");
+    assert.match(rulePackage.message, /已临床冻结/u);
   } finally {
     ops.application.close();
   }

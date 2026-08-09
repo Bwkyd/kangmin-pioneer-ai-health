@@ -565,6 +565,9 @@ export class PgConversationRepository implements ConversationRepository {
       stage: string;
       severity_code: string | null;
       syndrome_code: string | null;
+      phase_code: string | null;
+      audience: string | null;
+      rule_package_status: string | null;
       next_questions_json: string;
       matched_rule_ids_json: string;
       rule_package_version: string;
@@ -588,6 +591,10 @@ export class PgConversationRepository implements ConversationRepository {
       stage: row.stage,
       severityCode: row.severity_code,
       syndromeCode: row.syndrome_code,
+      phaseCode: (row.phase_code as "acute" | "remission" | null) ?? null,
+      audience: (row.audience as "child" | "adult" | null) ?? null,
+      rulePackageStatus:
+        (row.rule_package_status as "candidate" | "approved" | null) ?? null,
       nextQuestionsJson: row.next_questions_json,
       matchedRuleIdsJson: row.matched_rule_ids_json,
       rulePackageVersion: row.rule_package_version,

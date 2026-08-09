@@ -190,13 +190,16 @@ function classifiedVerdict(): ClinicalVerdict {
     stage: "completed",
     severityCode: "mild",
     syndromeCode: "LUNG_HEAT",
+    phaseCode: "acute",
+    audience: "adult",
     nextQuestions: [],
     allQuestions: [],
     matchedRuleIds: ["SEV-05", "T1"],
     message: null,
     planId: null,
     planRevision: null,
-    rulePackageVersion: "clinical-rules-draft-v0",
+    planBundle: null,
+    rulePackageVersion: "clinical-rules-v1",
     rulePackageHash: "hash"
   };
 }
