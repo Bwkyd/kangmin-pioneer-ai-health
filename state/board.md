@@ -11,6 +11,7 @@
 > 收尾：worktree/临时分支（dev-agent-v4-core/fix-pg-v4-migration/wt-*）全部清理，仅 main；云端/本地/git 已同步。
 > 教训：①CI 有 PG 契约测试——PG 迁移必须与 SQLite 同步写（0004 补）②部署目标确认先于构建（pioneer 是旧 vinext 栈，kangmin-cli 才是本地项目）③macOS bsdtar 无 --transform 用 -s，打包含 .env.local 等敏感文件须排除。
 > 待办：Q12-14 服务端信息收集路径（前端已静态省略，待客户确认）；PG 双方案查询已就绪未线上验证（预检 SQLite）；偏离清单 7 条 + 待客户确认清单 5 条待客户反馈；浏览门禁放开后患者 browse 全量方案口径待确认（评审 P2-2）。
+> 补充：基准测试 `scripts/benchmark-assessment.mjs`（12 场景真实 CLI 全对话，12/12 通过，`dfef895`）已入库并同步服务器；架构变更记录 `docs/changes/arch/004` 已入库。
 
 > ## ✅ 智能体设计计划 v4 定稿与作者拍板（2026-08-09 第十三轮 · 未提交，基线 `9e83c4a`）
 > 计划经两轮 5 视角对抗评审 + codex 独立评审（共发现 P0 约 20 项、P1 约 30 项，重点：stage CHECK 迁移缺失、"不灸"子串误判、T5 与决定①相悖、planBundle 泄露、按钮载荷 message="" 死循环、seed 线上执行机制、32 组合互斥失实等），v4 全部闭环。**作者拍板 8 项**（AskUserQuestion 记录）：① 问卷多选题保真（原题原选项按钮，传选项值 q1=B 服务端映射，Q12-14 保留提问）；② 证型 v3 七规则（寒热错杂字面优先，供医学审核）；③ 删 APP-01 症状计数转介（确诊题承担门禁）；④ 儿童可用（删 SAF-07，按小儿方案）；⑤ 部署前清空线上旧会话；⑥ 有回退线（16:00 裁减，最坏保留现状 cc79ac5）；⑦ 今天冻结（approved + clinical-rules-v1）；⑧ 配模型 key（演示走自由文本+AI 提取，按钮兜底）。
