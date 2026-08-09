@@ -19,7 +19,16 @@ import type {
 } from "../modules/clinical-rules/contracts.js";
 import type { ClinicalRule, RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
+import { ASSESSMENT_QUESTIONS } from "../modules/clinical-rules/assessment-questionnaire.js";
 import { enumerateSyndromeTreePaths } from "../modules/clinical-rules/syndrome-decision-tree.js";
+
+function withoutQuestionnaireStrategy(rulePackage: RulePackage): RulePackage {
+  const { questionnaireStrategy: _questionnaireStrategy, ...legacy } = rulePackage;
+  return legacy;
+}
+
+/** 旧规则流水线只用于保留既有安全/筛查单元测试，不参与生产装配。 */
+const LEGACY_PIPELINE_PACKAGE = withoutQuestionnaireStrategy(DRAFT_RULE_PACKAGE);
 
 function fact(fieldCode: string, state: ConfirmedFact["state"]): ConfirmedFact {
   return { fieldCode, state, source: "patient_confirmation" };
@@ -27,6 +36,14 @@ function fact(fieldCode: string, state: ConfirmedFact["state"]): ConfirmedFact {
 
 function optionFact(fieldCode: string, value: "A" | "B" | "C"): ConfirmedFact {
   return { fieldCode, state: "value", value, source: "patient_confirmation" };
+}
+
+function pageFact(fieldCode: string, value: string): ConfirmedFact {
+  return { fieldCode, state: "value", value, source: "patient_confirmation" };
+}
+
+function pageAnswers(values: Record<string, string>): ConfirmedFact[] {
+  return Object.entries(values).map(([fieldCode, value]) => pageFact(fieldCode, value));
 }
 
 /** 让规则流水线能一路走到严重度/证型的"干净"事实（v4：含确诊/人群/期别）。 */
@@ -51,7 +68,7 @@ const emptyRegistry: PlanRegistryPort = {
 };
 
 function kernelWith(planRegistry: PlanRegistryPort = emptyRegistry): ClinicalRuleKernel {
-  return new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+  return new ClinicalRuleKernel(LEGACY_PIPELINE_PACKAGE, planRegistry);
 }
 
 function factsWith(base: ConfirmedFact[], extra: ConfirmedFact[]): ConfirmedFact[] {
@@ -76,16 +93,81 @@ function lungHeatFacts(): ConfirmedFact[] {
   ]);
 }
 
-test("规则包元数据：版本 clinical-rules-v2、六步树与稳定哈希", () => {
-  const kernel = kernelWith();
-  assert.equal(kernel.rulePackageVersion, "clinical-rules-v2");
+test("生产规则包元数据：v3 页面问卷、六步树与稳定哈希", () => {
+  const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, emptyRegistry);
+  assert.equal(kernel.rulePackageVersion, "clinical-rules-v3");
   assert.equal(kernel.rulePackageStatus, "approved");
   assert.match(kernel.rulePackageHash, /^[0-9a-f]{64}$/u);
+  assert.equal(DRAFT_RULE_PACKAGE.questionnaireStrategy, "page_q1_q14");
   assert.deepEqual(DRAFT_RULE_PACKAGE.sourceRefs, [
     "vault/truth/clinical/syndrome-six-step-decision-tree.md",
     "vault/truth/clinical/assessment-rules.md",
+    "vault/truth/product/assessment-page-content.md",
     "vault/truth/clinical/care-plans.md"
   ]);
+});
+
+test("生产页面严格按《页面展示》Q1-Q14 逐题推进，不插入旧筛查题", async () => {
+  const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, emptyRegistry);
+  const answers: ConfirmedFact[] = [];
+
+  assert.deepEqual(ASSESSMENT_QUESTIONS.map((question) => question.id), [
+    "q1", "q2", "q3", "q4", "q5", "q6", "q7",
+    "q8", "q9", "q10", "q11", "q12", "q13", "q14"
+  ]);
+
+  const defaults: Record<string, string> = {
+    q1: "A", q2: "A", q3: "A", q4: "A", q5: "A", q6: "A", q7: "A",
+    q8: "A", q9: "A", q10: "A", q11: "A", q12: "A", q13: "A", q14: "A"
+  };
+  for (const question of ASSESSMENT_QUESTIONS) {
+    const verdict = await kernel.evaluate(answers);
+    assert.equal(verdict.outcome, "need_more_information", question.id);
+    assert.equal(verdict.nextQuestions[0]?.fieldCode, question.id, question.id);
+    assert.equal(verdict.nextQuestions[0]?.prompt, question.title, question.id);
+    answers.push(pageFact(question.id, defaults[question.id] ?? "A"));
+  }
+
+  const completed = await kernel.evaluate(answers);
+  assert.equal(completed.outcome, "classified");
+  assert.equal(completed.syndromeCode, "LUNG_HEAT");
+  assert.equal(completed.phaseCode, "acute");
+});
+
+test("生产六步树：Q1-Q11 后才做独立二次确认，完成后继续 Q12-Q14", async () => {
+  const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, emptyRegistry);
+  const base = pageAnswers({
+    q1: "C", q2: "B", q3: "B", q4: "C", q5: "D", q6: "B",
+    q7: "C", q8: "C", q9: "A", q10: "B", q11: "D"
+  });
+
+  const step5 = await kernel.evaluate(base);
+  assert.equal(step5.nextQuestions[0]?.fieldCode, "step5_q8_confirm");
+
+  const step6 = await kernel.evaluate([
+    ...base,
+    pageFact("step5_q8_confirm", "B")
+  ]);
+  assert.equal(step6.nextQuestions[0]?.fieldCode, "step6_q10_confirm");
+
+  const phaseStart = await kernel.evaluate([
+    ...base,
+    pageFact("step5_q8_confirm", "B"),
+    pageFact("step6_q10_confirm", "A")
+  ]);
+  assert.equal(phaseStart.nextQuestions[0]?.fieldCode, "q12");
+
+  const completed = await kernel.evaluate([
+    ...base,
+    pageFact("step5_q8_confirm", "B"),
+    pageFact("step6_q10_confirm", "A"),
+    pageFact("q12", "C"),
+    pageFact("q13", "B"),
+    pageFact("q14", "B")
+  ]);
+  assert.equal(completed.outcome, "classified");
+  assert.equal(completed.syndromeCode, "COLD_HEAT_COMPLEX");
+  assert.equal(completed.phaseCode, "remission");
 });
 
 test("高危输入逐项阻断：高热/出血/皮损/孕期/急救/神经症状（SAF-07 已删）", async () => {
@@ -385,7 +467,7 @@ test("方案安全：急性方案含灸法 → 整包阻断（MSAF-01，逐条�
       attributes: {}
     }
   });
-  const verdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+  const verdict = await new ClinicalRuleKernel(LEGACY_PIPELINE_PACKAGE, registry).evaluate(
     lungHeatFacts()
   );
   assert.equal(verdict.outcome, "blocked");
@@ -417,7 +499,7 @@ test("方案安全通过：双方案无禁忌 → classified 且绑定双方案�
       attributes: {}
     }
   });
-  const verdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+  const verdict = await new ClinicalRuleKernel(LEGACY_PIPELINE_PACKAGE, registry).evaluate(
     lungHeatFacts()
   );
   assert.equal(verdict.outcome, "classified");
@@ -521,7 +603,7 @@ test("生产注册表：含灸法的启用方案触发 MSAF-01 阻断（自由�
     insertPlan(database, { id: "plan-moxa", syndrome: "ACUTE", method: "温和艾灸与日常护理", phaseCode: "acute", audience: "adult" });
     insertPlan(database, { id: "plan-tune", syndrome: "LUNG_HEAT", method: "日常护理", phaseCode: null, audience: "adult" });
     const registry = new SqlitePlanRegistry(database);
-    const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry);
+    const kernel = new ClinicalRuleKernel(LEGACY_PIPELINE_PACKAGE, registry);
 
     const bundle = await registry.findApprovedPlanBundle({
       syndromeCode: "LUNG_HEAT",
@@ -554,7 +636,7 @@ test("生产注册表：'点揉，不灸'不得误判 moxibustion（评审 P0-2 
     });
     assert.deepEqual(bundle.acute?.attributes, {}, "含'不灸'不得输出 moxibustion");
 
-    const verdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+    const verdict = await new ClinicalRuleKernel(LEGACY_PIPELINE_PACKAGE, registry).evaluate(
       lungHeatFacts()
     );
     assert.equal(verdict.outcome, "classified");
@@ -578,7 +660,7 @@ test("生产注册表：method 为空或无法映射时不出属性键（unmatch
     });
     assert.deepEqual(bundle.acute?.attributes, {}, "空 method 不应输出属性键");
 
-    const verdict = await new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, registry).evaluate(
+    const verdict = await new ClinicalRuleKernel(LEGACY_PIPELINE_PACKAGE, registry).evaluate(
       lungHeatFacts()
     );
     assert.equal(verdict.outcome, "classified");

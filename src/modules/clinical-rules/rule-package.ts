@@ -1,13 +1,10 @@
 /**
- * 临床规则包 clinical-rules-v2（status=approved，2026-08-09 客户纠正确认）。
+ * 临床规则包 clinical-rules-v3（status=approved，2026-08-09 客户纠正确认）。
  *
- * v2 在 v1 的安全、筛选、期别、适用范围、严重度和方案安全基础上：
- * - 问卷多选题保真（选项值映射表在 modules/agent/option-mapping.ts，前端不复制映射）；
- * - 用客户确认的有序六步状态机替代作者/AI 代选的 v3 七规则；
- * - 删 APP-01 症状计数转介（确诊题承担适用范围门禁）；
- * - 删 SAF-07（儿童可用，人群题归 screening 阶段派生 audience）；
- * - 新增 screening（确诊门禁 + 人群）与 phase（期别）阶段。
- * 供医学审核事项见 docs/product/2026-08-09-智能体设计-决策记录.md 待确认清单。
+ * v3 明确拆开两类客户资料：
+ * - 《页面展示》唯一决定 Q1-Q14 的题面、选项、顺序和结果结构；
+ * - 《前置规则》及客户确认六步树唯一决定证型跳转、终止和期别。
+ * 旧安全/筛查/严重度规则保留作历史包兼容，不再插入 page_q1_q14 页面流程。
  *
  * 当前开发和验收采用的客户确认资料引用见 sourceRefs：
  * - assessment-rules：前置规则、证型决策树及急性期/缓解期判定；
@@ -21,15 +18,18 @@
 import { createHash } from "node:crypto";
 
 import type { ClinicalRule, RulePackage } from "./domain.js";
+import { ASSESSMENT_QUESTIONS } from "./assessment-questionnaire.js";
+import { SYNDROME_TREE } from "./syndrome-decision-tree.js";
 
 export { FIELD_LABELS } from "./domain.js";
 
-export const DRAFT_PACKAGE_VERSION = "clinical-rules-v2";
+export const DRAFT_PACKAGE_VERSION = "clinical-rules-v3";
 export const DRAFT_PACKAGE_STATUS = "approved" as const;
 
 export const SOURCE_REFS: string[] = [
   "vault/truth/clinical/syndrome-six-step-decision-tree.md",
   "vault/truth/clinical/assessment-rules.md",
+  "vault/truth/product/assessment-page-content.md",
   "vault/truth/clinical/care-plans.md"
 ];
 
@@ -369,9 +369,16 @@ function packageChecksum(pack: {
   rules: readonly ClinicalRule[];
   planSafetyRules: readonly ClinicalRule[];
   syndromeStrategy: "ordered_six_step";
+  questionnaireStrategy: "page_q1_q14";
 }): string {
   return createHash("sha256")
-    .update(JSON.stringify(pack), "utf8")
+    // 题面和状态机不是 rules 数组的一部分，也必须进入包哈希；否则只改
+    // 页面/跳转却不会让旧会话失效。
+    .update(JSON.stringify({
+      ...pack,
+      questionnaire: ASSESSMENT_QUESTIONS,
+      syndromeTree: SYNDROME_TREE
+    }), "utf8")
     .digest("hex");
 }
 
@@ -386,7 +393,8 @@ const base = {
     SEVERITY_RULES
   ),
   planSafetyRules: PLAN_SAFETY_RULES,
-  syndromeStrategy: "ordered_six_step" as const
+  syndromeStrategy: "ordered_six_step" as const,
+  questionnaireStrategy: "page_q1_q14" as const
 };
 
 /** 运行时只读加载的已冻结规则包；变更须走开发发布流程（架构 §16.2）。 */

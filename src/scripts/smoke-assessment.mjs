@@ -1,5 +1,4 @@
-// 评估全链路冒烟（智能体设计 v4，与流水线顺序一致）：
-// 急救→确诊→人群→喷嚏→症状→严重度→证型→结果卡
+// 评估全链路冒烟：页面按《页面展示》Q1-Q14，跳转按《前置规则》。
 // 用法：node scripts/smoke-assessment.mjs <数据库路径>
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
@@ -26,30 +25,25 @@ async function exec(message, conversationId) {
   return result.data;
 }
 
-// 对话序列：逐题一问，混合字段标签与问卷选项载荷（qN=选项）。
+// 寒热错杂路径：Q1-Q11 → Q8/Q10 二次确认 → Q12-Q14。
 const turns = [
   "",
-  "急救：否",
-  "高热：否",
-  "鼻出血：否",
-  "剧烈头痛：否",
-  "皮肤破损：否",
-  "怀孕：否",
-  "确诊过敏性鼻炎：是",
-  "未满12周岁：否",
   "q1=B",
-  "感冒样表现：否",
-  "鼻窦炎样表现：否",
-  "影响睡眠：否",
-  "影响日常活动：否",
-  "影响工作学习：否",
-  "难以忍受：否",
-  "q10=B",
-  "q8=C",
+  "q2=A",
+  "q3=C",
+  "q4=B",
+  "q5=D",
   "q6=B",
+  "q7=C",
+  "q8=C",
   "q9=A",
+  "q10=B",
+  "q11=D",
   "q8=B",
-  "q10=A"
+  "q10=A",
+  "q12=A",
+  "q13=A",
+  "q14=A"
 ];
 
 let last = null;
@@ -86,5 +80,5 @@ if (failed > 0) {
   console.error(content.slice(0, 600));
   process.exit(1);
 }
-console.log("冒烟通过：急救→确诊→人群→喷嚏→症状→严重度→证型→结果卡 全链路 ✅");
+console.log("冒烟通过：Q1-Q14→六步证型→分期→结果卡 全链路 ✅");
 app.close();

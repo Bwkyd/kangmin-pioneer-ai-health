@@ -60,6 +60,8 @@ export interface RulePackage {
   planSafetyRules: readonly ClinicalRule[];
   /** 证型阶段使用客户确认的有序六步状态机；缺省时兼容通用规则评估。 */
   syndromeStrategy?: "ordered_six_step" | undefined;
+  /** 页面按客户确认 Q1-Q14 逐题收集，再由六步树判证型。 */
+  questionnaireStrategy?: "page_q1_q14" | undefined;
   /** 规则包内容哈希（加载时计算，不可人工维护）。 */
   checksum: string;
 }

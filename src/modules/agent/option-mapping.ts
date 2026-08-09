@@ -1,14 +1,14 @@
 /**
  * 问卷选项值 → 判定字段确定性映射（智能体设计 v4：多选题保真）。
  *
- * 前端渲染客户问卷原题原选项按钮，点击只传稳定选项值（如 q1=B），
- * 服务端本表确定性映射到临床字段；前端与模型均不复制本映射。
- * 六步证型节点按客户确认树保存原始 A/B/C；其余旧问卷映射仍维持原审核状态，见
+ * 前端渲染客户问卷原题原选项按钮，点击只传稳定选项值（如 q1=B）。
+ * 生产页面流程按 qN 保存原始 A/B/C/D；六步二次确认按独立节点保存 A/B/C。
+ * 旧流水线的临床字段映射仅为历史包兼容，见
  * docs/product/2026-08-09-智能体设计-决策记录.md。
  */
 
 export interface QuestionOptionDef {
-  /** 映射到的判定字段；null = 仅信息收集，不参与判定（Q5/Q7/Q12-14）。 */
+  /** 旧语义映射字段；页面问卷流程以 qN 节点保存原始选项。 */
   field: string | null;
   options: Record<string, string>;
 }
@@ -27,16 +27,16 @@ const QUESTION_MAP: Record<string, QuestionOptionDef> = {
   q2: { field: "watery_rhinorrhea", options: { A: "yes", B: "no", C: "no", D: "no" } },
   q3: { field: "nasal_congestion", options: { A: "yes", B: "yes", C: "yes", D: "no" } },
   q4: { field: "nasal_itching", options: { A: "yes", B: "yes", C: "no" } },
-  q5: { field: null, options: {} },
+  q5: { field: null, options: { A: "value", B: "value", C: "value", D: "value" } },
   q6: { field: "fear_wind", options: { A: "yes", B: "yes", C: "no" } },
-  q7: { field: null, options: {} },
+  q7: { field: null, options: { A: "value", B: "value", C: "value" } },
   q8: { field: "fatigue", options: { A: "yes", B: "yes", C: "no" } },
   q9: { field: "limbs_not_warm", options: { A: "yes", B: "yes", C: "no" } },
   q10: { field: "thirst", options: { A: "yes", B: "yes", C: "no" } },
   q11: { field: "heat_imbalance", options: { A: "no", B: "yes", C: "no", D: "no" } },
-  q12: { field: null, options: {} },
-  q13: { field: null, options: {} },
-  q14: { field: null, options: {} }
+  q12: { field: null, options: { A: "value", B: "value", C: "value" } },
+  q13: { field: null, options: { A: "value", B: "value" } },
+  q14: { field: null, options: { A: "value", B: "value" } }
 };
 
 /** 未命中（非法题号/选项）返回 null：不猜测，留给自由文本/兜底路径。 */
@@ -63,11 +63,14 @@ export function parseOptionPayload(
     // 当前节点与载荷题号不一致：不把越序回答写入其他事实。
     return null;
   }
-  if (expectedField?.startsWith("step") === true) {
+  if (
+    expectedField?.startsWith("step") === true ||
+    /^q(?:[1-9]|1[0-4])$/u.test(expectedField ?? "")
+  ) {
     return {
       question,
       option,
-      field: expectedField,
+      field: expectedField ?? null,
       state: "value",
       factValue: option
     };
@@ -83,6 +86,20 @@ export function parseOptionPayload(
 
 /** 判定字段 → 问卷题号（供前端在补问字段时选择对应问卷卡片；UI 呈现层映射）。 */
 export const FIELD_TO_QUESTION: Record<string, string> = {
+  q1: "q1",
+  q2: "q2",
+  q3: "q3",
+  q4: "q4",
+  q5: "q5",
+  q6: "q6",
+  q7: "q7",
+  q8: "q8",
+  q9: "q9",
+  q10: "q10",
+  q11: "q11",
+  q12: "q12",
+  q13: "q13",
+  q14: "q14",
   paroxysmal_sneezing: "q1",
   watery_rhinorrhea: "q2",
   nasal_congestion: "q3",

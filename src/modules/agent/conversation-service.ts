@@ -127,6 +127,14 @@ export class ConversationService {
         session.rulePackageVersion !== this.kernel.rulePackageVersion ||
         session.rulePackageHash !== this.kernel.rulePackageHash
       ) {
+        const abandoned: ConversationSession = {
+          ...session,
+          state: "abandoned",
+          revision: session.revision + 1,
+          closedAt: timestamp,
+          updatedAt: timestamp
+        };
+        await this.updateSession(session, abandoned);
         throw new DomainError(
           "protocol_incompatible",
           "评估规则已经更新，旧对话不能继续判定。请新建对话后重新评估。",
@@ -516,12 +524,30 @@ export class ConversationService {
     patientId: string,
     conversationId: string
   ): Promise<ConversationShowResult> {
-    const session = await this.repository.findPatientSession(
+    let session = await this.repository.findPatientSession(
       patientId,
       conversationId
     );
     if (session === null) {
       throw new DomainError("resource_not_found", "对话不存在");
+    }
+    if (
+      session.state === "active" &&
+      (
+        session.rulePackageVersion !== this.kernel.rulePackageVersion ||
+        session.rulePackageHash !== this.kernel.rulePackageHash
+      )
+    ) {
+      const timestamp = now();
+      const abandoned: ConversationSession = {
+        ...session,
+        state: "abandoned",
+        revision: session.revision + 1,
+        closedAt: timestamp,
+        updatedAt: timestamp
+      };
+      await this.updateSession(session, abandoned);
+      session = abandoned;
     }
     const decisions = await this.repository.listDecisions(session.id);
     const encryptedMessages = await this.repository.listMessages(session.id);

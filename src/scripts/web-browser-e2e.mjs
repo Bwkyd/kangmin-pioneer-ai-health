@@ -10,6 +10,7 @@ import { chromium } from "playwright";
 import { createApplication } from "../dist/app/composition-root.js";
 import { createAdminApplicationWithOps } from "../dist/app/admin-composition-root.js";
 import { createKangminHttpServer } from "../dist/http/server.js";
+import { KangminDatabase } from "../dist/infrastructure/database.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
@@ -389,30 +390,24 @@ try {
     "不能替代门诊诊断"
   );
 
-  // ---- chat：内核补问渲染为客户问卷原题选项卡（真实 exec 链路）----
-  // dev 无模型 key：自由文本无确定性命中时走模型提取（失败降级 notice），
-  // 内核按空事实先问安全字段，前端渲染"是/否/不清楚"选项卡；
-  // conversationId 经 sessionStorage 持久化续聊。
+  // ---- chat：页面严格按《页面展示》Q1-Q14，规则按《前置规则》----
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   const chatInput = page.locator('input[aria-label="输入症状或问题"]');
   await chatInput.waitFor({ state: "visible" });
   await chatInput.fill("我最近鼻塞，晚上比较严重");
   await page.locator(".send-button").click();
   await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
-  await page.locator(".question-card").first().waitFor({ state: "visible" });
-  // 固定降级 notice（v4 客户可读文案：引导点击选项按钮，不暴露内部术语）。
+  await page.locator(".question-card", { hasText: "您打喷嚏的情况是" }).waitFor({ state: "visible" });
   await expectText(page.getByTestId("chat-notice"), "未识别到您的回答");
   const conversationId = await page.evaluate(() =>
     sessionStorage.getItem("kangmin.agent.conversationId")
   );
   assert.ok(conversationId, "首轮发送后应持久化 conversationId");
 
-  // 选项卡点击发送稳定选项值（fieldCode=state）：首个安全字段选"否"后，
-  // 服务端确定性映射并继续问下一项，卡片随轮次切换。
-  await page.locator(".question-card-options button", { hasText: "否" }).first().click();
-  await page.locator(".question-card", { hasText: "您是否体温超过 39℃" }).waitFor({ state: "visible" });
+  await page.locator(".question-card-options button", { hasText: "偶尔打喷嚏" }).click();
+  await page.locator(".question-card", { hasText: "您的鼻涕通常是" }).waitFor({ state: "visible" });
 
-  // 续聊：携带同一 conversationId，第二轮降级 notice 出现且会话 id 不变。
+  // 自由文本无法替代当前结构化选项，仍停留 Q2；会话 ID 不变。
   await chatInput.fill("还有打喷嚏和流清鼻涕");
   await page.locator(".send-button").click();
   await page.getByTestId("chat-notice").nth(1).waitFor({ state: "visible" });
@@ -421,94 +416,80 @@ try {
     conversationId
   );
 
-  // 刷新后从服务端恢复完整有序消息、最后补问与当前 conversationId。
+  // 刷新后从服务端恢复完整有序消息与 Q2。
   await page.reload();
   await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   await chatInput.waitFor({ state: "visible" });
   await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
   await page.locator(".user-bubble", { hasText: "还有打喷嚏和流清鼻涕" }).waitFor({ state: "visible" });
-  await page.locator(".question-card").first().waitFor({ state: "visible" });
+  await page.locator(".question-card", { hasText: "您的鼻涕通常是" }).waitFor({ state: "visible" });
   assert.equal(
     await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
     conversationId
   );
 
-  // 恢复后的进行中会话可以继续发送，仍使用原 ID。
-  await chatInput.fill("症状早上更明显");
-  await page.locator(".send-button").click();
-  await page.locator(".user-bubble", { hasText: "症状早上更明显" }).waitFor({ state: "visible" });
-  assert.equal(
-    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
-    conversationId
-  );
-
-  // 显式新建会话会清掉当前选择；结束态只读且不再出现无效“重试”。
-  await page.getByTestId("chat-new").click();
-  assert.equal(
-    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
-    null
-  );
-  await chatInput.fill("急救：是");
-  await page.locator(".send-button").click();
+  // 模拟部署后规则包升级：旧会话第一次续答即废弃；选项不得乐观追加，
+  // 页面只提示一次“请新建对话”，从根上覆盖客户截图中的重复“不清楚”。
+  const upgradeDatabase = new KangminDatabase(databasePath);
+  try {
+    upgradeDatabase.connection
+      .prepare(`UPDATE agent_conversations
+                SET rule_package_version = 'clinical-rules-v2-stale',
+                    rule_package_hash = 'stale-hash'
+                WHERE id = ?`)
+      .run(conversationId);
+  } finally {
+    upgradeDatabase.close();
+  }
+  const q2AnswerCountBefore = await page.locator(".user-bubble", { hasText: "清水样" }).count();
+  await page.locator(".question-card-options button", { hasText: "清水样" }).click();
   await page.locator(".conversation-ended").waitFor({ state: "visible" });
-  assert.equal(await chatInput.isDisabled(), true, "已结束对话的输入框应禁用");
-  assert.equal(await page.locator(".record-notice.error", { hasText: "对话已结束" }).count(), 0);
-  const completedConversationId = await page.evaluate(() =>
-    sessionStorage.getItem("kangmin.agent.conversationId")
-  );
-  assert.ok(completedConversationId, "新会话发送后应生成 conversationId");
-  assert.notEqual(completedConversationId, conversationId, "新建对话必须生成不同 ID");
-
-  // 历史列表显示两段对话，并可切回原进行中会话继续使用。
-  await page.getByTestId("chat-history-toggle").click();
-  const history = page.getByTestId("chat-history");
-  await history.locator("button").nth(1).waitFor({ state: "visible" });
-  assert.equal(await history.locator("button").count(), 2);
-  await history.locator(`[data-conversation-id="${conversationId}"]`).click();
-  await page.locator(".user-bubble", { hasText: "症状早上更明显" }).waitFor({ state: "visible" });
-  assert.equal(await chatInput.isEnabled(), true, "切回进行中会话后输入框应恢复");
+  await expectText(page.locator(".conversation-ended"), "评估规则已更新，请新建对话后重新评估");
+  assert.equal(await chatInput.isDisabled(), true);
   assert.equal(
-    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
-    conversationId
+    await page.locator(".user-bubble", { hasText: "清水样" }).count(),
+    q2AnswerCountBefore,
+    "规则升级失败的选项不得写进聊天历史"
   );
 
-  // 客户六步树真实 UI 路径：Q10B → Q8C → Q6B → Q9B，必须按序显示
-  // 原题选项，并在 Q9B 立即判为肺气虚寒（不得误入肾阳不足）。
+  // 新会话完整走客户真实路径：Q1-Q11 → 两个独立确认节点 → Q12-Q14。
   await page.getByTestId("chat-new").click();
-  await chatInput.fill(
-    "急救：否 高热：否 鼻出血：否 剧烈头痛：否 皮肤破损：否 怀孕：否 确诊过敏性鼻炎：是 未满12周岁：否"
-  );
+  await chatInput.fill("开始评估");
   await page.locator(".send-button").click();
   await page.locator(".question-card", { hasText: "您打喷嚏的情况是" }).waitFor({ state: "visible" });
   await page.locator(".question-card-options button", { hasText: "基本不打喷嚏" }).click();
-  await page.locator(".question-card", { hasText: "感冒样表现" }).waitFor({ state: "visible" });
-  await chatInput.fill("感冒样表现：否 鼻窦炎样表现：否");
-  await page.locator(".send-button").click();
-  await page.locator(".question-card", { hasText: "影响您的夜间睡眠质量" }).waitFor({ state: "visible" });
-  await chatInput.fill("影响睡眠：否 影响日常活动：否 影响工作学习：否 难以忍受：否");
-  await page.locator(".send-button").click();
-
-  await page.locator(".question-card", { hasText: "口干、想喝水" }).waitFor({ state: "visible" });
-  await page.locator(".question-card-options button", { hasText: "偶尔口干" }).click();
-  await page.locator(".question-card", { hasText: "疲倦、没力气" }).waitFor({ state: "visible" });
-  await page.locator(".question-card-options button", { hasText: "没有" }).click();
-  await page.locator(".question-card", { hasText: "怕风、怕冷" }).waitFor({ state: "visible" });
-  await page.locator(".question-card-options button", { hasText: "稍微有一点" }).click();
-  const q9Card = page.locator(".question-card", { hasText: "手脚是否经常冰凉" });
-  await q9Card.waitFor({ state: "visible" });
-  await q9Card.locator("button", { hasText: "天气冷的时候会凉" }).click();
-  await q9Card.waitFor({ state: "hidden" });
-  const sixStepResult = page.locator(".result-card", { hasText: "肺气虚寒" });
+  const pagePath = [
+    ["您的鼻涕通常是", "白黏鼻涕"],
+    ["您的鼻塞情况是", "左右交替鼻塞"],
+    ["您的鼻痒程度", "不痒"],
+    ["什么情况下容易发作或加重", "无明显规律"],
+    ["是否比别人更怕风、怕冷", "稍微有一点"],
+    ["您是否容易感冒", "很少感冒"],
+    ["是否经常感觉疲倦、没力气", "没有"],
+    ["手脚是否经常冰凉", "一年四季手脚都凉"],
+    ["是否经常感觉口干、想喝水", "偶尔口干"],
+    ["哪项最符合您的日常感觉", "以上都不明显"],
+    ["是否经常感觉疲倦、没力气", "偶尔有"],
+    ["是否经常感觉口干、想喝水", "经常口干，想喝凉的"],
+    ["最近 1 周", "基本没有"],
+    ["目前最迫切想解决的问题", "调理体质"],
+    ["症状发作时", "长期处于"]
+  ];
+  for (const [questionText, optionText] of pagePath) {
+    const card = page.locator(".question-card", { hasText: questionText });
+    await card.waitFor({ state: "visible" });
+    await card.locator("button", { hasText: optionText }).click();
+  }
+  const sixStepResult = page.locator(".result-card", { hasText: "寒热错杂" });
   await sixStepResult.waitFor({ state: "visible" });
   await page.locator(".conversation-ended").waitFor({ state: "visible" });
-  assert.match((await sixStepResult.textContent()) ?? "", /肺气虚寒/u);
+  assert.match((await sixStepResult.textContent()) ?? "", /寒热错杂/u);
 
-  // 刷新会先回首页；再次进入问助手时，历史消息已提前恢复，仍必须主动滚到
-  // 最新结果，不能停留在首轮安全题让患者误以为结果丢失。
+  // 刷新后结果仍恢复到最新位置。
   await page.reload();
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
-  await page.locator(".result-card", { hasText: "肺气虚寒" }).waitFor({ state: "visible" });
+  await page.locator(".result-card", { hasText: "寒热错杂" }).waitFor({ state: "visible" });
   await page.waitForFunction(() => {
     const chat = document.querySelector(".chat");
     return chat instanceof HTMLElement &&
