@@ -1,8 +1,8 @@
 # 修正评估页面与有序六步证型决策树
 
-- 状态：客户复测后二次修复已提交部署，等待客户验收
+- 状态：已合并交付，客户已收到反馈
 - 日期：2026-08-09
-- 代码基线：`9e1e75e`；当前线上：`e87151d`；draft PR：#188
+- 代码基线：`9e1e75e`；当前线上：`e87151d`；合并提交：`c621704`（PR #188）
 - 页面依据：`vault/truth/product/assessment-page-content.md`
 - 规则依据：`vault/truth/clinical/assessment-rules.md`、`vault/truth/clinical/syndrome-six-step-decision-tree.md`
 
@@ -117,9 +117,9 @@ Q1/Q2/Q5/Q7/Q11 只生成辅助印证信息，不得覆盖叶子结果。
   问助手会恢复历史并自动定位到最新结果；
 - 本地浏览器 E2E、完整评估 smoke、12/12 CLI benchmark、全量 `npm run check`、
   `python3 scripts/structure-lint.py .` 与 `git diff --check` 均已通过；
-- 已推送 `agent/fix-six-step-tree` 并创建 draft PR #188；客户试用环境已部署
+- 已推送 `agent/fix-six-step-tree`，PR #188 已 squash 合并为 `c621704`；客户试用环境已部署
   `eba184f`。部署前完成独立端口临时库预检，生产 SQLite 已备份，公网 E2E、
-  服务日志及静态资源 SHA-256 均核验通过；PR 尚未合并，等待客户验收。
+  服务日志及静态资源 SHA-256 均核验通过；合并代码树与线上业务代码一致，作者已反馈客户。
 
 ## 客户复测后的 v3 修复证据
 
