@@ -34,6 +34,10 @@ export interface AgentPlan {
   id: string;
   name: string;
   syndrome: string;
+  /** 期别（智能体设计 v4）：'acute'=急性期方案；null=调体方案。 */
+  phaseCode: "acute" | null;
+  /** 人群（智能体设计 v4）：'adult'/'child'。 */
+  audience: "adult" | "child" | null;
   method: string;
   steps: string[];
   precautions: string;

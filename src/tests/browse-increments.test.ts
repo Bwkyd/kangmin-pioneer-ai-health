@@ -18,6 +18,8 @@ import type {
   CarePlanDetail,
   PublicContent
 } from "../modules/browse/contracts.js";
+import type { RulePackage } from "../modules/clinical-rules/domain.js";
+import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentSnapshot, ForecastDay } from "../modules/environment/environment-ports.js";
 import { seedContent } from "./content-fixture.js";
 
@@ -91,7 +93,21 @@ function seedExpiredSnapshot(databasePath: string): void {
   }
 }
 
-function fixture(options: { provider?: TestEnvironmentProvider } = {}) {
+/**
+ * candidate 模拟包（评审 P1-12 同源语义）：方案浏览门禁由生效规则包状态
+ * 派生——注入 candidate 模拟"未冻结"（浏览关闭），缺省为冻结包（放开）。
+ */
+function candidatePackage(): RulePackage {
+  return {
+    ...DRAFT_RULE_PACKAGE,
+    version: "clinical-rules-test-candidate",
+    status: "candidate"
+  };
+}
+
+function fixture(
+  options: { provider?: TestEnvironmentProvider; rulePackage?: RulePackage } = {}
+) {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-browse-inc-"));
   const databasePath = join(directory, "content.sqlite");
   seedContent(databasePath);
@@ -101,7 +117,8 @@ function fixture(options: { provider?: TestEnvironmentProvider } = {}) {
     databasePath,
     provider,
     application: createApplication(databasePath, {
-      environmentProvider: provider
+      environmentProvider: provider,
+      rulePackage: options.rulePackage
     })
   };
 }
@@ -135,9 +152,10 @@ test("browse article/video show：返回来源与免责声明（§25.5 患者侧
 });
 
 test("评审 R2 P1 双门禁：candidate 下方案浏览关闭（list 空、show resource_not_found、搜索不含方案）", async () => {
-  const { application } = fixture();
+  // 同源派生（评审 P1-12）：注入 candidate 模拟未冻结，浏览门禁关闭。
+  const { application } = fixture({ rulePackage: candidatePackage() });
   try {
-    // 临床规则包未冻结（approved）前，browse plan 患者可见门禁关闭：
+    // 临床规则包未冻结（candidate）时，browse plan 患者可见门禁关闭：
     // 管理端启用（agent_plans.status='enabled'）的方案也绝不公开给
     // 匿名患者——HELP"当前无获批临床规则和方案"承诺一致，患者无法经
     // browse plan show 拿到完整调理方案（含穴位/疗程文本）。
@@ -272,9 +290,8 @@ test("browse plan show 透出临床字段（服务层，门禁打开；issue-151
   const databasePath = join(directory, "plans.sqlite");
   seedContent(databasePath);
   seedPlans(databasePath);
-  // 患者可见门禁（= 规则包 approved 时组合根注入 planBrowseEnabled）
-  // 经环境变量打开，验证命令层输出携带临床字段。
-  process.env.KANGMIN_PLAN_BROWSE_ENABLED = "1";
+  // 患者可见门禁与规则包状态同源（评审 P1-12）：冻结包 approved 即放开，
+  // 无需环境变量；验证命令层输出携带临床字段。
   const application = createApplication(databasePath, {
     environmentProvider: new TestEnvironmentProvider()
   });
@@ -292,12 +309,12 @@ test("browse plan show 透出临床字段（服务层，门禁打开；issue-151
     assert.equal(shown.videoResourceId, null);
   } finally {
     application.close();
-    delete process.env.KANGMIN_PLAN_BROWSE_ENABLED;
   }
 });
 
 test("browse search 跨文章/视频/方案，只覆盖已发布（candidate 下方案门禁关闭）", async () => {
-  const { application } = fixture();
+  // 同源派生：注入 candidate 模拟未冻结，搜索不含方案。
+  const { application } = fixture({ rulePackage: candidatePackage() });
   try {
     const results = dataOf<BrowseSearchResults>(
       await application.execute({
@@ -546,7 +563,8 @@ test("环境快照不会自动写入患者暴露记录", async () => {
 });
 
 test("未登录可 browse：文章/方案/环境均不要求会话令牌", async () => {
-  const { application } = fixture();
+  // 同源派生：注入 candidate 模拟未冻结，验证门禁关闭下不要求会话。
+  const { application } = fixture({ rulePackage: candidatePackage() });
   try {
     const list = dataOf<{ items: unknown[] }>(
       await application.execute({ command: "browse article list" })
@@ -570,7 +588,8 @@ test("未登录可 browse：文章/方案/环境均不要求会话令牌", async
 });
 
 test("读失败必须抛 storage_unavailable，不伪装成空列表", async () => {
-  const { application } = fixture();
+  // 同源派生：注入 candidate，方案浏览门禁关闭（短路语义验证用）。
+  const { application } = fixture({ rulePackage: candidatePackage() });
   application.close(); // 关闭底层连接后任何读取都是存储故障
   const list = await application.execute({ command: "browse article list" });
   assert.equal(errorCodeOf(list), "storage_unavailable");

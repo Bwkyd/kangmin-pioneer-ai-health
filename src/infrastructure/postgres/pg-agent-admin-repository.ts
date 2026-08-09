@@ -78,6 +78,8 @@ interface PlanRowShape {
   id: string;
   name: string;
   syndrome: string;
+  phase_code: "acute" | null;
+  audience: "adult" | "child" | null;
   method: string;
   steps_json: string;
   precautions: string;
@@ -142,6 +144,8 @@ function toPlan(row: PlanRowShape): AgentPlan {
     id: row.id,
     name: row.name,
     syndrome: row.syndrome,
+    phaseCode: row.phase_code,
+    audience: row.audience,
     method: row.method,
     steps: JSON.parse(row.steps_json) as string[],
     precautions: row.precautions,
@@ -583,14 +587,17 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   async createPlan(input: PlanRow): Promise<void> {
     await this.database.query(
       `INSERT INTO agent_plans(
-        id, name, syndrome, method, steps_json, precautions, risks,
-        contraindications, applicable_age, video_resource_id, display_order,
-        status, revision, created_by, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+        id, name, syndrome, phase_code, audience, method, steps_json,
+        precautions, risks, contraindications, applicable_age,
+        video_resource_id, display_order, status, revision, created_by,
+        created_at, updated_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
       [
         input.id,
         input.name,
         input.syndrome,
+        input.phaseCode,
+        input.audience,
         input.method,
         input.stepsJson,
         input.precautions,
@@ -643,14 +650,17 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
           await this.database.queryIn(
             client,
             `INSERT INTO agent_plans(
-              id, name, syndrome, method, steps_json, precautions, risks,
-              contraindications, applicable_age, video_resource_id, display_order,
-              status, revision, created_by, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)`,
+              id, name, syndrome, phase_code, audience, method, steps_json,
+              precautions, risks, contraindications, applicable_age,
+              video_resource_id, display_order, status, revision, created_by,
+              created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
             [
               plan.id,
               plan.name,
               plan.syndrome,
+              plan.phaseCode,
+              plan.audience,
               plan.method,
               plan.stepsJson,
               plan.precautions,
@@ -693,6 +703,8 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       id: plan.id,
       name: plan.name,
       syndrome: plan.syndrome,
+      phase_code: plan.phaseCode,
+      audience: plan.audience,
       method: plan.method,
       steps_json: plan.stepsJson,
       precautions: plan.precautions,
@@ -711,9 +723,10 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
 
   async listPlans(status?: PlanStatus): Promise<AgentPlan[]> {
     const { rows } = await this.database.query<PlanRowShape>(
-      `SELECT id, name, syndrome, method, steps_json, precautions, risks,
-             contraindications, applicable_age, video_resource_id, display_order,
-             status, revision, created_by, created_at, updated_at
+      `SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+             precautions, risks, contraindications, applicable_age,
+             video_resource_id, display_order, status, revision, created_by,
+             created_at, updated_at
       FROM agent_plans
       ${status === undefined ? "" : "WHERE status = $1"}
       ORDER BY display_order ASC, updated_at DESC, id ASC`,
@@ -730,9 +743,10 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   /** 事务外方案读取（与 findPlan 同 SQL）。 */
   private async findPlanById(id: string): Promise<PlanRowShape | undefined> {
     const { rows } = await this.database.query<PlanRowShape>(
-      `SELECT id, name, syndrome, method, steps_json, precautions, risks,
-             contraindications, applicable_age, video_resource_id, display_order,
-             status, revision, created_by, created_at, updated_at
+      `SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+             precautions, risks, contraindications, applicable_age,
+             video_resource_id, display_order, status, revision, created_by,
+             created_at, updated_at
       FROM agent_plans WHERE id = $1`,
       [id]
     );
@@ -746,9 +760,10 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   ): Promise<PlanRowShape | undefined> {
     const { rows } = await this.database.queryIn<PlanRowShape>(
       client,
-      `SELECT id, name, syndrome, method, steps_json, precautions, risks,
-             contraindications, applicable_age, video_resource_id, display_order,
-             status, revision, created_by, created_at, updated_at
+      `SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+             precautions, risks, contraindications, applicable_age,
+             video_resource_id, display_order, status, revision, created_by,
+             created_at, updated_at
       FROM agent_plans WHERE id = $1`,
       [id]
     );
@@ -775,14 +790,16 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       await this.database.queryIn(
         client,
         `UPDATE agent_plans SET
-          name = $1, syndrome = $2, method = $3, steps_json = $4, precautions = $5,
-          risks = $6, contraindications = $7, applicable_age = $8,
-          video_resource_id = $9, display_order = $10, status = $11,
-          updated_at = $12, revision = $13
-        WHERE id = $14`,
+          name = $1, syndrome = $2, phase_code = $3, audience = $4, method = $5,
+          steps_json = $6, precautions = $7, risks = $8, contraindications = $9,
+          applicable_age = $10, video_resource_id = $11, display_order = $12,
+          status = $13, updated_at = $14, revision = $15
+        WHERE id = $16`,
         [
           plan.name,
           plan.syndrome,
+          plan.phaseCode,
+          plan.audience,
           plan.method,
           JSON.stringify(plan.steps),
           plan.precautions,
@@ -847,14 +864,16 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       await this.database.queryIn(
         client,
         `UPDATE agent_plans SET
-          name = $1, syndrome = $2, method = $3, steps_json = $4, precautions = $5,
-          risks = $6, contraindications = $7, applicable_age = $8,
-          video_resource_id = $9, display_order = $10, status = $11,
-          updated_at = $12, revision = $13
-        WHERE id = $14`,
+          name = $1, syndrome = $2, phase_code = $3, audience = $4, method = $5,
+          steps_json = $6, precautions = $7, risks = $8, contraindications = $9,
+          applicable_age = $10, video_resource_id = $11, display_order = $12,
+          status = $13, updated_at = $14, revision = $15
+        WHERE id = $16`,
         [
           plan.name,
           plan.syndrome,
+          plan.phaseCode,
+          plan.audience,
           plan.method,
           JSON.stringify(plan.steps),
           plan.precautions,

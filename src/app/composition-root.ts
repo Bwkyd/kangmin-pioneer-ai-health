@@ -18,8 +18,10 @@
  * KANGMIN_APP_ENV）注入 UnavailableEnvironmentProvider，环境命令抛
  * provider_unavailable，绝不返回测试桩固定假数据。
  *
- * 方案浏览开关：KANGMIN_PLAN_BROWSE_ENABLED=1 时注入
- * planBrowseEnabled=true（默认 false，临床规则包冻结前不放开）。
+ * 方案浏览门禁：与临床规则包冻结状态同源（评审 P1-12）——生效规则包
+ * （options.rulePackage ?? DRAFT_RULE_PACKAGE）status 为 approved 时注入
+ * planBrowseEnabled=true；clinical-rules-v1 已冻结，Web 试用即放开，
+ * SQLite 与 PostgreSQL 路径同一派生，不再读环境变量。
  *
  * 生产存储策略（fail-closed，见 assertProductionStorage）：
  * KANGMIN_APP_ENV=staging|production 时缺 PostgreSQL 连接串、缺对象
@@ -670,14 +672,13 @@ export function createApplicationWithOps(
       ...staticProbes
     };
     const sessions = new SessionService(new PgSessionRepository(database));
-    // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
-    // 注册表数据源接通统一方案表 agent_plans。
+    // 生效规则包（测试可注入 candidate 模拟未冻结）：浏览门禁与内核同源。
+    const rulePackage = options.rulePackage ?? DRAFT_RULE_PACKAGE;
+    // 内核正式路径：生效规则包非 approved（如 candidate）时阻断输出方案；
+    // 注册表数据源接通统一方案表 agent_plans，管理端启用且浏览门禁放开后可见。
     const planRegistry: PlanRegistryPort =
       options.planRegistry ?? new PgPlanRegistry(database);
-    const kernel = new ClinicalRuleKernel(
-      options.rulePackage ?? DRAFT_RULE_PACKAGE,
-      planRegistry
-    );
+    const kernel = new ClinicalRuleKernel(rulePackage, planRegistry);
     const accountRepository = new PgAccountRepository(database);
     const conversationRepository = new PgConversationRepository(database);
     // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
@@ -695,7 +696,11 @@ export function createApplicationWithOps(
       application: new KangminApplication(
         sessions,
         new PgRecordRepository(database, encryption),
-        new PgContentReadRepository(database),
+        // 评审 P1-12：PG 路径与 SQLite 同一派生——规则包 approved 即放开
+        // 患者浏览（生产 browse 不再恒关）。
+        new PgContentReadRepository(database, {
+          planBrowseEnabled: rulePackage.status === "approved"
+        }),
         new PgAgentRepository(database),
         new AccountService(accountRepository, sessions),
         environmentProvider,
@@ -718,14 +723,13 @@ export function createApplicationWithOps(
     ...staticProbes
   };
   const sessions = new SessionService(new SqliteSessionRepository(database));
-  // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
-  // 注册表数据源接通统一方案表 agent_plans，供模拟测试与冻结后的正式评估使用。
+  // 生效规则包（测试可注入 candidate 模拟未冻结）：浏览门禁与内核同源。
+  const rulePackage = options.rulePackage ?? DRAFT_RULE_PACKAGE;
+  // 内核正式路径：生效规则包非 approved（如 candidate）时阻断输出方案；
+  // 注册表数据源接通统一方案表 agent_plans，管理端启用且浏览门禁放开后可见。
   const planRegistry: PlanRegistryPort =
     options.planRegistry ?? new SqlitePlanRegistry(database);
-  const kernel = new ClinicalRuleKernel(
-    options.rulePackage ?? DRAFT_RULE_PACKAGE,
-    planRegistry
-  );
+  const kernel = new ClinicalRuleKernel(rulePackage, planRegistry);
   const accountRepository = new SqliteAccountRepository(database);
   const conversationRepository = new SqliteConversationRepository(database);
   // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
@@ -744,10 +748,11 @@ export function createApplicationWithOps(
     application: new KangminApplication(
       sessions,
       new SqliteRecordRepository(database, encryption),
-      // 方案浏览开关（设计 §17 患者侧门禁）：默认 false，临床规则包冻结
-      // 前不放开；显式 KANGMIN_PLAN_BROWSE_ENABLED=1 时注入 true。
+      // 方案浏览门禁（设计 §17 患者侧门禁）：与规则包冻结状态同源
+      // （评审 P1-12）——生效规则包 approved（clinical-rules-v1 已冻结）
+      // 即放开，不再读 KANGMIN_PLAN_BROWSE_ENABLED。
       new SqliteContentReadRepository(database, {
-        planBrowseEnabled: environment.KANGMIN_PLAN_BROWSE_ENABLED === "1"
+        planBrowseEnabled: rulePackage.status === "approved"
       }),
       new SqliteAgentRepository(database),
       new AccountService(accountRepository, sessions),
