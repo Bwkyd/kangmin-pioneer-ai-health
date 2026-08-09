@@ -562,18 +562,23 @@ test("Agent 对话命令通过真实 CLI：exec/feedback/快捷入口；患者�
   assert.equal(execBody.data.verdict.outcome, "need_more_information");
   assert.ok(execBody.data.message.decisionId !== null);
 
-  // 续接同一对话（结构化回答：高危阻断）。
-  const blocked = run([
-    "agent", "exec", "急救：是",
+  assert.equal(execBody.data.verdict.nextQuestions[0]?.prompt, "您打喷嚏的情况是？");
+
+  // 续接同一对话：生产页面严格由 Q1 推进到 Q2，不插入旧安全筛查题。
+  const continued = run([
+    "agent", "exec", "q1=A",
     "--conversation", execBody.data.conversationId,
     "--json"
   ], environment);
-  assert.equal(blocked.status, 0, blocked.stderr);
-  const blockedBody = JSON.parse(blocked.stdout) as {
-    data: { closed: boolean; message: { content: string } };
+  assert.equal(continued.status, 0, continued.stderr);
+  const continuedBody = JSON.parse(continued.stdout) as {
+    data: {
+      closed: boolean;
+      verdict: { nextQuestions: Array<{ prompt: string }> };
+    };
   };
-  assert.equal(blockedBody.data.closed, true);
-  assert.ok(blockedBody.data.message.content.includes("立即就医"));
+  assert.equal(continuedBody.data.closed, false);
+  assert.equal(continuedBody.data.verdict.nextQuestions[0]?.prompt, "您的鼻涕通常是？");
 
   // 快捷入口：kangmin <消息> ≡ agent start --message。
   const shortcut = run(["我最近鼻塞", "--json"], environment);

@@ -117,7 +117,7 @@ test("未登录真实 CLI：browse 全部只读命令成功执行", () => {
   assert.equal(listBody.ok, true);
   assert.deepEqual(listBody.data.items.map((item) => item.id), ["article-public"]);
 
-  // 评审 R2 P1 双门禁（P1-12 同源派生）：clinical-rules-v1 已冻结
+  // 评审 R2 P1 双门禁（P1-12 同源派生）：clinical-rules-v2 已冻结
   // （approved），管理端启用（status='enabled'）的方案对患者浏览可见；
   // 管理端门禁独立生效——draft 方案仍不可见、搜索含已启用方案。
   const plans = run(["browse", "plan", "list", "--json"], environment);

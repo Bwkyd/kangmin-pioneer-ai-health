@@ -11,6 +11,12 @@ import {
 } from "./agent";
 import { CommandError } from "./command-client";
 import { FIELD_TO_QUESTION } from "../../modules/agent/option-mapping";
+import { patientVisibleMessage } from "../../modules/agent/patient-visible-message";
+import {
+  ASSESSMENT_QUESTIONS,
+  type AssessmentQuestion as QuestionCard,
+  type AssessmentQuestionOption as QuestionOption
+} from "../../modules/clinical-rules/assessment-questionnaire";
 import DiscoverView from "./DiscoverView";
 import {
   AllergenExposure,
@@ -73,148 +79,8 @@ const WELCOME_MESSAGE: Message = {
   text: "敏友您好，本工具依据福建中医药大学抗敏先锋团队体质调理方案开发，为您推荐个性化外治建议"
 };
 
-/** 客户问卷原题（客户确认版：vault/truth/product/assessment-page-content.md）。
- *  前端只渲染原题与选项按钮，点击发送稳定选项值（q1=B），服务端按
- *  option-mapping.ts 确定性映射；前端不复制判定映射。 */
-interface QuestionOption {
-  code: string;
-  text: string;
-}
-interface QuestionCard {
-  id: string;
-  title: string;
-  options: QuestionOption[];
-}
-const QUESTIONNAIRE: QuestionCard[] = [
-  {
-    id: "q1",
-    title: "您打喷嚏的情况是？",
-    options: [
-      { code: "A", text: "频繁打喷嚏，一次连续数个至十几个" },
-      { code: "B", text: "偶尔打喷嚏" },
-      { code: "C", text: "基本不打喷嚏" },
-    ],
-  },
-  {
-    id: "q2",
-    title: "您的鼻涕通常是？",
-    options: [
-      { code: "A", text: "清水样，量多，像水一样流下来" },
-      { code: "B", text: "白黏鼻涕" },
-      { code: "C", text: "黄稠鼻涕" },
-      { code: "D", text: "鼻涕很少，鼻腔干燥" },
-    ],
-  },
-  {
-    id: "q3",
-    title: "您的鼻塞情况是？",
-    options: [
-      { code: "A", text: "双侧都堵，持续不通" },
-      { code: "B", text: "左右交替鼻塞" },
-      { code: "C", text: "发作时才堵，不发作时正常" },
-      { code: "D", text: "基本不鼻塞" },
-    ],
-  },
-  {
-    id: "q4",
-    title: "您的鼻痒程度？",
-    options: [
-      { code: "A", text: "明显鼻痒，经常忍不住揉鼻子" },
-      { code: "B", text: "轻微鼻痒" },
-      { code: "C", text: "不痒" },
-    ],
-  },
-  {
-    id: "q5",
-    title: "您的鼻炎在什么情况下容易发作或加重？",
-    options: [
-      { code: "A", text: "遇到冷空气、吹风或天冷时加重" },
-      { code: "B", text: "接触花粉、尘螨等过敏原时发作" },
-      { code: "C", text: "晨起时发作明显" },
-      { code: "D", text: "无明显规律" },
-    ],
-  },
-  {
-    id: "q6",
-    title: "您是否比别人更怕风、怕冷？",
-    options: [
-      { code: "A", text: "明显怕风怕冷，比别人穿得多" },
-      { code: "B", text: "稍微有一点" },
-      { code: "C", text: "不怕" },
-    ],
-  },
-  {
-    id: "q7",
-    title: "您是否容易感冒？",
-    options: [
-      { code: "A", text: "经常感冒，一年好几次" },
-      { code: "B", text: "偶尔感冒" },
-      { code: "C", text: "很少感冒" },
-    ],
-  },
-  {
-    id: "q8",
-    title: "您是否经常感觉疲倦、没力气？",
-    options: [
-      { code: "A", text: "经常觉得累，什么都不想做" },
-      { code: "B", text: "偶尔有" },
-      { code: "C", text: "没有" },
-    ],
-  },
-  {
-    id: "q9",
-    title: "您的手脚是否经常冰凉？",
-    options: [
-      { code: "A", text: "一年四季手脚都凉" },
-      { code: "B", text: "天气冷的时候会凉" },
-      { code: "C", text: "手脚总是暖和的" },
-    ],
-  },
-  {
-    id: "q10",
-    title: "您是否经常感觉口干、想喝水？",
-    options: [
-      { code: "A", text: "经常口干，想喝凉的" },
-      { code: "B", text: "偶尔口干" },
-      { code: "C", text: "不觉得口干" },
-    ],
-  },
-  {
-    id: "q11",
-    title: "以下哪项最符合您的日常感觉？",
-    options: [
-      { code: "A", text: "怕冷，手脚凉，腰膝酸软，夜尿多" },
-      { code: "B", text: "怕热，手心脚心发热，口干咽燥" },
-      { code: "C", text: "容易过敏，皮肤痒，喷嚏频繁" },
-      { code: "D", text: "以上都不明显" },
-    ],
-  },
-  {
-    id: "q12",
-    title: "最近 1 周，您的鼻痒、打喷嚏、流鼻涕、鼻塞等鼻部症状发作情况是？",
-    options: [
-      { code: "A", text: "几乎每天都有明显症状，影响日常生活" },
-      { code: "B", text: "偶尔发作，但能忍受" },
-      { code: "C", text: "基本没有，或只有轻微感觉，不影响生活" },
-    ],
-  },
-  {
-    id: "q13",
-    title: "您目前最迫切想解决的问题是？",
-    options: [
-      { code: "A", text: "马上缓解鼻塞、流涕、打喷嚏等难受症状" },
-      { code: "B", text: "调理体质，减少以后复发" },
-    ],
-  },
-  {
-    id: "q14",
-    title: "您的症状发作时，通常属于以下哪种模式？",
-    options: [
-      { code: "A", text: "突然发作，症状较重，但发作间期基本正常" },
-      { code: "B", text: "长期处于“似好非好”状态，不严重但一直没好利索" },
-    ],
-  },
-];
+/** 页面只渲染共享问卷；题面与规则跳转不得在前端各维护一份。 */
+const QUESTIONNAIRE = ASSESSMENT_QUESTIONS;
 
 /** 一轮 agent exec 结果展开为聊天消息：助手正文 + system_notice。 */
 function agentTurnMessages(turn: AgentTurnResult): Message[] {
@@ -246,7 +112,13 @@ function restoredMessages(detail: AgentConversationDetail): Message[] {
         const result = message.content.includes("【急性发作期】") || message.content.includes("【缓解期】");
         return { id: message.id, role: "ai", kind: result ? "result" : "text", text: message.content };
       }
-      return { id: message.id, role: "user", kind: "text", text: message.content };
+      return {
+        id: message.id,
+        role: "user",
+        kind: "text",
+        // 兼容修复前已保存的内部协议载荷，历史对话不再显示 fieldCode=state。
+        text: patientVisibleMessage(message.content)
+      };
     })
   ];
 }
@@ -384,6 +256,7 @@ export default function App() {
     }
   });
   const [conversationState, setConversationState] = useState<AgentConversationState | null>(null);
+  const [conversationEndReason, setConversationEndReason] = useState<string | null>(null);
   const [chatHydrated, setChatHydrated] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<AgentConversationSummary[]>([]);
@@ -494,6 +367,11 @@ export default function App() {
         if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
         setMessages(restoredMessages(detail));
         setConversationState(detail.session.state);
+        setConversationEndReason(
+          detail.session.state === "abandoned"
+            ? "评估规则已更新，请新建对话后重新评估。"
+            : null
+        );
         setPendingQuestions(
           detail.session.state === "active"
             ? detail.lastDecision?.nextQuestions ?? null
@@ -504,6 +382,7 @@ export default function App() {
         if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
         setConversationId(null);
         setConversationState(null);
+        setConversationEndReason(null);
         setMessages([WELCOME_MESSAGE]);
         setPendingQuestions(null);
         setChatError(
@@ -548,8 +427,9 @@ export default function App() {
   }, [historyOpen, historyReload, previewConsentStatus]);
 
   useEffect(() => {
+    if (tab !== "chat") return;
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, tab]);
 
   useEffect(() => {
     const canvas = chartRef.current;
@@ -770,6 +650,7 @@ export default function App() {
     chatLoadRequest.next();
     setConversationId(null);
     setConversationState(null);
+    setConversationEndReason(null);
     setMessages([WELCOME_MESSAGE]);
     setPendingQuestions(null);
     setInput("");
@@ -798,6 +679,11 @@ export default function App() {
       if (!chatLoadRequest.isCurrent(requestVersion)) return;
       setConversationId(detail.session.id);
       setConversationState(detail.session.state);
+      setConversationEndReason(
+        detail.session.state === "abandoned"
+          ? "评估规则已更新，请新建对话后重新评估。"
+          : null
+      );
       setMessages(restoredMessages(detail));
       setPendingQuestions(
         detail.session.state === "active"
@@ -828,27 +714,35 @@ export default function App() {
   /** 问卷原题选项卡：点击发送稳定选项值（qN=选项），用户气泡显示原题与选项。 */
   const answerQuestion = (card: QuestionCard, option: QuestionOption) => {
     if (chatSending || conversationState !== "active") return;
-    setMessages((current) => [
-      ...current,
-      { id: Date.now(), role: "user", kind: "option", label: `${option.code}. ${option.text}`, caption: card.title },
-    ]);
-    void sendChatMessage(`${card.id}=${option.code}`, false);
+    void sendChatMessage(`${card.id}=${option.code}`, false, {
+      id: Date.now(),
+      role: "user",
+      kind: "option",
+      label: `${option.code}. ${option.text}`,
+      caption: card.title
+    });
   };
 
   /** 无问卷映射字段（如 urgent_help/sleep_affected 等）：是/否/不清楚，载荷 fieldCode=state。 */
   const answerField = (field: { fieldCode: string; prompt: string }, state: "yes" | "no" | "unknown") => {
     if (chatSending || conversationState !== "active") return;
     const labels: Record<string, string> = { yes: "是", no: "否", unknown: "不清楚" };
-    setMessages((current) => [
-      ...current,
-      { id: Date.now(), role: "user", kind: "option", label: labels[state] ?? state, caption: field.prompt },
-    ]);
-    void sendChatMessage(`${field.fieldCode}=${state}`, false);
+    void sendChatMessage(`${field.fieldCode}=${state}`, false, {
+      id: Date.now(),
+      role: "user",
+      kind: "option",
+      label: labels[state] ?? state,
+      caption: field.prompt
+    });
   };
 
   // chat 底部输入：接通 agent exec 真实对话。echoUser=false 用于失败重试
   // （首轮已渲染用户气泡，重试不再重复追加）。
-  const sendChatMessage = async (value: string, echoUser = true) => {
+  const sendChatMessage = async (
+    value: string,
+    echoUser = true,
+    optionMessage: Extract<Message, { kind: "option" }> | null = null
+  ) => {
     if (!chatHydrated || (conversationState !== null && conversationState !== "active")) {
       setChatError("本对话已结束，请新建对话后继续");
       setChatRetryMessage(null);
@@ -870,6 +764,7 @@ export default function App() {
       if (!chatRequest.isCurrent(requestVersion)) return;
       setConversationId(turn.conversationId);
       setConversationState(turn.state);
+      setConversationEndReason(null);
       try {
         sessionStorage.setItem(AGENT_CONVERSATION_KEY, turn.conversationId);
       } catch {
@@ -877,6 +772,7 @@ export default function App() {
       }
       setMessages((current) => [
         ...current.filter((message) => message.kind !== "thinking"),
+        ...(optionMessage === null ? [] : [optionMessage]),
         ...agentTurnMessages(turn),
       ]);
       // 补问选项卡随本轮 verdict 更新；收口轮（无补问）清空。
@@ -885,9 +781,17 @@ export default function App() {
     } catch (error) {
       if (!chatRequest.isCurrent(requestVersion)) return;
       setMessages((current) => current.filter((message) => message.kind !== "thinking"));
-      if (error instanceof CommandError && error.code === "resource_not_found") {
+      if (error instanceof CommandError && error.code === "protocol_incompatible") {
+        setConversationState("abandoned");
+        setConversationEndReason("评估规则已更新，请新建对话后重新评估。");
+        setPendingQuestions(null);
+        setChatError("");
+        setChatRetryMessage(null);
+        setHistoryReload((current) => current + 1);
+      } else if (error instanceof CommandError && error.code === "resource_not_found") {
         setConversationId(null);
         setConversationState(null);
+        setConversationEndReason(null);
         setPendingQuestions(null);
         setChatError("当前对话已过期或不可用，请新建对话后重新发送");
         try {
@@ -901,6 +805,7 @@ export default function App() {
         error.message.includes("对话已结束")
       ) {
         setConversationState("completed");
+        setConversationEndReason(null);
         setPendingQuestions(null);
         setChatError("本对话已结束，请新建对话后继续");
       } else {
@@ -1516,7 +1421,7 @@ export default function App() {
                 )}
                 {conversationState !== null && conversationState !== "active" && (
                   <div className="conversation-ended" role="status">
-                    <span>本对话已结束，历史内容仍可查看。</span>
+                    <span>{conversationEndReason ?? "本对话已结束，历史内容仍可查看。"}</span>
                     <button type="button" onClick={startNewConversation}>新建对话</button>
                   </div>
                 )}

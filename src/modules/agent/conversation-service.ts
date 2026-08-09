@@ -28,6 +28,7 @@ import type { EncryptionPort } from "../../kernel/encryption.js";
 import type { ConsentGatePort } from "../account/consent-ports.js";
 import { parseStructuredAnswers } from "./answer-parser.js";
 import { parseOptionPayload } from "./option-mapping.js";
+import { patientVisibleMessage } from "./patient-visible-message.js";
 import type { ConversationRepository } from "./conversation-repository.js";
 import type {
   CandidateRow,
@@ -122,6 +123,29 @@ export class ConversationService {
       await this.repository.createSession(session);
     } else {
       session = existing;
+      if (
+        session.rulePackageVersion !== this.kernel.rulePackageVersion ||
+        session.rulePackageHash !== this.kernel.rulePackageHash
+      ) {
+        const abandoned: ConversationSession = {
+          ...session,
+          state: "abandoned",
+          revision: session.revision + 1,
+          closedAt: timestamp,
+          updatedAt: timestamp
+        };
+        await this.updateSession(session, abandoned);
+        throw new DomainError(
+          "protocol_incompatible",
+          "评估规则已经更新，旧对话不能继续判定。请新建对话后重新评估。",
+          {
+            details: {
+              conversationRulePackageVersion: session.rulePackageVersion,
+              currentRulePackageVersion: this.kernel.rulePackageVersion
+            }
+          }
+        );
+      }
     }
 
     let saved = false;
@@ -218,13 +242,13 @@ export class ConversationService {
     //    命中时确定性映射（option-mapping.ts），严禁 message=""（空串解析
     //    返回 [] 死循环，评审二轮 P0-1）。
     const pendingAnswers: ConfirmedAnswerRow[] = [];
-    const optionHit = parseOptionPayload(message);
+    const optionHit = parseOptionPayload(message, lastQuestions);
     if (optionHit !== null && optionHit.field !== null && optionHit.state !== null) {
       pendingAnswers.push({
         sessionId: session.id,
         fieldCode: optionHit.field,
         value: optionHit.state,
-        factValue: null,
+        factValue: optionHit.factValue,
         source: "patient_confirmation",
         rulePackageVersion: session.rulePackageVersion,
         rulePackageHash: session.rulePackageHash,
@@ -399,14 +423,15 @@ export class ConversationService {
     let sequence = session.lastSequence + 1;
     const messages: ConversationMessage[] = [];
     if (message !== "") {
+      const visibleMessage = patientVisibleMessage(message);
       messages.push({
         id: randomUUID(),
         sessionId: session.id,
         sequence,
         role: "user",
         decisionId: null,
-        contentEncrypted: this.encryption.encrypt(message),
-        contentHash: sha256(message),
+        contentEncrypted: this.encryption.encrypt(visibleMessage),
+        contentHash: sha256(visibleMessage),
         createdAt: timestamp
       });
       sequence += 1;
@@ -499,12 +524,30 @@ export class ConversationService {
     patientId: string,
     conversationId: string
   ): Promise<ConversationShowResult> {
-    const session = await this.repository.findPatientSession(
+    let session = await this.repository.findPatientSession(
       patientId,
       conversationId
     );
     if (session === null) {
       throw new DomainError("resource_not_found", "对话不存在");
+    }
+    if (
+      session.state === "active" &&
+      (
+        session.rulePackageVersion !== this.kernel.rulePackageVersion ||
+        session.rulePackageHash !== this.kernel.rulePackageHash
+      )
+    ) {
+      const timestamp = now();
+      const abandoned: ConversationSession = {
+        ...session,
+        state: "abandoned",
+        revision: session.revision + 1,
+        closedAt: timestamp,
+        updatedAt: timestamp
+      };
+      await this.updateSession(session, abandoned);
+      session = abandoned;
     }
     const decisions = await this.repository.listDecisions(session.id);
     const encryptedMessages = await this.repository.listMessages(session.id);

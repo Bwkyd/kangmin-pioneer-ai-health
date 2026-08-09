@@ -1,13 +1,10 @@
 /**
- * 临床规则包 clinical-rules-v1（status=approved，2026-08-09 冻结，作者拍板 7）。
+ * 临床规则包 clinical-rules-v3（status=approved，2026-08-09 客户纠正确认）。
  *
- * 冻结内容 = 智能体设计 v4 八项拍板 + 两轮评审闭环：
- * - 问卷多选题保真（选项值映射表在 modules/agent/option-mapping.ts，前端不复制映射）；
- * - 证型 v3 七规则（T1a/b、T2a/b、T3、T4、T5，32 组合穷举 31 唯一命中 + 1 no_match 兜底）；
- * - 删 APP-01 症状计数转介（确诊题承担适用范围门禁）；
- * - 删 SAF-07（儿童可用，人群题归 screening 阶段派生 audience）；
- * - 新增 screening（确诊门禁 + 人群）与 phase（期别）阶段。
- * 供医学审核事项见 docs/product/2026-08-09-智能体设计-决策记录.md 待确认清单。
+ * v3 明确拆开两类客户资料：
+ * - 《页面展示》唯一决定 Q1-Q14 的题面、选项、顺序和结果结构；
+ * - 《前置规则》及客户确认六步树唯一决定证型跳转、终止和期别。
+ * 旧安全/筛查/严重度规则保留作历史包兼容，不再插入 page_q1_q14 页面流程。
  *
  * 当前开发和验收采用的客户确认资料引用见 sourceRefs：
  * - assessment-rules：前置规则、证型决策树及急性期/缓解期判定；
@@ -21,14 +18,18 @@
 import { createHash } from "node:crypto";
 
 import type { ClinicalRule, RulePackage } from "./domain.js";
+import { ASSESSMENT_QUESTIONS } from "./assessment-questionnaire.js";
+import { SYNDROME_TREE } from "./syndrome-decision-tree.js";
 
 export { FIELD_LABELS } from "./domain.js";
 
-export const DRAFT_PACKAGE_VERSION = "clinical-rules-v1";
+export const DRAFT_PACKAGE_VERSION = "clinical-rules-v3";
 export const DRAFT_PACKAGE_STATUS = "approved" as const;
 
 export const SOURCE_REFS: string[] = [
+  "vault/truth/clinical/syndrome-six-step-decision-tree.md",
   "vault/truth/clinical/assessment-rules.md",
+  "vault/truth/product/assessment-page-content.md",
   "vault/truth/clinical/care-plans.md"
 ];
 
@@ -328,173 +329,6 @@ const SEVERITY_RULES: readonly ClinicalRule[] = [
   }
 ];
 
-const SYNDROME_RULES: readonly ClinicalRule[] = [
-  {
-    // T1a 肺经伏热（无热象分支）：口渴核心；热象缺省。
-    // v3 拆双规则实现“口渴∧¬(热象∧寒象)”排除语义（AI 决策 A1）。
-    id: "T1a",
-    stage: "syndrome",
-    outcome: "classified",
-    code: "LUNG_HEAT",
-    message: "肺经伏热，上犯鼻窍。",
-    nextQuestions: [
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
-      {
-        fieldCode: "heat_imbalance",
-        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
-      }
-    ],
-    conditions: [
-      { fieldCode: "thirst", state: "yes" },
-      { fieldCode: "heat_imbalance", state: "no" }
-    ]
-  },
-  {
-    // T1b 肺经伏热（热象分支）：口渴+怕热，但无寒象（怕风/四肢不温）——
-    // 有寒象则落 T5 寒热错杂。
-    id: "T1b",
-    stage: "syndrome",
-    outcome: "classified",
-    code: "LUNG_HEAT",
-    message: "肺经伏热，上犯鼻窍。",
-    nextQuestions: [
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
-      {
-        fieldCode: "heat_imbalance",
-        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
-      },
-      { fieldCode: "fear_wind", prompt: "您近一周是否怕风（吹风时鼻痒、喷嚏加重）？" },
-      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" }
-    ],
-    conditions: [
-      { fieldCode: "thirst", state: "yes" },
-      { fieldCode: "heat_imbalance", state: "yes" },
-      { fieldCode: "fear_wind", state: "no" },
-      { fieldCode: "limbs_not_warm", state: "no" }
-    ]
-  },
-  {
-    // T2a 脾气虚弱（无热象分支）：倦怠+不渴；热象缺省。
-    id: "T2a",
-    stage: "syndrome",
-    outcome: "classified",
-    code: "SPLEEN_QI_DEF",
-    message: "脾气虚弱，清阳不升。",
-    nextQuestions: [
-      { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
-      {
-        fieldCode: "heat_imbalance",
-        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
-      }
-    ],
-    conditions: [
-      { fieldCode: "fatigue", state: "yes" },
-      { fieldCode: "thirst", state: "no" },
-      { fieldCode: "heat_imbalance", state: "no" }
-    ]
-  },
-  {
-    // T2b 脾气虚弱（热象分支）：倦怠+不渴+怕热，但无寒象。
-    id: "T2b",
-    stage: "syndrome",
-    outcome: "classified",
-    code: "SPLEEN_QI_DEF",
-    message: "脾气虚弱，清阳不升。",
-    nextQuestions: [
-      { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
-      {
-        fieldCode: "heat_imbalance",
-        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
-      },
-      { fieldCode: "fear_wind", prompt: "您近一周是否怕风（吹风时鼻痒、喷嚏加重）？" },
-      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" }
-    ],
-    conditions: [
-      { fieldCode: "fatigue", state: "yes" },
-      { fieldCode: "thirst", state: "no" },
-      { fieldCode: "heat_imbalance", state: "yes" },
-      { fieldCode: "fear_wind", state: "no" },
-      { fieldCode: "limbs_not_warm", state: "no" }
-    ]
-  },
-  {
-    // T3 肺气虚寒：四肢不温=no∧无倦怠∧不渴∧无热象（v4 修正：不再依赖怕风，
-    // 客户树第 5 步默认分支；评审 P1-5 既有漏判修复）。
-    id: "T3",
-    stage: "syndrome",
-    outcome: "classified",
-    code: "LUNG_QI_COLD",
-    message: "肺气虚寒，卫表不固。",
-    nextQuestions: [
-      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" },
-      { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
-      {
-        fieldCode: "heat_imbalance",
-        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
-      }
-    ],
-    conditions: [
-      { fieldCode: "limbs_not_warm", state: "no" },
-      { fieldCode: "fatigue", state: "no" },
-      { fieldCode: "thirst", state: "no" },
-      { fieldCode: "heat_imbalance", state: "no" }
-    ]
-  },
-  {
-    // T4 肾阳不足：四肢不温∧无倦怠∧不渴∧无热象（v4 修正：四肢凉替代
-    // 自造字段 cold_intolerance，AI 决策 A3：形寒肢冷仅信息收集）。
-    id: "T4",
-    stage: "syndrome",
-    outcome: "classified",
-    code: "KIDNEY_YANG_DEF",
-    message: "肾阳不足，温煦失职。",
-    nextQuestions: [
-      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" },
-      { fieldCode: "fatigue", prompt: "您近一周是否倦怠乏力（容易累，没精神）？" },
-      { fieldCode: "thirst", prompt: "您近一周是否口渴（总想喝水，或咽干口燥）？" },
-      {
-        fieldCode: "heat_imbalance",
-        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
-      }
-    ],
-    conditions: [
-      { fieldCode: "limbs_not_warm", state: "yes" },
-      { fieldCode: "fatigue", state: "no" },
-      { fieldCode: "thirst", state: "no" },
-      { fieldCode: "heat_imbalance", state: "no" }
-    ]
-  },
-  {
-    // T5 寒热错杂：怕热∧（怕风∨四肢不温）——热象+寒象并见（决定①字面，
-    // 客户树第 1 步优先，供医学审核）。32 组合穷举：唯一命中 12 组合。
-    id: "T5",
-    stage: "syndrome",
-    outcome: "classified",
-    code: "COLD_HEAT_COMPLEX",
-    message: "寒热错杂，虚实并见。",
-    nextQuestions: [
-      {
-        fieldCode: "heat_imbalance",
-        prompt: "您近一周是否怕热（手心脚心发热、口干咽燥）？"
-      },
-      { fieldCode: "fear_wind", prompt: "您近一周是否怕风（吹风时鼻痒、喷嚏加重）？" },
-      { fieldCode: "limbs_not_warm", prompt: "您近一周是否四肢不温（手脚经常冰凉）？" }
-    ],
-    conditions: [
-      { fieldCode: "heat_imbalance", state: "yes" },
-      {
-        anyOf: [
-          { fieldCode: "fear_wind", state: "yes" },
-          { fieldCode: "limbs_not_warm", state: "yes" }
-        ]
-      }
-    ]
-  }
-];
-
 /** 方案安全规则：匹配到方案后，方法属性与患者事实冲突时阻断。 */
 const PLAN_SAFETY_RULES: readonly ClinicalRule[] = [
   {
@@ -534,9 +368,17 @@ function packageChecksum(pack: {
   sourceRefs: readonly string[];
   rules: readonly ClinicalRule[];
   planSafetyRules: readonly ClinicalRule[];
+  syndromeStrategy: "ordered_six_step";
+  questionnaireStrategy: "page_q1_q14";
 }): string {
   return createHash("sha256")
-    .update(JSON.stringify(pack), "utf8")
+    // 题面和状态机不是 rules 数组的一部分，也必须进入包哈希；否则只改
+    // 页面/跳转却不会让旧会话失效。
+    .update(JSON.stringify({
+      ...pack,
+      questionnaire: ASSESSMENT_QUESTIONS,
+      syndromeTree: SYNDROME_TREE
+    }), "utf8")
     .digest("hex");
 }
 
@@ -548,10 +390,11 @@ const base = {
     SCREENING_RULES,
     PHASE_RULES,
     APPLICABILITY_RULES,
-    SEVERITY_RULES,
-    SYNDROME_RULES
+    SEVERITY_RULES
   ),
-  planSafetyRules: PLAN_SAFETY_RULES
+  planSafetyRules: PLAN_SAFETY_RULES,
+  syndromeStrategy: "ordered_six_step" as const,
+  questionnaireStrategy: "page_q1_q14" as const
 };
 
 /** 运行时只读加载的已冻结规则包；变更须走开发发布流程（架构 §16.2）。 */

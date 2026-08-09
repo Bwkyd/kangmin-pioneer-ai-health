@@ -100,20 +100,22 @@ function questionText(verdict: ClinicalVerdict): string {
   return `为了继续评估，请回答以下问题：\n${lines.join("\n")}`;
 }
 
-/** 步骤文本：steps_json 可能是 JSON 数组（管理端），转逐行编号；非 JSON 原样。
- *  数组元素支持字符串或对象 {title, description}（codex P2-2：对象式步骤
- *  存量契约，不得渲染 [object Object]）。 */
-function planSteps(plan: ApprovedPlan): string {
+/**
+ * 方法列表：数据库沿用历史字段 steps_json，但客户材料中的每一项是供患者
+ * 选择的方法，不是必须依次执行的步骤。数组元素兼容字符串或对象
+ * {title, description}；非 JSON 文本作为单个方法展示。
+ */
+function planMethods(plan: ApprovedPlan): string[] {
   if (plan.steps === "" || plan.steps === "[]") {
-    return "";
+    return [];
   }
   try {
     const parsed = JSON.parse(plan.steps) as unknown;
     if (Array.isArray(parsed)) {
       return parsed
-        .map((step, index) => {
+        .map((step) => {
           if (typeof step === "string") {
-            return `${index + 1}. ${step}`;
+            return step;
           }
           if (step !== null && typeof step === "object") {
             const record = step as Record<string, unknown>;
@@ -121,30 +123,31 @@ function planSteps(plan: ApprovedPlan): string {
             const description =
               typeof record.description === "string" ? record.description : "";
             const text = [title, description].filter((part) => part !== "").join("：");
-            return `${index + 1}. ${text === "" ? JSON.stringify(step) : text}`;
+            return text === "" ? JSON.stringify(step) : text;
           }
-          return `${index + 1}. ${String(step)}`;
-        })
-        .join("\n");
+          return String(step);
+        });
     }
   } catch {
-    // 非 JSON 原样输出。
+    // 非 JSON 文本按单个方法展示。
   }
-  return plan.steps;
+  return [plan.steps];
 }
 
-/** 单方案区块（名称/手法/步骤/注意事项）；方案缺失输出待补充，不捏造正文。 */
+/** 单方案区块（名称/方法及各自视频/注意事项）；方案缺失不捏造正文。 */
 function planBlock(plan: ApprovedPlan | null): string {
   if (plan === null) {
     return "方案待补充（由后台完善后生效）。";
   }
   const lines: string[] = [plan.name];
-  if (plan.method !== "") {
-    lines.push(`手法：${plan.method}`);
-  }
-  const steps = planSteps(plan);
-  if (steps !== "") {
-    lines.push(`步骤：\n${steps}`);
+  const methods = planMethods(plan);
+  if (methods.length > 0) {
+    lines.push("方法（请选择其中一项）：");
+    methods.forEach((method, index) => {
+      lines.push(`${index + 1}. ${method}`, "【操作视频】", videoBlock(plan));
+    });
+  } else if (plan.method !== "") {
+    lines.push("方法：", plan.method, "【操作视频】", videoBlock(plan));
   }
   if (plan.precautions !== "") {
     lines.push(`注意事项：${plan.precautions}`);
@@ -182,14 +185,10 @@ function acuteTemplate(syndrome: string, bundle: PlanBundle | null): string {
     "【急性期症状缓解方案】",
     "【文本】",
     planBlock(bundle?.acute ?? null),
-    "【操作视频】",
-    videoBlock(bundle?.acute ?? null),
     "",
     "【体质调理固本方案】",
     "【文本】",
     planBlock(bundle?.constitution ?? null),
-    "【操作视频】",
-    videoBlock(bundle?.constitution ?? null),
     "",
     "【执行建议】",
     "急性期方案：每日执行，直至症状明显缓解",
@@ -208,14 +207,10 @@ function remissionTemplate(syndrome: string, bundle: PlanBundle | null): string 
     "【体质调理固本方案】",
     "【文本】",
     planBlock(bundle?.constitution ?? null),
-    "【操作视频】",
-    videoBlock(bundle?.constitution ?? null),
     "",
     "【急性期方案】",
     "【文本】",
     planBlock(bundle?.acute ?? null),
-    "【操作视频】",
-    videoBlock(bundle?.acute ?? null),
     "",
     "【执行建议】",
     "调体方案每周 2-3 次。配合规律作息、适度运动、忌口生冷辛辣",

@@ -1,7 +1,8 @@
 /**
  * Clinical Rule Kernel 实现。
  *
- * 固定执行顺序（智能体设计 v4）：
+ * 生产 page_q1_q14 路径：Q1-Q11 → 六步证型树 → Q12-Q14 → 期别/方案。
+ * 兼容旧规则包时仍使用固定执行顺序（智能体设计 v4）：
  *   安全 > 确诊门禁/人群派生 > 期别派生 > 适用范围 > 严重度 > 证型 > 方案安全；
  * 低优先级结果不能覆盖高优先级阻断。unknown/missing 一律不能
  * 让规则"通过"——要么补问，要么按裁决语义处理，绝不猜测。
@@ -21,6 +22,12 @@ import type {
 } from "./contracts.js";
 import type { ClinicalRule, FactEntry, FactMap, RulePackage } from "./domain.js";
 import { evaluateRules } from "./domain.js";
+import {
+  CONSTITUTION_QUESTION_IDS,
+  PHASE_QUESTION_IDS,
+  assessmentQuestion
+} from "./assessment-questionnaire.js";
+import { evaluateSyndromeDecisionTree } from "./syndrome-decision-tree.js";
 
 /** 单次裁决的补问上限（智能体设计 v4：逐题一问，多选题保真）。 */
 export const MAX_NEXT_QUESTIONS = 1;
@@ -77,6 +84,10 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
 
   async evaluate(facts: readonly ConfirmedFact[]): Promise<ClinicalVerdict> {
     const source = new MapFactSource(facts);
+
+    if (this.pack.questionnaireStrategy === "page_q1_q14") {
+      return this.evaluatePageQuestionnaire(source);
+    }
 
     const safety = this.evaluateSafety(source);
     if (safety !== null) {
@@ -170,7 +181,7 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
           }
         ]);
 
-        // 决策凭证需要跨阶段累积命中规则（如 ["SEV-05","T1a"]）。
+        // 决策凭证需要跨阶段累积命中规则（如 ["SEV-05","SDT-01-A"]）。
         const allMatched = [...severity.matchedRuleIds, ...syndrome.matchedRuleIds];
         const plan = await this.evaluatePlanSafety(withSyndrome, allMatched);
         if (plan !== null) {
@@ -189,6 +200,157 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       null,
       null
     );
+  }
+
+  /**
+   * 客户页面问卷流程：严格按《页面展示》Q1→Q14 逐题收集。
+   * Q1-Q11 收齐后才执行《前置规则》六步证型树；树需要二次确认时
+   * 继续使用独立 step5/step6 节点。证型完成后收集 Q12-Q14，最后
+   * 按《前置规则》以 Q1 为硬指标派生急性/缓解期并组合方案。
+   */
+  private async evaluatePageQuestionnaire(source: MapFactSource): Promise<ClinicalVerdict> {
+    for (const questionId of CONSTITUTION_QUESTION_IDS) {
+      const pending = this.validatePageAnswer(source, questionId, "syndrome");
+      if (pending !== null) {
+        return pending;
+      }
+    }
+
+    const treeSource = source.with([
+      this.copyPageAnswer(source, "q10", "step1_q10"),
+      this.copyPageAnswer(source, "q8", "step2_q8"),
+      this.copyPageAnswer(source, "q6", "step3_q6"),
+      this.copyPageAnswer(source, "q9", "step4_q9")
+    ]);
+    const tree = evaluateSyndromeDecisionTree(treeSource);
+    if (tree.kind === "need_answer") {
+      return this.needMoreVerdict(treeSource, "syndrome", [tree.question], "mild");
+    }
+    if (tree.kind === "invalid_answer") {
+      return this.verdict(
+        treeSource,
+        "conflict",
+        "syndrome",
+        [],
+        "证型问卷答案与当前节点不兼容，请重新开始评估。",
+        null,
+        null
+      );
+    }
+
+    for (const questionId of PHASE_QUESTION_IDS) {
+      const pending = this.validatePageAnswer(source, questionId, "phase");
+      if (pending !== null) {
+        return pending;
+      }
+    }
+
+    const q1 = this.pageOption(source, "q1");
+    // 《前置规则》：Q1 A/B 为急性期；Q1 C 且 Q2B/Q3B 为缓解期，
+    // 其余组合仍“以 Q1 为准”，故 Q1C 的兜底同为缓解期。
+    const phaseCode = q1 === "A" || q1 === "B" ? "acute" : "remission";
+    const phaseRuleId = phaseCode === "acute" ? "P-Q1-ACUTE" : "P-Q1-REMISSION";
+    const completedSource = treeSource.with([
+      {
+        fieldCode: "syndrome_code",
+        state: "value",
+        value: tree.leaf.syndromeCode,
+        source: "derived"
+      },
+      {
+        fieldCode: "phase_code",
+        state: "value",
+        value: phaseCode,
+        source: "derived"
+      },
+      {
+        // 客户页面资料未设置年龄题；当前公开试用页面沿用成人方案。
+        fieldCode: "audience",
+        state: "value",
+        value: "adult",
+        source: "derived"
+      },
+      {
+        fieldCode: "severity_code",
+        state: "value",
+        value: "mild",
+        source: "derived"
+      }
+    ]);
+
+    const plan = await this.evaluatePlanSafety(
+      completedSource,
+      [phaseRuleId, tree.leaf.ruleId]
+    );
+    return plan ?? this.verdict(
+      completedSource,
+      "classified",
+      "completed",
+      [phaseRuleId, tree.leaf.ruleId],
+      null,
+      "mild",
+      tree.leaf.syndromeCode
+    );
+  }
+
+  private validatePageAnswer(
+    source: MapFactSource,
+    questionId: string,
+    stage: "syndrome" | "phase"
+  ): ClinicalVerdict | null {
+    const question = assessmentQuestion(questionId);
+    if (question === undefined) {
+      return this.verdict(
+        source,
+        "conflict",
+        stage,
+        [],
+        "评估问卷配置不完整，请重新开始评估。",
+        null,
+        null
+      );
+    }
+    const entry = source.get(questionId);
+    if (entry === null) {
+      return this.needMoreVerdict(
+        source,
+        stage,
+        [{ fieldCode: question.id, prompt: question.title }]
+      );
+    }
+    const option = String(entry.value ?? "").toUpperCase();
+    if (
+      entry.state !== "value" ||
+      !question.options.some((candidate) => candidate.code === option)
+    ) {
+      return this.verdict(
+        source,
+        "conflict",
+        stage,
+        [],
+        "问卷选项与当前题目不兼容，请重新开始评估。",
+        null,
+        null
+      );
+    }
+    return null;
+  }
+
+  private pageOption(source: MapFactSource, questionId: string): string {
+    return String(source.get(questionId)?.value ?? "").toUpperCase();
+  }
+
+  private copyPageAnswer(
+    source: MapFactSource,
+    questionId: string,
+    targetField: string
+  ): ConfirmedFact {
+    return {
+      fieldCode: targetField,
+      state: "value",
+      value: this.pageOption(source, questionId),
+      source: "derived"
+    };
   }
 
   private evaluateSafety(source: MapFactSource): ClinicalVerdict | null {
@@ -387,6 +549,38 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
     source: MapFactSource,
     severityCode: SeverityCode | null
   ): ClinicalVerdict | null {
+    if (this.pack.syndromeStrategy === "ordered_six_step") {
+      const result = evaluateSyndromeDecisionTree(source);
+      if (result.kind === "need_answer") {
+        return this.needMoreVerdict(
+          source,
+          "syndrome",
+          [result.question],
+          severityCode
+        );
+      }
+      if (result.kind === "invalid_answer") {
+        return this.verdict(
+          source,
+          "conflict",
+          "syndrome",
+          [],
+          "证型问卷答案与当前节点不兼容，请重新开始评估。",
+          severityCode,
+          null
+        );
+      }
+      return this.verdict(
+        source,
+        "classified",
+        "syndrome",
+        [result.leaf.ruleId],
+        result.leaf.message,
+        severityCode,
+        result.leaf.syndromeCode
+      );
+    }
+
     const report = evaluateRules(this.stageRules("syndrome"), source);
     const codes = [...new Set(report.matched.map((rule) => rule.code).filter(Boolean))];
 
@@ -486,7 +680,11 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
           source: "approved_plan"
         })
       );
-      const report = evaluateRules(this.pack.planSafetyRules, source.with(planFacts));
+      const planSafetyRules =
+        this.pack.questionnaireStrategy === "page_q1_q14"
+          ? this.pack.planSafetyRules.filter((rule) => rule.nextQuestions.length === 0)
+          : this.pack.planSafetyRules;
+      const report = evaluateRules(planSafetyRules, source.with(planFacts));
       if (report.matched.length > 0) {
         return this.verdict(
           source,
