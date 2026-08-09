@@ -52,6 +52,46 @@ export async function runAgentTurn(
   });
 }
 
+export type AgentConversationState = "active" | "completed" | "abandoned";
+
+export interface AgentConversationSummary {
+  id: string;
+  state: AgentConversationState;
+  createdAt: string;
+  updatedAt: string;
+  closedAt: string | null;
+}
+
+export interface AgentConversationDetail {
+  session: AgentConversationSummary;
+  messages: Array<{
+    id: string;
+    sequence: number;
+    role: "user" | "assistant" | "system_notice";
+    content: string;
+    contentHash: string;
+    decisionId: string | null;
+    createdAt: string;
+  }>;
+  decisionCount: number;
+  lastDecision: {
+    nextQuestions: Array<{ fieldCode: string; prompt: string }>;
+  } | null;
+}
+
+/** 当前患者的已保存自由对话，按最近更新时间倒序。 */
+export async function listAgentConversations(): Promise<AgentConversationSummary[]> {
+  const result = await command<{ items: AgentConversationSummary[] }>(
+    "agent conversations list"
+  );
+  return result.items;
+}
+
+/** 读取当前患者的一段对话及完整有序消息。 */
+export async function showAgentConversation(id: string): Promise<AgentConversationDetail> {
+  return command<AgentConversationDetail>("agent conversations show", { id });
+}
+
 interface AgentSessionDto {
   id: string;
   status: "awaiting_answer" | "safety_blocked" | "completed";

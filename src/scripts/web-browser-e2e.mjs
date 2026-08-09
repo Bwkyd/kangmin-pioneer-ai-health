@@ -13,6 +13,14 @@ import { createKangminHttpServer } from "../dist/http/server.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
+// 浏览器全链路会在同一进程内集中执行大量真实命令。单独提高测试实例额度，
+// 避免用例规模增长后误触生产默认限流；限流行为由 http-ops.e2e 独立验证。
+const browserE2eRateLimits = {
+  strictPerWindow: 1_000,
+  commandsPerWindow: 1_000,
+  uploadPerWindow: 1_000
+};
+
 const adminCli = fileURLToPath(
   new URL("../dist/cli/kangmin-admin.js", import.meta.url)
 );
@@ -48,6 +56,19 @@ async function expectText(locator, text) {
   assert.match((await locator.textContent()) ?? "", new RegExp(text, "u"));
 }
 
+/** 中央新增按钮必须完整收纳在底栏内，避免跨页面遮挡正文。 */
+async function expectAddButtonInsideNavigation(page, pageName) {
+  const navigationBox = await page.locator(".bottom-nav").boundingBox();
+  const addButtonBox = await page.getByTestId("symptom-add-today").boundingBox();
+  assert.ok(navigationBox, `${pageName}应显示底部导航`);
+  assert.ok(addButtonBox, `${pageName}应显示症状新增按钮`);
+  assert.ok(
+    addButtonBox.y >= navigationBox.y &&
+      addButtonBox.y + addButtonBox.height <= navigationBox.y + navigationBox.height,
+    `${pageName}的症状新增按钮不应溢出底栏`
+  );
+}
+
 /** 打开日历 tab 并切到列表模式。 */
 async function openCalendarList(page) {
   await page.getByTestId("nav-calendar").click();
@@ -74,7 +95,8 @@ let server = createKangminHttpServer(application, {
   appEnvironment: "integration",
   allowDevelopmentSession: true,
   adminApplication: adminOps.application,
-  adminObjectStorage: adminOps.objectStorage
+  adminObjectStorage: adminOps.objectStorage,
+  rateLimits: browserE2eRateLimits
 });
 let origin = await listen(server);
 const browser = await chromium.launch({ headless: true });
@@ -111,6 +133,14 @@ try {
   assert.equal(await page.locator(".mini-program-menu").count(), 0);
   assert.equal(await page.locator(".nav-add").count(), 1);
   assert.equal(await page.locator(".bottom-nav button").count(), 5);
+  await page.locator(".bottom-nav button", { hasText: "首页" }).click();
+  await expectAddButtonInsideNavigation(page, "首页");
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  await expectAddButtonInsideNavigation(page, "问助手");
+  await page.getByTestId("nav-calendar").click();
+  await expectAddButtonInsideNavigation(page, "日历");
+  await page.locator(".bottom-nav button", { hasText: "我的" }).click();
+  await expectAddButtonInsideNavigation(page, "我的");
   await page.getByRole("button", { name: "健康档案" }).click();
   await page.getByTestId("health-profile-view").waitFor({ state: "visible" });
   await expectText(page.getByTestId("profile-status"), "暂无健康档案");
@@ -256,7 +286,8 @@ try {
     appEnvironment: "integration",
     allowDevelopmentSession: true,
     adminApplication: adminOps.application,
-    adminObjectStorage: adminOps.objectStorage
+    adminObjectStorage: adminOps.objectStorage,
+    rateLimits: browserE2eRateLimits
   });
   origin = await listen(server);
 
@@ -390,14 +421,53 @@ try {
     conversationId
   );
 
-  // 刷新后同 conversationId 续接，会话不丢。
+  // 刷新后从服务端恢复完整有序消息、最后补问与当前 conversationId。
   await page.reload();
   await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   await chatInput.waitFor({ state: "visible" });
+  await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
+  await page.locator(".user-bubble", { hasText: "还有打喷嚏和流清鼻涕" }).waitFor({ state: "visible" });
+  await page.locator(".question-card").first().waitFor({ state: "visible" });
+  assert.equal(
+    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
+    conversationId
+  );
+
+  // 恢复后的进行中会话可以继续发送，仍使用原 ID。
   await chatInput.fill("症状早上更明显");
   await page.locator(".send-button").click();
-  await page.getByTestId("chat-notice").waitFor({ state: "visible" });
+  await page.locator(".user-bubble", { hasText: "症状早上更明显" }).waitFor({ state: "visible" });
+  assert.equal(
+    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
+    conversationId
+  );
+
+  // 显式新建会话会清掉当前选择；结束态只读且不再出现无效“重试”。
+  await page.getByTestId("chat-new").click();
+  assert.equal(
+    await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
+    null
+  );
+  await chatInput.fill("急救：是");
+  await page.locator(".send-button").click();
+  await page.locator(".conversation-ended").waitFor({ state: "visible" });
+  assert.equal(await chatInput.isDisabled(), true, "已结束对话的输入框应禁用");
+  assert.equal(await page.locator(".record-notice.error", { hasText: "对话已结束" }).count(), 0);
+  const completedConversationId = await page.evaluate(() =>
+    sessionStorage.getItem("kangmin.agent.conversationId")
+  );
+  assert.ok(completedConversationId, "新会话发送后应生成 conversationId");
+  assert.notEqual(completedConversationId, conversationId, "新建对话必须生成不同 ID");
+
+  // 历史列表显示两段对话，并可切回原进行中会话继续使用。
+  await page.getByTestId("chat-history-toggle").click();
+  const history = page.getByTestId("chat-history");
+  await history.locator("button").nth(1).waitFor({ state: "visible" });
+  assert.equal(await history.locator("button").count(), 2);
+  await history.locator(`[data-conversation-id="${conversationId}"]`).click();
+  await page.locator(".user-bubble", { hasText: "症状早上更明显" }).waitFor({ state: "visible" });
+  assert.equal(await chatInput.isEnabled(), true, "切回进行中会话后输入框应恢复");
   assert.equal(
     await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
     conversationId

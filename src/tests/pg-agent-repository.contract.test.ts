@@ -436,6 +436,10 @@ contractTest("appendMessage：UNIQUE(session_id, sequence) 重复序号报唯一
   await repository.createSession(session);
 
   await repository.appendMessage(messageFixture("c-msg-dup-1", session.id, 1, null));
+  await repository.appendMessage(messageFixture("c-msg-ordered-2", session.id, 2, null));
+  const listed = await repository.listMessages(session.id);
+  assert.deepEqual(listed.map((message) => message.sequence), [1, 2]);
+  assert.equal(encryption.decrypt(listed[0]!.contentEncrypted), "正文-c-msg-dup-1");
   const duplicate = messageFixture("c-msg-dup-2", session.id, 1, null);
   await assert.rejects(
     repository.appendMessage(duplicate),

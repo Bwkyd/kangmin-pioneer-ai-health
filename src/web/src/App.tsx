@@ -1,6 +1,14 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-import { runAgentTurn, type AgentTurnResult } from "./agent";
+import {
+  listAgentConversations,
+  runAgentTurn,
+  showAgentConversation,
+  type AgentConversationDetail,
+  type AgentConversationState,
+  type AgentConversationSummary,
+  type AgentTurnResult
+} from "./agent";
 import { CommandError } from "./command-client";
 import { FIELD_TO_QUESTION } from "../../modules/agent/option-mapping";
 import DiscoverView from "./DiscoverView";
@@ -50,14 +58,20 @@ type Tab =
   | "healthProfile"
   | "allergenRecord";
 type Message =
-  | { id: number; role: "ai" | "user"; kind: "text"; text: string }
-  | { id: number; role: "ai"; kind: "thinking" }
-  | { id: number; role: "ai"; kind: "notice"; text: string }
-  | { id: number; role: "ai"; kind: "result"; text: string }
-  | { id: number; role: "user"; kind: "option"; label: string; caption: string };
+  | { id: string | number; role: "ai" | "user"; kind: "text"; text: string }
+  | { id: string | number; role: "ai"; kind: "thinking" }
+  | { id: string | number; role: "ai"; kind: "notice"; text: string }
+  | { id: string | number; role: "ai"; kind: "result"; text: string }
+  | { id: string | number; role: "user"; kind: "option"; label: string; caption: string };
 
 /** chat 自由对话的 conversationId 持久化键（sessionStorage：刷新后续接，关页即清）。 */
 const AGENT_CONVERSATION_KEY = "kangmin.agent.conversationId";
+const WELCOME_MESSAGE: Message = {
+  id: "welcome",
+  role: "ai",
+  kind: "text",
+  text: "敏友您好，本工具依据福建中医药大学抗敏先锋团队体质调理方案开发，为您推荐个性化外治建议"
+};
 
 /** 客户问卷原题（客户确认版：vault/truth/product/assessment-page-content.md）。
  *  前端只渲染原题与选项按钮，点击发送稳定选项值（q1=B），服务端按
@@ -202,9 +216,7 @@ const QUESTIONNAIRE: QuestionCard[] = [
   },
 ];
 
-/** 一轮 agent exec 结果展开为聊天消息：助手正文 + system_notice。
- *  补问轮（verdict.nextQuestions 非空）不重复渲染服务端问题清单文本，
- *  由下方问卷选项卡承载原题原选项；final 轮（含期别标记）渲染结果卡。 */
+/** 一轮 agent exec 结果展开为聊天消息：助手正文 + system_notice。 */
 function agentTurnMessages(turn: AgentTurnResult): Message[] {
   const base = Date.now();
   const messages: Message[] = [];
@@ -212,7 +224,7 @@ function agentTurnMessages(turn: AgentTurnResult): Message[] {
     const content = turn.message.content;
     if (content.includes("【急性发作期】") || content.includes("【缓解期】")) {
       messages.push({ id: base, role: "ai", kind: "result", text: content });
-    } else if (turn.verdict === null || turn.verdict.nextQuestions.length === 0) {
+    } else {
       messages.push({ id: base, role: "ai", kind: "text", text: content });
     }
   }
@@ -220,6 +232,35 @@ function agentTurnMessages(turn: AgentTurnResult): Message[] {
     messages.push({ id: base + 1 + index, role: "ai", kind: "notice", text: notice.content });
   });
   return messages;
+}
+
+/** 服务端历史消息恢复为与实时消息相同的渲染结构。 */
+function restoredMessages(detail: AgentConversationDetail): Message[] {
+  return [
+    WELCOME_MESSAGE,
+    ...detail.messages.map((message): Message => {
+      if (message.role === "system_notice") {
+        return { id: message.id, role: "ai", kind: "notice", text: message.content };
+      }
+      if (message.role === "assistant") {
+        const result = message.content.includes("【急性发作期】") || message.content.includes("【缓解期】");
+        return { id: message.id, role: "ai", kind: result ? "result" : "text", text: message.content };
+      }
+      return { id: message.id, role: "user", kind: "text", text: message.content };
+    })
+  ];
+}
+
+function conversationDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
 }
 
 /** final 轮结果卡：message.content 纯文本保留换行，不解析 markdown。 */
@@ -327,14 +368,7 @@ export default function App() {
   const [previewConsentReload, setPreviewConsentReload] = useState(0);
   const [previewConsentError, setPreviewConsentError] = useState("");
   const [tab, setTab] = useState<Tab>("home");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      role: "ai",
-      kind: "text",
-      text: "敏友您好，本工具依据福建中医药大学抗敏先锋团队体质调理方案开发，为您推荐个性化外治建议",
-    },
-  ]);
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
   // 最近一轮内核补问（verdict.nextQuestions）：渲染问卷原题或"是/否/不清楚"选项卡。
   const [pendingQuestions, setPendingQuestions] = useState<Array<{ fieldCode: string; prompt: string }> | null>(null);
   const [input, setInput] = useState("");
@@ -349,6 +383,13 @@ export default function App() {
       return null;
     }
   });
+  const [conversationState, setConversationState] = useState<AgentConversationState | null>(null);
+  const [chatHydrated, setChatHydrated] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<AgentConversationSummary[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [historyError, setHistoryError] = useState("");
+  const [historyReload, setHistoryReload] = useState(0);
   const [scores, setScores] = useState<Array<number | null>>([...emptySymptomScores]);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
@@ -395,6 +436,7 @@ export default function App() {
   const [exposureRequest] = useState(() => new RequestVersion());
   const [overviewRequest] = useState(() => new RequestVersion());
   const [chatRequest] = useState(() => new RequestVersion());
+  const [chatLoadRequest] = useState(() => new RequestVersion());
 
   const scoresComplete = hasCompleteSymptomScores(scores);
   // record overview 空态口径：无最近症状日期或本月次数为 0 即按空态展示。
@@ -436,6 +478,74 @@ export default function App() {
       });
     return () => { cancelled = true; };
   }, [previewConsentReload]);
+
+  // 刷新恢复：当前会话 ID 只负责定位，气泡、结束态与最后补问全部以
+  // 服务端详情为准，避免“界面像新对话、后端却续旧对话”的错位。
+  useEffect(() => {
+    if (previewConsentStatus !== "ready" || chatHydrated) return;
+    if (conversationId === null) {
+      setChatHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    const requestVersion = chatLoadRequest.next();
+    showAgentConversation(conversationId)
+      .then((detail) => {
+        if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
+        setMessages(restoredMessages(detail));
+        setConversationState(detail.session.state);
+        setPendingQuestions(
+          detail.session.state === "active"
+            ? detail.lastDecision?.nextQuestions ?? null
+            : null
+        );
+      })
+      .catch((error: unknown) => {
+        if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
+        setConversationId(null);
+        setConversationState(null);
+        setMessages([WELCOME_MESSAGE]);
+        setPendingQuestions(null);
+        setChatError(
+          error instanceof CommandError && error.code === "resource_not_found"
+            ? "之前的对话已过期或不可用，请新建对话"
+            : error instanceof Error
+              ? error.message
+              : "之前的对话暂时无法恢复"
+        );
+        try {
+          sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
+        } catch {
+          // sessionStorage 不可用时，组件状态仍已清理。
+        }
+      })
+      .finally(() => {
+        if (!cancelled && chatLoadRequest.isCurrent(requestVersion)) {
+          setChatHydrated(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [chatHydrated, chatLoadRequest, conversationId, previewConsentStatus]);
+
+  useEffect(() => {
+    if (previewConsentStatus !== "ready" || !historyOpen) return;
+    let cancelled = false;
+    setHistoryStatus("loading");
+    setHistoryError("");
+    listAgentConversations()
+      .then((items) => {
+        if (cancelled) return;
+        setConversationHistory(items);
+        setHistoryStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setConversationHistory([]);
+        setHistoryStatus("error");
+        setHistoryError(error instanceof Error ? error.message : "历史对话暂时无法读取");
+      });
+    return () => { cancelled = true; };
+  }, [historyOpen, historyReload, previewConsentStatus]);
 
   useEffect(() => {
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
@@ -654,15 +764,70 @@ export default function App() {
     setTab("chat");
   };
 
+  /** 显式新建对话：清空当前选择与所有瞬时状态，下一条消息创建新 ID。 */
+  const startNewConversation = () => {
+    chatRequest.next();
+    chatLoadRequest.next();
+    setConversationId(null);
+    setConversationState(null);
+    setMessages([WELCOME_MESSAGE]);
+    setPendingQuestions(null);
+    setInput("");
+    setChatSending(false);
+    setChatError("");
+    setChatRetryMessage(null);
+    setChatHydrated(true);
+    setHistoryOpen(false);
+    try {
+      sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
+    } catch {
+      // sessionStorage 不可用时，组件状态仍已开启一段新对话。
+    }
+  };
+
+  /** 从服务端历史切换对话；结束会话只读，进行中会话可继续。 */
+  const selectConversation = async (id: string) => {
+    if (chatSending) return;
+    chatRequest.next();
+    const requestVersion = chatLoadRequest.next();
+    setChatSending(true);
+    setChatError("");
+    setChatRetryMessage(null);
+    try {
+      const detail = await showAgentConversation(id);
+      if (!chatLoadRequest.isCurrent(requestVersion)) return;
+      setConversationId(detail.session.id);
+      setConversationState(detail.session.state);
+      setMessages(restoredMessages(detail));
+      setPendingQuestions(
+        detail.session.state === "active"
+          ? detail.lastDecision?.nextQuestions ?? null
+          : null
+      );
+      setHistoryOpen(false);
+      try {
+        sessionStorage.setItem(AGENT_CONVERSATION_KEY, detail.session.id);
+      } catch {
+        // sessionStorage 不可用时仅在本次页面生命周期内保留选择。
+      }
+    } catch (error) {
+      if (!chatLoadRequest.isCurrent(requestVersion)) return;
+      setHistoryStatus("error");
+      setHistoryError(error instanceof Error ? error.message : "对话暂时无法读取");
+    } finally {
+      if (chatLoadRequest.isCurrent(requestVersion)) setChatSending(false);
+    }
+  };
+
   /** "开始了解我的情况"：发送首条消息，驱动内核补问流水线（服务端只问不猜）。 */
   const beginConsultation = () => {
-    if (chatSending || messages.length !== 1) return;
+    if (!chatHydrated || chatSending || conversationState !== null || messages.length !== 1) return;
     void sendChatMessage("我想了解我的鼻炎情况");
   };
 
   /** 问卷原题选项卡：点击发送稳定选项值（qN=选项），用户气泡显示原题与选项。 */
   const answerQuestion = (card: QuestionCard, option: QuestionOption) => {
-    if (chatSending) return;
+    if (chatSending || conversationState !== "active") return;
     setMessages((current) => [
       ...current,
       { id: Date.now(), role: "user", kind: "option", label: `${option.code}. ${option.text}`, caption: card.title },
@@ -672,7 +837,7 @@ export default function App() {
 
   /** 无问卷映射字段（如 urgent_help/sleep_affected 等）：是/否/不清楚，载荷 fieldCode=state。 */
   const answerField = (field: { fieldCode: string; prompt: string }, state: "yes" | "no" | "unknown") => {
-    if (chatSending) return;
+    if (chatSending || conversationState !== "active") return;
     const labels: Record<string, string> = { yes: "是", no: "否", unknown: "不清楚" };
     setMessages((current) => [
       ...current,
@@ -684,6 +849,11 @@ export default function App() {
   // chat 底部输入：接通 agent exec 真实对话。echoUser=false 用于失败重试
   // （首轮已渲染用户气泡，重试不再重复追加）。
   const sendChatMessage = async (value: string, echoUser = true) => {
+    if (!chatHydrated || (conversationState !== null && conversationState !== "active")) {
+      setChatError("本对话已结束，请新建对话后继续");
+      setChatRetryMessage(null);
+      return;
+    }
     const requestVersion = chatRequest.next();
     setChatSending(true);
     setChatError("");
@@ -696,19 +866,10 @@ export default function App() {
     }
     setMessages((current) => [...current, { id: Date.now() + 1, role: "ai", kind: "thinking" }]);
     try {
-      let storedId = conversationId;
-      let turn: AgentTurnResult;
-      try {
-        turn = await runAgentTurn(value, storedId ?? undefined);
-      } catch (error) {
-        // 本地持久化的 conversationId 已失效（服务侧数据重置或保留过期）：
-        // 丢弃后按新会话重试一次，不让旧 id 卡死输入。
-        if (storedId === null || !(error instanceof CommandError) || error.code !== "resource_not_found") throw error;
-        storedId = null;
-        turn = await runAgentTurn(value);
-      }
+      const turn = await runAgentTurn(value, conversationId ?? undefined);
       if (!chatRequest.isCurrent(requestVersion)) return;
       setConversationId(turn.conversationId);
+      setConversationState(turn.state);
       try {
         sessionStorage.setItem(AGENT_CONVERSATION_KEY, turn.conversationId);
       } catch {
@@ -719,12 +880,33 @@ export default function App() {
         ...agentTurnMessages(turn),
       ]);
       // 补问选项卡随本轮 verdict 更新；收口轮（无补问）清空。
-      setPendingQuestions(turn.verdict?.nextQuestions ?? null);
+      setPendingQuestions(turn.closed ? null : turn.verdict?.nextQuestions ?? null);
+      setHistoryReload((current) => current + 1);
     } catch (error) {
       if (!chatRequest.isCurrent(requestVersion)) return;
       setMessages((current) => current.filter((message) => message.kind !== "thinking"));
-      setChatError(error instanceof Error ? error.message : "发送失败，请稍后重试");
-      setChatRetryMessage(value);
+      if (error instanceof CommandError && error.code === "resource_not_found") {
+        setConversationId(null);
+        setConversationState(null);
+        setPendingQuestions(null);
+        setChatError("当前对话已过期或不可用，请新建对话后重新发送");
+        try {
+          sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
+        } catch {
+          // sessionStorage 不可用时，组件状态仍已清理失效 ID。
+        }
+      } else if (
+        error instanceof CommandError &&
+        error.code === "validation_failed" &&
+        error.message.includes("对话已结束")
+      ) {
+        setConversationState("completed");
+        setPendingQuestions(null);
+        setChatError("本对话已结束，请新建对话后继续");
+      } else {
+        setChatError(error instanceof Error ? error.message : "发送失败，请稍后重试");
+        setChatRetryMessage(error instanceof CommandError && error.retryable ? value : null);
+      }
     } finally {
       if (chatRequest.isCurrent(requestVersion)) setChatSending(false);
     }
@@ -733,7 +915,7 @@ export default function App() {
   const sendCustom = (event: FormEvent) => {
     event.preventDefault();
     const value = input.trim();
-    if (!value || chatSending) return;
+    if (!value || chatSending || !chatHydrated || (conversationState !== null && conversationState !== "active")) return;
     setInput("");
     void sendChatMessage(value);
   };
@@ -1222,6 +1404,40 @@ export default function App() {
                   <span>库</span>
                   <p><strong>安全评估与方案建议</strong><small>固定规则优先 · 不替代门诊诊断</small></p>
                 </div>
+                <div className="chat-toolbar" aria-label="对话管理">
+                  <button
+                    type="button"
+                    data-testid="chat-history-toggle"
+                    aria-expanded={historyOpen}
+                    onClick={() => setHistoryOpen((current) => !current)}
+                  >
+                    ☰ 历史对话
+                  </button>
+                  <button type="button" data-testid="chat-new" onClick={startNewConversation}>
+                    ＋ 新建对话
+                  </button>
+                </div>
+                {historyOpen && (
+                  <section className="chat-history" data-testid="chat-history" aria-label="历史对话">
+                    <div className="chat-history-head"><strong>历史对话</strong><small>仅显示当前体验账户</small></div>
+                    {historyStatus === "loading" && <p>正在读取…</p>}
+                    {historyStatus === "error" && <p role="alert">{historyError}</p>}
+                    {historyStatus === "ready" && conversationHistory.length === 0 && <p>暂无已保存的对话</p>}
+                    {conversationHistory.map((conversation) => (
+                      <button
+                        type="button"
+                        key={conversation.id}
+                        data-conversation-id={conversation.id}
+                        className={conversation.id === conversationId ? "active" : ""}
+                        disabled={chatSending}
+                        onClick={() => void selectConversation(conversation.id)}
+                      >
+                        <span>{conversationDate(conversation.updatedAt)}</span>
+                        <small>{conversation.state === "active" ? "进行中" : "已结束"}</small>
+                      </button>
+                    ))}
+                  </section>
+                )}
                 <div className="chat" aria-live="polite">
                   <div className="time-label">{timeLabel}</div>
                   {messages.map((message) => {
@@ -1246,7 +1462,7 @@ export default function App() {
                     );
                   })}
 
-                  {messages.length === 1 && (
+                  {chatHydrated && conversationState === null && messages.length === 1 && (
                     <button className="start-card" type="button" onClick={beginConsultation} disabled={chatSending}>
                       <span className="start-icon">聊</span><span><strong>开始了解我的情况</strong><small>约 2 分钟 · 随时可以退出</small></span><b>›</b>
                     </button>
@@ -1298,10 +1514,21 @@ export default function App() {
                     )}
                   </div>
                 )}
+                {conversationState !== null && conversationState !== "active" && (
+                  <div className="conversation-ended" role="status">
+                    <span>本对话已结束，历史内容仍可查看。</span>
+                    <button type="button" onClick={startNewConversation}>新建对话</button>
+                  </div>
+                )}
                 <form className="composer" onSubmit={sendCustom}>
-                  <button type="button" aria-label="语音输入">⌁</button>
-                  <input aria-label="输入症状或问题" value={input} onChange={(event) => setInput(event.target.value)} placeholder={chatSending ? "正在发送…" : "问问题或描述症状…"} disabled={chatSending} />
-                  <button className="send-button" type="submit" aria-label="发送" disabled={chatSending}>{chatSending ? "…" : "↑"}</button>
+                  <input
+                    aria-label="输入症状或问题"
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    placeholder={!chatHydrated ? "正在恢复对话…" : conversationState !== null && conversationState !== "active" ? "该对话已结束" : chatSending ? "正在发送…" : "问问题或描述症状…"}
+                    disabled={!chatHydrated || chatSending || (conversationState !== null && conversationState !== "active")}
+                  />
+                  <button className="send-button" type="submit" aria-label="发送" disabled={!chatHydrated || chatSending || (conversationState !== null && conversationState !== "active")}>{chatSending ? "…" : "↑"}</button>
                 </form>
               </div>
             )}

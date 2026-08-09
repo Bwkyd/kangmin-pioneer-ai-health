@@ -213,11 +213,25 @@ export interface DecisionSummary {
   matchedRuleIds: string[];
   rulePackageVersion: string;
   planId: string | null;
+  /** 恢复进行中会话时重新渲染最后一轮补问。 */
+  nextQuestions: NextQuestion[];
+  createdAt: string;
+}
+
+/** 已解密且通过哈希校验的患者侧历史消息。 */
+export interface ConversationMessageView {
+  id: string;
+  sequence: number;
+  role: MessageRole;
+  decisionId: string | null;
+  content: string;
+  contentHash: string;
   createdAt: string;
 }
 
 export interface ConversationShowResult {
   session: ConversationSession;
+  messages: ConversationMessageView[];
   decisionCount: number;
   lastDecision: DecisionSummary | null;
 }
