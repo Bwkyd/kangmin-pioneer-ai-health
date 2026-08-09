@@ -3,6 +3,39 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 智能体设计 v4 开发轮完成并部署交付（2026-08-09 第十四轮 · 已提交，合并 `16b3888`，tag `customer-trial-2026-08-09`）
+> 开发轮全部完成：ssh go/no-go（SQLite 确认、路径 /srv/kangmin-cli，线上服务为 kangmin-cli 而非 pioneer）→ 有界实验（规则穷举 31/32、迁移重建、选项映射）→ 迁移 0011/0012（+PG 0004，CI 质量门禁暴露后补）→ 规则包 v3 冻结（clinical-rules-v1 approved）→ 内核新流水线（safety→screening→phase→applicability→severity→syndrome→plan_safety）→ findApprovedPlanBundle 双方案 → 输出两套模板 → 管理端 ACUTE 特判 + phaseCode/audience 全链路 → seed 11 条（验收 enabled）→ 前端选项卡/结果卡/文案清理 → 冒烟。
+> **评审收敛两轮通过**：三视角分身（冗余/并发边界/破坏旧功能，P0 无，P1/P2 全部修复——unknown 不再重问、期别缺失 fail-closed、no_match 终态一致、历史决策按行包状态裁剪、steps 对象渲染）+ codex（P1-2 历史决策解封、P2-2 steps 渲染、E2E 文案断言）+ CI PG 契约暴露（0004 迁移 + 302/303 用例 audience）。
+> **部署**（kangmin-cli，caddy km2.49.232.26.48.nip.io/49.232.26.48 → 8787）：停服 → DB+WAL/SHM 备份（惯例名 backups/kangmin-mvp-<ts>-before-<sha>.sqlite）→ 解压 releases/16b3888 → node_modules 复用 → 软链切换 → drop-in 配 KANGMIN_DEEPSEEK_API_KEY → 启动（自动迁移 0011/0012）→ 清空旧会话（子表到父表）→ seed 11 条 ✅ → 线上冒烟 19 轮 ✅ → /live ok、/ready rule-package ok、前端资源 SHA 与本地 dist 一致。
+> 交付链接：https://49.232.26.48 （km2.49.232.26.48.nip.io 同站）。tag：customer-trial-2026-08-09。
+> 收尾：worktree/临时分支（dev-agent-v4-core/fix-pg-v4-migration/wt-*）全部清理，仅 main；云端/本地/git 已同步。
+> 教训：①CI 有 PG 契约测试——PG 迁移必须与 SQLite 同步写（0004 补）②部署目标确认先于构建（pioneer 是旧 vinext 栈，kangmin-cli 才是本地项目）③macOS bsdtar 无 --transform 用 -s，打包含 .env.local 等敏感文件须排除。
+> 待办：Q12-14 服务端信息收集路径（前端已静态省略，待客户确认）；PG 双方案查询已就绪未线上验证（预检 SQLite）；偏离清单 7 条 + 待客户确认清单 5 条待客户反馈；浏览门禁放开后患者 browse 全量方案口径待确认（评审 P2-2）。
+
+> ## ✅ 智能体设计计划 v4 定稿与作者拍板（2026-08-09 第十三轮 · 未提交，基线 `9e83c4a`）
+> 计划经两轮 5 视角对抗评审 + codex 独立评审（共发现 P0 约 20 项、P1 约 30 项，重点：stage CHECK 迁移缺失、"不灸"子串误判、T5 与决定①相悖、planBundle 泄露、按钮载荷 message="" 死循环、seed 线上执行机制、32 组合互斥失实等），v4 全部闭环。**作者拍板 8 项**（AskUserQuestion 记录）：① 问卷多选题保真（原题原选项按钮，传选项值 q1=B 服务端映射，Q12-14 保留提问）；② 证型 v3 七规则（寒热错杂字面优先，供医学审核）；③ 删 APP-01 症状计数转介（确诊题承担门禁）；④ 儿童可用（删 SAF-07，按小儿方案）；⑤ 部署前清空线上旧会话；⑥ 有回退线（16:00 裁减，最坏保留现状 cc79ac5）；⑦ 今天冻结（approved + clinical-rules-v1）；⑧ 配模型 key（演示走自由文本+AI 提取，按钮兜底）。
+> 计划定稿：`immutable-mixing-neumann.md` v4（含选项值映射表、findApprovedPlanBundle 双方案查询、31+1 组合穷举结论、DB 备份/清库事务、seed 禁占位文案、部署预检含数据库后端确认）。已知偏离清单 7 条（标供医学审核）。
+> **分角色决策记录**：`docs/product/2026-08-09-智能体设计-决策记录.md`——AI 决策（A1-A10，实现层技术判断）/ 作者决策（拍板 8 项）/ 客户决策（decision.md）三分，含状态与回看指引；待客户确认清单 5 条。
+> 验证：两轮评审与 codex 总判定一致——修正 P0 后今日交付可行；`docs/reviews/010` 为第一轮综合文档。
+> 待办：作者确认后开工（开发轮第一步：ssh 只读验证 go/no-go——连通/数据库后端/模型 key → 建议 worktree 开发（工作区有未提交改动）→ 迁移→规则→内核→测试→前端→seed→部署）。今日交付底线 5 条不变；本轮全部文件（board/决策记录/010/计划）仍未提交，是否随开发轮一起 commit 待作者决定。
+
+> ## 🔍 智能体设计计划与对抗评审（2026-08-09 第十三轮 · 未提交，基线 `9e83c4a`）
+> 智能体设计改造计划（对话式评估全链路真实化：规则包冻结落 8 项决定、期别判定实现、筛选题+人群题、前端真实化、Web 部署）初稿完成，作者要求先对抗性评审再动手：5 个子 agent 并行、各持单一视角（临床规则/架构安全/数据一致性/前端演示/交付运维）挑刺。
+> 评审结论：**计划方向正确但不可直接执行**——37 条 P0-P3（P0 十项：stage CHECK 约束迁移缺失、肺经伏热"不灸"子串误判 moxibustion、T5 `thirst=no` 与决定①相悖、判定回归、线上 seed 缺失、seed 无正文、选项渲染缺失、planBundle 患者侧泄露、模型不可用预案缺失、结果卡渲染空洞）。综合文档：`docs/reviews/010_agent-assessment-adversarial-review.md`（含每条依据文件:行）。
+> 待作者拍板 3 问（修订计划前置）：① T5 寒热错杂判定（折中 vs 决定①字面，均标医学审核）；② Q1 期别映射（三值字段 vs 二元+映射规则）；③ 线上模型 key 现状（纯选项路径 vs 配 key 走自由文本）。
+> 验证：5 视角总体判定一致（不能按当前版本执行）；docs/reviews/README.md 索引已更新。
+> 待办：作者拍板 3 问 → 修订计划 → 实施 → 部署（今日交付底线 5 条不变，见下轮）。
+
+> ## 📋 客户材料分析与决策前置（2026-08-09 第十二轮 · 未提交，基线 `9e83c4a`）
+> 客户发来三份资料（`vault/raw/`：页面展示、前置规则、急性期/调体方案），用于智能体设计。逐份分析出材料层全部判断点，作者拍板 **8 项决定**（因客户急需、导师检查时限，未发客户，作者代选全部推荐项 A；客户反馈后按反馈调整）：
+> ① 寒热错杂：Q11 选 B + 寒象（Q6 A 或 Q9 A）→ 判寒热错杂（供医学审核，待客户确认）；② 问卷加人群题（成人/儿童 12 岁以下）；③ 评估前加确诊确认题（否/不确定 → 提示门诊）；④ Q6 仅信息收集不参与判定；⑤ 期别判定以《前置规则》Q1/Q2/Q3 为准，Q12–14 保留提问仅信息收集；⑥ 缓解期按字面执行（Q1 选 C 即缓解期）；⑦ 证型展示名用简称；⑧ 欢迎语用《页面展示》版（带"敏友您好"）。
+> 产出：`docs/product/2026-08-09-评估问卷与规则确认-decision.md`（决定+背景+待确认标记，**下一轮智能体设计真相源之一**）；Word 版问卷备存 `_work/20260809-assessment-decision/`（未发客户，如需再发需重新转换）。
+> 下一轮真相源组合（冲突处以此为准）：① decision.md（8 项生效决定）② `vault/truth/` 4 份（客户确认基准）。truth 原文暂不加工，待客户确认后合并定稿。
+> 设计层决定（2026-08-09 作者拍板）：交互形态 = **对话式**（客户展示稿为逐题问答呈现，现有 conversation-service 即对话式，保留主流程、改造量最小）；本轮交付 = **CLI + Web 前端**（Web 链接给客户验证，通过后最后上小程序）；验收边界 = **客户试用版可用**（规则冻结 + 核心链路通，管理后台方案录入客户自己弄，不阻塞）。
+> 设计层默认 5 项：判定依据展示、自由问答本轮不做、评估结果保存、证型简称、欢迎语页面版。
+> 验证：decision.md 与 word 内容核对通过；`docs/product/README.md` 目录规约符合。
+> 待办：下一轮智能体设计开工——**今天（2026-08-09）必须交付 Web 试用链接**（导师检查，底线"说得过去"）。今日交付底线：① 规则包冻结并落 8 项决定（寒热错杂 T5 修正、期别规则、筛选题+人群题）；② 对话式评估全链路真实跑通（去掉"流程预览"标签）；③ 结果页按《页面展示》模板输出（急性期/缓解期两套文案+执行建议+免责）；④ 方案输出含证型对应手法清单（文本/视频占位，客户后台补）；⑤ Web 构建部署、链接交付客户。后续再上小程序。
+
 > ## ✅ 上下文初始化复核与遗留处理（2026-08-09 第十一轮 · 已提交，基线 `877cc6d`）
 > 复核 CLAUDE.md 上下文初始化：CLAUDE.md 引用的关键文件（board、MEMORY、目录协议、AGENTS、docs/README）全部存在，目录速查路径有效，`structure-lint.py` 通过，CLAUDE/AGENTS 除首行外一致，hooksPath 与 state/meta/skills 均已入库。
 > 处理三处遗留：① `.claude/skills/` 内为 42plugin 第三方个人技能（dev-database-design、meta-42cog，license 42plugin-personal），非项目自产技能（自产技能按 `skills/README.md` 归根目录 `skills/`），加入 `.gitignore` 忽略，避免每轮污染 git status；② board 补记 #175/#176 提交（本记录）；③ 第十轮板面"git reset 教训候选"落地为 `state/memory/20260809-git-reset-check.md` 首条项目记忆并登记 MEMORY.md。
