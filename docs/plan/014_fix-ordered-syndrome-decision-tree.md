@@ -2,7 +2,7 @@
 
 - 状态：已合并交付，客户已收到反馈
 - 日期：2026-08-09
-- 代码基线：`9e1e75e`；当前线上：`e87151d`；合并提交：`c621704`（PR #188）
+- 代码基线：`9e1e75e`；当前线上：`e87151d`；业务合并：`c621704`（PR #188）；收尾记录：`265d00c`（PR #189）
 - 页面依据：`vault/truth/product/assessment-page-content.md`
 - 规则依据：`vault/truth/clinical/assessment-rules.md`、`vault/truth/clinical/syndrome-six-step-decision-tree.md`
 
@@ -131,3 +131,17 @@ Q1/Q2/Q5/Q7/Q11 只生成辅助印证信息，不得覆盖叶子结果。
   浏览器 E2E、9/9 CLI benchmark、完整 smoke 均通过；提交 `e87151d` 已推送并部署。
   线上独立预检、停服 SQLite 备份、原子 release 切换、公网 Q1–Q14 HTTP E2E、
   静态资源 SHA-256 与服务状态均已核验；旧 release 保留可回滚。
+
+## 最终交付自检（`main@265d00c`）
+
+- PR #188、#189 均已合并，quality 与 image CI 均通过；本地 `main` 与
+  `origin/main` 同步，任务分支已清理；
+- 本次从规范入口 `src/` 重新执行 `npm run check`：333 tests、257 pass、76 项因未配置
+  PG/S3 跳过、0 fail，浏览器 E2E PASS；结构检查、diff 检查及公网 `/live` 同步通过；
+- 页面、前置规则、六步树 truth 及对应 raw 来源链完整，014 计划与计划索引状态一致；
+- 共享题库、`clinical-rules-v3`、独立二次确认、旧会话隔离和逐方法展示均能在实现与
+  测试中定位，不存在只写文档未落代码的事项；
+- 线上 `e87151d` 的业务代码树与合并提交 `c621704` 一致，PR #189 仅更新状态文档，
+  无需再次部署；作者已向客户反馈；
+- 本任务无遗留。儿童分流因客户页面没有年龄题，继续作为资料限制保留，须待客户补充
+  题目和口径后另开任务，不在本计划内擅自实现。
