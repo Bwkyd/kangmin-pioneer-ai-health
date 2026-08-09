@@ -703,7 +703,9 @@ contractTest("方案注册表：仅 enabled 可见，display_order 优先，meth
     method: "刮痧拔罐",
     status: "enabled",
     displayOrder: 2,
-    revision: 3
+    revision: 3,
+    phaseCode: null,
+    audience: "adult"
   });
   await insertPlan(database, {
     id: "c-plan-a",
@@ -711,7 +713,9 @@ contractTest("方案注册表：仅 enabled 可见，display_order 优先，meth
     method: "艾灸加刮痧",
     status: "enabled",
     displayOrder: 1,
-    revision: 5
+    revision: 5,
+    phaseCode: null,
+    audience: "adult"
   });
 
   const bundle = await registry.findApprovedPlanBundle({
