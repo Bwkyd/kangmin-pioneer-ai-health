@@ -138,7 +138,8 @@ function planBlock(plan: ApprovedPlan | null): string {
 }
 
 function videoBlock(plan: ApprovedPlan | null): string {
-  return plan?.videoResourceId === null || plan?.videoResourceId === undefined
+  const videoId = plan?.videoResourceId;
+  return videoId === null || videoId === undefined || videoId === ""
     ? "视频暂未上传（医学审核后补充）。"
     : "操作视频已提供（见视频资源）。";
 }
@@ -245,6 +246,16 @@ export function renderValidatedOutput(
       const syndrome = SYNDROME_LABELS[verdict.syndromeCode ?? ""] ?? "未定";
       // 两套模板按《页面展示》（客户确认版本，vault/truth/product/
       // assessment-page-content.md）纯文本化；期别由 Q1 派生（P-01/P-02）。
+      // 防御（评审并发 P2-1）：phaseCode 缺失（异常包）时 fail-closed
+      // 输出"期别未定"，绝不默认渲染缓解期医学断言。
+      if (verdict.phaseCode !== "acute" && verdict.phaseCode !== "remission") {
+        return output(
+          "classified_result_phase_unknown",
+          `您的体质类型为：【${syndrome}】\n` +
+            `期别信息暂未确定，本工具暂不输出具体方案。本结果由固定规则产生，仅供参考，最终方案请以门诊诊断为准。`,
+          fields
+        );
+      }
       const content =
         verdict.phaseCode === "acute"
           ? acuteTemplate(syndrome, verdict.planBundle)

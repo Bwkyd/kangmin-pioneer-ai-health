@@ -419,8 +419,9 @@ export class ClinicalRuleKernel implements ClinicalRuleKernelPort {
       return this.needMoreVerdict(source, "syndrome", report.questions, severityCode);
     }
     // no_match 兜底（AI 决策 A2）：怕热单独（无寒象无口渴无疲倦）为罕见
-    // 组合，客户树无判定归属。安全侧提示门诊后转信息收集（不结束会话，
-    // conversation-service 对 no_match 渲染 message 后继续，见 execTurn）。
+    // 组合，客户树无判定归属。安全侧提示门诊；会话结束（评审并发 P1-1
+    // 修正：no_match 必发生在字段闭环后，无新信息可收集，结束会话并
+    // 渲染 message 兜底文案，见 conversation-service execTurn）。
     return this.verdict(
       source,
       "no_match",

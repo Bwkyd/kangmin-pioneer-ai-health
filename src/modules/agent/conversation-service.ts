@@ -318,8 +318,26 @@ export class ConversationService {
     // 3. 固定规则内核评估（唯一临床裁决来源）。
     const verdict = await this.kernel.evaluate(facts);
 
+    // 3b. 已答 unknown 的字段不再追问（评审并发 P2-2）：逐题一问（MAX=1）
+    // 下，unknown 字段的问题每轮重出会形成同题无限循环。展示与
+    // fail-closed 判定基于过滤后的补问集；决策凭证仍存原始全集。
+    const displayVerdict: ClinicalVerdict =
+      verdict.outcome === "need_more_information"
+        ? {
+            ...verdict,
+            nextQuestions: verdict.nextQuestions.filter(
+              (question) => !unknownAnswered.has(question.fieldCode)
+            ),
+            allQuestions: verdict.allQuestions.filter(
+              (question) => !unknownAnswered.has(question.fieldCode)
+            )
+          }
+        : verdict;
+
     // 4. 补问无法取得进展 → fail-closed（unknown 不等于 no）。
-    const escalated = this.failClosedIfNoProgress(verdict, unknownAnswered);
+    //    过滤后 allQuestions 为空（全部字段已答 unknown）→ every() 对
+    //    空集为 true → 立即 fail-closed 收尾，不再循环。
+    const escalated = this.failClosedIfNoProgress(displayVerdict, unknownAnswered);
 
     // 5. 解释阶段：只有规则包 approved 时才调用模型解释；
     //    candidate 包正式输出被硬阻断，绝不输出个性化方案。
@@ -337,8 +355,10 @@ export class ConversationService {
         modelFields = null;
       }
     }
+    // 补问渲染用过滤后的展示集（已答 unknown 字段不再追问，P2-2）；
+    // 非补问裁决两版一致。
     const validated = renderValidatedOutput(
-      verdict,
+      displayVerdict,
       this.kernel.rulePackageStatus,
       modelFields
     );
@@ -707,7 +727,15 @@ export class ConversationService {
       return null;
     }
     if (verdict.allQuestions.length === 0) {
-      return null;
+      // 补问集为空：内核 need_more 必带问题，空集只可能由
+      // unknownAnswered 过滤造成（评审并发 P2-2）——全部待答字段
+      // 已确认 unknown，无法取得进展 → fail-closed 收尾，避免
+      // "无问题可问但会话不结束"的卡死态。
+      const content =
+        verdict.stage === "safety"
+          ? FAIL_CLOSED_SAFETY_NOTICE
+          : FAIL_CLOSED_INFO_NOTICE;
+      return { content, contentHash: sha256(content) };
     }
     const allUnknown = verdict.allQuestions.every((question) =>
       unknownAnswered.has(question.fieldCode)
