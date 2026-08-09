@@ -8,6 +8,7 @@
 > 对话问题根因与修复：旧前端只持久化 `conversationId`、气泡只在 React 内存，刷新后形成“新界面续旧后端”的状态错位，结束会话遂返回“不能继续回答”。现由 CLI-first 应用服务详情返回经解密与 SHA-256 校验的有序消息和最后补问，SQLite/PostgreSQL 双实现同步；Web 新增新建对话、患者隔离的历史列表/切换、刷新恢复、结束态只读及新建入口。过期/不存在/已结束不再用无效重试或静默重发创建新会话。
 > 验证与交付：本地 `npm run check` 全绿（245 pass、75 项因未配置 PostgreSQL/S3 跳过），浏览器 E2E 覆盖刷新恢复、新 ID、历史切换、结束态禁用输入与无错误重试；PR #185 的 quality/image 全绿后 squash 合并为 `b1ad92a`。CI 曾因浏览器全链路集中命令超过默认限流而 429，已仅提高 E2E 实例额度，生产默认与限流专项测试未变。
 > 部署：历史会话实证确认 SSH 使用 `/Users/chenqiqiang/.ssh/cezhang_tencent_120_53_103_145`（文件名不是目标主机）；新 release 先在 8788 临时库冒烟，再停服备份 SQLite/WAL/SHM 至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260809-1915-before-b1ad92a/`，原子切换 `/srv/kangmin-cli/app` 至完整 SHA release。`kangmin-cli` active，内外网 `/live` ok，线上三项 JS/CSS 与本地 `dist` SHA-256 一致，部署后 warning/error 日志为空。客户测试地址：`https://49.232.26.48`。
+> 收尾：本地任务分支已在核验 PR 合并与成果完整后删除，远端分支按授权边界保留；最终再次运行结构检查、`git diff --check` 与 `npm run check` 均通过。部署目标/密钥误判教训已合并进 `state/memory/20260809-deploy-target-verify.md`，本轮无未落实事项，可关闭对话。
 
 > ## ✅ 智能体设计 v4 开发轮完成并部署交付（2026-08-09 第十四轮 · 已提交，合并 `16b3888`，tag `customer-trial-2026-08-09`）
 > 开发轮全部完成：ssh go/no-go（SQLite 确认、路径 /srv/kangmin-cli，线上服务为 kangmin-cli 而非 pioneer）→ 有界实验（规则穷举 31/32、迁移重建、选项映射）→ 迁移 0011/0012（+PG 0004，CI 质量门禁暴露后补）→ 规则包 v3 冻结（clinical-rules-v1 approved）→ 内核新流水线（safety→screening→phase→applicability→severity→syndrome→plan_safety）→ findApprovedPlanBundle 双方案 → 输出两套模板 → 管理端 ACUTE 特判 + phaseCode/audience 全链路 → seed 11 条（验收 enabled）→ 前端选项卡/结果卡/文案清理 → 冒烟。
