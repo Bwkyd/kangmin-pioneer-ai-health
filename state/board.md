@@ -3,10 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
-> ## ✅ 客户原始页面与前置规则 v3 已提交部署（2026-08-09 第二十七轮 · 部署 `e87151d`，PR #188）
+> ## ✅ 客户原始页面与前置规则 v3 已合并交付（2026-08-09 第二十七轮 · 合并 `c621704`，线上 `e87151d`）
 > 客户复测确认线上仍偏离指定资料：页面错误插入安全、确诊、年龄、鉴别和严重度题；旧规则会话点击答案后持续产生“发送失败/不清楚”。本轮已明确职责并落实：`vault/truth/product/assessment-page-content.md` 唯一控制 Q1–Q14 题面、选项、顺序和结果表达；`vault/truth/clinical/assessment-rules.md` 与六步树唯一控制 Q1–Q11 证型、独立二次确认、Q12–Q14 及期别组合。生产规则包升级为 `clinical-rules-v3`，前后端共用 `assessment-questionnaire.ts`，不再自行插题或复制题库。
 > 旧规则活动会话首次被读/续答即原子转为 `abandoned`，页面锁定并只提示一次新建评估；选项由服务端成功后才加入消息，失败答案不再污染历史。浏览器 E2E 直接篡改测试会话规则版本复现客户截图，验证旧会话锁定、无失败气泡，再新建会话完整走 Q1–Q14 → Q8/Q10 二次确认 → 寒热错杂 → 缓解期并刷新恢复。
-> 验证与部署：`npm run check` 全绿（333 tests：257 pass、76 项因未配置 PG/S3 跳过、0 fail），包含真实浏览器 E2E；9/9 CLI benchmark 与完整 smoke 通过。提交 `e87151d` 已推送现有 draft PR #188。服务器独立 8788 临时库预检确认 v3 首题为 Q1；停服后将生产 SQLite 备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260809-223926-before-e87151d/`，原子切换 `/srv/kangmin-cli/app` 至完整 SHA release，旧版 `eba184f` 保留可回滚。公网 HTTP E2E 完整走通 Q1–Q14、两个二次确认、寒热错杂与缓解期；线上 index/患者 JS/CSS 与本地构建 SHA-256 一致。服务 active、`NRestarts=0`；`/ready` 仍仅有部署前既有的 encryption/environment-provider 两项 `not_configured`，数据库、对象存储和规则包均为 ok。限制：客户页面没有年龄题，试用页面继续按成人方案；儿童分流必须等客户补充页面题目与口径，不能自行加题。
+> 验证与部署：`npm run check` 全绿（333 tests：257 pass、76 项因未配置 PG/S3 跳过、0 fail），包含真实浏览器 E2E；9/9 CLI benchmark 与完整 smoke 通过。提交 `e87151d` 已部署试用环境；PR #188 已 squash 合并为 `c621704`，合并代码树与线上业务代码一致，无需重复部署。服务器独立 8788 临时库预检确认 v3 首题为 Q1；停服后将生产 SQLite 备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260809-223926-before-e87151d/`，原子切换 `/srv/kangmin-cli/app` 至完整 SHA release，旧版 `eba184f` 保留可回滚。公网 HTTP E2E 完整走通 Q1–Q14、两个二次确认、寒热错杂与缓解期；线上 index/患者 JS/CSS 与本地构建 SHA-256 一致。服务 active、`NRestarts=0`；`/ready` 仍仅有部署前既有的 encryption/environment-provider 两项 `not_configured`，数据库、对象存储和规则包均为 ok。作者已将结果反馈客户，本任务完成。限制：客户页面没有年龄题，试用页面继续按成人方案；儿童分流必须等客户补充页面题目与口径，不能自行加题。
 
 > ## ✅ 六步树修复已提交并部署客户试用环境（2026-08-09 第二十六轮 · 部署 `eba184f`，PR #188）
 > 修复已拆为 `b50b964`（受约束问诊调研）与 `eba184f`（有序六步树、患者答案中文化、方案方法展示、刷新滚动恢复），推送分支 `agent/fix-six-step-tree` 并创建 draft PR #188：`https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/188`。未合并 PR，客户可先按试用环境实测。
