@@ -507,9 +507,33 @@ export class ConversationService {
       throw new DomainError("resource_not_found", "对话不存在");
     }
     const decisions = await this.repository.listDecisions(session.id);
+    const encryptedMessages = await this.repository.listMessages(session.id);
     const last = decisions[decisions.length - 1] ?? null;
+    const messages = encryptedMessages.map((message) => {
+      let content: string;
+      try {
+        content = this.encryption.decrypt(message.contentEncrypted);
+      } catch (cause) {
+        throw new DomainError("storage_unavailable", "对话记录暂时无法读取", {
+          cause
+        });
+      }
+      if (sha256(content) !== message.contentHash) {
+        throw new DomainError("storage_unavailable", "对话记录完整性校验失败");
+      }
+      return {
+        id: message.id,
+        sequence: message.sequence,
+        role: message.role,
+        decisionId: message.decisionId,
+        content,
+        contentHash: message.contentHash,
+        createdAt: message.createdAt
+      };
+    });
     return {
       session,
+      messages,
       decisionCount: decisions.length,
       lastDecision: last === null ? null : this.summarizeDecision(last)
     };
@@ -537,6 +561,7 @@ export class ConversationService {
       matchedRuleIds: trimmed ? [] : (JSON.parse(decision.matchedRuleIdsJson) as string[]),
       rulePackageVersion: decision.rulePackageVersion,
       planId: trimmed ? null : decision.planId,
+      nextQuestions: JSON.parse(decision.nextQuestionsJson) as NextQuestion[],
       createdAt: decision.createdAt
     };
   }

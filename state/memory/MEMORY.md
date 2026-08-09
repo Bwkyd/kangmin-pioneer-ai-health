@@ -8,3 +8,4 @@
 - [决策前置化与确定性分流](20260809-decision-prioritization.md) — 可自决的自决，专业问题列选择题问作者，先做第一版看反馈再拍板
 - [双后端迁移同步纪律](20260809-dual-backend-migrations.md) — SQLite 与 PG 迁移必须同步写，CI 的 PG 契约测试会暴露缺失
 - [部署目标先核实](20260809-deploy-target-verify.md) — 服务器多服务并存先确认目标服务与代码栈，再构建打包
+- [持久化 ID 必须权威回读](20260809-persisted-id-rehydration.md) — 只保存实体 ID 会造成刷新后的前后端状态错位，恢复时必须回读正文与终态

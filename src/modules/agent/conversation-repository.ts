@@ -60,6 +60,8 @@ export interface ConversationRepository {
   commitTurn(input: CommitTurnInput): Promise<CommitTurnOutcome>;
 
   appendMessage(message: ConversationMessage): Promise<void>;
+  /** 按消息序号读取完整对话流水；正文仍为密文，由应用服务解密并校验。 */
+  listMessages(sessionId: string): Promise<ConversationMessage[]>;
 
   setConfirmedAnswer(answer: ConfirmedAnswerRow): Promise<void>;
   listConfirmedAnswers(sessionId: string): Promise<ConfirmedAnswerRow[]>;

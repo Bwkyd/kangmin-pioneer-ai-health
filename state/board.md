@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🛠️ 修复交互控件与多会话聊天（2026-08-09 第十五轮 · 未提交，基线 `f661fa8`）
+> 截图问题：①删除问助手输入栏左侧无实际功能的圆形按钮；②将共享底栏中央“＋”完整收纳在导航内，首页/问助手/日历/我的均加边界回归；其余负偏移均为受限容器内装饰，无同类控件越界。
+> 对话问题根因与修复：旧前端只持久化 `conversationId`、气泡只在 React 内存，刷新后形成“新界面续旧后端”的状态错位，结束会话遂返回“不能继续回答”。现由 CLI-first 应用服务详情返回经解密与 SHA-256 校验的有序消息和最后补问，SQLite/PostgreSQL 双实现同步；Web 新增新建对话、患者隔离的历史列表/切换、刷新恢复、结束态只读及新建入口。过期/不存在/已结束不再用无效重试或静默重发创建新会话。
+> 验证：`npm run check` 全绿（245 pass、75 项因未配置 PostgreSQL/S3 跳过）；浏览器 E2E 覆盖刷新恢复、新 ID、历史切换、结束态禁用输入与无错误重试；`python3 scripts/structure-lint.py .`、`git diff --check` 通过。本地服务已按新构建重启于 `http://127.0.0.1:8787`（`/live` ok）；改动尚未提交。
+
 > ## ✅ 智能体设计 v4 开发轮完成并部署交付（2026-08-09 第十四轮 · 已提交，合并 `16b3888`，tag `customer-trial-2026-08-09`）
 > 开发轮全部完成：ssh go/no-go（SQLite 确认、路径 /srv/kangmin-cli，线上服务为 kangmin-cli 而非 pioneer）→ 有界实验（规则穷举 31/32、迁移重建、选项映射）→ 迁移 0011/0012（+PG 0004，CI 质量门禁暴露后补）→ 规则包 v3 冻结（clinical-rules-v1 approved）→ 内核新流水线（safety→screening→phase→applicability→severity→syndrome→plan_safety）→ findApprovedPlanBundle 双方案 → 输出两套模板 → 管理端 ACUTE 特判 + phaseCode/audience 全链路 → seed 11 条（验收 enabled）→ 前端选项卡/结果卡/文案清理 → 冒烟。
 > **评审收敛两轮通过**：三视角分身（冗余/并发边界/破坏旧功能，P0 无，P1/P2 全部修复——unknown 不再重问、期别缺失 fail-closed、no_match 终态一致、历史决策按行包状态裁剪、steps 对象渲染）+ codex（P1-2 历史决策解封、P2-2 steps 渲染、E2E 文案断言）+ CI PG 契约暴露（0004 迁移 + 302/303 用例 audience）。

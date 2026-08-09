@@ -179,7 +179,11 @@ test("决策序号每会话独立从 1 连续递增，不与消息序号混用�
     // 必须连续 1、2）。
     const show = dataOf<{
       decisionCount: number;
-      lastDecision: { decisionSequence: number };
+      messages: Array<{ sequence: number; role: string; content: string }>;
+      lastDecision: {
+        decisionSequence: number;
+        nextQuestions: Array<{ fieldCode: string }>;
+      };
     }>(
       await application.execute({
         command: "agent conversations show",
@@ -189,6 +193,13 @@ test("决策序号每会话独立从 1 连续递增，不与消息序号混用�
     );
     assert.equal(show.decisionCount, 2);
     assert.equal(show.lastDecision.decisionSequence, 2);
+    const messageSequences = show.messages.map((message) => message.sequence);
+    assert.deepEqual(messageSequences, [...messageSequences].sort((left, right) => left - right));
+    assert.equal(new Set(messageSequences).size, messageSequences.length);
+    assert.equal(show.messages[0]?.role, "user");
+    assert.equal(show.messages[0]?.content, "我最近鼻塞");
+    assert.equal(show.messages[2]?.content, "急救：否");
+    assert.ok(show.lastDecision.nextQuestions.length > 0);
   } finally {
     application.close();
   }
