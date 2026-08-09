@@ -1,8 +1,8 @@
 # 修正评估页面与有序六步证型决策树
 
-- 状态：客户复测后二次修复已完成本地实现与 E2E，待提交部署
+- 状态：客户复测后二次修复已提交部署，等待客户验收
 - 日期：2026-08-09
-- 代码基线：`9e1e75e`；当前线上：`eba184f`；draft PR：#188
+- 代码基线：`9e1e75e`；当前线上：`e87151d`；draft PR：#188
 - 页面依据：`vault/truth/product/assessment-page-content.md`
 - 规则依据：`vault/truth/clinical/assessment-rules.md`、`vault/truth/clinical/syndrome-six-step-decision-tree.md`
 
@@ -128,4 +128,6 @@ Q1/Q2/Q5/Q7/Q11 只生成辅助印证信息，不得覆盖叶子结果。
 - 旧会话规则不兼容时由服务端落为 `abandoned`，Web 不再乐观追加失败选项；
 - 生产 E2E 覆盖 Q1–Q14、寒热错杂二次确认、分期、刷新恢复，以及截图中的旧会话
   重复点击回归；`npm run check` 全绿（333 tests：257 pass、76 跳过、0 fail），
-  浏览器 E2E、9/9 CLI benchmark、完整 smoke 均通过；待提交和试用环境部署。
+  浏览器 E2E、9/9 CLI benchmark、完整 smoke 均通过；提交 `e87151d` 已推送并部署。
+  线上独立预检、停服 SQLite 备份、原子 release 切换、公网 Q1–Q14 HTTP E2E、
+  静态资源 SHA-256 与服务状态均已核验；旧 release 保留可回滚。
