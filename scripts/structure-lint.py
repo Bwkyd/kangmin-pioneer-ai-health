@@ -52,6 +52,7 @@ NAVIGATION_FILES = (
 DATED_DIRECTORY = re.compile(r"^\d{8}-[a-z0-9][a-z0-9-]*$")
 BUILD_DIRECTORY = re.compile(r"^\d{8}-\d{6}$")
 MEMORY_FILE = re.compile(r"^\d{8}-[a-z0-9][a-z0-9-]*\.md$")
+NUMBERED_DOCUMENT = re.compile(r"^(\d{3})_[a-z0-9][a-z0-9-]*\.md$")
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 
 
@@ -111,6 +112,38 @@ def check_navigation_links(root: Path, errors: list[str]) -> None:
                 errors.append(f"导航链接失效：{relative} -> {target}")
 
 
+def check_document_numbers(root: Path, errors: list[str]) -> None:
+    """plan/reviews/research/changes 各自在分类内从 001 连续编号。"""
+    for category in ("plan", "reviews", "research", "changes"):
+        category_root = root / "docs" / category
+        if not category_root.exists():
+            continue
+        documents: dict[int, list[Path]] = {}
+        for document in sorted(category_root.rglob("*.md")):
+            match = NUMBERED_DOCUMENT.fullmatch(document.name)
+            if match is None:
+                continue
+            number = int(match.group(1))
+            documents.setdefault(number, []).append(document.relative_to(root))
+
+        for number, paths in sorted(documents.items()):
+            if len(paths) > 1:
+                joined = "、".join(str(path) for path in paths)
+                errors.append(
+                    f"docs/{category} 分类编号重复：{number:03d} -> {joined}"
+                )
+
+        if not documents:
+            continue
+        expected = set(range(1, max(documents) + 1))
+        missing = sorted(expected - set(documents))
+        if missing:
+            errors.append(
+                f"docs/{category} 分类编号不连续，缺少："
+                + "、".join(f"{number:03d}" for number in missing)
+            )
+
+
 def check_agents_claude_sync(root: Path, errors: list[str]) -> None:
     agents = root / "AGENTS.md"
     claude = root / "CLAUDE.md"
@@ -151,6 +184,7 @@ def main() -> int:
     check_dated_directory(root, "_archive", DATED_DIRECTORY, errors)
     check_dated_directory(root, "_build", BUILD_DIRECTORY, errors)
     check_memory(root, errors)
+    check_document_numbers(root, errors)
     check_navigation_links(root, errors)
     check_agents_claude_sync(root, errors)
     check_removed_paths(root, errors)

@@ -5,6 +5,5 @@
 
 | 编号 | 日期 | 文档 |
 | --- | --- | --- |
-| 013 | 2026-08-09 | [受约束的灵活问诊 Agent 调研](013_constrained-conversational-agent-research.md) |
-
-下一份全局编号从 `014` 开始。
+| 001 | 2026-08-09 | [受约束的灵活问诊 Agent 调研](001_constrained-conversational-agent-research.md) |
+下一份调研编号从 `002` 开始。
