@@ -377,7 +377,7 @@ kangmin-admin CLI ─────────┤                         ↓
   fail-closed；
 - `clinical-rules-draft-v0` 当前为 `candidate`，只能用于管理端模拟测试；正式
   患者分类输出必须返回临床冻结阻断；
-- 不把 `vault/raw/` 或 `vault/truth/` 的内容复制到 Web 公共资源、日志、Issue、PR
+- 不把 `vault/truth/` 的内容复制到 Web 公共资源、日志、Issue、PR
   或响应。
 
 ## 协议与退出码

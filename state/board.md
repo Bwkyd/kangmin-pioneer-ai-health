@@ -3,6 +3,21 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ⛔ 无依据六步树撤销并停止相关开发（2026-08-11 第三十七轮 · 基线 `main@46f9df6`）
+> 作者明确指出原 `vault/raw/clinical/syndrome-six-step-decision-tree.md` 不是其取得或可采用的客户资料。该文件及其直接派生的 truth 文件已删除，vault 索引已撤销“客户确认六步树”结论。按作者最终明确指令，`vault/raw/` 原有 4 份材料已原样移动到 `vault/truth/`，与报价 Markdown 一起构成 5 份唯一真相源；没有删除、回退或加工资料正文。`raw/` 当前只保留迁移说明，`business/` 已撤除。作者随后明确允许将报价 `.xlsx` 原件归档以便 AI 直接读取 Markdown；原件现位于 `_archive/20260811-quotation-original/`，不得删除。
+> 现有 `src/` 的 `clinical-rules-v3`、六步树实现与相关测试，以及 014 计划和两份产品决策记录，仍包含这份无依据材料派生出的结论。本轮未擅自改业务代码或改写历史文档，后续开发立即停止；必须先依据《前置规则》重新核对受影响实现，形成有界回退清单并由作者确认后处理，不能继续把六步树当真相源。
+> 验证：`vault/truth/` 根目录现有且仅有 5 份现行 Markdown 及 README，`vault/raw/` 仅有迁移说明，`vault/business/` 不存在；归档报价原件 SHA-256 仍为 `b27c044d7a50fca3e9401265213fd4c2ab758df8ed5511d69a0dd1977a17082f`。`python3 scripts/structure-lint.py .` 与 `git diff --check` 通过。
+> 权威顺序已固化到报价 Markdown、truth 索引和 AGENTS/CLAUDE 双入口：报价表只在功能范围、所属端、价格和工期上最高；四份专项文件在各自职责内最高；docs/state/代码/测试不得覆盖 truth；职责内仍冲突或缺失时必须停下由作者确认，AI 推断无权威。
+> 收尾自检确认本对话可以结束但不能直接进入新功能开发：truth 的 5 份 Markdown 完整，报价 `.xlsx` 归档哈希一致，结构检查和 `git diff --check` 通过；当前资料治理改动仍未提交。`src/modules/clinical-rules/`、相关测试、014 计划和两份产品决策记录仍引用已撤销的无依据六步树，下一窗口必须先按 5 份 truth 做受影响清单与有界回退，完成前不得把旧代码或历史文档当需求继续开发。本轮错误已抽象写入 `state/memory/20260811-material-relocation-scope.md`：移动不得扩大为删除、加工或归档其他文件，忽略区操作必须前后核对清单与哈希。
+
+> ## 🔍 报价原件直接对齐与下一轮候选分组（2026-08-11 第三十六轮 · 基线 `main@46f9df6`）
+> 已只读直接解析 `vault/raw/business/quotations/kangmin-mini-program-quotation.xlsx`（SHA-256 `b27c044d7a50fca3e9401265213fd4c2ab758df8ed5511d69a0dd1977a17082f`）的“功能清单”工作表；7 个报价项为智能辨证助手、症状评估、科普内容、基础页面、文章管理、视频管理和知识库管理。代码与现行状态显示：这些能力已在 CLI/Web 形成相应闭环，而仓库不存在微信小程序工程；因此下一阶段的确定性主缺口是将已有患者能力接入小程序薄壳，不是增加报价外功能或重做后台。
+> 候选分组按交付边界合并为：① 小程序公共底座（工程、请求、微信登录、会话、五入口导航）；② 问助手（报价行 2）；③ 症状记录/日历/趋势（报价行 3）；④ 文章/视频/站内推送的患者查看（报价行 4）。管理后台 3 项（报价行 6–8）已交付，不进入下轮。建议首个 3 小时开发轮只做“公共底座 + 问助手最小主链路”，按工程骨架 → 请求/错误契约 → `wx.login`/Bearer 会话 → 首轮对话与历史恢复从低到高实施。此处只记录候选结论，待作者确认后再建正式计划，当前不占用 `docs/plan` 编号，未修改业务代码。
+> 开工冒烟结论为“通过”：`main@46f9df6` 与 `origin/main` 一致，Node `v24.18.0`、npm `11.16.0`、现有依赖、微信开发者工具 `2.01.2510290` 及 CLI 可用，开发者工具已登录；使用已确认 AppID 的临时原生小程序工程可被 CLI 正常打开，临时件已清理。`npm run check` 全绿，公网 `/live` 有效 HTTPS 返回 200。当前 `/v1/auth/wechat` 如实返回 `capability_unavailable`，因此本轮按已拍板的可注入测试替身验证登录契约，不向作者索取 AppSecret；真实登录、合法请求域名和真机验收仍属后续阶段，不得被记为已通过。
+> 45 分钟有界测试已提前收敛出关键结论：原生五入口组件可将中央“＋”保持为独立 `navigateTo` 新增动作，不用改成普通 Tab；可测试请求适配层实证 `wx.login` 后持久化 token、受保护请求携带 Bearer、401 清理失效会话以及超时明确失败全部可行。但现行患者 `nextQuestions` 契约只有 `fieldCode/prompt`，Web 依赖本地 `FIELD_TO_QUESTION + ASSESSMENT_QUESTIONS` 才能渲染 A/B/C/D 按钮；若直接开发小程序将迫使客户端复制题库，违反薄壳与单一来源约束。因此正式计划必须把“服务端患者问题展示 DTO 补充选项文案与受控提交值”置于小程序 UI 之前，内部临床 `NextQuestion` 与规则内核不变。附加限制：当前微信开发者工具已移除旧自动化 SDK 依赖的 `--auto-port` 入口，通用 GUI 读取通道亦无法启动；正式验收应使用可执行契约测试 + 开发者工具编译打开 + 人工点击清单，不得伪报全自动 UI 通过。
+> 开始契约调整时发现报价原件及整个 `vault/raw/business/` 目录已不在当前工作区；仓库、用户目录、Spotlight 与废纸篓均未找到 `kangmin-mini-program-quotation.xlsx`。四份指定 Markdown 原始资料仍在。为避免凭旧摘录扩大或误判报价范围，业务代码调整已暂停；必须先由作者将原报价单恢复到指定路径，再重新核对 SHA-256 后继续。
+> 作者随后将报价原件恢复，SHA-256 仍为 `b27c044d7a50fca3e9401265213fd4c2ab758df8ed5511d69a0dd1977a17082f`，与此前直接核验的原件完全一致。已按作者要求用 `42md` 转为 Markdown，并修正转换器对 Excel 合并单元格造成的列左移；复核确认 7 个功能项均为 5 列，价格合计 2,800 元，工期 15 个工作日。最终采用稿位于 `vault/truth/`，`.xlsx` 原件按作者后续指令归档。
+
 > ## ✅ Web 阶段状态与 Git 收尾复核完成（2026-08-11 第三十五轮 · 基线 `main@399e32e`）
 > PR #193 已合并业务实现为 `6ae634a`，PR #194 已合并部署状态为 `399e32e`，两轮 quality/image CI 均成功；原任务 worktree `/Users/chenqiqiang/work/kangmin-worktrees/production-readiness-admin`、本地分支和远端分支均已实际删除，`origin/main` 已包含全部实现与部署记录。此前只存在本地主工作区的第二十九至第三十三轮记录已在本轮按原始时间顺序补入，避免状态外部化断层。
 > `docs/plan/015_tencent-cloud-production-cutover.md` 及文档索引已落实 Web 先验收、小程序后置、PostgreSQL/COS 正式切换待资源的边界；线上 `https://49.232.26.48` 继续运行 release `b8246fb`，服务 active、`NRestarts=0`，部署备份 quick_check=ok。现有 DeepSeek 密钥虽已迁至权限 `0600` 的服务器环境文件，但因部署检查阶段曾进入受控终端输出，仍须在正式生产前从供应商控制台轮换并更新服务器配置；该安全待办不阻断当前 Web 功能确认，但不得遗漏到正式生产验收之外。
