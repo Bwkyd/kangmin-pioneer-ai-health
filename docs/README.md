@@ -29,25 +29,20 @@
 
 ## 编号
 
-- `plan/`、`reviews/`、`research/` 共用三位全局流水号，格式为
-  `NNN_kebab-case.md`；已使用编号不删除、不复用；
-- `001`–`003` 已由 `changes/arch/` 的历史变更记录占用；本次整理从 `004` 继续；
+- `plan/`、`reviews/`、`research/`、`changes/` **各自在分类内**使用三位流水号，
+  格式为 `NNN_kebab-case.md`；每个分类均从 `001` 开始，已使用编号不删除、不复用；
+- `changes/` 下的 `arch/`、`ops/`、`fix/` 共同使用 changes 分类流水号；
 - 客户决策是例外，按 `YYYY-MM-DD-<topic>-decision.md` 命名，便于按沟通日期检索；
 - 各目录 `README.md` 和 `TEMPLATE_*.md` 不占流水号。
 
-当前编号：
+当前分类编号：
 
-| 编号 | 文档 |
-| --- | --- |
-| 001–003 | [`changes/arch/`](changes/arch/) 历史架构变更 |
-| 004–006 | [`plan/`](plan/) 目标设计与客户试用计划 |
-| 007–009 | [`reviews/`](reviews/) 2026-08-02 完成度评审 |
-| 010–012 | [`plan/`](plan/) R1–R3 已完成修复方案 |
-| 013 | [`research/`](research/) 受约束的灵活问诊 Agent 调研 |
-| 014 | [`plan/`](plan/) 有序六步证型决策树修正计划 |
-| 015 | [`plan/`](plan/) 腾讯云正式环境切换方案 |
-
-下一份编号文档从 `016` 开始。
+| 分类 | 已用编号 | 下一编号 |
+| --- | --- | --- |
+| [`plan/`](plan/) | 001–008 | 009 |
+| [`reviews/`](reviews/) | 001–004 | 005 |
+| [`research/`](research/) | 001 | 002 |
+| [`changes/`](changes/) | 001–004 | 005 |
 
 ## 文档最低信息
 

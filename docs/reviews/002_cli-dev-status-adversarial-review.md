@@ -1,6 +1,6 @@
-# Codex（gpt-5.6-sol）对抗评审结果 + 复核意见（2026-08-02）
+# 002 Codex（gpt-5.6-sol）对抗评审结果 + 复核意见（2026-08-02）
 
-> 评审对象：[`007_cli-dev-status-review.md`](007_cli-dev-status-review.md)（5 分身调研报告）
+> 评审对象：[`001_cli-dev-status-review.md`](001_cli-dev-status-review.md)（5 分身调研报告）
 > 评审方式：codex CLI + gpt-5.6-sol，read-only 沙箱，独立抽查证据 ≥15 处、跑 96 条只读命令、两次上下文压缩。
 > 本文档 = codex 判决摘要 + 本文作者（kimi）对每条判决的**独立复核**（认同/部分认同/不认同，附亲自核验的证据）。
 

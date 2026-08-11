@@ -61,9 +61,11 @@
 - `research/`：需要长期追溯的专题调研。
 - `product/`：客户决策单，命名 `YYYY-MM-DD-<topic>-decision.md`。
 - `changes/`：已经采用的重要架构、运维和修复记录。
-- `plan/reviews/research` 共用三位全局流水号，文件名一律英文
-  `NNN_kebab-case.md`；编号永不重排、删除后不复用，同主题以最新编号为准。
-- 当前编号索引和下一个编号以 `docs/README.md` 为准。
+- `plan/`、`reviews/`、`research/`、`changes/` 各自在分类内使用三位流水号，
+  文件名一律英文 `NNN_kebab-case.md`；每类从 `001` 开始，编号永不重排、
+  删除后不复用，同主题以该分类最新编号为准。
+- 各分类当前索引和下一个编号以对应目录 `README.md` 为准；`docs/README.md`
+  只汇总各分类编号状态。
 - 客户来源统一进入 `vault/raw/`，客户确认采用版本进入 `vault/truth/`。
 
 ### skills/

@@ -1,8 +1,8 @@
-# 修复 Issue R2：内容媒体域（写路径校验 + 患者读路径投影）
+# 005 修复 Issue R2：内容媒体域（写路径校验 + 患者读路径投影）
 
 > ✅ 已落地：Issue #151 → PR #152，squash 合入 main `fda50bd`（2026-08-03）。下文为开工前方案，行号证据基于旧基线，仅作档案留存。
 
-> 来源：[`../reviews/008_cli-dev-status-adversarial-review.md`](../reviews/008_cli-dev-status-adversarial-review.md) P0-2、P0-3、P1-9
+> 来源：[`../reviews/002_cli-dev-status-adversarial-review.md`](../reviews/002_cli-dev-status-adversarial-review.md) P0-2、P0-3、P1-9
 > 同类病：内容从管理端到患者端的链路上，校验和投影各缺一段。
 > 复杂度：中｜建议分支：`codex/issue-<n>-content-media`
 

@@ -283,8 +283,8 @@ bash scripts/worktree-audit.sh .worktrees/issue-123-short-slug
 
 - [Agent 强制规则](AGENTS.md)
 - [新实现交付文档](src/README.md)
-- [患者 CLI 架构](docs/plan/004_kangmin-patient-cli-design.md)
-- [管理 CLI 架构](docs/plan/005_kangmin-admin-cli-design.md)
+- [患者 CLI 架构](docs/plan/001_kangmin-patient-cli-design.md)
+- [管理 CLI 架构](docs/plan/002_kangmin-admin-cli-design.md)
 - [Task Issue 模板](.github/ISSUE_TEMPLATE/task.yml)
 - [Bug Issue 模板](.github/ISSUE_TEMPLATE/bug.yml)
 - [Draft PR 模板](.github/PULL_REQUEST_TEMPLATE.md)

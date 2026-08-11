@@ -1121,7 +1121,7 @@ const MIGRATIONS: Migration[] = [
     // 智能体设计改造：新流水线阶段 screening/phase（智能体设计 v4 二节）。
     // SQLite 无法 ALTER CHECK，按 0010 先例重建表：新 CHECK 加两个阶段，
     // 新增 phase_code/audience/rule_package_status 列（一律可空，回滚兼容；
-    // 旧代码只 SELECT 旧列不受影响，见 docs/reviews/010 二轮 P0-1）。
+    // 旧代码只 SELECT 旧列不受影响，见 docs/reviews/004 二轮 P0-1）。
     // 可行性已由有界实验验证（_work/20260809-bounded-slice/migration-rebuild.mjs）。
     version: "0011_agent_decisions_stages",
     apply: (connection) => {
