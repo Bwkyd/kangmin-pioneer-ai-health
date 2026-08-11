@@ -1,7 +1,7 @@
 # 腾讯云正式环境切换方案
 
-状态：Web 阶段实施完成，待部署验证
-日期：2026-08-10
+状态：Web 试用环境已部署，待客户确认；正式云切换待资源
+日期：2026-08-11
 代码基线：`main@9b1b7b3` 后的 `agent/production-readiness-admin` 生产改造
 
 ## 已确认边界
@@ -39,3 +39,11 @@
 - COS SecretKey、数据库密码目前未提供，无法在本地完成正式 PostgreSQL/COS 云联调；本轮先部署现有 Web 试用环境验证功能。
 - 隐私条款与试用数据处置未确认前，不执行正式数据迁移。
 - 小程序工程与微信审核不属于当前 Web 阶段，待客户确认 Web 功能后另行实施。
+
+## Web 试用环境部署记录
+
+- 2026-08-11 将提交 `b8246fb` 部署至 `https://49.232.26.48`，服务仍沿用现有 SQLite 与本地素材目录，仅用于客户 Web 功能确认，不冒充 PostgreSQL/COS 正式环境。
+- 新 release 先后通过空库和线上数据库副本 8788 预检；副本迁移由 17 项升至 20 项且 `PRAGMA quick_check` 为 `ok`。
+- 停服切换前备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260811-134712-before-b8246fb.sqlite`；当前 release 为 `/srv/kangmin-cli/releases/b8246fb5b65f6490061a82a2538db63b1516f4cf`，旧 release 保留回滚。
+- 公网患者端、管理端、站内消息列表和知识问答冒烟通过，患者与管理 HTML 的 SHA-256 均与本地构建一致；服务 active，`NRestarts=0`。
+- 服务器模型密钥已从 systemd 单元明文项迁入权限 `0600` 的 `/etc/kangmin-cli.env`；环境数据和微信登录均显式关闭。`/ready` 当前仅保留试用环境既有的加密密钥 `not_configured`，不作为正式生产就绪结论。
