@@ -43,6 +43,17 @@ interface ConversationRow {
   updated_at: string;
 }
 
+interface MessageRow {
+  id: string;
+  session_id: string;
+  sequence: number;
+  role: string;
+  decision_id: string | null;
+  content_encrypted: string;
+  content_hash: string;
+  created_at: string;
+}
+
 function parseSession(row: ConversationRow): ConversationSession {
   return {
     id: row.id,
@@ -303,10 +314,11 @@ export class SqliteConversationRepository implements ConversationRepository {
             id, session_id, decision_sequence, session_revision,
             input_snapshot_encrypted, input_snapshot_hash,
             outcome, stage, severity_code, syndrome_code,
+            phase_code, audience, rule_package_status,
             next_questions_json, matched_rule_ids_json,
             rule_package_version, rule_package_hash,
             plan_id, plan_revision, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           decision.id,
@@ -319,6 +331,9 @@ export class SqliteConversationRepository implements ConversationRepository {
           decision.stage,
           decision.severityCode,
           decision.syndromeCode,
+          decision.phaseCode,
+          decision.audience,
+          decision.rulePackageStatus,
           decision.nextQuestionsJson,
           decision.matchedRuleIdsJson,
           decision.rulePackageVersion,
@@ -373,6 +388,26 @@ export class SqliteConversationRepository implements ConversationRepository {
           message.createdAt
         );
     });
+  }
+
+  async listMessages(sessionId: string): Promise<ConversationMessage[]> {
+    const rows = this.database.connection
+      .prepare(
+        `SELECT id, session_id, sequence, role, decision_id,
+                content_encrypted, content_hash, created_at
+         FROM agent_messages WHERE session_id = ? ORDER BY sequence ASC`
+      )
+      .all(sessionId) as unknown as MessageRow[];
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      sequence: row.sequence,
+      role: row.role as ConversationMessage["role"],
+      decisionId: row.decision_id,
+      contentEncrypted: parseEncrypted(row.content_encrypted),
+      contentHash: row.content_hash,
+      createdAt: row.created_at
+    }));
   }
 
   async setConfirmedAnswer(answer: ConfirmedAnswerRow): Promise<void> {
@@ -509,10 +544,11 @@ export class SqliteConversationRepository implements ConversationRepository {
           INSERT INTO agent_decisions(
             id, session_id, decision_sequence, session_revision,
             input_snapshot_encrypted, input_snapshot_hash, outcome, stage,
-            severity_code, syndrome_code, next_questions_json,
+            severity_code, syndrome_code, phase_code, audience,
+            rule_package_status, next_questions_json,
             matched_rule_ids_json, rule_package_version, rule_package_hash,
             plan_id, plan_revision, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           decision.id,
@@ -525,6 +561,9 @@ export class SqliteConversationRepository implements ConversationRepository {
           decision.stage,
           decision.severityCode,
           decision.syndromeCode,
+          decision.phaseCode,
+          decision.audience,
+          decision.rulePackageStatus,
           decision.nextQuestionsJson,
           decision.matchedRuleIdsJson,
           decision.rulePackageVersion,
@@ -553,6 +592,9 @@ export class SqliteConversationRepository implements ConversationRepository {
       stage: string;
       severity_code: string | null;
       syndrome_code: string | null;
+      phase_code: string | null;
+      audience: string | null;
+      rule_package_status: string | null;
       next_questions_json: string;
       matched_rule_ids_json: string;
       rule_package_version: string;
@@ -572,6 +614,10 @@ export class SqliteConversationRepository implements ConversationRepository {
       stage: row.stage,
       severityCode: row.severity_code,
       syndromeCode: row.syndrome_code,
+      phaseCode: (row.phase_code as "acute" | "remission" | null) ?? null,
+      audience: (row.audience as "child" | "adult" | null) ?? null,
+      rulePackageStatus:
+        (row.rule_package_status as "candidate" | "approved" | null) ?? null,
       nextQuestionsJson: row.next_questions_json,
       matchedRuleIdsJson: row.matched_rule_ids_json,
       rulePackageVersion: row.rule_package_version,

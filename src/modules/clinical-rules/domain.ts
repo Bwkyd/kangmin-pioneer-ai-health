@@ -35,15 +35,15 @@ export type RuleCondition =
   | CountCondition;
 
 export interface ClinicalRule {
-  /** 稳定规则 ID，如 SAF-02、SEV-01、T3。 */
+  /** 稳定规则 ID，如 SAF-02、SEV-01、SDT-04-B。 */
   id: string;
   stage: StageName;
   /** 命中时的裁决结果。 */
   outcome: VerdictOutcome;
   /** severity_code 或 syndrome_code（outcome 为 classified 时）。 */
   code?: string | undefined;
-  /** 命中的固定文案（阻断/转介/分类说明）。 */
-  message: string;
+  /** 命中的固定文案（阻断/转介/分类说明）；派生类规则可无文案。 */
+  message: string | null;
   /** 条件字段不足时向患者补问的问题（单条规则最多 2 个）。 */
   nextQuestions: NextQuestion[];
   conditions: RuleCondition[];
@@ -58,6 +58,10 @@ export interface RulePackage {
   sourceRefs: string[];
   rules: readonly ClinicalRule[];
   planSafetyRules: readonly ClinicalRule[];
+  /** 证型阶段使用客户确认的有序六步状态机；缺省时兼容通用规则评估。 */
+  syndromeStrategy?: "ordered_six_step" | undefined;
+  /** 页面按客户确认 Q1-Q14 逐题收集，再由六步树判证型。 */
+  questionnaireStrategy?: "page_q1_q14" | undefined;
   /** 规则包内容哈希（加载时计算，不可人工维护）。 */
   checksum: string;
 }
@@ -85,7 +89,15 @@ export const FIELD_LABELS: Record<string, string> = {
   fatigue: "倦怠乏力",
   limbs_not_warm: "四肢不温",
   fear_wind: "怕风",
-  cold_intolerance: "形寒肢冷"
+  cold_intolerance: "形寒肢冷",
+  diagnosed_confirmed: "确诊过敏性鼻炎",
+  heat_imbalance: "怕热",
+  step1_q10: "第1步口干",
+  step2_q8: "第2步疲倦",
+  step3_q6: "第3步怕风怕冷",
+  step4_q9: "第4步手脚冰凉",
+  step5_q8_confirm: "第5步疲倦二次确认",
+  step6_q10_confirm: "第6步口干二次确认"
 };
 
 /** 严重度代码的固定中文标签。 */
@@ -94,13 +106,13 @@ export const SEVERITY_LABELS: Record<string, string> = {
   moderate_severe: "中重度"
 };
 
-/** 证型代码的固定中文标签。 */
+/** 证型代码的固定中文标签（简称，作者拍板 ⑦：展示名用简称）。 */
 export const SYNDROME_LABELS: Record<string, string> = {
-  LUNG_HEAT: "肺经伏热，上犯鼻窍",
-  LUNG_QI_COLD: "肺气虚寒，卫表不固",
-  SPLEEN_QI_DEF: "脾气虚弱，清阳不升",
-  KIDNEY_YANG_DEF: "肾阳不足，温煦失职",
-  COLD_HEAT_COMPLEX: "寒热错杂，虚实并见"
+  LUNG_HEAT: "肺经伏热",
+  LUNG_QI_COLD: "肺气虚寒",
+  SPLEEN_QI_DEF: "脾气虚弱",
+  KIDNEY_YANG_DEF: "肾阳不足",
+  COLD_HEAT_COMPLEX: "寒热错杂"
 };
 
 export interface FactEntry {

@@ -547,5 +547,56 @@ export const PG_MIGRATIONS: PgMigration[] = [
       `ALTER TABLE patient_consents ALTER COLUMN id SET NOT NULL`,
       `CREATE UNIQUE INDEX patient_consents_id ON patient_consents(id)`
     ]
+  },
+  {
+    // 智能体设计 v4（与 SQLite 0011/0012 对齐，评审 P2-4/codex P0-3）：
+    // agent_decisions.stage CHECK 加 screening/phase + phase_code/audience/
+    // rule_package_status 列（全可空回滚兼容）；agent_plans 加
+    // phase_code/audience 列（期别×人群双方案查询）。
+    version: "0004_agent_v4_stages",
+    statements: [
+      `ALTER TABLE agent_decisions
+       DROP CONSTRAINT agent_decisions_stage_check`,
+      `ALTER TABLE agent_decisions
+       ADD CONSTRAINT agent_decisions_stage_check
+       CHECK(stage IN ('safety', 'screening', 'phase', 'applicability',
+                       'severity', 'syndrome', 'plan_safety', 'completed'))`,
+      `ALTER TABLE agent_decisions ADD COLUMN phase_code TEXT`,
+      `ALTER TABLE agent_decisions ADD COLUMN audience TEXT`,
+      `ALTER TABLE agent_decisions ADD COLUMN rule_package_status TEXT`,
+      `ALTER TABLE agent_plans ADD COLUMN phase_code TEXT`,
+      `ALTER TABLE agent_plans ADD COLUMN audience TEXT`
+    ]
+  },
+  {
+    // 小程序站内消息已读回执，与 SQLite 0016 语义一致。
+    version: "0005_patient_message_reads",
+    statements: [
+      `CREATE TABLE patient_message_reads (
+        message_id TEXT NOT NULL REFERENCES content_messages(id) ON DELETE CASCADE,
+        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        read_at TEXT NOT NULL,
+        PRIMARY KEY(message_id, patient_id)
+      )`,
+      `CREATE INDEX patient_message_reads_patient
+        ON patient_message_reads(patient_id, read_at DESC)`
+    ]
+  },
+  {
+    version: "0006_patient_external_identities",
+    statements: [
+      `CREATE TABLE patient_external_identities (
+        provider TEXT NOT NULL CHECK(provider IN ('wechat_mini_program')),
+        subject_hash TEXT NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(provider, subject_hash),
+        UNIQUE(provider, patient_id)
+      )`
+    ]
+  },
+  {
+    version: "0007_knowledge_category",
+    statements: ["ALTER TABLE agent_knowledge_items ADD COLUMN category TEXT"]
   }
 ];

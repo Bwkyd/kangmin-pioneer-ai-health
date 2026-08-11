@@ -25,6 +25,14 @@ export interface SaveAccountSessionInput {
   clientKind: "mini_program" | "cli";
 }
 
+export interface SaveMiniProgramSessionInput {
+  subjectHash: string;
+  newPatientId: string;
+  tokenHash: string;
+  expiresAt: string;
+  createdAt: string;
+}
+
 export interface SessionRepository {
   /** 按令牌哈希查找未撤销的会话；不存在或已撤销返回 null。 */
   findSession(tokenHash: string): Promise<SessionSnapshot | null>;
@@ -32,6 +40,8 @@ export interface SessionRepository {
     input: SaveDevelopmentSessionInput
   ): Promise<string>;
   saveAccountSession(input: SaveAccountSessionInput): Promise<void>;
+  /** 微信 OpenID 经服务层不可逆摘要后绑定患者，并原子创建小程序会话。 */
+  saveMiniProgramSession(input: SaveMiniProgramSessionInput): Promise<string>;
   /** 撤销会话并返回是否真的撤销了（false 表示令牌不存在或已撤销）。 */
   revokeSession(tokenHash: string): Promise<boolean>;
 }

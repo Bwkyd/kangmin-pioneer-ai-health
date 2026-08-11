@@ -190,13 +190,16 @@ function classifiedVerdict(): ClinicalVerdict {
     stage: "completed",
     severityCode: "mild",
     syndromeCode: "LUNG_HEAT",
+    phaseCode: "acute",
+    audience: "adult",
     nextQuestions: [],
     allQuestions: [],
     matchedRuleIds: ["SEV-05", "T1"],
     message: null,
     planId: null,
     planRevision: null,
-    rulePackageVersion: "clinical-rules-draft-v0",
+    planBundle: null,
+    rulePackageVersion: "clinical-rules-v2",
     rulePackageHash: "hash"
   };
 }
@@ -232,6 +235,37 @@ test("模板输出：candidate 规则包 classified 只渲染临床冻结阻断�
   assert.equal(output.templateId, "clinical_freeze");
   assert.equal(output.content, CLINICAL_FREEZE_BLOCK);
   assert.ok(output.contentHash.length === 64);
+});
+
+test("方案模板：可选项称为方法，删除重复手法段，并在每个方法下放视频", () => {
+  const plan = {
+    planId: "plan-test",
+    planRevision: 1,
+    name: "寒热错杂调体方案（成人）",
+    method: "肺俞穴按揉；风门穴按揉",
+    steps: JSON.stringify(["肺俞穴按揉", "风门穴按揉"]),
+    precautions: "以酸胀为度。",
+    videoResourceId: null,
+    attributes: {}
+  };
+  const output = renderValidatedOutput(
+    {
+      ...classifiedVerdict(),
+      planBundle: { acute: plan, constitution: plan }
+    },
+    "approved",
+    null
+  );
+
+  assert.ok(output.content.includes("方法（请选择其中一项）："));
+  assert.ok(output.content.includes("1. 肺俞穴按揉\n【操作视频】"));
+  assert.ok(output.content.includes("2. 风门穴按揉\n【操作视频】"));
+  assert.equal(output.content.includes("手法："), false);
+  assert.equal(output.content.includes("步骤："), false);
+  assert.equal(
+    output.content.split("视频暂未上传（医学审核后补充）。").length - 1,
+    4
+  );
 });
 
 test("模板输出：blocked/non_applicable/conflict/no_match 均为固定文案", () => {

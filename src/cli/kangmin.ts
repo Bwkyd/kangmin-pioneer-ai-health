@@ -54,6 +54,11 @@ browse 命令：
   browse article categories
   browse article search <query>
   browse article show <id>
+  browse message list
+  browse message show <id>
+  browse message read <id>
+  browse message unread-count
+  agent knowledge ask --question <问题>
   browse video list [--limit N] [--offset N]
   browse video categories
   browse video search <query>
@@ -476,6 +481,25 @@ function parseBrowse(
     return { command: filtered.join(" "), input, json, help: false };
   }
 
+  // browse message list|show|read|unread-count（均要求 --session）。
+  if (resource === "message") {
+    if (maybeAction === "list" || maybeAction === "unread-count") {
+      if (positional !== undefined || rest.length > 0) {
+        input.__parseError = `browse message ${maybeAction} 不接受额外参数`;
+      }
+      return { command: `browse message ${maybeAction}`, input, json, help: false };
+    }
+    if (maybeAction === "show" || maybeAction === "read") {
+      if (positional === undefined || positional.startsWith("--") || rest.length > 0) {
+        input.__parseError = `browse message ${maybeAction} 需要且只接受一个消息 ID`;
+      } else {
+        input.id = positional;
+      }
+      return { command: `browse message ${maybeAction}`, input, json, help: false };
+    }
+    return { command: filtered.join(" "), input, json, help: false };
+  }
+
   if (resource !== "article" && resource !== "video") {
     return { command: filtered.join(" "), input, json, help: false };
   }
@@ -630,6 +654,10 @@ function parse(argv: string[]): ParsedCommand {
       input.message = messageTokens.join(" ");
       parseOptions(input, optionTokens);
       return { command: "agent exec", input, json, help: false };
+    }
+    if (resource === "knowledge" && maybeAction === "ask") {
+      parseOptions(input, [positional, ...rest].filter((value): value is string => value !== undefined));
+      return { command: "agent knowledge ask", input, json, help: false };
     }
     if (resource === "feedback") {
       if (maybeAction === undefined || maybeAction.startsWith("--")) {

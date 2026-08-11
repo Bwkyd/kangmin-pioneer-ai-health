@@ -1,8 +1,24 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
-import { runAgentTurn, runSafetyAssessment, type AgentTurnResult, type SafetyAssessmentResult } from "./agent";
+import {
+  listAgentConversations,
+  runAgentTurn,
+  showAgentConversation,
+  type AgentConversationDetail,
+  type AgentConversationState,
+  type AgentConversationSummary,
+  type AgentTurnResult
+} from "./agent";
 import { CommandError } from "./command-client";
+import { FIELD_TO_QUESTION } from "../../modules/agent/option-mapping";
+import { patientVisibleMessage } from "../../modules/agent/patient-visible-message";
+import {
+  ASSESSMENT_QUESTIONS,
+  type AssessmentQuestion as QuestionCard,
+  type AssessmentQuestionOption as QuestionOption
+} from "../../modules/clinical-rules/assessment-questionnaire";
 import DiscoverView from "./DiscoverView";
+import MessagesView from "./MessagesView";
 import {
   AllergenExposure,
   AllergenExposureDraft,
@@ -34,7 +50,6 @@ import {
   upsertExposure,
   validateExposureDraft,
 } from "./health-records";
-import { REHAB_METHOD_DEFINITIONS } from "./rehab-methods";
 import {
   grantPreviewConsent,
   loadPreviewConsent,
@@ -46,53 +61,96 @@ type Tab =
   | "chat"
   | "assessment"
   | "articles"
+  | "messages"
   | "profile"
   | "healthProfile"
   | "allergenRecord";
 type Message =
-  | { id: number; role: "ai" | "user"; kind: "text"; text: string }
-  | { id: number; role: "ai"; kind: "thinking" }
-  | { id: number; role: "ai"; kind: "notice"; text: string }
-  | { id: number; role: "ai"; kind: "verdict"; text: string }
-  | { id: number; role: "ai"; kind: "source"; title: string; detail: string };
+  | { id: string | number; role: "ai" | "user"; kind: "text"; text: string }
+  | { id: string | number; role: "ai"; kind: "thinking" }
+  | { id: string | number; role: "ai"; kind: "notice"; text: string }
+  | { id: string | number; role: "ai"; kind: "result"; text: string }
+  | { id: string | number; role: "user"; kind: "option"; label: string; caption: string };
 
 /** chat 自由对话的 conversationId 持久化键（sessionStorage：刷新后续接，关页即清）。 */
 const AGENT_CONVERSATION_KEY = "kangmin.agent.conversationId";
-
-/** verdict.outcome 的中文如实标注（不做临床美化；未知值原样展示代码）。 */
-const OUTCOME_LABELS: Record<string, string> = {
-  blocked: "安全阻断",
-  need_more_information: "需补充信息",
-  non_applicable: "不适用",
-  conflict: "信息冲突",
-  no_match: "未匹配",
-  classified: "已评估",
+const WELCOME_MESSAGE: Message = {
+  id: "welcome",
+  role: "ai",
+  kind: "text",
+  text: "敏友您好，本工具依据福建中医药大学抗敏先锋团队体质调理方案开发，为您推荐个性化外治建议"
 };
 
-function verdictText(verdict: NonNullable<AgentTurnResult["verdict"]>): string {
-  const parts = [`结论：${OUTCOME_LABELS[verdict.outcome] ?? verdict.outcome}`];
-  if (verdict.severityCode !== null) parts.push(`严重度：${verdict.severityCode}`);
-  if (verdict.syndromeCode !== null) parts.push(`证型：${verdict.syndromeCode}`);
-  if (verdict.matchedRuleIds.length > 0) parts.push(`命中规则：${verdict.matchedRuleIds.join("、")}`);
-  parts.push(`规则包版本：${verdict.rulePackageVersion}`);
-  return parts.join("；");
-}
+/** 页面只渲染共享问卷；题面与规则跳转不得在前端各维护一份。 */
+const QUESTIONNAIRE = ASSESSMENT_QUESTIONS;
 
-/** 一轮 agent exec 结果展开为聊天消息：助手正文 + system_notice + 决策摘要（如实渲染）。 */
+/** 一轮 agent exec 结果展开为聊天消息：助手正文 + system_notice。 */
 function agentTurnMessages(turn: AgentTurnResult): Message[] {
   const base = Date.now();
   const messages: Message[] = [];
   if (turn.message !== null) {
-    messages.push({ id: base, role: "ai", kind: "text", text: turn.message.content });
+    const content = turn.message.content;
+    if (content.includes("【急性发作期】") || content.includes("【缓解期】")) {
+      messages.push({ id: base, role: "ai", kind: "result", text: content });
+    } else {
+      messages.push({ id: base, role: "ai", kind: "text", text: content });
+    }
   }
   turn.notices.forEach((notice, index) => {
     messages.push({ id: base + 1 + index, role: "ai", kind: "notice", text: notice.content });
   });
-  // 决策/裁决类输出只在会话收口轮追加结构化摘要；补问轮的正文已是提问，不重复渲染。
-  if (turn.verdict !== null && turn.closed) {
-    messages.push({ id: base + 1000, role: "ai", kind: "verdict", text: verdictText(turn.verdict) });
-  }
   return messages;
+}
+
+/** 服务端历史消息恢复为与实时消息相同的渲染结构。 */
+function restoredMessages(detail: AgentConversationDetail): Message[] {
+  return [
+    WELCOME_MESSAGE,
+    ...detail.messages.map((message): Message => {
+      if (message.role === "system_notice") {
+        return { id: message.id, role: "ai", kind: "notice", text: message.content };
+      }
+      if (message.role === "assistant") {
+        const result = message.content.includes("【急性发作期】") || message.content.includes("【缓解期】");
+        return { id: message.id, role: "ai", kind: result ? "result" : "text", text: message.content };
+      }
+      return {
+        id: message.id,
+        role: "user",
+        kind: "text",
+        // 兼容修复前已保存的内部协议载荷，历史对话不再显示 fieldCode=state。
+        text: patientVisibleMessage(message.content)
+      };
+    })
+  ];
+}
+
+function conversationDate(value: string): string {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "时间未知";
+  return new Intl.DateTimeFormat("zh-CN", {
+    month: "numeric",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date);
+}
+
+/** final 轮结果卡：message.content 纯文本保留换行，不解析 markdown。 */
+function ResultCard({ message }: { message: Extract<Message, { kind: "result" }> }) {
+  const phase = message.text.includes("【急性发作期】") ? "急性发作期" : "缓解期";
+  return (
+    <article className="result-card final-result" aria-label="评估结果">
+      <div className="result-head">
+        <div><small>评估已完成</small><h2>{phase}</h2></div>
+        <span>评估结果</span>
+      </div>
+      <div className="result-body">{message.text}</div>
+      <div className="result-foot"><span>方案来源</span> 已审核的体质调理方案</div>
+      <div className="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</div>
+    </article>
+  );
 }
 
 class RequestVersion {
@@ -108,227 +166,8 @@ class RequestVersion {
   }
 }
 
-const symptomOptions = [
-  "鼻塞、打喷嚏、流清鼻涕",
-  "晚上鼻塞，睡眠受影响",
-  "鼻涕黄稠，还有咽部不适",
-];
-
-const durationOptions = ["最近 3 天出现", "反复半年，换季加重", "已经持续两年以上"];
-const warningOptions = ["以上情况都没有", "有高热或明显头痛", "面部肿痛或鼻出血不止", "呼吸不畅或胸闷"];
-
-const knowledgeQuestions = [
-  {
-    question: "为什么换季容易反复？",
-    answer:
-      "换季时温度、湿度和空气中的过敏原可能发生变化，鼻部也可能更容易受到刺激。可以记录症状出现时间、诱因和严重程度，供就医时参考。",
-    source: "内部演示内容 · 待医学审核",
-  },
-  {
-    question: "鼻塞在家先怎么护理？",
-    answer:
-      "可以先减少冷空气和刺激物暴露，并记录鼻塞对睡眠的影响。若症状持续、加重或伴随高危信号，请及时咨询正规医疗机构。",
-    source: "内部演示内容 · 待医学审核",
-  },
-  {
-    question: "调理效果多久记录一次？",
-    answer:
-      "可以在固定时间做简短记录，关注喷嚏、流涕、鼻塞和鼻痒等变化。当前页面中的记录与趋势均为交互演示。",
-    source: "内部演示内容 · 待医学审核",
-  },
-];
-
 const scaleItems = ["喷嚏", "流涕", "鼻塞", "鼻痒"];
 
-type TriState = "yes" | "no" | "unknown";
-type AgentGroup = "safety" | "severity" | "syndrome" | "rehabSafety";
-
-type AgentAssessmentDraft = {
-  diagnosedAllergicRhinitis: TriState;
-  safety: Record<string, TriState>;
-  severity: Record<string, TriState>;
-  syndrome: Record<string, TriState>;
-  rehabMethod: string;
-  rehabSafety: Record<string, TriState>;
-};
-
-type AgentResult = SafetyAssessmentResult;
-
-const triStateOptions: Array<[TriState, string]> = [["yes", "有"], ["no", "没有"], ["unknown", "不确定"]];
-const agentSafetyFields = [
-  ["respiratoryEmergency", "呼吸困难、喘不过气或口唇发紫"],
-  ["persistentHighFever", "持续高热或明显头痛"],
-  ["facialSwelling", "面部肿胀或剧烈疼痛"],
-  ["severeNoseBleed", "鼻出血不止"],
-  ["unilateralFoulDischarge", "单侧恶臭鼻涕"],
-  ["severeNeurologicalSymptoms", "严重头晕、意识异常等神经症状"],
-] as const;
-const agentSeverityFields = [
-  ["sleepAffected", "症状影响睡眠"],
-  ["activityAffected", "症状影响日常活动"],
-  ["workStudyAffected", "症状影响学习或工作"],
-  ["symptomTroublesome", "症状让你明显困扰"],
-] as const;
-const agentSyndromeFields = [
-  ["thirst", "口渴或咽干"],
-  ["fatigue", "容易疲劳"],
-  ["limbsNotWarm", "四肢不温"],
-  ["fearWind", "怕风"],
-  ["coldIntolerance", "怕冷"],
-] as const;
-const agentRehabFields = [
-  ["acuteColdRhinitis", "感冒引起的急性鼻炎，或正在发热"],
-  ["feverOrInfection", "有发热、感染或明显头痛"],
-  ["acuteAllergicFlare", "过敏性鼻炎正处于严重急性发作"],
-  ["skinDamageOrInflammation", "操作部位有破损、感染、炎症、湿疹或疱疹"],
-  ["bleedingRisk", "有血小板减少、血友病或严重贫血等出血风险"],
-  ["anticoagulantUse", "正在使用阿司匹林、华法林等抗凝药"],
-  ["severeChronicDisease", "有严重心脑血管、肝肾等慢性疾病"],
-  ["specialPhysicalState", "过饱、过饿、过渴、过劳、醉酒、孕期或经期"],
-  ["mediumAllergy", "对姜、油、乳液等操作介质过敏"],
-  ["lungHeatPattern", "鼻涕黄稠、口干怕热，或已知肺经蕴热"],
-] as const;
-const guaShaRehabFields = [
-  ["feverOrInfection", "有发热、感染或明显头痛"],
-  ["acuteColdRhinitis", "感冒引起的急性鼻炎，或正在发热"],
-  ["acuteAllergicFlare", "过敏性鼻炎正处于严重急性发作"],
-  ["lungHeatPattern", "鼻涕黄稠、口干怕热，或已知肺经蕴热"],
-  ["skinDamageOrInflammation", "刮痧部位有破损、感染、炎症、湿疹或疱疹"],
-  ["skinAllergyAtSite", "刮痧部位有过敏或皮疹"],
-  ["bleedingRisk", "有血小板减少、血友病或严重贫血等出血风险"],
-  ["anticoagulantUse", "正在使用阿司匹林、华法林等抗凝药"],
-  ["severeChronicDisease", "有严重心脑血管、肝肾等慢性疾病"],
-  ["specialPhysicalState", "过饱、过饿、过渴、过劳、醉酒、孕期或经期"],
-] as const;
-const allAgentRehabFields = [...agentRehabFields, ...guaShaRehabFields] as const;
-const rehabMethodOptions = REHAB_METHOD_DEFINITIONS
-  .map(({ code, label, note }) => [code, note ? `${label}（${note}）` : label] as const);
-
-const agentFieldLabels: Record<string, string> = Object.fromEntries([
-  ...agentSafetyFields,
-  ...agentSeverityFields,
-  ...agentSyndromeFields,
-  ...agentRehabFields,
-  ...guaShaRehabFields,
-  ["diagnosedAllergicRhinitis", "是否已经被医生或检查确认过敏性鼻炎"],
-  ["urgentHelp", "需要立即就医的紧急情况"],
-].map(([key, label]) => [key, label])) as Record<string, string>;
-
-function agentQuestionLabel(field: string): string {
-  return agentFieldLabels[field] || "相关情况";
-}
-
-function createAgentDraft(): AgentAssessmentDraft {
-  const unknowns = (fields: readonly (readonly [string, string])[]) => Object.fromEntries(fields.map(([key]) => [key, "unknown"] as const));
-  return {
-    diagnosedAllergicRhinitis: "unknown",
-    safety: unknowns(agentSafetyFields),
-    severity: unknowns(agentSeverityFields),
-    syndrome: unknowns(agentSyndromeFields),
-    rehabMethod: "finger_pressure_yingxiang",
-    rehabSafety: unknowns(allAgentRehabFields),
-  };
-}
-
-function AgentAssessmentPanel({
-  draft,
-  setDraft,
-  status,
-  notice,
-  result,
-  onSubmit,
-}: {
-  draft: AgentAssessmentDraft;
-  setDraft: React.Dispatch<React.SetStateAction<AgentAssessmentDraft>>;
-  status: "idle" | "submitting" | "ready" | "error";
-  notice: string;
-  result: AgentResult | null;
-  onSubmit: () => void;
-}) {
-  const updateGroup = (group: AgentGroup, key: string, value: TriState) => {
-    setDraft((current) => ({ ...current, [group]: { ...current[group], [key]: value } }));
-  };
-  const renderFields = (group: AgentGroup, fields: readonly (readonly [string, string])[]) => (
-    <div className="agent-field-list">
-      {fields.map(([key, label]) => (
-        <label key={key} className="agent-field">
-          <span>{label}</span>
-          <select value={draft[group][key]} onChange={(event) => updateGroup(group, key, event.target.value as TriState)}>
-            {triStateOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-          </select>
-        </label>
-      ))}
-    </div>
-  );
-
-  return (
-    <section className="agent-assessment-panel" aria-label="智能体安全评估与康复方案建议">
-      <div className="agent-panel-intro">
-        <strong>安全评估与康复方案建议</strong>
-        <p>请按你目前的情况选择“有、没有或不确定”。服务端规则会先排除危险情况，再匹配当前已审核的康复方案；不确定不会被当成没有。当前版本仅将“危险信号”组提交服务端安全外壳，其余选择暂存本页，待正式规则包临床审核后接入。</p>
-      </div>
-      <label className="agent-field agent-diagnosis-field">
-        <span>是否已经被医生或检查确认过敏性鼻炎？</span>
-        <select value={draft.diagnosedAllergicRhinitis} onChange={(event) => setDraft((current) => ({ ...current, diagnosedAllergicRhinitis: event.target.value as TriState }))}>
-          {triStateOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-        </select>
-      </label>
-      <details open>
-        <summary>第一步：危险信号</summary>
-        {renderFields("safety", agentSafetyFields)}
-      </details>
-      <details>
-        <summary>第二步：症状影响程度</summary>
-        {renderFields("severity", agentSeverityFields)}
-      </details>
-      <details>
-        <summary>第三步：体质相关信息</summary>
-        {renderFields("syndrome", agentSyndromeFields)}
-      </details>
-      <details>
-        <summary>第四步：想了解哪种康复方法</summary>
-        <label className="agent-field">
-          <span>康复方法</span>
-          <select value={draft.rehabMethod} onChange={(event) => setDraft((current) => ({ ...current, rehabMethod: event.target.value }))}>
-            {rehabMethodOptions.map(([value, text]) => <option key={value} value={value}>{text}</option>)}
-          </select>
-        </label>
-        <p className="agent-method-note">{draft.rehabMethod === "gua_sha" ? "普通刮痧使用独立安全门禁：先筛查发热/感染、鼻炎发作、热性状态、身体与皮肤问题及出血风险；任一项不确定都不会给出刮痧步骤。" : "鼻三线姜刮不等同于普通刮痧；如果信息不完整，智能体不会直接给出操作建议。"}</p>
-        {renderFields("rehabSafety", draft.rehabMethod === "gua_sha" ? guaShaRehabFields : agentRehabFields)}
-      </details>
-      {notice && <p className={`agent-notice ${status === "error" ? "error-text" : ""}`} role="status">{notice}</p>}
-      <button className="agent-submit" type="button" disabled={status === "submitting"} onClick={onSubmit}>{status === "submitting" ? "正在安全评估…" : "获取安全建议"}</button>
-      {result && (
-        <article className="agent-result" aria-label="智能体评估结果">
-          <div className="agent-result-title"><strong>服务端评估结果</strong><span className={result.assessment?.status === "blocked" || result.rehabSafety?.status === "blocked" ? "blocked" : result.assessment?.status === "classified" ? "approved" : "pending"}>{result.assessment?.status === "blocked" || result.rehabSafety?.status === "blocked" ? "先暂停操作" : result.assessment?.status === "classified" ? "筛查已完成" : "需继续确认"}</span></div>
-          {result.explanation?.summary && <p>{result.explanation.summary}</p>}
-          {result.assessment?.status === "blocked" && <p className="error-text">检测到需要先处理的高风险信号：{result.assessment.matchedRuleIds?.map((field) => agentQuestionLabel(field.replace(/^SAFE-/u, ""))).join("、") || "请先咨询专业人员"}。</p>}
-          {result.assessment?.status === "referred" && <p>目前还不能进入康复方案建议：请先完成过敏性鼻炎的医生或检查确认。</p>}
-          {result.assessment?.status === "need_more_information" && <p>还需要确认：{result.assessment.nextQuestions?.map(agentQuestionLabel).join("、") || "请补充未确认的信息"}。</p>}
-          {result.rehabSafety?.status === "blocked" && <p className="error-text">当前情况不适合直接进行这项操作，请先咨询专业人员。</p>}
-          {result.rehabSafety?.status === "blocked" && result.rehabSafety.blockedBy && <p className="error-text">需要避开的情况：{result.rehabSafety.blockedBy.map(agentQuestionLabel).join("、")}。</p>}
-          {result.rehabSafety?.status === "blocked" && result.rehabSafety.blockedReasons && <p className="error-text">拦截原因：{result.rehabSafety.blockedReasons.join("；")}。</p>}
-          {result.rehabSafety?.status === "need_more_information" && <p>还有安全信息未确认：{result.rehabSafety.nextQuestions?.map(agentQuestionLabel).join("、") || "请补充后再试"}。</p>}
-          {result.rehabSafety && result.rehabSafety.status !== "clear" && result.rehabSafety.ruleSource && <small>规则来源：{result.rehabSafety.ruleSource}；规则版本：{result.rehabSafety.rulePackageVersion}</small>}
-          {!result.explanation?.plan && result.assessment?.status === "classified" && result.rehabSafety?.status === "clear" && <p>筛查已完成，但当前账户没有可返回的已审核方案；智能体不会直接推荐未经审核的操作。</p>}
-          {result.explanation?.plan && (
-            <div className="agent-plan-detail">
-              <h3>{result.explanation.plan.title}</h3>
-              <p>{result.explanation.plan.summary}</p>
-              <p><strong>方法：</strong>{result.explanation.plan.methodLabel}</p>
-              {result.explanation.plan.routes.length > 0 && <p><strong>路线/穴位：</strong>{result.explanation.plan.routes.map((route) => `${route.label}（${route.points.join("、")}）`).join("；")}</p>}
-              {result.explanation.plan.pointGroups.length > 0 && <p><strong>穴位结构：</strong>{result.explanation.plan.pointGroups.map((group) => `${group.label}${group.relation ? `（${group.relation}）` : ""}`).join("；")}</p>}
-              <p><strong>风险提示：</strong>{result.explanation.plan.risks}</p>
-              <p><strong>禁忌事项：</strong>{result.explanation.plan.contraindications}</p>
-              <ol>{result.explanation.plan.steps.map((step, index) => <li key={`${step.title}-${index}`}><strong>{step.title}</strong><span>{step.instruction}</span></li>)}</ol>
-            </div>
-          )}
-          <small>{result.explanation?.disclaimer || result.assessment?.disclaimer || "结果不能替代门诊诊断。"}</small>
-        </article>
-      )}
-    </section>
-  );
-}
 
 function displayDate(value: string): string {
   const [year, month, day] = value.split("-");
@@ -403,20 +242,9 @@ export default function App() {
   const [previewConsentReload, setPreviewConsentReload] = useState(0);
   const [previewConsentError, setPreviewConsentError] = useState("");
   const [tab, setTab] = useState<Tab>("home");
-  const [messages, setMessages] = useState<Message[]>([
-    {
-      id: 1,
-      role: "ai",
-      kind: "text",
-      text: "你好，我是小岐。你可以描述症状、记录健康变化；我不会直接下诊断，康复建议会先做安全筛查，并且只使用已审核的内容。",
-    },
-  ]);
-  const [step, setStep] = useState(0);
-  const [agentAssessmentOpen, setAgentAssessmentOpen] = useState(false);
-  const [agentDraft, setAgentDraft] = useState<AgentAssessmentDraft>(createAgentDraft);
-  const [agentStatus, setAgentStatus] = useState<"idle" | "submitting" | "ready" | "error">("idle");
-  const [agentNotice, setAgentNotice] = useState("");
-  const [agentResult, setAgentResult] = useState<AgentResult | null>(null);
+  const [messages, setMessages] = useState<Message[]>([WELCOME_MESSAGE]);
+  // 最近一轮内核补问（verdict.nextQuestions）：渲染问卷原题或"是/否/不清楚"选项卡。
+  const [pendingQuestions, setPendingQuestions] = useState<Array<{ fieldCode: string; prompt: string }> | null>(null);
   const [input, setInput] = useState("");
   const [chatSending, setChatSending] = useState(false);
   const [chatError, setChatError] = useState("");
@@ -429,6 +257,14 @@ export default function App() {
       return null;
     }
   });
+  const [conversationState, setConversationState] = useState<AgentConversationState | null>(null);
+  const [conversationEndReason, setConversationEndReason] = useState<string | null>(null);
+  const [chatHydrated, setChatHydrated] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [conversationHistory, setConversationHistory] = useState<AgentConversationSummary[]>([]);
+  const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [historyError, setHistoryError] = useState("");
+  const [historyReload, setHistoryReload] = useState(0);
   const [scores, setScores] = useState<Array<number | null>>([...emptySymptomScores]);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
@@ -473,9 +309,9 @@ export default function App() {
   const [symptomRequest] = useState(() => new RequestVersion());
   const [medicationRequest] = useState(() => new RequestVersion());
   const [exposureRequest] = useState(() => new RequestVersion());
-  const [agentRequest] = useState(() => new RequestVersion());
   const [overviewRequest] = useState(() => new RequestVersion());
   const [chatRequest] = useState(() => new RequestVersion());
+  const [chatLoadRequest] = useState(() => new RequestVersion());
 
   const scoresComplete = hasCompleteSymptomScores(scores);
   // record overview 空态口径：无最近症状日期或本月次数为 0 即按空态展示。
@@ -518,9 +354,84 @@ export default function App() {
     return () => { cancelled = true; };
   }, [previewConsentReload]);
 
+  // 刷新恢复：当前会话 ID 只负责定位，气泡、结束态与最后补问全部以
+  // 服务端详情为准，避免“界面像新对话、后端却续旧对话”的错位。
   useEffect(() => {
+    if (previewConsentStatus !== "ready" || chatHydrated) return;
+    if (conversationId === null) {
+      setChatHydrated(true);
+      return;
+    }
+    let cancelled = false;
+    const requestVersion = chatLoadRequest.next();
+    showAgentConversation(conversationId)
+      .then((detail) => {
+        if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
+        setMessages(restoredMessages(detail));
+        setConversationState(detail.session.state);
+        setConversationEndReason(
+          detail.session.state === "abandoned"
+            ? "评估规则已更新，请新建对话后重新评估。"
+            : null
+        );
+        setPendingQuestions(
+          detail.session.state === "active"
+            ? detail.lastDecision?.nextQuestions ?? null
+            : null
+        );
+      })
+      .catch((error: unknown) => {
+        if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
+        setConversationId(null);
+        setConversationState(null);
+        setConversationEndReason(null);
+        setMessages([WELCOME_MESSAGE]);
+        setPendingQuestions(null);
+        setChatError(
+          error instanceof CommandError && error.code === "resource_not_found"
+            ? "之前的对话已过期或不可用，请新建对话"
+            : error instanceof Error
+              ? error.message
+              : "之前的对话暂时无法恢复"
+        );
+        try {
+          sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
+        } catch {
+          // sessionStorage 不可用时，组件状态仍已清理。
+        }
+      })
+      .finally(() => {
+        if (!cancelled && chatLoadRequest.isCurrent(requestVersion)) {
+          setChatHydrated(true);
+        }
+      });
+    return () => { cancelled = true; };
+  }, [chatHydrated, chatLoadRequest, conversationId, previewConsentStatus]);
+
+  useEffect(() => {
+    if (previewConsentStatus !== "ready" || !historyOpen) return;
+    let cancelled = false;
+    setHistoryStatus("loading");
+    setHistoryError("");
+    listAgentConversations()
+      .then((items) => {
+        if (cancelled) return;
+        setConversationHistory(items);
+        setHistoryStatus("ready");
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return;
+        setConversationHistory([]);
+        setHistoryStatus("error");
+        setHistoryError(error instanceof Error ? error.message : "历史对话暂时无法读取");
+      });
+    return () => { cancelled = true; };
+  }, [historyOpen, historyReload, previewConsentStatus]);
+
+  useEffect(() => {
+    if (tab !== "chat") return;
     chatEnd.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, step]);
+  }, [messages, tab]);
 
   useEffect(() => {
     const canvas = chartRef.current;
@@ -730,95 +641,115 @@ export default function App() {
     return () => { cancelled = true; };
   }, [tab, overviewRequest, previewConsentStatus]);
 
-  const addExchange = (answer: string, reply: string, nextStep: number, source?: string) => {
-    setMessages((current) => [
-      ...current,
-      { id: Date.now(), role: "user", kind: "text", text: answer },
-      { id: Date.now() + 1, role: "ai", kind: "thinking" },
-    ]);
-    window.setTimeout(() => {
-      setMessages((current) => [
-        ...current.filter((message) => message.kind !== "thinking"),
-        { id: Date.now() + 2, role: "ai", kind: "text", text: reply },
-        ...(source
-          ? [{ id: Date.now() + 3, role: "ai" as const, kind: "source" as const, title: "回答依据", detail: source }]
-          : []),
-      ]);
-      setStep(nextStep);
-    }, 550);
-  };
-
+  /** 首页"诊一诊"入口：进入 chat 页，由"开始了解我的情况"发起真实评估流程。 */
   const startConsultation = () => {
-    agentRequest.next();
     setTab("chat");
-    setAgentAssessmentOpen(true);
-    setAgentStatus("idle");
-    setAgentNotice("");
-    setAgentResult(null);
   };
 
-  const changeAgentDraft: React.Dispatch<React.SetStateAction<AgentAssessmentDraft>> = (update) => {
-    agentRequest.next();
-    setAgentDraft(update);
-    setAgentResult(null);
-    setAgentStatus("idle");
-    setAgentNotice("");
-  };
-
-  const submitAgentAssessment = async () => {
-    const requestVersion = agentRequest.next();
-    const draft = agentDraft;
-    setAgentStatus("submitting");
-    setAgentNotice("正在提交服务端安全筛查…");
-    setAgentResult(null);
+  /** 显式新建对话：清空当前选择与所有瞬时状态，下一条消息创建新 ID。 */
+  const startNewConversation = () => {
+    chatRequest.next();
+    chatLoadRequest.next();
+    setConversationId(null);
+    setConversationState(null);
+    setConversationEndReason(null);
+    setMessages([WELCOME_MESSAGE]);
+    setPendingQuestions(null);
+    setInput("");
+    setChatSending(false);
+    setChatError("");
+    setChatRetryMessage(null);
+    setChatHydrated(true);
+    setHistoryOpen(false);
     try {
-      const result = await runSafetyAssessment(draft.safety);
-      if (!agentRequest.isCurrent(requestVersion)) return;
-      setAgentResult(result);
-      setAgentStatus("ready");
-      setAgentNotice(result.assessment?.status === "classified"
-        ? "服务端已完成筛查；没有已审核方案时不会直接推荐操作"
-        : "服务端安全筛查已返回结果");
+      sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
+    } catch {
+      // sessionStorage 不可用时，组件状态仍已开启一段新对话。
+    }
+  };
+
+  /** 从服务端历史切换对话；结束会话只读，进行中会话可继续。 */
+  const selectConversation = async (id: string) => {
+    if (chatSending) return;
+    chatRequest.next();
+    const requestVersion = chatLoadRequest.next();
+    setChatSending(true);
+    setChatError("");
+    setChatRetryMessage(null);
+    try {
+      const detail = await showAgentConversation(id);
+      if (!chatLoadRequest.isCurrent(requestVersion)) return;
+      setConversationId(detail.session.id);
+      setConversationState(detail.session.state);
+      setConversationEndReason(
+        detail.session.state === "abandoned"
+          ? "评估规则已更新，请新建对话后重新评估。"
+          : null
+      );
+      setMessages(restoredMessages(detail));
+      setPendingQuestions(
+        detail.session.state === "active"
+          ? detail.lastDecision?.nextQuestions ?? null
+          : null
+      );
+      setHistoryOpen(false);
+      try {
+        sessionStorage.setItem(AGENT_CONVERSATION_KEY, detail.session.id);
+      } catch {
+        // sessionStorage 不可用时仅在本次页面生命周期内保留选择。
+      }
     } catch (error) {
-      if (!agentRequest.isCurrent(requestVersion)) return;
-      setAgentStatus("error");
-      setAgentNotice(error instanceof Error ? error.message : "智能体评估失败，请稍后重试");
+      if (!chatLoadRequest.isCurrent(requestVersion)) return;
+      setHistoryStatus("error");
+      setHistoryError(error instanceof Error ? error.message : "对话暂时无法读取");
+    } finally {
+      if (chatLoadRequest.isCurrent(requestVersion)) setChatSending(false);
     }
   };
 
-  const selectSymptom = (answer: string) =>
-    addExchange(answer, "了解了。这个情况大概持续多久？是否在换季、遇冷空气或早晨起床时更明显？", 2);
-
-  const selectDuration = (answer: string) =>
-    addExchange(
-      answer,
-      "收到。我先做安全确认：目前有没有高热、明显头痛、面部肿痛、呼吸困难，或者鼻出血不止？",
-      3,
-    );
-
-  const selectWarning = (answer: string) => {
-    if (answer !== warningOptions[0]) {
-      addExchange(answer, "这种情况不适合只在家调理。建议尽快前往耳鼻喉科就诊；如果呼吸困难，请立即寻求急诊帮助。", 5);
-      return;
-    }
-    addExchange(
-      answer,
-      "信息已收集完成。康复建议还需要完成方法对应的安全筛查，并且只能使用已审核内容；当前不能直接把自由描述变成操作方案。",
-      4,
-      "演示流程 · 未接入正式临床规则与审核内容",
-    );
+  /** "开始了解我的情况"：发送首条消息，驱动内核补问流水线（服务端只问不猜）。 */
+  const beginConsultation = () => {
+    if (!chatHydrated || chatSending || conversationState !== null || messages.length !== 1) return;
+    void sendChatMessage("我想了解我的鼻炎情况");
   };
 
-  const askKnowledge = (index: number) => {
-    const item = knowledgeQuestions[index];
-    if (!item) return;
-    setTab("chat");
-    addExchange(item.question, item.answer, step || 0, item.source);
+  /** 问卷原题选项卡：点击发送稳定选项值（qN=选项），用户气泡显示原题与选项。 */
+  const answerQuestion = (card: QuestionCard, option: QuestionOption) => {
+    if (chatSending || conversationState !== "active") return;
+    void sendChatMessage(`${card.id}=${option.code}`, false, {
+      id: Date.now(),
+      role: "user",
+      kind: "option",
+      label: `${option.code}. ${option.text}`,
+      caption: card.title
+    });
+  };
+
+  /** 无问卷映射字段（如 urgent_help/sleep_affected 等）：是/否/不清楚，载荷 fieldCode=state。 */
+  const answerField = (field: { fieldCode: string; prompt: string }, state: "yes" | "no" | "unknown") => {
+    if (chatSending || conversationState !== "active") return;
+    const labels: Record<string, string> = { yes: "是", no: "否", unknown: "不清楚" };
+    void sendChatMessage(`${field.fieldCode}=${state}`, false, {
+      id: Date.now(),
+      role: "user",
+      kind: "option",
+      label: labels[state] ?? state,
+      caption: field.prompt
+    });
   };
 
   // chat 底部输入：接通 agent exec 真实对话。echoUser=false 用于失败重试
   // （首轮已渲染用户气泡，重试不再重复追加）。
-  const sendChatMessage = async (value: string, echoUser = true) => {
+  const sendChatMessage = async (
+    value: string,
+    echoUser = true,
+    optionMessage: Extract<Message, { kind: "option" }> | null = null
+  ) => {
+    if (!chatHydrated || (conversationState !== null && conversationState !== "active")) {
+      setChatError("本对话已结束，请新建对话后继续");
+      setChatRetryMessage(null);
+      return;
+    }
     const requestVersion = chatRequest.next();
     setChatSending(true);
     setChatError("");
@@ -831,19 +762,11 @@ export default function App() {
     }
     setMessages((current) => [...current, { id: Date.now() + 1, role: "ai", kind: "thinking" }]);
     try {
-      let storedId = conversationId;
-      let turn: AgentTurnResult;
-      try {
-        turn = await runAgentTurn(value, storedId ?? undefined);
-      } catch (error) {
-        // 本地持久化的 conversationId 已失效（服务侧数据重置或保留过期）：
-        // 丢弃后按新会话重试一次，不让旧 id 卡死输入。
-        if (storedId === null || !(error instanceof CommandError) || error.code !== "resource_not_found") throw error;
-        storedId = null;
-        turn = await runAgentTurn(value);
-      }
+      const turn = await runAgentTurn(value, conversationId ?? undefined);
       if (!chatRequest.isCurrent(requestVersion)) return;
       setConversationId(turn.conversationId);
+      setConversationState(turn.state);
+      setConversationEndReason(null);
       try {
         sessionStorage.setItem(AGENT_CONVERSATION_KEY, turn.conversationId);
       } catch {
@@ -851,13 +774,46 @@ export default function App() {
       }
       setMessages((current) => [
         ...current.filter((message) => message.kind !== "thinking"),
+        ...(optionMessage === null ? [] : [optionMessage]),
         ...agentTurnMessages(turn),
       ]);
+      // 补问选项卡随本轮 verdict 更新；收口轮（无补问）清空。
+      setPendingQuestions(turn.closed ? null : turn.verdict?.nextQuestions ?? null);
+      setHistoryReload((current) => current + 1);
     } catch (error) {
       if (!chatRequest.isCurrent(requestVersion)) return;
       setMessages((current) => current.filter((message) => message.kind !== "thinking"));
-      setChatError(error instanceof Error ? error.message : "发送失败，请稍后重试");
-      setChatRetryMessage(value);
+      if (error instanceof CommandError && error.code === "protocol_incompatible") {
+        setConversationState("abandoned");
+        setConversationEndReason("评估规则已更新，请新建对话后重新评估。");
+        setPendingQuestions(null);
+        setChatError("");
+        setChatRetryMessage(null);
+        setHistoryReload((current) => current + 1);
+      } else if (error instanceof CommandError && error.code === "resource_not_found") {
+        setConversationId(null);
+        setConversationState(null);
+        setConversationEndReason(null);
+        setPendingQuestions(null);
+        setChatError("当前对话已过期或不可用，请新建对话后重新发送");
+        try {
+          sessionStorage.removeItem(AGENT_CONVERSATION_KEY);
+        } catch {
+          // sessionStorage 不可用时，组件状态仍已清理失效 ID。
+        }
+      } else if (
+        error instanceof CommandError &&
+        error.code === "validation_failed" &&
+        error.message.includes("对话已结束")
+      ) {
+        setConversationState("completed");
+        setConversationEndReason(null);
+        setPendingQuestions(null);
+        setChatError("本对话已结束，请新建对话后继续");
+      } else {
+        setChatError(error instanceof Error ? error.message : "发送失败，请稍后重试");
+        setChatRetryMessage(error instanceof CommandError && error.retryable ? value : null);
+      }
     } finally {
       if (chatRequest.isCurrent(requestVersion)) setChatSending(false);
     }
@@ -866,7 +822,7 @@ export default function App() {
   const sendCustom = (event: FormEvent) => {
     event.preventDefault();
     const value = input.trim();
-    if (!value || chatSending) return;
+    if (!value || chatSending || !chatHydrated || (conversationState !== null && conversationState !== "active")) return;
     setInput("");
     void sendChatMessage(value);
   };
@@ -1152,13 +1108,6 @@ export default function App() {
       setExposures([]);
       setExposureStatus("loading");
     }
-    if (next === "chat") {
-      agentRequest.next();
-      setAgentAssessmentOpen(true);
-      setAgentStatus("idle");
-      setAgentNotice("");
-      setAgentResult(null);
-    }
     setTab(next);
   };
 
@@ -1172,14 +1121,15 @@ export default function App() {
     else if (tab !== "home") setTab("home");
   };
 
-  const activeOptions =
-    step === 1 ? symptomOptions : step === 2 ? durationOptions : step === 3 ? warningOptions : [];
+  // 聊天时间戳：实时取当前时刻（不再硬编码演示时间）。
+  const now = new Date();
+  const timeLabel = `今天 ${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 
   const headerTitle =
     tab === "home"
       ? "抗敏先锋"
       : tab === "chat"
-        ? "小岐知识助手"
+        ? "抗敏先锋"
         : tab === "assessment"
           ? "过敏日历"
           : tab === "healthProfile"
@@ -1188,6 +1138,8 @@ export default function App() {
               ? "过敏原记录"
             : tab === "articles"
               ? "学一学"
+              : tab === "messages"
+                ? "消息中心"
               : "我的";
 
   const acceptPreviewConsent = async () => {
@@ -1321,9 +1273,8 @@ export default function App() {
                 <aside className="basis-card" aria-label="方案依据与使用说明">
                   <span>据</span>
                   <div>
-                    <strong>抗敏先锋鼻健康交互 Demo</strong>
-                    <p>服务端规则优先，不输出诊断；康复建议只来自当前已审核内容。</p>
-                    <small>未完成身份认证或临床审核时不会保存或推荐正式方案</small>
+                    <strong>抗敏先锋鼻健康服务</strong>
+                    <p>方案来自已审核内容，基于福建中医药大学抗敏先锋团队体质调理方案开发。</p>
                     <em>结果仅供参考，最终方案请以门诊诊断为准。</em>
                   </div>
                 </aside>
@@ -1362,85 +1313,104 @@ export default function App() {
                   <span>库</span>
                   <p><strong>安全评估与方案建议</strong><small>固定规则优先 · 不替代门诊诊断</small></p>
                 </div>
+                <div className="chat-toolbar" aria-label="对话管理">
+                  <button
+                    type="button"
+                    data-testid="chat-history-toggle"
+                    aria-expanded={historyOpen}
+                    onClick={() => setHistoryOpen((current) => !current)}
+                  >
+                    ☰ 历史对话
+                  </button>
+                  <button type="button" data-testid="chat-new" onClick={startNewConversation}>
+                    ＋ 新建对话
+                  </button>
+                </div>
+                {historyOpen && (
+                  <section className="chat-history" data-testid="chat-history" aria-label="历史对话">
+                    <div className="chat-history-head"><strong>历史对话</strong><small>仅显示当前体验账户</small></div>
+                    {historyStatus === "loading" && <p>正在读取…</p>}
+                    {historyStatus === "error" && <p role="alert">{historyError}</p>}
+                    {historyStatus === "ready" && conversationHistory.length === 0 && <p>暂无已保存的对话</p>}
+                    {conversationHistory.map((conversation) => (
+                      <button
+                        type="button"
+                        key={conversation.id}
+                        data-conversation-id={conversation.id}
+                        className={conversation.id === conversationId ? "active" : ""}
+                        disabled={chatSending}
+                        onClick={() => void selectConversation(conversation.id)}
+                      >
+                        <span>{conversationDate(conversation.updatedAt)}</span>
+                        <small>{conversation.state === "active" ? "进行中" : "已结束"}</small>
+                      </button>
+                    ))}
+                  </section>
+                )}
                 <div className="chat" aria-live="polite">
-                  <div className="time-label">今天 14:20</div>
+                  <div className="time-label">{timeLabel}</div>
                   {messages.map((message) => {
                     if (message.kind === "thinking") {
-                      return <div className="message-row ai-row" key={message.id}><div className="mini-avatar">岐</div><div className="bubble ai-bubble typing"><b /><b /><b /></div></div>;
+                      return <div className="message-row ai-row" key={message.id}><div className="mini-avatar">抗</div><div className="bubble ai-bubble typing"><b /><b /><b /></div></div>;
                     }
                     if (message.kind === "notice") {
                       return <div className="chat-notice" data-testid="chat-notice" role="status" key={message.id}>{message.text}</div>;
                     }
-                    if (message.kind === "verdict") {
-                      return <div className="chat-verdict" data-testid="chat-verdict" key={message.id}><strong>本轮评估结果</strong>{message.text}</div>;
-                    }
-                    if (message.kind === "source") {
-                      return <div className="source-card" key={message.id}><span>✓</span><div><strong>{message.title}</strong><small>{message.detail}</small></div><b>›</b></div>;
+                    if (message.kind === "result") {
+                      return <ResultCard message={message} key={message.id} />;
                     }
                     return (
                       <div className={`message-row ${message.role}-row`} key={message.id}>
-                        {message.role === "ai" && <div className="mini-avatar">岐</div>}
-                        <div className={`bubble ${message.role}-bubble`}>{message.text}</div>
+                        {message.role === "ai" && <div className="mini-avatar">抗</div>}
+                        <div className={`bubble ${message.role}-bubble`}>
+                          {message.kind === "option"
+                            ? <><strong className="option-answer">{message.label}</strong><small className="option-caption">{message.caption}</small></>
+                            : message.text}
+                        </div>
                       </div>
                     );
                   })}
 
-                  {agentAssessmentOpen && (
-                    <AgentAssessmentPanel
-                      draft={agentDraft}
-                      setDraft={changeAgentDraft}
-                      status={agentStatus}
-                      notice={agentNotice}
-                      result={agentResult}
-                      onSubmit={submitAgentAssessment}
-                    />
+                  {chatHydrated && conversationState === null && messages.length === 1 && (
+                    <button className="start-card" type="button" onClick={beginConsultation} disabled={chatSending}>
+                      <span className="start-icon">聊</span><span><strong>开始了解我的情况</strong><small>约 2 分钟 · 随时可以退出</small></span><b>›</b>
+                    </button>
                   )}
 
-                  {step === 0 && messages.length === 1 && !agentAssessmentOpen && (
-                    <>
-                      <div className="quick-ask-label">你可以这样问</div>
-                      <div className="knowledge-options">
-                        {knowledgeQuestions.map((item, index) => <button key={item.question} onClick={() => askKnowledge(index)}><span>问</span>{item.question}<b>›</b></button>)}
-                      </div>
-                      <button className="start-card" onClick={startConsultation}>
-                        <span className="start-icon">聊</span><span><strong>开始了解我的情况</strong><small>约 2 分钟 · 随时可以退出</small></span><b>›</b>
-                      </button>
-                    </>
-                  )}
-
-                  {activeOptions.length > 0 && (
-                    <div className="quick-options">
-                      {activeOptions.map((option) => (
-                        <button key={option} onClick={() => step === 1 ? selectSymptom(option) : step === 2 ? selectDuration(option) : selectWarning(option)}>
-                          {option}<span>›</span>
-                        </button>
-                      ))}
+                  {pendingQuestions !== null && pendingQuestions.length > 0 && (
+                    <div className="question-cards">
+                      {pendingQuestions.map((question) => {
+                        const cardId = FIELD_TO_QUESTION[question.fieldCode];
+                        const card = cardId === undefined ? undefined : QUESTIONNAIRE.find((item) => item.id === cardId);
+                        if (card !== undefined) {
+                          return (
+                            <section className="question-card" key={question.fieldCode}>
+                              <div className="question-card-title"><span>问</span><strong>{card.title}</strong></div>
+                              <div className="question-card-options">
+                                {card.options.map((option) => (
+                                  <button key={option.code} type="button" disabled={chatSending} onClick={() => answerQuestion(card, option)}>
+                                    <span>{option.code}</span>{option.text}
+                                  </button>
+                                ))}
+                              </div>
+                            </section>
+                          );
+                        }
+                        return (
+                          <section className="question-card" key={question.fieldCode}>
+                            <div className="question-card-title"><span>问</span><strong>{question.prompt}</strong></div>
+                            <div className="question-card-options">
+                              {(["yes", "no", "unknown"] as const).map((state) => (
+                                <button key={state} type="button" disabled={chatSending} onClick={() => answerField(question, state)}>
+                                  <span>{state === "yes" ? "是" : state === "no" ? "否" : "？"}</span>
+                                  {state === "yes" ? "是" : state === "no" ? "否" : "不清楚"}
+                                </button>
+                              ))}
+                            </div>
+                          </section>
+                        );
+                      })}
                     </div>
-                  )}
-
-                  {step === 4 && (
-                    <>
-                      <article className="result-card">
-                        <div className="result-head"><div><small>交互演示已完成</small><h2>未输出诊断或证型</h2></div><span>仅作演示</span></div>
-                        <p>当前版本仅展示交互流程，不依据本次回答生成个性化调理方案。</p>
-                        <div className="evidence"><span>症状已记录</span><span>安全项已确认</span><span>建议线下咨询</span></div>
-                        <div className="result-foot"><span>内容状态</span> 内部演示，待正式规则与医学审核</div>
-                        <div className="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</div>
-                      </article>
-                      <article className="plan-card">
-                        <div className="plan-title"><span>演示</span><div><small>功能未开放</small><h2>正式方案待审核后接入</h2></div></div>
-                        <ol>
-                          <li><i>1</i><span><strong>保留症状记录入口</strong><small>当前记录仅用于界面演示</small></span></li>
-                          <li><i>2</i><span><strong>出现高危信号及时就医</strong><small>呼吸困难等情况请立即寻求帮助</small></span></li>
-                          <li><i>3</i><span><strong>等待正式内容开放</strong><small>规则与医学内容审核完成后再接入</small></span></li>
-                        </ol>
-                      </article>
-                      <div className="plan-pending-notice" role="status">
-                        <strong>正式康复方案暂未开放</strong>
-                        <span>相关内容需完成临床负责人审核后，才会进入用户端。</span>
-                      </div>
-                      <button className="feedback-button" onClick={() => navigateTo("assessment")}>去记录今天的症状</button>
-                    </>
                   )}
                   <div ref={chatEnd} />
                 </div>
@@ -1453,10 +1423,21 @@ export default function App() {
                     )}
                   </div>
                 )}
+                {conversationState !== null && conversationState !== "active" && (
+                  <div className="conversation-ended" role="status">
+                    <span>{conversationEndReason ?? "本对话已结束，历史内容仍可查看。"}</span>
+                    <button type="button" onClick={startNewConversation}>新建对话</button>
+                  </div>
+                )}
                 <form className="composer" onSubmit={sendCustom}>
-                  <button type="button" aria-label="语音输入">⌁</button>
-                  <input aria-label="输入症状或问题" value={input} onChange={(event) => setInput(event.target.value)} placeholder={chatSending ? "正在发送…" : "问问题或描述症状…"} disabled={chatSending} />
-                  <button className="send-button" type="submit" aria-label="发送" disabled={chatSending}>{chatSending ? "…" : "↑"}</button>
+                  <input
+                    aria-label="输入症状或问题"
+                    value={input}
+                    onChange={(event) => setInput(event.target.value)}
+                    placeholder={!chatHydrated ? "正在恢复对话…" : conversationState !== null && conversationState !== "active" ? "该对话已结束" : chatSending ? "正在发送…" : "问问题或描述症状…"}
+                    disabled={!chatHydrated || chatSending || (conversationState !== null && conversationState !== "active")}
+                  />
+                  <button className="send-button" type="submit" aria-label="发送" disabled={!chatHydrated || chatSending || (conversationState !== null && conversationState !== "active")}>{chatSending ? "…" : "↑"}</button>
                 </form>
               </div>
             )}
@@ -1669,6 +1650,8 @@ export default function App() {
 
             {tab === "articles" && <DiscoverView />}
 
+            {tab === "messages" && <MessagesView />}
+
             {tab === "profile" && (
               <div className="profile-view">
                 <section className="profile-hero">
@@ -1708,9 +1691,9 @@ export default function App() {
 
                 <section className="profile-section">
                   <h3>设置与服务</h3>
-                  <button>
+                  <button onClick={() => navigateTo("messages")}>
                     <span className="profile-item-icon violet">铃</span>
-                    <div><strong>提醒设置</strong><small>每日记录与健康内容提醒</small></div>
+                    <div><strong>消息中心</strong><small>查看站内鼻健康提醒</small></div>
                     <b>›</b>
                   </button>
                   <button>
@@ -1735,7 +1718,7 @@ export default function App() {
             <button className={tab === "chat" ? "active" : ""} onClick={() => navigateTo("chat")}><span className="nav-glyph nav-chat">◌</span>问助手</button>
             <button className="nav-add" data-testid="symptom-add-today" onClick={() => { navigateTo("assessment"); openSymptomDate(localDateValue()); }} aria-label="新增今天的症状记录"><span aria-hidden="true">＋</span></button>
             <button className={tab === "assessment" || tab === "allergenRecord" ? "active" : ""} aria-label="打开症状评估日历" data-navigation-purpose="symptom-calendar" data-testid="nav-calendar" title="症状评估日历" onClick={() => navigateTo("assessment")}><span className="nav-glyph nav-calendar">▦</span>日历</button>
-            <button className={tab === "profile" || tab === "healthProfile" ? "active" : ""} onClick={() => navigateTo("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
+            <button className={tab === "profile" || tab === "healthProfile" || tab === "messages" ? "active" : ""} onClick={() => navigateTo("profile")}><span className="nav-glyph nav-profile">人</span>我的</button>
           </nav>
 
           {entryOpen && (

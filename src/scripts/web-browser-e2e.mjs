@@ -10,8 +10,17 @@ import { chromium } from "playwright";
 import { createApplication } from "../dist/app/composition-root.js";
 import { createAdminApplicationWithOps } from "../dist/app/admin-composition-root.js";
 import { createKangminHttpServer } from "../dist/http/server.js";
+import { KangminDatabase } from "../dist/infrastructure/database.js";
 // 浏览器 E2E 以本地开发模式运行：组合根需要 dev 明文加密降级。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
+
+// 浏览器全链路会在同一进程内集中执行大量真实命令。单独提高测试实例额度，
+// 避免用例规模增长后误触生产默认限流；限流行为由 http-ops.e2e 独立验证。
+const browserE2eRateLimits = {
+  strictPerWindow: 1_000,
+  commandsPerWindow: 1_000,
+  uploadPerWindow: 1_000
+};
 
 const adminCli = fileURLToPath(
   new URL("../dist/cli/kangmin-admin.js", import.meta.url)
@@ -48,6 +57,19 @@ async function expectText(locator, text) {
   assert.match((await locator.textContent()) ?? "", new RegExp(text, "u"));
 }
 
+/** 中央新增按钮必须完整收纳在底栏内，避免跨页面遮挡正文。 */
+async function expectAddButtonInsideNavigation(page, pageName) {
+  const navigationBox = await page.locator(".bottom-nav").boundingBox();
+  const addButtonBox = await page.getByTestId("symptom-add-today").boundingBox();
+  assert.ok(navigationBox, `${pageName}应显示底部导航`);
+  assert.ok(addButtonBox, `${pageName}应显示症状新增按钮`);
+  assert.ok(
+    addButtonBox.y >= navigationBox.y &&
+      addButtonBox.y + addButtonBox.height <= navigationBox.y + navigationBox.height,
+    `${pageName}的症状新增按钮不应溢出底栏`
+  );
+}
+
 /** 打开日历 tab 并切到列表模式。 */
 async function openCalendarList(page) {
   await page.getByTestId("nav-calendar").click();
@@ -74,7 +96,8 @@ let server = createKangminHttpServer(application, {
   appEnvironment: "integration",
   allowDevelopmentSession: true,
   adminApplication: adminOps.application,
-  adminObjectStorage: adminOps.objectStorage
+  adminObjectStorage: adminOps.objectStorage,
+  rateLimits: browserE2eRateLimits
 });
 let origin = await listen(server);
 const browser = await chromium.launch({ headless: true });
@@ -111,6 +134,14 @@ try {
   assert.equal(await page.locator(".mini-program-menu").count(), 0);
   assert.equal(await page.locator(".nav-add").count(), 1);
   assert.equal(await page.locator(".bottom-nav button").count(), 5);
+  await page.locator(".bottom-nav button", { hasText: "首页" }).click();
+  await expectAddButtonInsideNavigation(page, "首页");
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  await expectAddButtonInsideNavigation(page, "问助手");
+  await page.getByTestId("nav-calendar").click();
+  await expectAddButtonInsideNavigation(page, "日历");
+  await page.locator(".bottom-nav button", { hasText: "我的" }).click();
+  await expectAddButtonInsideNavigation(page, "我的");
   await page.getByRole("button", { name: "健康档案" }).click();
   await page.getByTestId("health-profile-view").waitFor({ state: "visible" });
   await expectText(page.getByTestId("profile-status"), "暂无健康档案");
@@ -256,7 +287,8 @@ try {
     appEnvironment: "integration",
     allowDevelopmentSession: true,
     adminApplication: adminOps.application,
-    adminObjectStorage: adminOps.objectStorage
+    adminObjectStorage: adminOps.objectStorage,
+    rateLimits: browserE2eRateLimits
   });
   origin = await listen(server);
 
@@ -358,43 +390,111 @@ try {
     "不能替代门诊诊断"
   );
 
-  // ---- chat 底部输入接 agent exec（真对话）----
-  // dev 无模型 key：降级模式下助手回复为结构化问诊提问，并带固定
-  // system_notice 降级提示；conversationId 经 sessionStorage 持久化续聊。
+  // ---- chat：页面严格按《页面展示》Q1-Q14，规则按《前置规则》----
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   const chatInput = page.locator('input[aria-label="输入症状或问题"]');
   await chatInput.waitFor({ state: "visible" });
   await chatInput.fill("我最近鼻塞，晚上比较严重");
   await page.locator(".send-button").click();
   await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
-  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).first().waitFor({ state: "visible" });
-  await expectText(page.getByTestId("chat-notice"), "智能提取服务暂不可用");
+  await page.locator(".question-card", { hasText: "您打喷嚏的情况是" }).waitFor({ state: "visible" });
+  await expectText(page.getByTestId("chat-notice"), "未识别到您的回答");
   const conversationId = await page.evaluate(() =>
     sessionStorage.getItem("kangmin.agent.conversationId")
   );
   assert.ok(conversationId, "首轮发送后应持久化 conversationId");
 
-  // 续聊：携带同一 conversationId，助手回复仍出现且会话 id 不变。
+  await page.locator(".question-card-options button", { hasText: "偶尔打喷嚏" }).click();
+  await page.locator(".question-card", { hasText: "您的鼻涕通常是" }).waitFor({ state: "visible" });
+
+  // 自由文本无法替代当前结构化选项，仍停留 Q2；会话 ID 不变。
   await chatInput.fill("还有打喷嚏和流清鼻涕");
   await page.locator(".send-button").click();
-  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).nth(1).waitFor({ state: "visible" });
+  await page.getByTestId("chat-notice").nth(1).waitFor({ state: "visible" });
   assert.equal(
     await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
     conversationId
   );
 
-  // 刷新后同 conversationId 续接，会话不丢。
+  // 刷新后从服务端恢复完整有序消息与 Q2。
   await page.reload();
   await page.locator(".demo-shell .bottom-nav").waitFor({ state: "visible" });
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   await chatInput.waitFor({ state: "visible" });
-  await chatInput.fill("症状早上更明显");
-  await page.locator(".send-button").click();
-  await page.locator(".ai-bubble", { hasText: "为了继续评估" }).first().waitFor({ state: "visible" });
+  await page.locator(".user-bubble", { hasText: "我最近鼻塞，晚上比较严重" }).waitFor({ state: "visible" });
+  await page.locator(".user-bubble", { hasText: "还有打喷嚏和流清鼻涕" }).waitFor({ state: "visible" });
+  await page.locator(".question-card", { hasText: "您的鼻涕通常是" }).waitFor({ state: "visible" });
   assert.equal(
     await page.evaluate(() => sessionStorage.getItem("kangmin.agent.conversationId")),
     conversationId
   );
+
+  // 模拟部署后规则包升级：旧会话第一次续答即废弃；选项不得乐观追加，
+  // 页面只提示一次“请新建对话”，从根上覆盖客户截图中的重复“不清楚”。
+  const upgradeDatabase = new KangminDatabase(databasePath);
+  try {
+    upgradeDatabase.connection
+      .prepare(`UPDATE agent_conversations
+                SET rule_package_version = 'clinical-rules-v2-stale',
+                    rule_package_hash = 'stale-hash'
+                WHERE id = ?`)
+      .run(conversationId);
+  } finally {
+    upgradeDatabase.close();
+  }
+  const q2AnswerCountBefore = await page.locator(".user-bubble", { hasText: "清水样" }).count();
+  await page.locator(".question-card-options button", { hasText: "清水样" }).click();
+  await page.locator(".conversation-ended").waitFor({ state: "visible" });
+  await expectText(page.locator(".conversation-ended"), "评估规则已更新，请新建对话后重新评估");
+  assert.equal(await chatInput.isDisabled(), true);
+  assert.equal(
+    await page.locator(".user-bubble", { hasText: "清水样" }).count(),
+    q2AnswerCountBefore,
+    "规则升级失败的选项不得写进聊天历史"
+  );
+
+  // 新会话完整走客户真实路径：Q1-Q11 → 两个独立确认节点 → Q12-Q14。
+  await page.getByTestId("chat-new").click();
+  await chatInput.fill("开始评估");
+  await page.locator(".send-button").click();
+  await page.locator(".question-card", { hasText: "您打喷嚏的情况是" }).waitFor({ state: "visible" });
+  await page.locator(".question-card-options button", { hasText: "基本不打喷嚏" }).click();
+  const pagePath = [
+    ["您的鼻涕通常是", "白黏鼻涕"],
+    ["您的鼻塞情况是", "左右交替鼻塞"],
+    ["您的鼻痒程度", "不痒"],
+    ["什么情况下容易发作或加重", "无明显规律"],
+    ["是否比别人更怕风、怕冷", "稍微有一点"],
+    ["您是否容易感冒", "很少感冒"],
+    ["是否经常感觉疲倦、没力气", "没有"],
+    ["手脚是否经常冰凉", "一年四季手脚都凉"],
+    ["是否经常感觉口干、想喝水", "偶尔口干"],
+    ["哪项最符合您的日常感觉", "以上都不明显"],
+    ["是否经常感觉疲倦、没力气", "偶尔有"],
+    ["是否经常感觉口干、想喝水", "经常口干，想喝凉的"],
+    ["最近 1 周", "基本没有"],
+    ["目前最迫切想解决的问题", "调理体质"],
+    ["症状发作时", "长期处于"]
+  ];
+  for (const [questionText, optionText] of pagePath) {
+    const card = page.locator(".question-card", { hasText: questionText });
+    await card.waitFor({ state: "visible" });
+    await card.locator("button", { hasText: optionText }).click();
+  }
+  const sixStepResult = page.locator(".result-card", { hasText: "寒热错杂" });
+  await sixStepResult.waitFor({ state: "visible" });
+  await page.locator(".conversation-ended").waitFor({ state: "visible" });
+  assert.match((await sixStepResult.textContent()) ?? "", /寒热错杂/u);
+
+  // 刷新后结果仍恢复到最新位置。
+  await page.reload();
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  await page.locator(".result-card", { hasText: "寒热错杂" }).waitFor({ state: "visible" });
+  await page.waitForFunction(() => {
+    const chat = document.querySelector(".chat");
+    return chat instanceof HTMLElement &&
+      chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 2;
+  });
 
   // ---- 管理 Web：真实账号、HttpOnly 会话、文章发布闭环、知识上传 ----
   const adminPage = await context.newPage();

@@ -50,6 +50,17 @@ interface ConversationRow {
   updated_at: string;
 }
 
+interface MessageRow {
+  id: string;
+  session_id: string;
+  sequence: number;
+  role: string;
+  decision_id: string | null;
+  content_encrypted: string;
+  content_hash: string;
+  created_at: string;
+}
+
 function parseSession(row: ConversationRow): ConversationSession {
   return {
     id: row.id,
@@ -394,6 +405,25 @@ export class PgConversationRepository implements ConversationRepository {
     });
   }
 
+  async listMessages(sessionId: string): Promise<ConversationMessage[]> {
+    const { rows } = await this.database.query<MessageRow>(
+      `SELECT id, session_id, sequence, role, decision_id,
+              content_encrypted, content_hash, created_at
+       FROM agent_messages WHERE session_id = $1 ORDER BY sequence ASC`,
+      [sessionId]
+    );
+    return rows.map((row) => ({
+      id: row.id,
+      sessionId: row.session_id,
+      sequence: row.sequence,
+      role: row.role as ConversationMessage["role"],
+      decisionId: row.decision_id,
+      contentEncrypted: parseEncrypted(row.content_encrypted),
+      contentHash: row.content_hash,
+      createdAt: row.created_at
+    }));
+  }
+
   async setConfirmedAnswer(answer: ConfirmedAnswerRow): Promise<void> {
     await this.database.transaction(async (client) => {
       await this.database.queryIn(
@@ -565,6 +595,9 @@ export class PgConversationRepository implements ConversationRepository {
       stage: string;
       severity_code: string | null;
       syndrome_code: string | null;
+      phase_code: string | null;
+      audience: string | null;
+      rule_package_status: string | null;
       next_questions_json: string;
       matched_rule_ids_json: string;
       rule_package_version: string;
@@ -588,6 +621,10 @@ export class PgConversationRepository implements ConversationRepository {
       stage: row.stage,
       severityCode: row.severity_code,
       syndromeCode: row.syndrome_code,
+      phaseCode: (row.phase_code as "acute" | "remission" | null) ?? null,
+      audience: (row.audience as "child" | "adult" | null) ?? null,
+      rulePackageStatus:
+        (row.rule_package_status as "candidate" | "approved" | null) ?? null,
       nextQuestionsJson: row.next_questions_json,
       matchedRuleIdsJson: row.matched_rule_ids_json,
       rulePackageVersion: row.rule_package_version,

@@ -1116,6 +1116,151 @@ const MIGRATIONS: Migration[] = [
         CREATE UNIQUE INDEX patient_consents_id ON patient_consents(id);
       `);
     }
+  },
+  {
+    // 智能体设计改造：新流水线阶段 screening/phase（智能体设计 v4 二节）。
+    // SQLite 无法 ALTER CHECK，按 0010 先例重建表：新 CHECK 加两个阶段，
+    // 新增 phase_code/audience/rule_package_status 列（一律可空，回滚兼容；
+    // 旧代码只 SELECT 旧列不受影响，见 docs/reviews/004 二轮 P0-1）。
+    // 可行性已由有界实验验证（_work/20260809-bounded-slice/migration-rebuild.mjs）。
+    version: "0011_agent_decisions_stages",
+    apply: (connection) => {
+      // 防御性跳过：账本标记 0008 已应用但表不存在（异常/手工库）时
+      // 只建新结构，不误伤升级（同 0010 的防御先例）。
+      const hasOldTable =
+        connection
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_decisions'"
+          )
+          .get() !== undefined;
+      const copyOld =
+        hasOldTable
+          ? `
+        INSERT INTO agent_decisions_new (id, session_id, decision_sequence,
+          session_revision, input_snapshot_encrypted, input_snapshot_hash,
+          outcome, stage, severity_code, syndrome_code, next_questions_json,
+          matched_rule_ids_json, rule_package_version, rule_package_hash,
+          plan_id, plan_revision, created_at)
+          SELECT id, session_id, decision_sequence, session_revision,
+          input_snapshot_encrypted, input_snapshot_hash, outcome, stage,
+          severity_code, syndrome_code, next_questions_json,
+          matched_rule_ids_json, rule_package_version, rule_package_hash,
+          plan_id, plan_revision, created_at FROM agent_decisions;
+
+        DROP TABLE agent_decisions;
+        ALTER TABLE agent_decisions_new RENAME TO agent_decisions;`
+          : `
+        ALTER TABLE agent_decisions_new RENAME TO agent_decisions;`;
+      connection.exec(`
+        CREATE TABLE agent_decisions_new (
+          id TEXT PRIMARY KEY,
+          session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+          decision_sequence INTEGER NOT NULL CHECK(decision_sequence >= 1),
+          session_revision INTEGER NOT NULL CHECK(session_revision >= 1),
+          input_snapshot_encrypted TEXT NOT NULL,
+          input_snapshot_hash TEXT NOT NULL,
+          outcome TEXT NOT NULL
+            CHECK(outcome IN ('blocked', 'need_more_information', 'non_applicable',
+                              'conflict', 'no_match', 'classified')),
+          stage TEXT NOT NULL
+            CHECK(stage IN ('safety', 'screening', 'phase', 'applicability',
+                            'severity', 'syndrome', 'plan_safety', 'completed')),
+          severity_code TEXT,
+          syndrome_code TEXT,
+          phase_code TEXT,
+          audience TEXT,
+          rule_package_status TEXT,
+          next_questions_json TEXT NOT NULL,
+          matched_rule_ids_json TEXT NOT NULL,
+          rule_package_version TEXT NOT NULL,
+          rule_package_hash TEXT NOT NULL,
+          plan_id TEXT,
+          plan_revision INTEGER,
+          created_at TEXT NOT NULL,
+          UNIQUE(session_id, decision_sequence)
+        ) STRICT;
+      `);
+      connection.exec(copyOld);
+    }
+  },
+  {
+    // 智能体设计改造：agent_plans 按期别×人群检索（评审 codex P0-1）。
+    // 新增 phase_code（'acute'=急性期方案，NULL=调体方案）与 audience
+    // （'adult'/'child'）两列；SQLite ADD COLUMN 幂等，旧行两列均为
+    // NULL（回滚兼容：旧查询 SELECT 不受影响）。
+    version: "0012_agent_plans_phase_audience",
+    apply: (connection) => {
+      // 防御性跳过：账本标记 0009 已应用但表不存在（异常/手工库）时
+      // 不触碰（同 0011 的防御先例）。
+      const hasTable =
+        connection
+          .prepare(
+            "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_plans'"
+          )
+          .get() !== undefined;
+      if (!hasTable) {
+        return;
+      }
+      const columns = connection
+        .prepare("PRAGMA table_info(agent_plans)")
+        .all() as unknown as Array<{ name: string }>;
+      const has = (name: string): boolean =>
+        columns.some((column) => column.name === name);
+      if (!has("phase_code")) {
+        connection.exec("ALTER TABLE agent_plans ADD COLUMN phase_code TEXT");
+      }
+      if (!has("audience")) {
+        connection.exec("ALTER TABLE agent_plans ADD COLUMN audience TEXT");
+      }
+    }
+  },
+  {
+    // 小程序站内消息已读回执：消息发布后面向全部登录患者可见，回执按
+    // patient_id 隔离；删除患者或消息时级联删除，不保留孤立状态。
+    version: "0016_patient_message_reads",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS patient_message_reads (
+          message_id TEXT NOT NULL REFERENCES content_messages(id) ON DELETE CASCADE,
+          patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+          read_at TEXT NOT NULL,
+          PRIMARY KEY(message_id, patient_id)
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS patient_message_reads_patient
+        ON patient_message_reads(patient_id, read_at DESC);
+      `);
+    }
+  },
+  {
+    // 微信小程序身份只保存 AppID+OpenID 的不可逆摘要；原始 OpenID、
+    // session_key 与 AppSecret 均不落库。
+    version: "0017_patient_external_identities",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS patient_external_identities (
+          provider TEXT NOT NULL CHECK(provider IN ('wechat_mini_program')),
+          subject_hash TEXT NOT NULL,
+          patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(provider, subject_hash),
+          UNIQUE(provider, patient_id)
+        ) STRICT;
+      `);
+    }
+  },
+  {
+    version: "0018_knowledge_category",
+    apply: (connection) => {
+      const hasTable = connection.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_knowledge_items'"
+      ).get() !== undefined;
+      if (!hasTable) return;
+      const columns = connection.prepare("PRAGMA table_info(agent_knowledge_items)").all() as unknown as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "category")) {
+        connection.exec("ALTER TABLE agent_knowledge_items ADD COLUMN category TEXT");
+      }
+    }
   }
 ];
 

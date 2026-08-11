@@ -18,8 +18,10 @@
  * KANGMIN_APP_ENV）注入 UnavailableEnvironmentProvider，环境命令抛
  * provider_unavailable，绝不返回测试桩固定假数据。
  *
- * 方案浏览开关：KANGMIN_PLAN_BROWSE_ENABLED=1 时注入
- * planBrowseEnabled=true（默认 false，临床规则包冻结前不放开）。
+ * 方案浏览门禁：与临床规则包冻结状态同源（评审 P1-12）——生效规则包
+ * （options.rulePackage ?? DRAFT_RULE_PACKAGE）status 为 approved 时注入
+ * planBrowseEnabled=true；clinical-rules-v2 已冻结，Web 试用即放开，
+ * SQLite 与 PostgreSQL 路径同一派生，不再读环境变量。
  *
  * 生产存储策略（fail-closed，见 assertProductionStorage）：
  * KANGMIN_APP_ENV=staging|production 时缺 PostgreSQL 连接串、缺对象
@@ -67,6 +69,9 @@ import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-en
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import { WechatCodeLogin } from "../infrastructure/wechat-code-login.js";
+import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
+import { PgKnowledgeRetrieval } from "../infrastructure/postgres/pg-knowledge-retrieval.js";
 import type {
   ObjectHead,
   ObjectStoragePort,
@@ -93,8 +98,16 @@ import type {
 } from "../modules/agent/model-ports.js";
 import { ClinicalRuleKernel } from "../modules/clinical-rules/clinical-rule-kernel.js";
 import type { PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
+import type { RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
+import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
+import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
+
+/** HTTP 入口使用的微信登录适配器工厂，保持基础设施依赖只出现在组合根。 */
+export function createWechatLogin(appId: string, appSecret: string): WechatLoginPort {
+  return new WechatCodeLogin({ appId, appSecret });
+}
 
 export type AppEnvironment = "local" | "integration" | "staging" | "production";
 
@@ -109,6 +122,8 @@ export interface ApplicationOptions {
   explanation?: ModelExplanationPort | undefined;
   /** 方案注册表端口；默认无任何已批准方案（规则包未冻结）。 */
   planRegistry?: PlanRegistryPort | undefined;
+  /** 临床规则包注入点（测试用）；默认加载冻结包 clinical-rules-v2。 */
+  rulePackage?: RulePackage | undefined;
   /** 显式覆盖 KANGMIN_APP_ENV（测试用）；未提供时读环境变量。 */
   appEnvironment?: AppEnvironment | undefined;
   /**
@@ -237,7 +252,15 @@ export function resolveObjectStorage(
       endpoint: process.env.KANGMIN_S3_ENDPOINT || undefined,
       region: process.env.KANGMIN_S3_REGION || "us-east-1",
       accessKeyId,
-      secretAccessKey
+      secretAccessKey,
+      forcePathStyle:
+        process.env.KANGMIN_S3_FORCE_PATH_STYLE === undefined
+          ? undefined
+          : process.env.KANGMIN_S3_FORCE_PATH_STYLE === "1",
+      signedChecksum:
+        process.env.KANGMIN_S3_SIGN_CHECKSUM === undefined
+          ? undefined
+          : process.env.KANGMIN_S3_SIGN_CHECKSUM === "1"
     });
   }
   return new LazyLocalObjectStorage(mediaDirectory);
@@ -265,9 +288,9 @@ function developmentFallbackAllowed(environment: NodeJS.ProcessEnv): boolean {
  * - 缺 KANGMIN_DATABASE_URL → config_missing（禁止回退 SQLite）；
  * - 缺 KANGMIN_S3_BUCKET → config_missing（禁止回退本地素材目录）；
  * - KANGMIN_ENV_PROVIDER_MODE 已设置（测试替身故障模式开关）→ config_missing；
- * - 环境 Provider 仍是 TestEnvironmentProvider（尚未接真实供应商）或
- *   UnavailableEnvironmentProvider（R1 门禁占位，同样非真实供应商）
- *   → config_missing；
+ * - 环境功能启用时 Provider 仍是测试替身或不可用占位 → config_missing；
+ * - 报价范围未包含环境数据时可显式 KANGMIN_ENVIRONMENT_ENABLED=0，
+ *   此时环境命令保持不可用，但不阻断其余生产能力；
  * - KANGMIN_ALLOW_DEV_SESSION=1 → config_missing（连开发会话开关都
  *   不允许出现，路由层拒绝之外再压一道）。
  * local/integration 直接返回，本地开发与集成测试零影响。
@@ -307,8 +330,9 @@ export function assertProductionStorage(
     );
   }
   if (
-    context.environmentProvider instanceof TestEnvironmentProvider ||
-    context.environmentProvider instanceof UnavailableEnvironmentProvider
+    environment.KANGMIN_ENVIRONMENT_ENABLED !== "0" &&
+    (context.environmentProvider instanceof TestEnvironmentProvider ||
+      context.environmentProvider instanceof UnavailableEnvironmentProvider)
   ) {
     throw new DomainError(
       "config_missing",
@@ -409,7 +433,8 @@ function encryptionReadinessProbe(
 
 /** 环境 Provider 探针：测试替身或 R1 门禁不可用占位都不算生产就绪。 */
 function environmentProviderReadinessProbe(
-  provider: EnvironmentProviderPort
+  provider: EnvironmentProviderPort,
+  enabled: boolean
 ): ReadinessProbe {
   const isPlaceholder =
     provider instanceof TestEnvironmentProvider ||
@@ -418,7 +443,9 @@ function environmentProviderReadinessProbe(
     name: "environment-provider",
     run: () =>
       Promise.resolve(
-        isPlaceholder
+        !enabled
+          ? { status: "ok", message: "环境数据功能已按交付范围显式关闭" }
+          : isPlaceholder
           ? {
               status: "not_configured",
               message: "环境数据接口未接真实供应商（测试替身或不可用占位）"
@@ -655,7 +682,10 @@ export function createApplicationWithOps(
   const objectStorage = resolveObjectStorage(options, mediaDirectory);
   const staticProbes = {
     encryption: encryptionReadinessProbe(environment),
-    environmentProvider: environmentProviderReadinessProbe(environmentProvider),
+    environmentProvider: environmentProviderReadinessProbe(
+      environmentProvider,
+      environment.KANGMIN_ENVIRONMENT_ENABLED !== "0"
+    ),
     rulePackage: rulePackageReadinessProbe()
   };
 
@@ -667,11 +697,13 @@ export function createApplicationWithOps(
       ...staticProbes
     };
     const sessions = new SessionService(new PgSessionRepository(database));
-    // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
-    // 注册表数据源接通统一方案表 agent_plans。
+    // 生效规则包（测试可注入 candidate 模拟未冻结）：浏览门禁与内核同源。
+    const rulePackage = options.rulePackage ?? DRAFT_RULE_PACKAGE;
+    // 内核正式路径：生效规则包非 approved（如 candidate）时阻断输出方案；
+    // 注册表数据源接通统一方案表 agent_plans，管理端启用且浏览门禁放开后可见。
     const planRegistry: PlanRegistryPort =
       options.planRegistry ?? new PgPlanRegistry(database);
-    const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+    const kernel = new ClinicalRuleKernel(rulePackage, planRegistry);
     const accountRepository = new PgAccountRepository(database);
     const conversationRepository = new PgConversationRepository(database);
     // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
@@ -689,7 +721,11 @@ export function createApplicationWithOps(
       application: new KangminApplication(
         sessions,
         new PgRecordRepository(database, encryption),
-        new PgContentReadRepository(database),
+        // 评审 P1-12：PG 路径与 SQLite 同一派生——规则包 approved 即放开
+        // 患者浏览（生产 browse 不再恒关）。
+        new PgContentReadRepository(database, {
+          planBrowseEnabled: rulePackage.status === "approved"
+        }),
         new PgAgentRepository(database),
         new AccountService(accountRepository, sessions),
         environmentProvider,
@@ -700,7 +736,8 @@ export function createApplicationWithOps(
           void database.close();
         },
         () => runPgPatientDoctor(database, environment),
-        objectStorage
+        objectStorage,
+        new KnowledgeQaService(new PgKnowledgeRetrieval(database), modelAdapter)
       ),
       readinessProbes
     };
@@ -712,11 +749,13 @@ export function createApplicationWithOps(
     ...staticProbes
   };
   const sessions = new SessionService(new SqliteSessionRepository(database));
-  // 规则包未冻结：内核正式路径仍由 candidate 状态阻断（不输出方案）；
-  // 注册表数据源接通统一方案表 agent_plans，供模拟测试与冻结后的正式评估使用。
+  // 生效规则包（测试可注入 candidate 模拟未冻结）：浏览门禁与内核同源。
+  const rulePackage = options.rulePackage ?? DRAFT_RULE_PACKAGE;
+  // 内核正式路径：生效规则包非 approved（如 candidate）时阻断输出方案；
+  // 注册表数据源接通统一方案表 agent_plans，管理端启用且浏览门禁放开后可见。
   const planRegistry: PlanRegistryPort =
     options.planRegistry ?? new SqlitePlanRegistry(database);
-  const kernel = new ClinicalRuleKernel(DRAFT_RULE_PACKAGE, planRegistry);
+  const kernel = new ClinicalRuleKernel(rulePackage, planRegistry);
   const accountRepository = new SqliteAccountRepository(database);
   const conversationRepository = new SqliteConversationRepository(database);
   // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
@@ -735,10 +774,11 @@ export function createApplicationWithOps(
     application: new KangminApplication(
       sessions,
       new SqliteRecordRepository(database, encryption),
-      // 方案浏览开关（设计 §17 患者侧门禁）：默认 false，临床规则包冻结
-      // 前不放开；显式 KANGMIN_PLAN_BROWSE_ENABLED=1 时注入 true。
+      // 方案浏览门禁（设计 §17 患者侧门禁）：与规则包冻结状态同源
+      // （评审 P1-12）——生效规则包 approved（clinical-rules-v2 已冻结）
+      // 即放开，不再读 KANGMIN_PLAN_BROWSE_ENABLED。
       new SqliteContentReadRepository(database, {
-        planBrowseEnabled: environment.KANGMIN_PLAN_BROWSE_ENABLED === "1"
+        planBrowseEnabled: rulePackage.status === "approved"
       }),
       new SqliteAgentRepository(database),
       new AccountService(accountRepository, sessions),
@@ -750,7 +790,8 @@ export function createApplicationWithOps(
         database.close();
       },
       () => Promise.resolve(runPatientDoctor(databasePath, environment)),
-      objectStorage
+      objectStorage,
+      new KnowledgeQaService(new SqliteKnowledgeRetrieval(database), modelAdapter)
     ),
     readinessProbes
   };

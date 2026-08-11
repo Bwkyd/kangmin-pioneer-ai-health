@@ -25,9 +25,14 @@ export interface ConfirmedFact {
   source: string;
 }
 
-/** 内核执行阶段。classified 前必须依次通过 safety→applicability→severity→syndrome。 */
+/** 内核执行阶段。classified 前必须依次通过
+ *  safety→screening→phase→applicability→severity→syndrome
+ * （智能体设计 v4：screening 确诊门禁与人群派生、phase 期别派生先于适用范围）。
+ */
 export type StageName =
   | "safety"
+  | "screening"
+  | "phase"
   | "applicability"
   | "severity"
   | "syndrome"
@@ -56,18 +61,25 @@ export interface ClinicalVerdict {
   stage: StageName;
   severityCode: SeverityCode | null;
   syndromeCode: string | null;
+  /** 期别（Q1 派生）：acute 急性期 / remission 缓解期（智能体设计 v4）。 */
+  phaseCode: "acute" | "remission" | null;
+  /** 人群（screening 派生）：child 未满 12 周岁 / adult 成人。 */
+  audience: "child" | "adult" | null;
   /** 本轮展示给患者的补问，单次不超过 2 个（客户资料：单次问诊提问≤2 个）。 */
   nextQuestions: NextQuestion[];
   /** 本轮全部待补问字段（未截断）。截断只影响本轮展示数量，不影响
    *  fail-closed 进展判定——进展判定必须基于全集（评审 P1 kimi P1-6）。 */
   allQuestions: NextQuestion[];
-  /** 命中的规则 ID，如 ["SAF-02"]、["SEV-01","T3"]。 */
+  /** 命中的规则 ID，如 ["SAF-02"]、["SEV-01","SDT-04-B"]。 */
   matchedRuleIds: string[];
   /** 命中的固定阻断/转介文案（blocked/non_applicable 时有值）。 */
   message: string | null;
   /** 匹配到的已批准方案；无可用方案时为 null。 */
   planId: string | null;
   planRevision: number | null;
+  /** 双方案包（急性期+调体，渲染用）；planBundle 永不进患者侧裁剪
+   *  （评审 P0-8：患者只从消息内容渲染，防三步拼装侧信道）。 */
+  planBundle: PlanBundle | null;
   rulePackageVersion: string;
   rulePackageHash: string;
 }
@@ -75,12 +87,26 @@ export interface ClinicalVerdict {
 /** 规则包临床冻结状态。approved 只能由开发发布流程产生，模型与后台不能设置。 */
 export type RulePackageStatus = "candidate" | "approved";
 
-/** 已批准方案查询端口：只返回批准且当前有效的方案，不返回草稿。 */
+/** 已批准方案（渲染与安全评估共用；只返回批准且当前有效的方案）。 */
 export interface ApprovedPlan {
   planId: string;
   planRevision: number;
+  name: string;
+  method: string;
+  /** 步骤文本（steps_json 序列化后的展示形式，渲染层直接使用）。 */
+  steps: string;
+  precautions: string;
+  videoResourceId: string | null;
   /** 方案方法属性（如 moxibustion/guasha_cupping），供方案安全规则评估。 */
   attributes: Record<string, string>;
+}
+
+/** 双方案包：急性期方案 + 调体方案（任一可缺，渲染层处理缺项）。 */
+export interface PlanBundle {
+  /** phase_code='acute' 且 audience 匹配的方案；无匹配时 null。 */
+  acute: ApprovedPlan | null;
+  /** 证型调体方案（phase_code 为空）且 audience 匹配；无匹配时 null。 */
+  constitution: ApprovedPlan | null;
 }
 
 export interface PlanRegistryPort {
@@ -88,10 +114,11 @@ export interface PlanRegistryPort {
    * 异步签名：PostgreSQL 适配器只能异步返回；禁止通过缓存或预加载
    * 绕过每次评估时的最新发布门禁查询。
    */
-  findApprovedPlan(input: {
+  findApprovedPlanBundle(input: {
     syndromeCode: string;
-    severityCode: SeverityCode;
-  }): Promise<ApprovedPlan | null>;
+    phaseCode: "acute" | "remission";
+    audience: "child" | "adult";
+  }): Promise<PlanBundle>;
 }
 
 export interface ClinicalRuleKernelPort {

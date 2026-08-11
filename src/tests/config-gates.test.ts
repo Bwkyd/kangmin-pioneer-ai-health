@@ -10,6 +10,8 @@ import { KangminDatabase } from "../infrastructure/database.js";
 import { exitCodeForCode } from "../kernel/errors.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { BrowseHome } from "../modules/browse/contracts.js";
+import type { RulePackage } from "../modules/clinical-rules/domain.js";
+import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentSnapshot } from "../modules/environment/environment-ports.js";
 import { seedContent } from "./content-fixture.js";
 
@@ -59,6 +61,18 @@ async function withEnvironment(
 function freshDatabasePath(): string {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-gates-"));
   return join(directory, "gates.sqlite");
+}
+
+/**
+ * candidate 模拟包（评审 P1-12 同源语义）：方案浏览门禁与规则包状态同源
+ * 派生，注入 candidate 即模拟"未冻结"（浏览关闭），approved 则放开。
+ */
+function candidatePackage(): RulePackage {
+  return {
+    ...DRAFT_RULE_PACKAGE,
+    version: "clinical-rules-test-candidate",
+    status: "candidate"
+  };
 }
 
 /** 种子：一条管理端已启用方案 + 一条草稿方案（门禁开关测试用）。 */
@@ -203,10 +217,9 @@ test("环境门禁：未设 APP_ENV + 显式 KANGMIN_ALLOW_DEV_SESSION=1 → 可
   );
 });
 
-test("方案开关：KANGMIN_PLAN_BROWSE_ENABLED=1 且有 enabled 方案 → plan list 返回真实数据", async () => {
+test("方案门禁：规则包已冻结（approved）且有 enabled 方案 → plan list 返回真实数据", async () => {
   await withEnvironment(
     {
-      KANGMIN_PLAN_BROWSE_ENABLED: "1",
       KANGMIN_APP_ENV: undefined,
       KANGMIN_ALLOW_DEV_SESSION: "1"
     },
@@ -263,17 +276,19 @@ test("方案开关：KANGMIN_PLAN_BROWSE_ENABLED=1 且有 enabled 方案 → pla
   );
 });
 
-test("方案开关：默认关闭（未设 KANGMIN_PLAN_BROWSE_ENABLED）时维持空列表", async () => {
+test("方案门禁：规则包未冻结（candidate 注入）时维持空列表", async () => {
   await withEnvironment(
     {
-      KANGMIN_PLAN_BROWSE_ENABLED: undefined,
       KANGMIN_APP_ENV: undefined,
       KANGMIN_ALLOW_DEV_SESSION: "1"
     },
     async () => {
       const databasePath = freshDatabasePath();
       seedPlans(databasePath);
-      const application = createApplication(databasePath);
+      // 同源派生：注入 candidate 模拟未冻结，浏览门禁关闭。
+      const application = createApplication(databasePath, {
+        rulePackage: candidatePackage()
+      });
       try {
         const listed = dataOf<{ items: unknown[] }>(
           await application.execute({ command: "browse plan list" })

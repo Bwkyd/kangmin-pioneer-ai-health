@@ -133,6 +133,9 @@ function decisionFixture(
     matchedRuleIdsJson: "[]",
     rulePackageVersion: "draft-2026-07",
     rulePackageHash: "rule-hash",
+    phaseCode: null,
+    audience: null,
+    rulePackageStatus: null,
     planId: null,
     planRevision: null,
     createdAt: TIMESTAMP
@@ -433,6 +436,10 @@ contractTest("appendMessage：UNIQUE(session_id, sequence) 重复序号报唯一
   await repository.createSession(session);
 
   await repository.appendMessage(messageFixture("c-msg-dup-1", session.id, 1, null));
+  await repository.appendMessage(messageFixture("c-msg-ordered-2", session.id, 2, null));
+  const listed = await repository.listMessages(session.id);
+  assert.deepEqual(listed.map((message) => message.sequence), [1, 2]);
+  assert.equal(encryption.decrypt(listed[0]!.contentEncrypted), "正文-c-msg-dup-1");
   const duplicate = messageFixture("c-msg-dup-2", session.id, 1, null);
   await assert.rejects(
     repository.appendMessage(duplicate),
@@ -460,6 +467,37 @@ contractTest("setConfirmedAnswer：同字段重复写为 upsert（幂等重放�
   const urgent = answers.find((answer) => answer.fieldCode === "urgent_help");
   assert.equal(urgent?.value, "no");
   assert.equal(urgent?.revision, 2);
+});
+
+contractTest("六步树节点答案：同题首次与二次确认可独立保存 A/B/C", async (database) => {
+  const repository = new PgConversationRepository(database);
+  const session = sessionFixture("c-conv-six-step");
+  await repository.createSession(session);
+
+  for (const [fieldCode, factValue] of [
+    ["step1_q10", "B"],
+    ["step2_q8", "C"],
+    ["step5_q8_confirm", "B"],
+    ["step6_q10_confirm", "A"]
+  ] as const) {
+    await repository.setConfirmedAnswer({
+      ...answerFixture(session.id, fieldCode, 1),
+      factValue,
+      rulePackageVersion: "clinical-rules-v2"
+    });
+  }
+
+  const answers = await repository.listConfirmedAnswers(session.id);
+  assert.equal(answers.length, 4);
+  assert.deepEqual(
+    new Map(answers.map((answer) => [answer.fieldCode, answer.factValue])),
+    new Map([
+      ["step1_q10", "B"],
+      ["step2_q8", "C"],
+      ["step5_q8_confirm", "B"],
+      ["step6_q10_confirm", "A"]
+    ])
+  );
 });
 
 contractTest("候选：listCandidates 按 created_at 升序，markCandidateDecided 落定状态", async (database) => {
@@ -642,13 +680,16 @@ async function insertPlan(
     status: "draft" | "enabled" | "disabled";
     displayOrder: number;
     revision: number;
+    phaseCode?: string | null;
+    audience?: string | null;
   }
 ): Promise<void> {
   await database.query(
     `INSERT INTO agent_plans(
       id, name, syndrome, method, steps_json, precautions, risks,
-      contraindications, display_order, status, revision, created_at, updated_at
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+      contraindications, phase_code, audience, display_order, status,
+      revision, created_at, updated_at
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
     [
       plan.id,
       `方案-${plan.id}`,
@@ -658,6 +699,8 @@ async function insertPlan(
       "注意事项",
       "风险",
       "禁忌",
+      plan.phaseCode ?? null,
+      plan.audience ?? null,
       plan.displayOrder,
       plan.status,
       plan.revision,
@@ -680,10 +723,13 @@ contractTest("方案注册表：仅 enabled 可见，display_order 优先，meth
     displayOrder: 0,
     revision: 1
   });
-  assert.equal(
-    await registry.findApprovedPlan({ syndromeCode: syndrome, severityCode: "mild" }),
-    null
-  );
+  const draftBundle = await registry.findApprovedPlanBundle({
+    syndromeCode: syndrome,
+    phaseCode: "acute",
+    audience: "adult"
+  });
+  assert.equal(draftBundle.acute, null);
+  assert.equal(draftBundle.constitution, null);
 
   // display_order 小者优先；同序按 id ASC（LIMIT 1 确定性）。
   await insertPlan(database, {
@@ -692,7 +738,9 @@ contractTest("方案注册表：仅 enabled 可见，display_order 优先，meth
     method: "刮痧拔罐",
     status: "enabled",
     displayOrder: 2,
-    revision: 3
+    revision: 3,
+    phaseCode: null,
+    audience: "adult"
   });
   await insertPlan(database, {
     id: "c-plan-a",
@@ -700,17 +748,20 @@ contractTest("方案注册表：仅 enabled 可见，display_order 优先，meth
     method: "艾灸加刮痧",
     status: "enabled",
     displayOrder: 1,
-    revision: 5
+    revision: 5,
+    phaseCode: null,
+    audience: "adult"
   });
 
-  const plan = await registry.findApprovedPlan({
+  const bundle = await registry.findApprovedPlanBundle({
     syndromeCode: syndrome,
-    severityCode: "moderate_severe"
+    phaseCode: "acute",
+    audience: "adult"
   });
-  assert.equal(plan?.planId, "c-plan-a");
-  assert.equal(plan?.planRevision, 5);
+  assert.equal(bundle.constitution?.planId, "c-plan-a");
+  assert.equal(bundle.constitution?.planRevision, 5);
   // 含“灸”→moxibustion，含“刮”→guasha_cupping。
-  assert.deepEqual(plan?.attributes, {
+  assert.deepEqual(bundle.constitution?.attributes, {
     moxibustion: "yes",
     guasha_cupping: "yes"
   });
@@ -724,22 +775,25 @@ contractTest("方案注册表：method 无法映射时不输出属性键（unmat
     method: "鼻腔冲洗",
     status: "enabled",
     displayOrder: 0,
-    revision: 2
+    revision: 2,
+    phaseCode: null,
+    audience: "adult"
   });
 
-  const plan = await registry.findApprovedPlan({
+  const bundle = await registry.findApprovedPlanBundle({
     syndromeCode: "C_TEST_PLAIN",
-    severityCode: "mild"
+    phaseCode: "acute",
+    audience: "adult"
   });
   // 未知方法绝不猜测：不输出 moxibustion/guasha_cupping 键。
-  assert.deepEqual(plan?.attributes, {});
-  assert.equal(
-    await registry.findApprovedPlan({
-      syndromeCode: "C_TEST_NO_SUCH",
-      severityCode: "mild"
-    }),
-    null
-  );
+  assert.deepEqual(bundle.constitution?.attributes, {});
+  const missing = await registry.findApprovedPlanBundle({
+    syndromeCode: "C_TEST_NO_SUCH",
+    phaseCode: "acute",
+    audience: "adult"
+  });
+  assert.equal(missing.acute, null);
+  assert.equal(missing.constitution, null);
 });
 
 contractTest("匿名保留期：findAnonymousSession 过滤过期会话（issue-155）", async (database) => {

@@ -50,7 +50,7 @@ content 命令：
 
 agent 命令：
   status
-  knowledge     list|show|add <file>|add-from-media --media <id>|index|enable|disable|search-test <query>
+  knowledge     list|show|add <file>|add-from-media --media <id>|update|delete|index|enable|disable|search-test <query>
   plan          list|show|create|update|preview|enable|disable|mappings
   model         show|update|test（--api-key 为标志，密钥从 stdin 读取）
   test          run|case <case-id>
@@ -240,6 +240,8 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   "agent knowledge show": { positional: "id", required: true },
   "agent knowledge add": { positional: "file", required: true },
   "agent knowledge add-from-media": { positional: null, required: false },
+  "agent knowledge update": { positional: "id", required: true },
+  "agent knowledge delete": { positional: "id", required: true },
   "agent knowledge index": { positional: "id", required: true },
   "agent knowledge enable": { positional: "id", required: true },
   "agent knowledge disable": { positional: "id", required: true },

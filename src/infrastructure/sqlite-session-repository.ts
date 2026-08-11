@@ -2,6 +2,7 @@ import { KangminDatabase } from "./database.js";
 import type {
   SaveAccountSessionInput,
   SaveDevelopmentSessionInput,
+  SaveMiniProgramSessionInput,
   SessionClientKind,
   SessionRepository,
   SessionSnapshot
@@ -100,6 +101,30 @@ export class SqliteSessionRepository implements SessionRepository {
         input.createdAt,
         input.clientKind
       );
+  }
+
+  async saveMiniProgramSession(input: SaveMiniProgramSessionInput): Promise<string> {
+    return this.database.transaction(() => {
+      let identity = this.database.connection.prepare(`
+        SELECT patient_id FROM patient_external_identities
+        WHERE provider = 'wechat_mini_program' AND subject_hash = ?
+      `).get(input.subjectHash) as unknown as { patient_id: string } | undefined;
+      if (identity === undefined) {
+        this.database.connection.prepare(`
+          INSERT INTO patients(id, development_subject, created_at) VALUES (?, NULL, ?)
+        `).run(input.newPatientId, input.createdAt);
+        this.database.connection.prepare(`
+          INSERT INTO patient_external_identities(provider, subject_hash, patient_id, created_at)
+          VALUES ('wechat_mini_program', ?, ?, ?)
+        `).run(input.subjectHash, input.newPatientId, input.createdAt);
+        identity = { patient_id: input.newPatientId };
+      }
+      this.database.connection.prepare(`
+        INSERT INTO patient_sessions(token_hash, patient_id, expires_at, created_at, client_kind)
+        VALUES (?, ?, ?, ?, 'mini_program')
+      `).run(input.tokenHash, identity.patient_id, input.expiresAt, input.createdAt);
+      return identity.patient_id;
+    });
   }
 
   async revokeSession(tokenHash: string): Promise<boolean> {
