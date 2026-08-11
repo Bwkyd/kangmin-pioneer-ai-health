@@ -5,7 +5,7 @@
 
 > ## ✅ 文档分类编号治理完成并收紧范围核验（2026-08-11 第三十六轮 · 基线 `main@46f9df6`）
 > `docs/plan`、`reviews`、`research`、`changes` 已改为各分类从 001 独立递增，13 组历史文档完成等行数重编号，相关索引、引用、目录规约和结构检查同步更新。未经权威原件核验的候选材料已完全移出正式文档且不占编号，未形成业务代码、数据库、部署或线上状态变化。
-> 已新增范围核验项目记忆：正式开发计划必须区分明确交付功能、必要技术实现和候选产品改进；无法直接核验报价或客户确认原件时只能标记待核验，不得升级为开发授权。验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；提交时必须排除作者原有的 `AGENTS.md`、`CLAUDE.md` 改动。
+> 已新增范围核验项目记忆：正式开发计划必须区分明确交付功能、必要技术实现和候选产品改进；无法直接核验报价或客户确认原件时只能标记待核验，不得升级为开发授权。验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；治理改动已提交为 `63c6a52`，未包含作者原有的 `AGENTS.md`、`CLAUDE.md` 改动。
 
 > ## ✅ Web 阶段状态与 Git 收尾复核完成（2026-08-11 第三十五轮 · 基线 `main@399e32e`）
 > PR #193 已合并业务实现为 `6ae634a`，PR #194 已合并部署状态为 `399e32e`，两轮 quality/image CI 均成功；原任务 worktree `/Users/chenqiqiang/work/kangmin-worktrees/production-readiness-admin`、本地分支和远端分支均已实际删除，`origin/main` 已包含全部实现与部署记录。此前只存在本地主工作区的第二十九至第三十三轮记录已在本轮按原始时间顺序补入，避免状态外部化断层。
