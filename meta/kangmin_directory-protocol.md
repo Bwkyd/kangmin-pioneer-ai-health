@@ -1,6 +1,6 @@
 # kangmin 目录规约（Directory Protocol）
 
-> 本文件是 `AGENTS.md` 引用之“目录语义展开”的唯一现行版（v1.2），被
+> 本文件是 `AGENTS.md` 引用之“目录语义展开”的唯一现行版（v1.4），被
 > `AGENTS.md` 路径引用，必须保持稳定：不编号、不带日期，版本走文件内记录 + Git。
 >
 > 语义来源：`AGENTS.md`（2026-08-07 整理，忠实收录，不扩写稀释）。
@@ -16,12 +16,13 @@
 | v1.1 | 2026-08-07 | 按 kangmin 真实目录本地化；明确 board 倒序轮次、vault 客户资料分层及 docs 现行分类 |
 | v1.2 | 2026-08-07 | 统一 board、客户确认资料和本地保留目录语义；修复 Git 与结构检查规则 |
 | v1.3 | 2026-08-08 | 旧 `work/` 已完成分流归档并入忽略区，根目录不再保留；AGENTS.md 与 CLAUDE.md 双文件一致性纳入结构检查 |
+| v1.4 | 2026-08-11 | vault 收敛为 truth 唯一真相源；文档编号改为各分类从 001 独立递增 |
 
 ## 分区总览
 
 | 路径 | 定位 | 关键纪律 |
 | --- | --- | --- |
-| `vault/` | 客户与项目资料分层 | raw 保留来源；truth 保存客户确认采用版本；style 保存品牌规范 |
+| `vault/` | 项目权威资料 | truth 是唯一真相源；style 保存品牌规范 |
 | `state/` | 状态区 | board（Agent 每轮）· changelog（人类里程碑）· memory（项目记忆） |
 | `docs/{plan,reviews,research}` | 编号过程文档 | 文件名使用英文 `NNN_kebab-case.md`，流水不重排 |
 | `docs/{product,changes}` | 决策与已采用变更 | product 放客户决策；changes 放长期变更记录 |
@@ -38,12 +39,10 @@
 
 ### vault/ 客户与项目资料
 
-- `raw/`：收到时的来源版本，只整理路径和文件名，不改正文；按 business、clinical、
-  content、product 分类，索引见 `vault/raw/README.md`。
-- `truth/`：客户已经确认、当前项目采用的版本；它不是“加工稿”目录，文件必须保留
-  到 `raw/` 的 `source_file` 来源链。
+- `truth/`：报价及客户确认、当前项目采用的临床、内容、页面资料；文件直接平铺，是
+  开发、范围判断和验收的唯一真相源，不再维护同内容 raw/加工副本。
 - `style/`：已确认的 Logo、颜色、字体、视觉和表达规范。
-- `truth/` 中的客户确认版本是当前开发实现和验收依据。
+- 原始二进制文件如只作备查，放入符合命名规约的 `_archive/` 日期目录，不进入活动资料。
 
 ### state/
 
@@ -61,10 +60,12 @@
 - `research/`：需要长期追溯的专题调研。
 - `product/`：客户决策单，命名 `YYYY-MM-DD-<topic>-decision.md`。
 - `changes/`：已经采用的重要架构、运维和修复记录。
-- `plan/reviews/research` 共用三位全局流水号，文件名一律英文
-  `NNN_kebab-case.md`；编号永不重排、删除后不复用，同主题以最新编号为准。
-- 当前编号索引和下一个编号以 `docs/README.md` 为准。
-- 客户来源统一进入 `vault/raw/`，客户确认采用版本进入 `vault/truth/`。
+- `plan/`、`reviews/`、`research/`、`changes/` 各自在分类内使用三位流水号，
+  文件名一律英文 `NNN_kebab-case.md`；每类从 `001` 开始，编号永不重排、
+  删除后不复用，同主题以该分类最新编号为准。
+- 各分类当前索引和下一个编号以对应目录 `README.md` 为准；`docs/README.md`
+  只汇总各分类编号状态。
+- 客户确认采用的资料统一进入 `vault/truth/`；历史原件只在确有追溯需要时归档。
 
 ### skills/
 

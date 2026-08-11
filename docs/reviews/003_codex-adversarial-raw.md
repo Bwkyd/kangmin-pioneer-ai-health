@@ -1,7 +1,7 @@
-# Codex（gpt-5.6-sol）对抗评审·原始输出存档
+# 003 Codex（gpt-5.6-sol）对抗评审·原始输出存档
 
 > 来源：2026-08-02 23:30 启动的 codex exec 会话（read-only 沙箱，约 40 分钟，96 条只读命令）。
-> 评审对象：007_cli-dev-status-review.md。复核意见见 008_cli-dev-status-adversarial-review.md。
+> 评审对象：001_cli-dev-status-review.md。复核意见见 002_cli-dev-status-adversarial-review.md。
 > 以下为模型原始输出全文，未删改。
 
 ---

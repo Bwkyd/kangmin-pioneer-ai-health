@@ -3,14 +3,33 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ⛔ 无依据六步树撤销并停止相关开发（2026-08-11 第三十八轮 · 基线 `main@46f9df6`）
+> 作者明确指出原 `vault/raw/clinical/syndrome-six-step-decision-tree.md` 不是其取得或可采用的客户资料。该文件及其直接派生的 truth 文件已删除，vault 索引已撤销“客户确认六步树”结论。按作者最终明确指令，`vault/raw/` 原有 4 份材料已原样移动到 `vault/truth/`，与报价 Markdown 一起构成 5 份唯一真相源；没有删除、回退或加工资料正文。`raw/` 当前只保留迁移说明，`business/` 已撤除。作者随后明确允许将报价 `.xlsx` 原件归档以便 AI 直接读取 Markdown；原件现位于 `_archive/20260811-quotation-original/`，不得删除。
+> 现有 `src/` 的 `clinical-rules-v3`、六步树实现与相关测试，以及 007 计划和两份产品决策记录，仍包含这份无依据材料派生出的结论。本轮未擅自改业务代码或改写历史文档，后续开发立即停止；必须先依据《前置规则》重新核对受影响实现，形成有界回退清单并由作者确认后处理，不能继续把六步树当真相源。
+> 验证：`vault/truth/` 根目录现有且仅有 5 份现行 Markdown 及 README，`vault/raw/` 仅有迁移说明，`vault/business/` 不存在；归档报价原件 SHA-256 仍为 `b27c044d7a50fca3e9401265213fd4c2ab758df8ed5511d69a0dd1977a17082f`。`python3 scripts/structure-lint.py .` 与 `git diff --check` 通过。
+> 权威顺序已固化到报价 Markdown、truth 索引和 AGENTS/CLAUDE 双入口：报价表只在功能范围、所属端、价格和工期上最高；四份专项文件在各自职责内最高；docs/state/代码/测试不得覆盖 truth；职责内仍冲突或缺失时必须停下由作者确认，AI 推断无权威。
+> 收尾自检确认本对话可以结束但不能直接进入新功能开发：truth 的 5 份 Markdown 完整，报价 `.xlsx` 归档哈希一致，结构检查和 `git diff --check` 通过；资料治理已提交到任务分支，尚待 PR 合并。`src/modules/clinical-rules/`、相关测试、007 计划和两份产品决策记录仍引用已撤销的无依据六步树，下一窗口必须先按 5 份 truth 做受影响清单与有界回退，完成前不得把旧代码或历史文档当需求继续开发。本轮错误已抽象写入 `state/memory/20260811-material-relocation-scope.md`：移动不得扩大为删除、加工或归档其他文件，忽略区操作必须前后核对清单与哈希。
+
+> ## 🔍 报价原件直接对齐与下一轮候选分组（2026-08-11 第三十七轮 · 基线 `main@46f9df6`）
+> 已只读直接解析 `vault/raw/business/quotations/kangmin-mini-program-quotation.xlsx`（SHA-256 `b27c044d7a50fca3e9401265213fd4c2ab758df8ed5511d69a0dd1977a17082f`）的“功能清单”工作表；7 个报价项为智能辨证助手、症状评估、科普内容、基础页面、文章管理、视频管理和知识库管理。代码与现行状态显示：这些能力已在 CLI/Web 形成相应闭环，而仓库不存在微信小程序工程；因此下一阶段的确定性主缺口是将已有患者能力接入小程序薄壳，不是增加报价外功能或重做后台。
+> 候选分组按交付边界合并为：① 小程序公共底座（工程、请求、微信登录、会话、五入口导航）；② 问助手（报价行 2）；③ 症状记录/日历/趋势（报价行 3）；④ 文章/视频/站内推送的患者查看（报价行 4）。管理后台 3 项（报价行 6–8）已交付，不进入下轮。建议首个 3 小时开发轮只做“公共底座 + 问助手最小主链路”，按工程骨架 → 请求/错误契约 → `wx.login`/Bearer 会话 → 首轮对话与历史恢复从低到高实施。此处只记录候选结论，待作者确认后再建正式计划，当前不占用 `docs/plan` 编号，未修改业务代码。
+> 开工冒烟结论为“通过”：`main@46f9df6` 与 `origin/main` 一致，Node `v24.18.0`、npm `11.16.0`、现有依赖、微信开发者工具 `2.01.2510290` 及 CLI 可用，开发者工具已登录；使用已确认 AppID 的临时原生小程序工程可被 CLI 正常打开，临时件已清理。`npm run check` 全绿，公网 `/live` 有效 HTTPS 返回 200。当前 `/v1/auth/wechat` 如实返回 `capability_unavailable`，因此本轮按已拍板的可注入测试替身验证登录契约，不向作者索取 AppSecret；真实登录、合法请求域名和真机验收仍属后续阶段，不得被记为已通过。
+> 45 分钟有界测试已提前收敛出关键结论：原生五入口组件可将中央“＋”保持为独立 `navigateTo` 新增动作，不用改成普通 Tab；可测试请求适配层实证 `wx.login` 后持久化 token、受保护请求携带 Bearer、401 清理失效会话以及超时明确失败全部可行。但现行患者 `nextQuestions` 契约只有 `fieldCode/prompt`，Web 依赖本地 `FIELD_TO_QUESTION + ASSESSMENT_QUESTIONS` 才能渲染 A/B/C/D 按钮；若直接开发小程序将迫使客户端复制题库，违反薄壳与单一来源约束。因此正式计划必须把“服务端患者问题展示 DTO 补充选项文案与受控提交值”置于小程序 UI 之前，内部临床 `NextQuestion` 与规则内核不变。附加限制：当前微信开发者工具已移除旧自动化 SDK 依赖的 `--auto-port` 入口，通用 GUI 读取通道亦无法启动；正式验收应使用可执行契约测试 + 开发者工具编译打开 + 人工点击清单，不得伪报全自动 UI 通过。
+> 开始契约调整时发现报价原件及整个 `vault/raw/business/` 目录已不在当前工作区；仓库、用户目录、Spotlight 与废纸篓均未找到 `kangmin-mini-program-quotation.xlsx`。四份指定 Markdown 原始资料仍在。为避免凭旧摘录扩大或误判报价范围，业务代码调整已暂停；必须先由作者将原报价单恢复到指定路径，再重新核对 SHA-256 后继续。
+> 作者随后将报价原件恢复，SHA-256 仍为 `b27c044d7a50fca3e9401265213fd4c2ab758df8ed5511d69a0dd1977a17082f`，与此前直接核验的原件完全一致。已按作者要求用 `42md` 转为 Markdown，并修正转换器对 Excel 合并单元格造成的列左移；复核确认 7 个功能项均为 5 列，价格合计 2,800 元，工期 15 个工作日。最终采用稿位于 `vault/truth/`，`.xlsx` 原件按作者后续指令归档。
+
+> ## ✅ 文档分类编号治理完成并收紧范围核验（2026-08-11 第三十六轮 · 基线 `main@46f9df6`）
+> `docs/plan`、`reviews`、`research`、`changes` 已改为各分类从 001 独立递增，13 组历史文档完成等行数重编号，相关索引、引用、目录规约和结构检查同步更新。未经权威原件核验的候选材料已完全移出正式文档且不占编号，未形成业务代码、数据库、部署或线上状态变化。
+> 已新增范围核验项目记忆：正式开发计划必须区分明确交付功能、必要技术实现和候选产品改进；无法直接核验报价或客户确认原件时只能标记待核验，不得升级为开发授权。验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；治理改动已提交为 `63c6a52`，未包含作者原有的 `AGENTS.md`、`CLAUDE.md` 改动。
+
 > ## ✅ Web 阶段状态与 Git 收尾复核完成（2026-08-11 第三十五轮 · 基线 `main@399e32e`）
 > PR #193 已合并业务实现为 `6ae634a`，PR #194 已合并部署状态为 `399e32e`，两轮 quality/image CI 均成功；原任务 worktree `/Users/chenqiqiang/work/kangmin-worktrees/production-readiness-admin`、本地分支和远端分支均已实际删除，`origin/main` 已包含全部实现与部署记录。此前只存在本地主工作区的第二十九至第三十三轮记录已在本轮按原始时间顺序补入，避免状态外部化断层。
-> `docs/plan/015_tencent-cloud-production-cutover.md` 及文档索引已落实 Web 先验收、小程序后置、PostgreSQL/COS 正式切换待资源的边界；线上 `https://49.232.26.48` 继续运行 release `b8246fb`，服务 active、`NRestarts=0`，部署备份 quick_check=ok。现有 DeepSeek 密钥虽已迁至权限 `0600` 的服务器环境文件，但因部署检查阶段曾进入受控终端输出，仍须在正式生产前从供应商控制台轮换并更新服务器配置；该安全待办不阻断当前 Web 功能确认，但不得遗漏到正式生产验收之外。
+> `docs/plan/008_tencent-cloud-production-cutover.md` 及文档索引已落实 Web 先验收、小程序后置、PostgreSQL/COS 正式切换待资源的边界；线上 `https://49.232.26.48` 继续运行 release `b8246fb`，服务 active、`NRestarts=0`，部署备份 quick_check=ok。现有 DeepSeek 密钥虽已迁至权限 `0600` 的服务器环境文件，但因部署检查阶段曾进入受控终端输出，仍须在正式生产前从供应商控制台轮换并更新服务器配置；该安全待办不阻断当前 Web 功能确认，但不得遗漏到正式生产验收之外。
 
 > ## ✅ Web 运营能力已合并并部署试用环境（2026-08-11 第三十四轮 · 合并 `6ae634a`，PR #193）
 > 作者确认的范围已落实：站内推送为应用内全员广播；调理方案后台编辑因报价单未包含而排除；正式存储采用腾讯云托管 PostgreSQL + COS。当前先以 Web 完成功能确认，原生小程序与体验码更新放到最后阶段；微信登录能力保留但以 `KANGMIN_WECHAT_ENABLED=0` 显式关闭，不阻断 Web 部署。管理 Web 已支持消息草稿/编辑/发布/下架，患者“我的→消息中心”支持列表、详情和按患者隔离的已读状态；SQLite `0016` 与 PG `0005` 同步增加回执表。
 > 知识库已补齐分类、元数据更新、停用后删除及审计；患者“学一学→知识问答”只检索 enabled 分块，DeepSeek 可用时按已审核片段受约束生成并列来源，不可用时确定性降级为来源摘录，资料不足不自行补全。微信登录新增 `/v1/auth/wechat` code2Session、严格限流、7 天会话与 AppID+OpenID 不可逆摘要绑定；原始 OpenID、session_key、AppSecret 均不落库、不进日志。
-> 生产侧已加入腾讯云配置模板 `src/.env.example`、只读容器 Compose、PostgreSQL/COS S3 兼容配置、COS virtual-host 寻址与先 HeadBucket 再签名；报价未含环境数据时以 `KANGMIN_ENVIRONMENT_ENABLED=0` 明确关闭而不伪装供应商。切换与待确认项详见 `docs/plan/015_tencent-cloud-production-cutover.md`。
+> 生产侧已加入腾讯云配置模板 `src/.env.example`、只读容器 Compose、PostgreSQL/COS S3 兼容配置、COS virtual-host 寻址与先 HeadBucket 再签名；报价未含环境数据时以 `KANGMIN_ENVIRONMENT_ENABLED=0` 明确关闭而不伪装供应商。切换与待确认项详见 `docs/plan/008_tencent-cloud-production-cutover.md`。
 > 验证：`cd src && npm run check` 全绿（336 tests：260 pass、76 项因未配置 PG/S3 跳过、0 fail，浏览器 E2E PASS）；`python3 scripts/structure-lint.py .`、`git diff --check` 通过。提交 `b8246fb` 已部署，PR #193 的 quality/image CI 均成功并 squash 合并为 `6ae634a`，合并代码树与任务分支一致；空库和线上 SQLite 副本在 8788 预检通过，副本迁移 17→20 且 quick_check=ok。停服前备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260811-134712-before-b8246fb.sqlite`，线上原子切换至完整 SHA release，旧版 `e87151d` 保留回滚；公网患者/管理 Web、消息列表、知识问答冒烟及两页构建哈希均通过，服务 active、`NRestarts=0`。上传包和预检库已清理，模型密钥已迁至权限 0600 的环境文件；正式 PostgreSQL/COS 云联调仍需实例与凭据，原生小程序后置。独立工作树未触碰主工作区作者改动，确认无未提交或未合并的独有成果，按作者指示进入工作树与分支清理。
 
 > ## 🛠️ 生产基础设施与小程序身份入口确认（2026-08-10 第三十三轮 · 基线 `main@9b1b7b3`）
@@ -59,11 +78,11 @@
 > ## ✅ 有序六步证型决策树完成本地修复（2026-08-09 第二十四轮 · 未提交未部署，基线 `50df413`）
 > 证型主判定已由 v3 扁平并行规则替换为唯一的 `clinical-rules-v2` 有序状态机：严格执行 step1_q10 → step2_q8 → step3_q6 → step4_q9 → step5_q8_confirm → step6_q10_confirm，命中叶子立即终止。六个节点分别保存原始 A/B/C，首次与二次 Q8/Q10 不再互相覆盖；非法布尔、非 A–C 和错序载荷 fail-closed，Q1/Q2/Q5/Q7/Q11 等辅助事实不能覆盖叶子。旧规则包的未完成会话返回 `protocol_incompatible` 并提示新建评估。
 > 数据层复核确认 SQLite、PostgreSQL 现有主键均为 `(session_id, field_code)`，直接以节点身份作 field_code 即可独立留痕，无须重建表。已用 SQLite 真实仓储验证六个节点答案；PostgreSQL 增补同题首次/二次确认契约，因本机未配置 `KANGMIN_TEST_DATABASE_URL` 按惯例跳过真实 PG 集成，未虚报通过。CLI、HTTP、Web 继续复用同一应用服务；浏览器真实路径 Q10B → Q8C → Q6B → Q9B 已正确收口为肺气虚寒。
-> 验证：111 条根到叶 A/B/C 路径逐前缀穷举通过；12/12 真实 CLI benchmark 通过；完整评估 smoke 通过；`npm run check` 全绿（330 tests：254 pass、76 项因未配置 PG/S3 跳过、0 fail）并包含浏览器 E2E；`python3 scripts/structure-lint.py .`、`git diff --check` 均通过。计划 `docs/plan/014_fix-ordered-syndrome-decision-tree.md` 已回写实现证据。当前只完成本地代码与文档修复，尚未 commit、PR、部署、清理线上旧会话或改变线上规则版本。
+> 验证：111 条根到叶 A/B/C 路径逐前缀穷举通过；12/12 真实 CLI benchmark 通过；完整评估 smoke 通过；`npm run check` 全绿（330 tests：254 pass、76 项因未配置 PG/S3 跳过、0 fail）并包含浏览器 E2E；`python3 scripts/structure-lint.py .`、`git diff --check` 均通过。计划 `docs/plan/007_fix-ordered-syndrome-decision-tree.md` 已回写实现证据。当前只完成本地代码与文档修复，尚未 commit、PR、部署、清理线上旧会话或改变线上规则版本。
 
 > ## ✅ 六步证型树规则与实施文档落地（2026-08-09 第二十三轮 · 文档完成，业务待实施，基线 `50df413`）
 > 客户最新澄清已完成分层落档：来源整理为 `vault/raw/clinical/syndrome-six-step-decision-tree.md`，当前开发与验收规范为 `vault/truth/clinical/syndrome-six-step-decision-tree.md`；原 `assessment-rules.md` 只保留未被替代的通用、安全和期别规则。证型规范明确六个独立节点、A/B/C 跳转、命中叶子立即结束、Q8/Q10 二次确认独立存储，以及 Q1/Q2/Q5/Q7/Q11 仅作辅助印证。
-> 两份产品决策记录已回写客户纠正：旧“Q11B + 寒象”和 v3 七规则标记为历史失效，不再作为实现依据；本次确认没有被扩大到年龄、确诊门禁、期别和安全规则。实施计划已登记 `docs/plan/014_fix-ordered-syndrome-decision-tree.md`，包含节点化数据模型、SQLite/PG 同步迁移、CLI/HTTP/Web 共用状态机、旧会话隔离、111 条根到叶路径穷举及关键错判回归。
+> 两份产品决策记录已回写客户纠正：旧“Q11B + 寒象”和 v3 七规则标记为历史失效，不再作为实现依据；本次确认没有被扩大到年龄、确诊门禁、期别和安全规则。实施计划已登记 `docs/plan/007_fix-ordered-syndrome-decision-tree.md`，包含节点化数据模型、SQLite/PG 同步迁移、CLI/HTTP/Web 共用状态机、旧会话隔离、111 条根到叶路径穷举及关键错判回归。
 > 当前状态：规则、约束、参考资料和验收标准已落实到长期文档；尚未修改证型业务代码、数据库或线上环境，必须按 014 计划完成测试后方可部署。验证：`python3 scripts/structure-lint.py .` 与 `git diff --check` 通过，文档编号和 truth 来源链已纳入结构检查。
 
 > ## 📋 六步证型树修改目标与验收口径（2026-08-09 第二十二轮 · 方案确认中，未改业务代码）
@@ -88,11 +107,11 @@
 > 验证：`npm run check` 全绿（含类型、架构、构建、全量 Node 测试与浏览器 E2E），`python3 scripts/structure-lint.py .`、`git diff --check` 通过。当前改动未提交、未部署；工作区原有第十七/十八轮调研文档改动均原样保留。
 
 > ## ⏸️ 灵活问诊 Agent 改造暂停（2026-08-09 第十八轮 · 等待客户反馈）
-> 作者决定暂停受约束对话 Agent 改造，待客户对交互形态、原始材料冲突及规则口径反馈后再决定是否实施。`docs/research/013_constrained-conversational-agent-research.md` 仅保留为调研依据，不视为批准计划；当前不修改业务代码、不部署，也不继续拆分实施任务。
+> 作者决定暂停受约束对话 Agent 改造，待客户对交互形态、原始材料冲突及规则口径反馈后再决定是否实施。`docs/research/001_constrained-conversational-agent-research.md` 仅保留为调研依据，不视为批准计划；当前不修改业务代码、不部署，也不继续拆分实施任务。
 
 > ## 🔬 受约束的灵活问诊 Agent 调研（2026-08-09 第十七轮 · 仅调研，未改业务代码）
 > 对照客户原始《前置规则》《页面展示》、仓内患者 CLI 设计与现有实现，并调研 Rasa Flows/Slots/Conversation Repair、Dialogflow CX form filling、LangGraph.js interrupt/checkpoint、XState guard、HL7 FHIR Questionnaire/SDC 与 NIST AI RMF。结论：目标形态应为“受约束的混合主动式对话 Agent”——模型只把自然语言翻译为受控候选命令，患者确认事实后才进入确定性临床内核；按钮与文本共享同一语义入口，澄清/纠正/unknown/插话后继续/无法处理是显式对话状态。
-> 仓库原设计方向正确但实现未闭环：candidate 已存库却无 adopt/modify/ignore 应用入口，Web 不接 proposedCandidates；选项卡与消息分离，服务端存内部载荷；没有 conversation repair。建议不引入第二套 Agent 运行时，复用现有 TypeScript 临床内核、会话持久化、CAS 与决策凭证，按 P0 单一 turn 契约 → P1 候选确认和修复模式 → P2 题库/规则/模板版本化实施。详见 `docs/research/013_constrained-conversational-agent-research.md`。
+> 仓库原设计方向正确但实现未闭环：candidate 已存库却无 adopt/modify/ignore 应用入口，Web 不接 proposedCandidates；选项卡与消息分离，服务端存内部载荷；没有 conversation repair。建议不引入第二套 Agent 运行时，复用现有 TypeScript 临床内核、会话持久化、CAS 与决策凭证，按 P0 单一 turn 契约 → P1 候选确认和修复模式 → P2 题库/规则/模板版本化实施。详见 `docs/research/001_constrained-conversational-agent-research.md`。
 > 材料边界：raw 两份资料自身对期别判定存在 Q12–Q14 与 Q1–Q3 的字面冲突；技术只能忠实执行某个已确认版本，不能让互斥规则同时成立。raw 保留来源，客户确认后进入 truth/决策记录并编译为带 sourceRefs、版本和哈希的规则。本轮未修改代码、医学规则或部署。
 
 > ## 🔍 “不清楚”重复补问根因确认（2026-08-09 第十六轮 · 仅诊断，未改业务代码）
@@ -121,12 +140,12 @@
 > 计划经两轮 5 视角对抗评审 + codex 独立评审（共发现 P0 约 20 项、P1 约 30 项，重点：stage CHECK 迁移缺失、"不灸"子串误判、T5 与决定①相悖、planBundle 泄露、按钮载荷 message="" 死循环、seed 线上执行机制、32 组合互斥失实等），v4 全部闭环。**作者拍板 8 项**（AskUserQuestion 记录）：① 问卷多选题保真（原题原选项按钮，传选项值 q1=B 服务端映射，Q12-14 保留提问）；② 证型 v3 七规则（寒热错杂字面优先，供医学审核）；③ 删 APP-01 症状计数转介（确诊题承担门禁）；④ 儿童可用（删 SAF-07，按小儿方案）；⑤ 部署前清空线上旧会话；⑥ 有回退线（16:00 裁减，最坏保留现状 cc79ac5）；⑦ 今天冻结（approved + clinical-rules-v1）；⑧ 配模型 key（演示走自由文本+AI 提取，按钮兜底）。
 > 计划定稿：`immutable-mixing-neumann.md` v4（含选项值映射表、findApprovedPlanBundle 双方案查询、31+1 组合穷举结论、DB 备份/清库事务、seed 禁占位文案、部署预检含数据库后端确认）。已知偏离清单 7 条（标供医学审核）。
 > **分角色决策记录**：`docs/product/2026-08-09-智能体设计-决策记录.md`——AI 决策（A1-A10，实现层技术判断）/ 作者决策（拍板 8 项）/ 客户决策（decision.md）三分，含状态与回看指引；待客户确认清单 5 条。
-> 验证：两轮评审与 codex 总判定一致——修正 P0 后今日交付可行；`docs/reviews/010` 为第一轮综合文档。
+> 验证：两轮评审与 codex 总判定一致——修正 P0 后今日交付可行；`docs/reviews/004` 为第一轮综合文档。
 > 待办：作者确认后开工（开发轮第一步：ssh 只读验证 go/no-go——连通/数据库后端/模型 key → 建议 worktree 开发（工作区有未提交改动）→ 迁移→规则→内核→测试→前端→seed→部署）。今日交付底线 5 条不变；本轮全部文件（board/决策记录/010/计划）仍未提交，是否随开发轮一起 commit 待作者决定。
 
 > ## 🔍 智能体设计计划与对抗评审（2026-08-09 第十三轮 · 未提交，基线 `9e83c4a`）
 > 智能体设计改造计划（对话式评估全链路真实化：规则包冻结落 8 项决定、期别判定实现、筛选题+人群题、前端真实化、Web 部署）初稿完成，作者要求先对抗性评审再动手：5 个子 agent 并行、各持单一视角（临床规则/架构安全/数据一致性/前端演示/交付运维）挑刺。
-> 评审结论：**计划方向正确但不可直接执行**——37 条 P0-P3（P0 十项：stage CHECK 约束迁移缺失、肺经伏热"不灸"子串误判 moxibustion、T5 `thirst=no` 与决定①相悖、判定回归、线上 seed 缺失、seed 无正文、选项渲染缺失、planBundle 患者侧泄露、模型不可用预案缺失、结果卡渲染空洞）。综合文档：`docs/reviews/010_agent-assessment-adversarial-review.md`（含每条依据文件:行）。
+> 评审结论：**计划方向正确但不可直接执行**——37 条 P0-P3（P0 十项：stage CHECK 约束迁移缺失、肺经伏热"不灸"子串误判 moxibustion、T5 `thirst=no` 与决定①相悖、判定回归、线上 seed 缺失、seed 无正文、选项渲染缺失、planBundle 患者侧泄露、模型不可用预案缺失、结果卡渲染空洞）。综合文档：`docs/reviews/004_agent-assessment-adversarial-review.md`（含每条依据文件:行）。
 > 待作者拍板 3 问（修订计划前置）：① T5 寒热错杂判定（折中 vs 决定①字面，均标医学审核）；② Q1 期别映射（三值字段 vs 二元+映射规则）；③ 线上模型 key 现状（纯选项路径 vs 配 key 走自由文本）。
 > 验证：5 视角总体判定一致（不能按当前版本执行）；docs/reviews/README.md 索引已更新。
 > 待办：作者拍板 3 问 → 修订计划 → 实施 → 部署（今日交付底线 5 条不变，见下轮）。
@@ -150,7 +169,7 @@
 > ## 🔧 手册治理修正与 work/ 归档（2026-08-08 第九轮 · 未提交，基线 `4ac5d69`）
 > 审查 CLAUDE.md 手册发现矛盾与遗漏：钩子保护未入库、`ALLOW_MAIN_PUSH=1` 紧急通道未写入手册、AGENTS/CLAUDE 双份无同步规则、目录速查漏 product/changes、缺 `npm run check`、"_archive/ 全忽略"表述不准。作者拍板三项：`.githooks/` 入库、保留紧急通道但限作者显式授权、双份文件强制同步。
 > `work/` 分流归档（作者确认）：`delivery-status.md` → `_work/20260805-cli-delivery-status/`、六轮 DB 评审 → `_work/20260731-db-design-review/`、6 张演示截图 → `_archive/20260804-demo-screenshots/`，根目录 `work/` 已删除（该目录在 .gitignore 中，删除不可从 Git 找回）。
-> 落地：手册补 hooksPath 配置、ALLOW_MAIN_PUSH 授权边界、双文件同步纪律、速查补全与 `npm run check`，AGENTS/CLAUDE 同步修改（除首行标题外一致）；协议升 v1.3；`docs/reviews/007` 引用路径更新；`scripts/structure-lint.py` 新增 AGENTS/CLAUDE 一致性校验与 CLAUDE.md 必需文件检查。
+> 落地：手册补 hooksPath 配置、ALLOW_MAIN_PUSH 授权边界、双文件同步纪律、速查补全与 `npm run check`，AGENTS/CLAUDE 同步修改（除首行标题外一致）；协议升 v1.3；`docs/reviews/001` 引用路径更新；`scripts/structure-lint.py` 新增 AGENTS/CLAUDE 一致性校验与 CLAUDE.md 必需文件检查。
 > 验证：`python3 scripts/structure-lint.py .`、`git diff --check`、一致性校验正负向单测均通过。
 > 提交：作者授权分三个 commit——`cbf2ad5`（钩子入库+手册同步）、`1da90ed`（work/ 归档+协议 v1.3）、`1a492ec`（lint 扩展+007 引用）；本文件与 `state/` 其余文件仍未入库，是否随 Git 同步待作者决定。
 

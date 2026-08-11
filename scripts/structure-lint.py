@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""检查 kangmin 目录协议中可机械验证的结构、链接和来源链。"""
+"""检查 kangmin 目录协议中可机械验证的结构和链接。"""
 
 from __future__ import annotations
 
@@ -22,7 +22,6 @@ REQUIRED_DIRECTORIES = (
     "legacy",
     "state/memory",
     "meta",
-    "vault/raw",
     "vault/truth",
     "vault/style",
     "docs/plan",
@@ -46,13 +45,15 @@ NAVIGATION_FILES = (
     "meta/kangmin_directory-protocol.md",
     "state/memory/MEMORY.md",
     "skills/README.md",
+    "vault/README.md",
+    "vault/truth/README.md",
 )
 
 DATED_DIRECTORY = re.compile(r"^\d{8}-[a-z0-9][a-z0-9-]*$")
 BUILD_DIRECTORY = re.compile(r"^\d{8}-\d{6}$")
 MEMORY_FILE = re.compile(r"^\d{8}-[a-z0-9][a-z0-9-]*\.md$")
+NUMBERED_DOCUMENT = re.compile(r"^(\d{3})_[a-z0-9][a-z0-9-]*\.md$")
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
-SOURCE_FILE = re.compile(r'^source_file: "([^"]+)"$', re.MULTILINE)
 
 
 def check_required(root: Path, errors: list[str]) -> None:
@@ -111,22 +112,36 @@ def check_navigation_links(root: Path, errors: list[str]) -> None:
                 errors.append(f"导航链接失效：{relative} -> {target}")
 
 
-def check_truth_sources(root: Path, errors: list[str]) -> None:
-    truth = root / "vault/truth"
-    if not truth.exists():
-        return
+def check_document_numbers(root: Path, errors: list[str]) -> None:
+    """plan/reviews/research/changes 各自在分类内从 001 连续编号。"""
+    for category in ("plan", "reviews", "research", "changes"):
+        category_root = root / "docs" / category
+        if not category_root.exists():
+            continue
+        documents: dict[int, list[Path]] = {}
+        for document in sorted(category_root.rglob("*.md")):
+            match = NUMBERED_DOCUMENT.fullmatch(document.name)
+            if match is None:
+                continue
+            number = int(match.group(1))
+            documents.setdefault(number, []).append(document.relative_to(root))
 
-    for document in sorted(truth.rglob("*.md")):
-        if document.name == "README.md":
+        for number, paths in sorted(documents.items()):
+            if len(paths) > 1:
+                joined = "、".join(str(path) for path in paths)
+                errors.append(
+                    f"docs/{category} 分类编号重复：{number:03d} -> {joined}"
+                )
+
+        if not documents:
             continue
-        match = SOURCE_FILE.search(document.read_text(encoding="utf-8"))
-        relative = document.relative_to(root)
-        if match is None:
-            errors.append(f"truth 文件缺少 source_file：{relative}")
-            continue
-        source = root / match.group(1)
-        if not source.is_file():
-            errors.append(f"truth 来源不存在：{relative} -> {match.group(1)}")
+        expected = set(range(1, max(documents) + 1))
+        missing = sorted(expected - set(documents))
+        if missing:
+            errors.append(
+                f"docs/{category} 分类编号不连续，缺少："
+                + "、".join(f"{number:03d}" for number in missing)
+            )
 
 
 def check_agents_claude_sync(root: Path, errors: list[str]) -> None:
@@ -141,6 +156,10 @@ def check_agents_claude_sync(root: Path, errors: list[str]) -> None:
 
 
 def check_removed_paths(root: Path, errors: list[str]) -> None:
+    for relative in ("vault/business",):
+        if (root / relative).exists():
+            errors.append(f"已废弃目录仍存在：{relative}/")
+
     checks = {
         "docs/README.md": ("docs/meetings", "客户资料/", "计划和进行中事项不写入 board"),
         "meta/kangmin_directory-protocol.md": ("docs/客户资料", "scripts/structure‑lint.py"),
@@ -165,8 +184,8 @@ def main() -> int:
     check_dated_directory(root, "_archive", DATED_DIRECTORY, errors)
     check_dated_directory(root, "_build", BUILD_DIRECTORY, errors)
     check_memory(root, errors)
+    check_document_numbers(root, errors)
     check_navigation_links(root, errors)
-    check_truth_sources(root, errors)
     check_agents_claude_sync(root, errors)
     check_removed_paths(root, errors)
 

@@ -1,4 +1,4 @@
-# 受约束的灵活问诊 Agent 调研
+# 001 受约束的灵活问诊 Agent 调研
 
 - 状态：调研结论，供后续方案设计；未实施
 - 日期：2026-08-09
@@ -151,7 +151,7 @@ interface UserTurn {
 
 ## 五、现状差距
 
-仓库原设计 `docs/plan/004_kangmin-patient-cli-design.md` 已明确“模型提取待确认候选，患者可确认、修改、忽略或回答不知道”，方向正确；当前主要是实现未闭环：
+仓库原设计 `docs/plan/001_kangmin-patient-cli-design.md` 已明确“模型提取待确认候选，患者可确认、修改、忽略或回答不知道”，方向正确；当前主要是实现未闭环：
 
 1. `ConversationService` 已保存 proposed candidates，但没有采用/忽略/修改的应用服务入口；
 2. Web 的 `AgentTurnResult` 不接 `proposedCandidates`，没有候选确认 UI；

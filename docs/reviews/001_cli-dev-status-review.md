@@ -1,4 +1,4 @@
-# CLI 开发完善状态调研报告（2026-08-02）
+# 001 CLI 开发完善状态调研报告（2026-08-02）
 
 > 调研方式：5 个分身并行独立核验（设计文档 vs 实现、基础设施、构建测试实跑、HTTP/Web 薄壳）。
 > 基线：HEAD = `e74e369 Productionize patient CLI infrastructure (stage 0) (#137)`，`src/` 工作区干净。

@@ -377,7 +377,7 @@ kangmin-admin CLI ─────────┤                         ↓
   fail-closed；
 - `clinical-rules-draft-v0` 当前为 `candidate`，只能用于管理端模拟测试；正式
   患者分类输出必须返回临床冻结阻断；
-- 不把 `vault/raw/` 或 `vault/truth/` 的内容复制到 Web 公共资源、日志、Issue、PR
+- 不把 `vault/truth/` 的内容复制到 Web 公共资源、日志、Issue、PR
   或响应。
 
 ## 协议与退出码
@@ -471,8 +471,8 @@ Dockerfile 使用多阶段构建，运行阶段只保留 `dist/` 与生产依赖
 - [`scripts/architecture-check.mjs`](scripts/architecture-check.mjs)：依赖方向门禁
 - [`tests/`](tests/)：当前行为证据
 - [仓库 CI](../.github/workflows/ci.yml)
-- [患者 CLI 架构](../docs/plan/004_kangmin-patient-cli-design.md)
-- [管理 CLI 架构](../docs/plan/005_kangmin-admin-cli-design.md)
+- [患者 CLI 架构](../docs/plan/001_kangmin-patient-cli-design.md)
+- [管理 CLI 架构](../docs/plan/002_kangmin-admin-cli-design.md)
 
 `dist/`、`.local/`、`node_modules/` 和 `sbom.cyclonedx.json` 是生成或本地内容，
 不得编辑或提交。
