@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import { DomainError } from "../../kernel/errors.js";
 import { generateToken, hashToken } from "../../kernel/session-tokens.js";
@@ -40,7 +40,11 @@ export class SessionService implements PatientIdentityPort {
     return {
       patientId: session.patientId,
       assurance:
-        session.clientKind === "development" ? "development" : "local_account"
+        session.clientKind === "development"
+          ? "development"
+          : session.clientKind === "mini_program"
+            ? "wechat"
+            : "local_account"
     };
   }
 
@@ -141,6 +145,34 @@ export class SessionService implements PatientIdentityPort {
       clientKind: "cli"
     });
     return { token, expiresAt };
+  }
+
+  /** 微信 code2Session 成功后，用 AppID + OpenID 摘要稳定绑定患者。 */
+  async createMiniProgramSession(
+    appId: string,
+    openId: string,
+    options: { ttlSeconds?: number } = {}
+  ): Promise<{ patientId: string; token: string; expiresAt: string }> {
+    if (appId.trim() === "" || openId.trim() === "") {
+      throw new DomainError("authentication_required", "微信登录凭据无效");
+    }
+    const ttlSeconds = options.ttlSeconds ?? ACCOUNT_SESSION_TTL_SECONDS;
+    if (!Number.isInteger(ttlSeconds) || ttlSeconds < ACCOUNT_SESSION_MIN_SECONDS || ttlSeconds > ACCOUNT_SESSION_MAX_SECONDS) {
+      throw new DomainError("validation_failed", "小程序会话有效期必须在 60 秒到 30 天之间");
+    }
+    const timestamp = new Date();
+    const expiresAt = new Date(timestamp.getTime() + ttlSeconds * 1000).toISOString();
+    const token = generateToken();
+    const patientId = await this.repository.saveMiniProgramSession({
+      // OpenID 具有足够随机性；加入 AppID 命名空间后做不可逆摘要，数据库
+      // 不保存微信原始标识，日志和响应也不返回该值。
+      subjectHash: createHash("sha256").update(`${appId}\0${openId}`, "utf8").digest("hex"),
+      newPatientId: randomUUID(),
+      tokenHash: hashToken(token),
+      expiresAt,
+      createdAt: timestamp.toISOString()
+    });
+    return { patientId, token, expiresAt };
   }
 
   /** 撤销当前会话（标记 revoked，不删除会话行以保留审计线索）。 */

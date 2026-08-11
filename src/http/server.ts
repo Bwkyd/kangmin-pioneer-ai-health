@@ -9,6 +9,7 @@ import {
 } from "../app/application.js";
 import {
   createApplicationWithOps,
+  createWechatLogin,
   createStructuredRequestLogger,
   logLevelForStatus,
   type ReadinessProbe,
@@ -31,6 +32,7 @@ import {
   type CommandServiceMeta
 } from "../kernel/protocol.js";
 import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
+import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
 
 /**
  * 请求体大小上限默认值：保持既有 64 KiB 契约（http.e2e 既有断言）。
@@ -74,6 +76,8 @@ export interface HttpServerOptions {
   webRoot?: URL;
   adminApplication?: KangminAdminApplication | undefined;
   adminObjectStorage?: ObjectStoragePort | undefined;
+  /** 微信小程序 code2Session；未注入时登录路由返回 capability_unavailable。 */
+  wechatLogin?: WechatLoginPort | undefined;
   serviceVersion?: string | undefined;
   /** /ready 探针（组合根注入；缺省为空集，语义上不就绪项为零）。 */
   readinessProbes?: ReadinessProbe[];
@@ -776,6 +780,38 @@ export function createKangminHttpServer(
 
     if (
       request.method === "POST" &&
+      requestUrl.pathname === "/v1/auth/wechat"
+    ) {
+      const decision = rateLimiter.check(clientIp(request), "strict");
+      if (!decision.allowed) {
+        response.setHeader("retry-after", String(decision.retryAfterSeconds));
+        json(response, 429, rateLimitedResult("wechat login", requestId, decision.retryAfterSeconds));
+        return;
+      }
+      try {
+        if (options.wechatLogin === undefined) {
+          throw new DomainError("capability_unavailable", "微信小程序登录尚未配置");
+        }
+        const body = await readJson(request, bodyLimitBytes);
+        if (!isRecord(body) || typeof body.code !== "string") {
+          throw new DomainError("validation_failed", "微信登录请求缺少 code");
+        }
+        const identity = await options.wechatLogin.exchangeCode(body.code);
+        const session = await application.sessions.createMiniProgramSession(identity.appId, identity.openId);
+        response.setHeader("set-cookie", `${SESSION_COOKIE}=${encodeURIComponent(session.token)}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${7 * 24 * 60 * 60}`);
+        json(response, 200, success("wechat login", {
+          token: session.token,
+          expiresAt: session.expiresAt
+        }, requestId));
+      } catch (error) {
+        const result = failure("wechat login", error, requestId);
+        json(response, httpStatusForCode(result.error.code), result);
+      }
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
       requestUrl.pathname === "/dev/session"
     ) {
       if (!developmentSessionEnabled) {
@@ -982,6 +1018,7 @@ async function main(): Promise<void> {
   let adminApplication;
   let adminObjectStorage: ObjectStoragePort | undefined;
   let readinessProbes: ReadinessProbe[] = [];
+  let wechatLogin: WechatLoginPort | undefined;
   try {
     // 组合根负责生产 fail-closed 校验与探针装配；server 不直接触碰仓储。
     const patientOps = createApplicationWithOps(databasePath);
@@ -1001,6 +1038,14 @@ async function main(): Promise<void> {
       patientOps.readinessProbes.environmentProvider,
       patientOps.readinessProbes.rulePackage
     ];
+    const wechatEnabled = process.env.KANGMIN_WECHAT_ENABLED === "1";
+    const wechatAppId = process.env.KANGMIN_WECHAT_APP_ID;
+    const wechatAppSecret = process.env.KANGMIN_WECHAT_APP_SECRET;
+    if (wechatEnabled && wechatAppId !== undefined && wechatAppSecret !== undefined) {
+      wechatLogin = createWechatLogin(wechatAppId, wechatAppSecret);
+    } else if (wechatEnabled) {
+      throw new DomainError("config_missing", "微信登录已启用，但缺少小程序 AppID 或 AppSecret");
+    }
   } catch (error) {
     application?.close();
     // 启动前置条件缺失（如生产缺加密密钥的 config_missing）走友好
@@ -1018,6 +1063,7 @@ async function main(): Promise<void> {
       process.env.KANGMIN_ALLOW_DEV_SESSION === "1",
     adminApplication,
     adminObjectStorage,
+    wechatLogin,
     readinessProbes,
     // 生产默认 1 MiB（KANGMIN_HTTP_BODY_LIMIT 可覆盖）；直接创建
     // server 的调用方保持 64 KiB 既有默认契约。

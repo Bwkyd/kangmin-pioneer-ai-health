@@ -60,6 +60,7 @@ function toMediaRow(row: MediaRowShape): KnowledgeSourceMediaRow {
 interface KnowledgeRowShape {
   id: string;
   name: string;
+  category: string | null;
   source: string | null;
   description: string | null;
   source_media_id: string | null;
@@ -124,6 +125,7 @@ function toKnowledge(row: KnowledgeRowShape): KnowledgeRow {
   return {
     id: row.id,
     name: row.name,
+    category: row.category,
     source: row.source,
     description: row.description,
     sourceMediaId: row.source_media_id,
@@ -320,7 +322,7 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
 
   async listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]> {
     const { rows } = await this.database.query<KnowledgeRowShape>(
-      `SELECT id, name, source, description, source_media_id, size_bytes,
+      `SELECT id, name, category, source, description, source_media_id, size_bytes,
              mime_type, sha256, status, parse_error, chunk_count,
              created_by, created_at, updated_at
       FROM agent_knowledge_items
@@ -336,10 +338,24 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     return row === undefined ? null : toKnowledge(row);
   }
 
+  async updateKnowledgeMetadata(id: string, input: { name: string; category: string | null; source: string | null; description: string | null; updatedAt: string }): Promise<"updated" | "not_found"> {
+    const { rowCount } = await this.database.query(`
+      UPDATE agent_knowledge_items
+      SET name = $1, category = $2, source = $3, description = $4, updated_at = $5
+      WHERE id = $6
+    `, [input.name, input.category, input.source, input.description, input.updatedAt, id]);
+    return rowCount === 1 ? "updated" : "not_found";
+  }
+
+  async deleteKnowledge(id: string): Promise<"deleted" | "not_found"> {
+    const { rowCount } = await this.database.query("DELETE FROM agent_knowledge_items WHERE id = $1", [id]);
+    return rowCount === 1 ? "deleted" : "not_found";
+  }
+
   /** 事务外知识读取（与 findKnowledge 同 SQL）。 */
   private async findKnowledgeById(id: string): Promise<KnowledgeRowShape | undefined> {
     const { rows } = await this.database.query<KnowledgeRowShape>(
-      `SELECT id, name, source, description, source_media_id, size_bytes,
+      `SELECT id, name, category, source, description, source_media_id, size_bytes,
              mime_type, sha256, status, parse_error, chunk_count,
              created_by, created_at, updated_at
       FROM agent_knowledge_items WHERE id = $1`,
@@ -355,7 +371,7 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   ): Promise<KnowledgeRowShape | undefined> {
     const { rows } = await this.database.queryIn<KnowledgeRowShape>(
       client,
-      `SELECT id, name, source, description, source_media_id, size_bytes,
+      `SELECT id, name, category, source, description, source_media_id, size_bytes,
              mime_type, sha256, status, parse_error, chunk_count,
              created_by, created_at, updated_at
       FROM agent_knowledge_items WHERE id = $1`,

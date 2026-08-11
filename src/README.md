@@ -298,8 +298,14 @@ kangmin-admin CLI ─────────┤                         ↓
 | `KANGMIN_S3_REGION` | S3 region，默认 `us-east-1` |
 | `KANGMIN_S3_ACCESS_KEY_ID` | S3 访问密钥 ID |
 | `KANGMIN_S3_SECRET_ACCESS_KEY` | S3 私密访问密钥 |
+| `KANGMIN_S3_FORCE_PATH_STYLE` | 自定义端点寻址方式；腾讯云 COS 设 `0`，MinIO 通常设 `1` |
+| `KANGMIN_S3_SIGN_CHECKSUM` | 是否签入 AWS SHA-256 头；COS 可设 `0`，确认阶段仍下载重算 |
 | `KANGMIN_MEDIA_MAX_BYTES` | 素材大小上限，默认 200 MiB |
 | `KANGMIN_KNOWLEDGE_MAX_BYTES` | 知识文件大小上限，默认 50 MiB |
+| `KANGMIN_WECHAT_ENABLED` | `1` 启用微信登录；Web 确认阶段保持 `0` |
+| `KANGMIN_WECHAT_APP_ID` | 微信小程序 AppID；启用微信登录时必须与 AppSecret 同时配置 |
+| `KANGMIN_WECHAT_APP_SECRET` | 微信小程序 AppSecret，仅服务器密钥注入，禁止写入仓库或前端 |
+| `KANGMIN_ENVIRONMENT_ENABLED` | `0` 表示按交付范围关闭环境数据；其他值要求 production 注入真实 Provider |
 
 加密解析顺序：
 

@@ -7,6 +7,7 @@ import type {
 export interface KnowledgeItem {
   id: string;
   name: string;
+  category?: string | null;
   source: string | null;
   description: string | null;
   sourceMediaId: string | null;

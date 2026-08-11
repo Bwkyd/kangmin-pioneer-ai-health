@@ -6,15 +6,17 @@
  * “暂未开放”；任何读取失败只提示重试，不用假数据填充。
  */
 
-import { useEffect, useRef, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 
 import {
+  askKnowledge,
   listCarePlans,
   listPublicContent,
   showCarePlan,
   showPublicContent,
   type CarePlanDetail,
   type CarePlanSummary,
+  type KnowledgeAnswer,
   type PublicContent
 } from "./discover";
 import {
@@ -23,7 +25,7 @@ import {
   type LearningAudience
 } from "./learning-catalog";
 
-type DiscoverTab = "article" | "video" | "plan";
+type DiscoverTab = "article" | "video" | "plan" | "qa";
 
 export default function DiscoverView() {
   const [tab, setTab] = useState<DiscoverTab>("video");
@@ -34,6 +36,9 @@ export default function DiscoverView() {
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [notice, setNotice] = useState("");
+  const [qaQuestion, setQaQuestion] = useState("");
+  const [qaAnswer, setQaAnswer] = useState<KnowledgeAnswer | null>(null);
+  const [qaBusy, setQaBusy] = useState(false);
   const [selectedContent, setSelectedContent] = useState<PublicContent | null>(null);
   const [selectedPlan, setSelectedPlan] = useState<CarePlanDetail | null>(null);
   const contentRequest = useRef(0);
@@ -51,6 +56,10 @@ export default function DiscoverView() {
     setStatus("loading");
     const load = async () => {
       try {
+        if (tab === "qa") {
+          setStatus("ready");
+          return;
+        }
         if (tab === "plan") {
           const planItems = await listCarePlans();
           if (contentRequest.current !== requestVersion) return;
@@ -69,6 +78,13 @@ export default function DiscoverView() {
     };
     void load();
   }, [tab]);
+
+  async function submitKnowledge(event: FormEvent) {
+    event.preventDefault(); setQaBusy(true); setNotice(""); setQaAnswer(null);
+    try { setQaAnswer(await askKnowledge(qaQuestion)); }
+    catch (error) { setNotice(error instanceof Error ? error.message : "知识问答暂时不可用"); }
+    finally { setQaBusy(false); }
+  }
 
   async function openContent(item: PublicContent) {
     const requestVersion = detailRequest.current + 1;
@@ -120,6 +136,7 @@ export default function DiscoverView() {
         <button type="button" className={tab === "video" ? "active" : ""} onClick={() => setTab("video")}>操作视频</button>
         <button type="button" className={tab === "article" ? "active" : ""} onClick={() => setTab("article")}>科普文章</button>
         <button type="button" className={tab === "plan" ? "active" : ""} onClick={() => setTab("plan")}>调理方案</button>
+        <button type="button" className={tab === "qa" ? "active" : ""} onClick={() => setTab("qa")}>知识问答</button>
       </nav>
 
       {tab === "video" && (
@@ -229,6 +246,14 @@ export default function DiscoverView() {
       {status === "ready" && tab === "article" && visibleItems.length === 0 && (
         <section className="discover-empty" data-testid="discover-empty">
           <h2>暂无已发布内容，发布后将出现在这里</h2>
+        </section>
+      )}
+
+      {status === "ready" && tab === "qa" && (
+        <section className="knowledge-qa">
+          <h2>问已审核知识库</h2><p>回答只检索后台已启用资料，并展示来源；资料不足时不会自行补全。</p>
+          <form onSubmit={(event) => void submitKnowledge(event)}><textarea required minLength={2} maxLength={500} rows={3} value={qaQuestion} onChange={(event) => setQaQuestion(event.target.value)} placeholder="例如：换季鼻塞时日常护理要注意什么？"/><button disabled={qaBusy}>{qaBusy ? "正在检索…" : "提交问题"}</button></form>
+          {qaAnswer && <article><div>{qaAnswer.answer}</div>{qaAnswer.sources.length > 0 && <ul>{qaAnswer.sources.map((source) => <li key={source.knowledgeId}>来源：{source.name}{source.source ? `（${source.source}）` : ""}</li>)}</ul>}<footer>{qaAnswer.disclaimer}</footer></article>}
         </section>
       )}
 

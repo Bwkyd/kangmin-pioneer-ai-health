@@ -388,6 +388,39 @@ export class AgentAdminService {
     return item;
   }
 
+  async updateKnowledge(
+    adminId: string,
+    id: string,
+    changes: { name?: string | undefined; category?: string | undefined; source?: string | undefined; description?: string | undefined },
+    requestId?: string
+  ): Promise<KnowledgeItem> {
+    const current = await this.getKnowledge(id);
+    const name = changes.name === undefined ? current.name : changes.name.trim();
+    if (name === "") throw new DomainError("validation_failed", "知识名称不能为空");
+    const result = await this.repository.updateKnowledgeMetadata(id, {
+      name,
+      category: changes.category === undefined ? current.category ?? null : changes.category.trim() || null,
+      source: changes.source === undefined ? current.source : changes.source.trim() || null,
+      description: changes.description === undefined ? current.description : changes.description.trim() || null,
+      updatedAt: now()
+    });
+    if (result === "not_found") throw new DomainError("resource_not_found", "知识不存在");
+    const updated = await this.getKnowledge(id);
+    await this.audit.record({ actorKind: "admin", actorId: adminId, action: "agent.knowledge.update", entityType: "agent_knowledge_item", entityId: id, requestId, details: { name: updated.name, category: updated.category ?? null } });
+    return updated;
+  }
+
+  async deleteKnowledge(adminId: string, id: string, requestId?: string): Promise<{ id: string; deleted: true }> {
+    const current = await this.getKnowledge(id);
+    if (current.status === "enabled") {
+      throw new DomainError("validation_failed", "已启用知识需先停用再删除");
+    }
+    const result = await this.repository.deleteKnowledge(id);
+    if (result === "not_found") throw new DomainError("resource_not_found", "知识不存在");
+    await this.audit.record({ actorKind: "admin", actorId: adminId, action: "agent.knowledge.delete", entityType: "agent_knowledge_item", entityId: id, requestId, details: { name: current.name } });
+    return { id, deleted: true };
+  }
+
   async indexKnowledge(id: string): Promise<KnowledgeItem> {
     const item = await this.getKnowledge(id);
     if (item.status !== "processing") {

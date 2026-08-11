@@ -9,6 +9,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
+import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
@@ -121,6 +122,19 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
     );
     assert.equal(enabled.status, "enabled");
 
+    // 患者知识问答只检索 enabled 分块；模型未配置时确定性降级为带来源摘录。
+    const patient = createApplication(databasePath);
+    try {
+      dataOf(await patient.execute({ command: "account register", input: { username: "knowledge-patient", password: "knowledge-pass-123" } }));
+      const login = dataOf<{ token: string }>(await patient.execute({ command: "account login", input: { username: "knowledge-patient", password: "knowledge-pass-123" } }));
+      const answer = dataOf<{ answer: string; sources: Array<{ knowledgeId: string }>; generated: boolean }>(await patient.execute({ command: "agent knowledge ask", sessionToken: login.token, input: { question: "换季鼻塞护理要注意什么" } }));
+      assert.match(answer.answer, /鼻塞/u);
+      assert.equal(answer.sources[0]?.knowledgeId, added.id);
+      assert.equal(answer.generated, false);
+    } finally {
+      patient.close();
+    }
+
     const hits = dataOf<{ items: Array<{ knowledgeId: string; snippet: string }> }>(
       await app.execute({
         command: "agent knowledge search-test",
@@ -160,6 +174,34 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
     assert.equal(disableAudits.length, 1);
     assert.equal(disableAudits[0]?.actor_id, adminId);
     assert.equal(disableAudits[0]?.entity_id, added.id);
+  } finally {
+    app.close();
+  }
+});
+
+test("知识资料支持分类、更新和停用后删除", async () => {
+  const { app, mediaDirectory, token } = await fixture();
+  try {
+    const file = join(mediaDirectory, "知识维护.md");
+    writeFileSync(file, "# 鼻腔护理\n\n已审核的护理说明。");
+    const added = dataOf<KnowledgeItem>(await app.execute({ command: "agent knowledge add", adminToken: token, input: { file } }));
+    const updated = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge update",
+      adminToken: token,
+      input: { id: added.id, name: "鼻腔护理指南", category: "居家护理", source: "专业审核材料" }
+    }));
+    assert.equal(updated.name, "鼻腔护理指南");
+    assert.equal(updated.category, "居家护理");
+    assert.equal(updated.source, "专业审核材料");
+
+    const missingConfirm = await app.execute({ command: "agent knowledge delete", adminToken: token, input: { id: added.id } });
+    assert.equal(missingConfirm.ok, false);
+    if (!missingConfirm.ok) assert.equal(missingConfirm.error.code, "confirmation_required");
+    const deleted = dataOf<{ id: string; deleted: true }>(await app.execute({ command: "agent knowledge delete", adminToken: token, input: { id: added.id, yes: true } }));
+    assert.equal(deleted.deleted, true);
+    const shown = await app.execute({ command: "agent knowledge show", adminToken: token, input: { id: added.id } });
+    assert.equal(shown.ok, false);
+    if (!shown.ok) assert.equal(shown.error.code, "resource_not_found");
   } finally {
     app.close();
   }
