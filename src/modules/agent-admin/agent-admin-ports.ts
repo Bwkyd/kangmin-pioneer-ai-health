@@ -34,6 +34,7 @@ export interface KnowledgeSourceMediaRow {
 export interface KnowledgeRow {
   id: string;
   name: string;
+  category?: string | null;
   source: string | null;
   description: string | null;
   sourceMediaId: string | null;
@@ -161,6 +162,11 @@ export interface AgentAdminRepository {
   }): Promise<IdempotentCreateResult<KnowledgeRow>>;
   listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]>;
   findKnowledge(id: string): Promise<KnowledgeRow | null>;
+  updateKnowledgeMetadata(
+    id: string,
+    input: { name: string; category: string | null; source: string | null; description: string | null; updatedAt: string }
+  ): Promise<"updated" | "not_found">;
+  deleteKnowledge(id: string): Promise<"deleted" | "not_found">;
   /**
    * 素材读取（agent knowledge add-from-media）：校验媒体行存在且
    * status=ready，并解析对象键（storedPath）读取已上传字节。

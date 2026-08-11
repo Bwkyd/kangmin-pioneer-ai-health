@@ -6,6 +6,7 @@ import type {
 import type {
   CarePlanDetail,
   CarePlanSummary,
+  PatientMessage,
   PublicContent,
   PublicContentKind
 } from "../../modules/browse/contracts.js";
@@ -58,6 +59,26 @@ interface PlanRow {
   risks: string;
   contraindications: string;
   video_resource_id: string | null;
+}
+
+interface MessageRow {
+  id: string;
+  title: string;
+  body: string;
+  summary: string | null;
+  published_at: string;
+  read_at: string | null;
+}
+
+function toPatientMessage(row: MessageRow): PatientMessage {
+  return {
+    id: row.id,
+    title: row.title,
+    body: row.body,
+    summary: row.summary,
+    publishedAt: row.published_at,
+    readAt: row.read_at
+  };
 }
 
 function toPublicContent(row: ContentRow): PublicContent {
@@ -282,6 +303,75 @@ export class PgContentReadRepository implements ContentReadRepository {
       return [];
     }
     return this.guard(async () => this.queryPlans(likePatternOf(query), limit));
+  }
+
+  async listMessages(patientId: string): Promise<PatientMessage[]> {
+    return this.guard(async () => {
+      const { rows } = await this.database.query<MessageRow>(`
+        SELECT m.id, m.title, m.body, m.summary, m.published_at, r.read_at
+        FROM content_messages m
+        LEFT JOIN patient_message_reads r
+          ON r.message_id = m.id AND r.patient_id = $1
+        WHERE m.status = 'published' AND m.published_at IS NOT NULL
+        ORDER BY m.published_at DESC, m.id ASC
+      `, [patientId]);
+      return rows.map(toPatientMessage);
+    });
+  }
+
+  async findMessage(patientId: string, id: string): Promise<PatientMessage | null> {
+    return this.guard(async () => {
+      const { rows } = await this.database.query<MessageRow>(`
+        SELECT m.id, m.title, m.body, m.summary, m.published_at, r.read_at
+        FROM content_messages m
+        LEFT JOIN patient_message_reads r
+          ON r.message_id = m.id AND r.patient_id = $1
+        WHERE m.id = $2 AND m.status = 'published' AND m.published_at IS NOT NULL
+      `, [patientId, id]);
+      const row = rows[0];
+      return row === undefined ? null : toPatientMessage(row);
+    });
+  }
+
+  async markMessageRead(patientId: string, id: string): Promise<PatientMessage | null> {
+    return this.guard(async () => this.database.transaction(async (client) => {
+      const visible = await this.database.queryIn<{ id: string }>(client, `
+        SELECT id FROM content_messages
+        WHERE id = $1 AND status = 'published' AND published_at IS NOT NULL
+      `, [id]);
+      if (visible.rows[0] === undefined) {
+        return null;
+      }
+      const readAt = new Date().toISOString();
+      await this.database.queryIn(client, `
+        INSERT INTO patient_message_reads(message_id, patient_id, read_at)
+        VALUES ($1, $2, $3)
+        ON CONFLICT(message_id, patient_id) DO NOTHING
+      `, [id, patientId, readAt]);
+      const result = await this.database.queryIn<MessageRow>(client, `
+        SELECT m.id, m.title, m.body, m.summary, m.published_at, r.read_at
+        FROM content_messages m
+        JOIN patient_message_reads r
+          ON r.message_id = m.id AND r.patient_id = $1
+        WHERE m.id = $2
+      `, [patientId, id]);
+      return toPatientMessage(result.rows[0]!);
+    }));
+  }
+
+  async unreadMessageCount(patientId: string): Promise<number> {
+    return this.guard(async () => {
+      const { rows } = await this.database.query<{ count: string }>(`
+        SELECT COUNT(*)::text AS count
+        FROM content_messages m
+        WHERE m.status = 'published' AND m.published_at IS NOT NULL
+          AND NOT EXISTS (
+            SELECT 1 FROM patient_message_reads r
+            WHERE r.message_id = m.id AND r.patient_id = $1
+          )
+      `, [patientId]);
+      return Number(rows[0]?.count ?? "0");
+    });
   }
 
   private async queryPlans(

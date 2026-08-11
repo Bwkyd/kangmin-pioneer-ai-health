@@ -1,6 +1,7 @@
 import type {
   CarePlanDetail,
   CarePlanSummary,
+  PatientMessage,
   PublicContent,
   PublicContentKind
 } from "./contracts.js";
@@ -33,6 +34,12 @@ export interface ContentReadRepository {
   listPlans(): Promise<CarePlanSummary[]>;
   findPlan(id: string): Promise<CarePlanDetail | null>;
   searchPlans(query: string, limit: number): Promise<CarePlanSummary[]>;
+
+  /** 登录患者的站内消息；未发布消息不可见，已读状态按患者隔离。 */
+  listMessages(patientId: string): Promise<PatientMessage[]>;
+  findMessage(patientId: string, id: string): Promise<PatientMessage | null>;
+  markMessageRead(patientId: string, id: string): Promise<PatientMessage | null>;
+  unreadMessageCount(patientId: string): Promise<number>;
 
   /** 公开媒体只读：无已发布引用或素材不存在时返回 null（不泄露存在性）。 */
   findPublishedMedia(mediaId: string): Promise<PublishedMediaRef | null>;

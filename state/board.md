@@ -3,6 +3,12 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 报价缺口与正式生产改造完成本地实现（2026-08-10 第二十九轮 · 基线 `main@9b1b7b3`，未提交未部署）
+> 作者确认的范围已落实：站内推送为应用内全员广播；调理方案后台编辑因报价单未包含而排除；正式存储采用腾讯云托管 PostgreSQL + COS。当前先以 Web 完成功能确认，原生小程序与体验码更新放到最后阶段；微信登录能力保留但以 `KANGMIN_WECHAT_ENABLED=0` 显式关闭，不阻断 Web 部署。管理 Web 已支持消息草稿/编辑/发布/下架，患者“我的→消息中心”支持列表、详情和按患者隔离的已读状态；SQLite `0016` 与 PG `0005` 同步增加回执表。
+> 知识库已补齐分类、元数据更新、停用后删除及审计；患者“学一学→知识问答”只检索 enabled 分块，DeepSeek 可用时按已审核片段受约束生成并列来源，不可用时确定性降级为来源摘录，资料不足不自行补全。微信登录新增 `/v1/auth/wechat` code2Session、严格限流、7 天会话与 AppID+OpenID 不可逆摘要绑定；原始 OpenID、session_key、AppSecret 均不落库、不进日志。
+> 生产侧已加入腾讯云配置模板 `src/.env.example`、只读容器 Compose、PostgreSQL/COS S3 兼容配置、COS virtual-host 寻址与先 HeadBucket 再签名；报价未含环境数据时以 `KANGMIN_ENVIRONMENT_ENABLED=0` 明确关闭而不伪装供应商。切换与待确认项详见 `docs/plan/015_tencent-cloud-production-cutover.md`。
+> 验证：`cd src && npm run check` 全绿（336 tests：260 pass、76 项因未配置 PG/S3 跳过、0 fail，浏览器 E2E PASS）；`python3 scripts/structure-lint.py .`、`git diff --check` 通过。独立工作树 `/Users/chenqiqiang/work/kangmin-worktrees/production-readiness-admin` 与分支 `agent/production-readiness-admin` 未触碰主工作区作者改动。当前未 commit、PR 或部署；本轮按作者确认先部署现有 Web 试用环境，正式 PostgreSQL/COS 云联调仍需实例与凭据，原生小程序不属于当前发布门禁。
+
 > ## ✅ 评估规则交付状态与文档自检完成（2026-08-09 第二十八轮 · 基线 `main@265d00c`）
 > 已按“状态、计划、真相资料、索引、实现证据、Git 收尾”复核：PR #188 的业务修复已合并为 `c621704`，PR #189 的交付状态记录已合并为 `265d00c`，两项 CI 均为 success；本地与远端任务分支已清理，工作区仅保留与 `origin/main` 同步的 `main`。线上继续运行已完成 E2E 的 `e87151d`，其业务代码树与 `c621704` 一致，纯文档收尾无需重复部署；作者已向客户反馈。
 > 文档落实：014 计划及索引均标记“已合并交付，客户已收到反馈”；页面、前置规则、六步树三份 truth 均存在且带 raw 来源，分别约束题面、通用/期别规则和有序证型跳转；方案 raw 继续只负责叶节点后的可选方法。代码侧共享题库、`clinical-rules-v3`、独立六步节点、旧会话 `abandoned` 和逐方法展示均有实现与测试引用。历史轮次中的“未合并/未部署”是当时事实快照，保留不改，不代表当前状态。当前无本任务未落实事项；儿童分流仍是已明确的资料限制，待客户另行补充题目与口径后再开新任务。

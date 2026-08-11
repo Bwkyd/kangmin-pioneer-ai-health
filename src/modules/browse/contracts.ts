@@ -70,6 +70,16 @@ export interface BrowseSearchResults {
   plans: CarePlanSummary[];
 }
 
+/** 患者站内消息：仅返回已发布消息，并按患者维度附带已读状态。 */
+export interface PatientMessage {
+  id: string;
+  title: string;
+  body: string;
+  summary: string | null;
+  publishedAt: string;
+  readAt: string | null;
+}
+
 /**
  * HTTP 媒体路由（GET /v1/media/:id）返回的已发布媒体字节：
  * 不套命令信封，直接发字节流；contentType 已过服务层白名单。

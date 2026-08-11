@@ -17,6 +17,7 @@ import type {
   NextQuestion,
   RulePackageStatus
 } from "../clinical-rules/contracts.js";
+export type { KnowledgeAnswerPort } from "./knowledge-qa.js";
 
 export interface ExtractionCandidate {
   fieldCode: string;

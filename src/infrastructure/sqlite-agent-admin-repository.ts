@@ -53,6 +53,7 @@ function toMediaRow(row: MediaRowShape): KnowledgeSourceMediaRow {
 interface KnowledgeRowShape {
   id: string;
   name: string;
+  category: string | null;
   source: string | null;
   description: string | null;
   source_media_id: string | null;
@@ -117,6 +118,7 @@ function toKnowledge(row: KnowledgeRowShape): KnowledgeRow {
   return {
     id: row.id,
     name: row.name,
+    category: row.category,
     source: row.source,
     description: row.description,
     sourceMediaId: row.source_media_id,
@@ -305,7 +307,7 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
 
   async listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]> {
     const rows = this.database.connection.prepare(`
-      SELECT id, name, source, description, source_media_id, size_bytes,
+      SELECT id, name, category, source, description, source_media_id, size_bytes,
              mime_type, sha256, status, parse_error, chunk_count,
              created_by, created_at, updated_at
       FROM agent_knowledge_items
@@ -318,6 +320,20 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   async findKnowledge(id: string): Promise<KnowledgeRow | null> {
     const row = this.findKnowledgeSync(id);
     return row === undefined ? null : toKnowledge(row);
+  }
+
+  async updateKnowledgeMetadata(id: string, input: { name: string; category: string | null; source: string | null; description: string | null; updatedAt: string }): Promise<"updated" | "not_found"> {
+    const result = this.database.connection.prepare(`
+      UPDATE agent_knowledge_items
+      SET name = ?, category = ?, source = ?, description = ?, updated_at = ?
+      WHERE id = ?
+    `).run(input.name, input.category, input.source, input.description, input.updatedAt, id);
+    return result.changes === 1 ? "updated" : "not_found";
+  }
+
+  async deleteKnowledge(id: string): Promise<"deleted" | "not_found"> {
+    const result = this.database.connection.prepare("DELETE FROM agent_knowledge_items WHERE id = ?").run(id);
+    return result.changes === 1 ? "deleted" : "not_found";
   }
 
   /** 素材读取（add-from-media）：与 content-aux findMedia 同 SQL。 */
@@ -390,7 +406,7 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   /** 事务内知识读取（与 findKnowledge 同 SQL）。 */
   private findKnowledgeSync(id: string): KnowledgeRowShape | undefined {
     return this.database.connection.prepare(`
-      SELECT id, name, source, description, source_media_id, size_bytes,
+      SELECT id, name, category, source, description, source_media_id, size_bytes,
              mime_type, sha256, status, parse_error, chunk_count,
              created_by, created_at, updated_at
       FROM agent_knowledge_items WHERE id = ?

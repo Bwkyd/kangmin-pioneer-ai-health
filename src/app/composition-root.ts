@@ -69,6 +69,9 @@ import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-en
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import { WechatCodeLogin } from "../infrastructure/wechat-code-login.js";
+import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
+import { PgKnowledgeRetrieval } from "../infrastructure/postgres/pg-knowledge-retrieval.js";
 import type {
   ObjectHead,
   ObjectStoragePort,
@@ -98,6 +101,13 @@ import type { PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
 import type { RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
+import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
+import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
+
+/** HTTP 入口使用的微信登录适配器工厂，保持基础设施依赖只出现在组合根。 */
+export function createWechatLogin(appId: string, appSecret: string): WechatLoginPort {
+  return new WechatCodeLogin({ appId, appSecret });
+}
 
 export type AppEnvironment = "local" | "integration" | "staging" | "production";
 
@@ -242,7 +252,15 @@ export function resolveObjectStorage(
       endpoint: process.env.KANGMIN_S3_ENDPOINT || undefined,
       region: process.env.KANGMIN_S3_REGION || "us-east-1",
       accessKeyId,
-      secretAccessKey
+      secretAccessKey,
+      forcePathStyle:
+        process.env.KANGMIN_S3_FORCE_PATH_STYLE === undefined
+          ? undefined
+          : process.env.KANGMIN_S3_FORCE_PATH_STYLE === "1",
+      signedChecksum:
+        process.env.KANGMIN_S3_SIGN_CHECKSUM === undefined
+          ? undefined
+          : process.env.KANGMIN_S3_SIGN_CHECKSUM === "1"
     });
   }
   return new LazyLocalObjectStorage(mediaDirectory);
@@ -270,9 +288,9 @@ function developmentFallbackAllowed(environment: NodeJS.ProcessEnv): boolean {
  * - 缺 KANGMIN_DATABASE_URL → config_missing（禁止回退 SQLite）；
  * - 缺 KANGMIN_S3_BUCKET → config_missing（禁止回退本地素材目录）；
  * - KANGMIN_ENV_PROVIDER_MODE 已设置（测试替身故障模式开关）→ config_missing；
- * - 环境 Provider 仍是 TestEnvironmentProvider（尚未接真实供应商）或
- *   UnavailableEnvironmentProvider（R1 门禁占位，同样非真实供应商）
- *   → config_missing；
+ * - 环境功能启用时 Provider 仍是测试替身或不可用占位 → config_missing；
+ * - 报价范围未包含环境数据时可显式 KANGMIN_ENVIRONMENT_ENABLED=0，
+ *   此时环境命令保持不可用，但不阻断其余生产能力；
  * - KANGMIN_ALLOW_DEV_SESSION=1 → config_missing（连开发会话开关都
  *   不允许出现，路由层拒绝之外再压一道）。
  * local/integration 直接返回，本地开发与集成测试零影响。
@@ -312,8 +330,9 @@ export function assertProductionStorage(
     );
   }
   if (
-    context.environmentProvider instanceof TestEnvironmentProvider ||
-    context.environmentProvider instanceof UnavailableEnvironmentProvider
+    environment.KANGMIN_ENVIRONMENT_ENABLED !== "0" &&
+    (context.environmentProvider instanceof TestEnvironmentProvider ||
+      context.environmentProvider instanceof UnavailableEnvironmentProvider)
   ) {
     throw new DomainError(
       "config_missing",
@@ -414,7 +433,8 @@ function encryptionReadinessProbe(
 
 /** 环境 Provider 探针：测试替身或 R1 门禁不可用占位都不算生产就绪。 */
 function environmentProviderReadinessProbe(
-  provider: EnvironmentProviderPort
+  provider: EnvironmentProviderPort,
+  enabled: boolean
 ): ReadinessProbe {
   const isPlaceholder =
     provider instanceof TestEnvironmentProvider ||
@@ -423,7 +443,9 @@ function environmentProviderReadinessProbe(
     name: "environment-provider",
     run: () =>
       Promise.resolve(
-        isPlaceholder
+        !enabled
+          ? { status: "ok", message: "环境数据功能已按交付范围显式关闭" }
+          : isPlaceholder
           ? {
               status: "not_configured",
               message: "环境数据接口未接真实供应商（测试替身或不可用占位）"
@@ -660,7 +682,10 @@ export function createApplicationWithOps(
   const objectStorage = resolveObjectStorage(options, mediaDirectory);
   const staticProbes = {
     encryption: encryptionReadinessProbe(environment),
-    environmentProvider: environmentProviderReadinessProbe(environmentProvider),
+    environmentProvider: environmentProviderReadinessProbe(
+      environmentProvider,
+      environment.KANGMIN_ENVIRONMENT_ENABLED !== "0"
+    ),
     rulePackage: rulePackageReadinessProbe()
   };
 
@@ -711,7 +736,8 @@ export function createApplicationWithOps(
           void database.close();
         },
         () => runPgPatientDoctor(database, environment),
-        objectStorage
+        objectStorage,
+        new KnowledgeQaService(new PgKnowledgeRetrieval(database), modelAdapter)
       ),
       readinessProbes
     };
@@ -764,7 +790,8 @@ export function createApplicationWithOps(
         database.close();
       },
       () => Promise.resolve(runPatientDoctor(databasePath, environment)),
-      objectStorage
+      objectStorage,
+      new KnowledgeQaService(new SqliteKnowledgeRetrieval(database), modelAdapter)
     ),
     readinessProbes
   };

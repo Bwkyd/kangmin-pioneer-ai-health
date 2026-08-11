@@ -82,3 +82,14 @@ export async function listCarePlans(): Promise<CarePlanSummary[]> {
 export async function showCarePlan(id: string): Promise<CarePlanDetail> {
   return command<CarePlanDetail>("browse plan show", { id });
 }
+
+export interface KnowledgeAnswer {
+  answer: string;
+  sources: Array<{ knowledgeId: string; name: string; source: string | null }>;
+  generated: boolean;
+  disclaimer: string;
+}
+
+export async function askKnowledge(question: string): Promise<KnowledgeAnswer> {
+  return command<KnowledgeAnswer>("agent knowledge ask", { question });
+}

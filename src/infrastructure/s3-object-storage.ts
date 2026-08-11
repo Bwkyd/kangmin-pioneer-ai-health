@@ -1,13 +1,14 @@
 /**
  * S3 兼容对象存储（staging/production）。
  * 语义与 ObjectStoragePort 对齐；预签名直传分"申请票据 → 直传 →
- * 校验和确认"三步，内容校验（SHA-256）绑定进签名头，客户端直传时
- * 必须携带。endpoint 存在时强制 path-style（MinIO 等自建端点兼容）。
+ * 校验和确认"三步；原生 S3 可把 SHA-256 绑定进签名头，兼容服务可在
+ * 确认阶段下载重算。endpoint 存在时默认 path-style，也允许显式关闭。
  */
 import { createHash } from "node:crypto";
 
 import {
   CreateBucketCommand,
+  HeadBucketCommand,
   GetObjectCommand,
   DeleteObjectCommand,
   HeadObjectCommand,
@@ -34,6 +35,9 @@ export interface S3ObjectStorageOptions {
   region: string;
   accessKeyId: string;
   secretAccessKey: string;
+  forcePathStyle?: boolean | undefined;
+  /** 部分 S3 兼容服务不接受 x-amz-checksum-sha256；关闭后确认阶段下载重算。 */
+  signedChecksum?: boolean | undefined;
 }
 
 /** hex SHA-256 转 base64（S3 ChecksumSHA256 要求的编码）。 */
@@ -48,18 +52,20 @@ function errorName(error: unknown): string | undefined {
 export class S3ObjectStorage implements ObjectStoragePort {
   private readonly client: S3Client;
   private readonly bucket: string;
+  private readonly signedChecksum: boolean;
   /** bucket 懒创建：首次写入确认存在，之后不再重复检查。 */
   private bucketEnsured = false;
 
   constructor(options: S3ObjectStorageOptions) {
     this.bucket = options.bucket;
+    this.signedChecksum = options.signedChecksum ?? true;
     this.client = new S3Client({
       region: options.region,
       ...(options.endpoint !== undefined
         ? { endpoint: options.endpoint }
         : {}),
       // 自建端点（MinIO 等）默认不支持 virtual-host 风格寻址。
-      forcePathStyle: options.endpoint !== undefined,
+      forcePathStyle: options.forcePathStyle ?? options.endpoint !== undefined,
       credentials: {
         accessKeyId: options.accessKeyId,
         secretAccessKey: options.secretAccessKey
@@ -112,14 +118,14 @@ export class S3ObjectStorage implements ObjectStoragePort {
     if (this.bucketEnsured) {
       return;
     }
-    await this.client
-      .send(new CreateBucketCommand({ Bucket: this.bucket }))
-      .catch((error: unknown) => {
-        // 与 withBucketRetry 同款：并发/既有桶仅 BucketAlreadyOwnedByYou 可忽略。
-        if (errorName(error) !== "BucketAlreadyOwnedByYou") {
-          throw error;
-        }
-      });
+    try {
+      await this.client.send(new HeadBucketCommand({ Bucket: this.bucket }));
+    } catch (error) {
+      if (errorName(error) !== "NoSuchBucket" && errorName(error) !== "NotFound") {
+        throw error;
+      }
+      await this.client.send(new CreateBucketCommand({ Bucket: this.bucket }));
+    }
     this.bucketEnsured = true;
   }
 
@@ -204,13 +210,13 @@ export class S3ObjectStorage implements ObjectStoragePort {
     sha256: string;
   }): Promise<ObjectUploadTicket> {
     const checksumBase64 = sha256HexToBase64(input.sha256);
-    // ChecksumSHA256 绑定进签名：客户端直传必须携带该校验头，
-    // 服务端据此拒绝内容与票据不符的上传。
+    // 原生 S3 默认把 ChecksumSHA256 绑定进签名；兼容端点可关闭该头，
+    // upload-confirm 仍会下载对象并重算 SHA-256，不降低最终完整性门禁。
     const command = new PutObjectCommand({
       Bucket: this.bucket,
       Key: input.key,
       ContentType: input.contentType,
-      ChecksumSHA256: checksumBase64
+      ...(this.signedChecksum ? { ChecksumSHA256: checksumBase64 } : {})
     });
     try {
       // getSignedUrl 是离线计算、不经 withBucketRetry：必须先确保
@@ -224,10 +230,9 @@ export class S3ObjectStorage implements ObjectStoragePort {
         objectKey: input.key,
         url,
         method: "PUT",
-        headers: {
-          "content-type": input.contentType,
-          "x-amz-checksum-sha256": checksumBase64
-        },
+        headers: this.signedChecksum
+          ? { "content-type": input.contentType, "x-amz-checksum-sha256": checksumBase64 }
+          : { "content-type": input.contentType },
         expiresAt: new Date(
           Date.now() + UPLOAD_TICKET_TTL_SECONDS * 1000
         ).toISOString()

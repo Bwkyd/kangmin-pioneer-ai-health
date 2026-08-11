@@ -24,6 +24,7 @@ import type {
   ModelExtractionInput,
   ModelExtractionPort
 } from "../modules/agent/model-ports.js";
+import type { KnowledgeAnswerPort, KnowledgeSource } from "../modules/agent/knowledge-qa.js";
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -57,12 +58,14 @@ outcome、severityCode、syndromeCode、matchedRuleIds、message。
 值必须与给定规则结果完全一致，不得新增穴位、疗程、力度、剂量、禁忌或疗效，
 不得输出其他键或自由文本。输出必须是 JSON 对象。`;
 
+const KNOWLEDGE_SYSTEM_PROMPT = `你是鼻健康知识问答助手。只能依据用户消息中提供的“已审核资料”回答，不能补充外部知识，不能诊断、开药或承诺疗效。资料不足时明确说资料不足。输出 JSON 对象且只能包含 answer 字段，answer 不超过 500 个中文字符。`;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export class DeepSeekModelAdapter
-  implements ModelExtractionPort, ModelExplanationPort
+  implements ModelExtractionPort, ModelExplanationPort, KnowledgeAnswerPort
 {
   private readonly apiKey: string | undefined;
   private readonly baseUrl: string;
@@ -150,6 +153,19 @@ export class DeepSeekModelAdapter
       return null;
     }
     return this.sanitizeExplanation(parsed);
+  }
+
+  async answer(question: string, sources: readonly KnowledgeSource[]): Promise<string | null> {
+    this.ensureConfigured();
+    const content = await this.chat(KNOWLEDGE_SYSTEM_PROMPT, JSON.stringify({
+      question,
+      approvedSources: sources.map((source, index) => ({ index: index + 1, name: source.name, text: source.text }))
+    }));
+    if (content === null) return null;
+    const parsed = this.parseJson(content);
+    if (!isRecord(parsed) || Object.keys(parsed).some((key) => key !== "answer") || typeof parsed.answer !== "string") return null;
+    const answer = parsed.answer.trim();
+    return answer !== "" && answer.length <= 500 ? answer : null;
   }
 
   /** 越权/多余键、类型不符一律拒绝（返回 null → 调用方回退固定模板）。 */

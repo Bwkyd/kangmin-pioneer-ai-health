@@ -6,6 +6,7 @@ import type {
   BrowseSearchResults,
   CarePlanDetail,
   CarePlanSummary,
+  PatientMessage,
   PublicContent,
   PublicContentKind,
   PublishedMedia
@@ -167,6 +168,30 @@ export class BrowseService {
       this.repository.searchPlans(query, 100)
     ]);
     return { articles, videos, plans };
+  }
+
+  async listMessages(patientId: string): Promise<{ items: PatientMessage[] }> {
+    return { items: await this.repository.listMessages(patientId) };
+  }
+
+  async showMessage(patientId: string, id: string): Promise<PatientMessage> {
+    const message = await this.repository.findMessage(patientId, id);
+    if (message === null) {
+      throw new DomainError("resource_not_found", "站内消息不存在或未发布");
+    }
+    return message;
+  }
+
+  async markMessageRead(patientId: string, id: string): Promise<PatientMessage> {
+    const message = await this.repository.markMessageRead(patientId, id);
+    if (message === null) {
+      throw new DomainError("resource_not_found", "站内消息不存在或未发布");
+    }
+    return message;
+  }
+
+  async unreadMessageCount(patientId: string): Promise<{ count: number }> {
+    return { count: await this.repository.unreadMessageCount(patientId) };
   }
 
   /**

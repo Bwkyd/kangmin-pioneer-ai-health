@@ -12,6 +12,7 @@ import test from "node:test";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
+import { SessionService } from "../modules/account/session-service.js";
 import type { CommandResult } from "../kernel/result.js";
 
 const PASSWORD = "s3cret-pass-1";
@@ -79,6 +80,26 @@ async function registerAndLogin(
 function errorMessageOf(result: CommandResult): string {
   return result.ok ? "ok" : `${result.error.code}: ${result.error.message}`;
 }
+
+test("微信小程序身份重复登录稳定绑定同一患者且不落原始 OpenID", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-wechat-session-"));
+  const database = new KangminDatabase(join(directory, "wechat.sqlite"));
+  try {
+    const sessions = new SessionService(new SqliteSessionRepository(database));
+    const first = await sessions.createMiniProgramSession("wx-test-app", "openid-sensitive-value");
+    const second = await sessions.createMiniProgramSession("wx-test-app", "openid-sensitive-value");
+    assert.equal(second.patientId, first.patientId);
+    assert.notEqual(second.token, first.token);
+    const identity = database.connection.prepare(`
+      SELECT subject_hash FROM patient_external_identities WHERE patient_id = ?
+    `).get(first.patientId) as unknown as { subject_hash: string };
+    assert.match(identity.subject_hash, /^[a-f0-9]{64}$/u);
+    assert.notEqual(identity.subject_hash, "openid-sensitive-value");
+    assert.equal((await sessions.resolvePatient(first.token)).assurance, "wechat");
+  } finally {
+    database.close();
+  }
+});
 
 test("注册→登录→status→logout 闭环，会话撤销后不可再用", async () => {
   const { application } = await fixture();
