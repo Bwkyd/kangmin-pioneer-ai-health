@@ -5,6 +5,8 @@
 > 写法：只写规则与做法，不写出处、原话、日期叙事。命名 `YYYYMMDD-slug.md`（最后更新日期制，更新即改名并同步本索引）。索引不超过 20 KB。
 
 - [git reset 前检查工作区](20260809-git-reset-check.md) — 破坏性 Git 操作前先查未提交改动并确认意图，防误覆盖
+- [清理前合并本地主状态](20260811-reconcile-local-board-before-cleanup.md) — 隔离 worktree 收尾前核对主工作区未提交 board，避免独有记录留在本地
+- [报价范围先于产品补全](20260811-scope-authority-before-planning.md) — 原件未核验不得把代码缺口或产品建议升级为报价范围、正式计划和开发授权
 - [决策前置化与确定性分流](20260809-decision-prioritization.md) — 可自决的自决，专业问题列选择题问作者，先做第一版看反馈再拍板
 - [双后端迁移同步纪律](20260809-dual-backend-migrations.md) — SQLite 与 PG 迁移必须同步写，CI 的 PG 契约测试会暴露缺失
 - [部署目标先核实](20260809-deploy-target-verify.md) — 服务器多服务并存先确认目标服务与代码栈，再构建打包
@@ -12,3 +14,4 @@
 - [患者可见状态保持单一来源](20260809-patient-visible-state.md) — 过滤、截断或映射后的有效问答状态必须由正文、结构化响应、持久化和恢复共同使用
 - [有序决策树必须保留节点身份](20260809-ordered-tree-node-identity.md) — 同题二次确认是独立节点，不能压成单字段并行规则而丢失路径与终止语义
 - [多来源资料必须按职责编译](20260809-source-role-contract.md) — 页面、规则与方案分别控制展示、跳转和叶后内容，不能互相越权补全
+- [资料移动必须锁定清单与动作语义](20260811-material-relocation-scope.md) — 移动不得扩大为删除、加工或归档其他文件，忽略区操作前后核对清单与哈希

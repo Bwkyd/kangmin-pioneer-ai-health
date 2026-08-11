@@ -1,6 +1,7 @@
 import type {
   SaveAccountSessionInput,
   SaveDevelopmentSessionInput,
+  SaveMiniProgramSessionInput,
   SessionClientKind,
   SessionRepository,
   SessionSnapshot
@@ -89,6 +90,40 @@ export class PgSessionRepository implements SessionRepository {
         input.clientKind
       ]
     );
+  }
+
+  async saveMiniProgramSession(input: SaveMiniProgramSessionInput): Promise<string> {
+    return this.database.transaction(async (client) => {
+      const existing = await this.database.queryIn<{ patient_id: string }>(client, `
+        SELECT patient_id FROM patient_external_identities
+        WHERE provider = 'wechat_mini_program' AND subject_hash = $1
+        FOR UPDATE
+      `, [input.subjectHash]);
+      let patientId = existing.rows[0]?.patient_id;
+      if (patientId === undefined) {
+        await this.database.queryIn(client, `
+          INSERT INTO patients(id, development_subject, created_at) VALUES ($1, NULL, $2)
+        `, [input.newPatientId, input.createdAt]);
+        await this.database.queryIn(client, `
+          INSERT INTO patient_external_identities(provider, subject_hash, patient_id, created_at)
+          VALUES ('wechat_mini_program', $1, $2, $3)
+          ON CONFLICT(provider, subject_hash) DO NOTHING
+        `, [input.subjectHash, input.newPatientId, input.createdAt]);
+        const authoritative = await this.database.queryIn<{ patient_id: string }>(client, `
+          SELECT patient_id FROM patient_external_identities
+          WHERE provider = 'wechat_mini_program' AND subject_hash = $1
+        `, [input.subjectHash]);
+        patientId = authoritative.rows[0]!.patient_id;
+        if (patientId !== input.newPatientId) {
+          await this.database.queryIn(client, "DELETE FROM patients WHERE id = $1", [input.newPatientId]);
+        }
+      }
+      await this.database.queryIn(client, `
+        INSERT INTO patient_sessions(token_hash, patient_id, expires_at, created_at, client_kind)
+        VALUES ($1, $2, $3, $4, 'mini_program')
+      `, [input.tokenHash, patientId, input.expiresAt, input.createdAt]);
+      return patientId;
+    });
   }
 
   async revokeSession(tokenHash: string): Promise<boolean> {

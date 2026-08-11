@@ -298,8 +298,14 @@ kangmin-admin CLI ─────────┤                         ↓
 | `KANGMIN_S3_REGION` | S3 region，默认 `us-east-1` |
 | `KANGMIN_S3_ACCESS_KEY_ID` | S3 访问密钥 ID |
 | `KANGMIN_S3_SECRET_ACCESS_KEY` | S3 私密访问密钥 |
+| `KANGMIN_S3_FORCE_PATH_STYLE` | 自定义端点寻址方式；腾讯云 COS 设 `0`，MinIO 通常设 `1` |
+| `KANGMIN_S3_SIGN_CHECKSUM` | 是否签入 AWS SHA-256 头；COS 可设 `0`，确认阶段仍下载重算 |
 | `KANGMIN_MEDIA_MAX_BYTES` | 素材大小上限，默认 200 MiB |
 | `KANGMIN_KNOWLEDGE_MAX_BYTES` | 知识文件大小上限，默认 50 MiB |
+| `KANGMIN_WECHAT_ENABLED` | `1` 启用微信登录；Web 确认阶段保持 `0` |
+| `KANGMIN_WECHAT_APP_ID` | 微信小程序 AppID；启用微信登录时必须与 AppSecret 同时配置 |
+| `KANGMIN_WECHAT_APP_SECRET` | 微信小程序 AppSecret，仅服务器密钥注入，禁止写入仓库或前端 |
+| `KANGMIN_ENVIRONMENT_ENABLED` | `0` 表示按交付范围关闭环境数据；其他值要求 production 注入真实 Provider |
 
 加密解析顺序：
 
@@ -371,7 +377,7 @@ kangmin-admin CLI ─────────┤                         ↓
   fail-closed；
 - `clinical-rules-draft-v0` 当前为 `candidate`，只能用于管理端模拟测试；正式
   患者分类输出必须返回临床冻结阻断；
-- 不把 `vault/raw/` 或 `vault/truth/` 的内容复制到 Web 公共资源、日志、Issue、PR
+- 不把 `vault/truth/` 的内容复制到 Web 公共资源、日志、Issue、PR
   或响应。
 
 ## 协议与退出码
@@ -465,8 +471,8 @@ Dockerfile 使用多阶段构建，运行阶段只保留 `dist/` 与生产依赖
 - [`scripts/architecture-check.mjs`](scripts/architecture-check.mjs)：依赖方向门禁
 - [`tests/`](tests/)：当前行为证据
 - [仓库 CI](../.github/workflows/ci.yml)
-- [患者 CLI 架构](../docs/plan/004_kangmin-patient-cli-design.md)
-- [管理 CLI 架构](../docs/plan/005_kangmin-admin-cli-design.md)
+- [患者 CLI 架构](../docs/plan/001_kangmin-patient-cli-design.md)
+- [管理 CLI 架构](../docs/plan/002_kangmin-admin-cli-design.md)
 
 `dist/`、`.local/`、`node_modules/` 和 `sbom.cyclonedx.json` 是生成或本地内容，
 不得编辑或提交。

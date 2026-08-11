@@ -34,6 +34,7 @@ import type { ObjectStoragePort } from "../modules/system/object-storage-ports.j
 import type { AgentRepository } from "../modules/agent/agent-repository.js";
 import { AgentService } from "../modules/agent/agent-service.js";
 import type { AgentQuestion, TriStateAnswer } from "../modules/agent/contracts.js";
+import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
 import { ConversationService } from "../modules/agent/conversation-service.js";
 import type { ConversationTurnResult, ConversationTestRunResult } from "../modules/agent/conversation-contracts.js";
 import type { ConfirmedFact } from "../modules/clinical-rules/contracts.js";
@@ -116,7 +117,8 @@ export class KangminApplication {
       checks: [],
       healthy: true
     }),
-    objectStorage?: ObjectStoragePort | undefined
+    objectStorage?: ObjectStoragePort | undefined,
+    private readonly knowledgeQa?: KnowledgeQaService | undefined
   ) {
     this.sessions = sessions;
     this.records = new RecordService(recordRepository, consentGate);
@@ -254,6 +256,48 @@ export class KangminApplication {
           return success(
             command,
             await this.browse.searchAll(searchQueryOf(input)),
+            request.requestId
+          );
+        case "browse message list": {
+          const patientId = (await this.sessions.resolvePatient(request.sessionToken)).patientId;
+          return success(
+            command,
+            await this.browse.listMessages(patientId),
+            request.requestId
+          );
+        }
+        case "browse message show": {
+          const patientId = (await this.sessions.resolvePatient(request.sessionToken)).patientId;
+          return success(
+            command,
+            await this.browse.showMessage(patientId, resourceIdOf(input)),
+            request.requestId
+          );
+        }
+        case "browse message read": {
+          const patientId = (await this.sessions.resolvePatient(request.sessionToken)).patientId;
+          return success(
+            command,
+            await this.browse.markMessageRead(patientId, resourceIdOf(input)),
+            request.requestId
+          );
+        }
+        case "browse message unread-count": {
+          const patientId = (await this.sessions.resolvePatient(request.sessionToken)).patientId;
+          return success(
+            command,
+            await this.browse.unreadMessageCount(patientId),
+            request.requestId
+          );
+        }
+        case "agent knowledge ask":
+          await this.sessions.resolvePatient(request.sessionToken);
+          if (this.knowledgeQa === undefined) {
+            throw new DomainError("capability_unavailable", "知识问答服务未配置");
+          }
+          return success(
+            command,
+            await this.knowledgeQa.ask(requiredString(input, "question")),
             request.requestId
           );
         case "browse environment current":

@@ -10,6 +10,7 @@
 export type PatientAssurance =
   | "verified_phone"
   | "local_account"
+  | "wechat"
   | "development";
 
 export interface PatientIdentity {

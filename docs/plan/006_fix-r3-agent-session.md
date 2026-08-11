@@ -1,8 +1,8 @@
-# 修复 Issue R3：Agent 会话域（生命周期 + 身份契约）
+# 006 修复 Issue R3：Agent 会话域（生命周期 + 身份契约）
 
 > ✅ 已落地：Issue #155 → PR #158，squash 合入 main `efff3c5`（2026-08-04）。下文为开工前方案，行号证据基于旧基线，仅作档案留存。
 
-> 来源：[`../reviews/008_cli-dev-status-adversarial-review.md`](../reviews/008_cli-dev-status-adversarial-review.md) P0-1、P0-4、P1-8
+> 来源：[`../reviews/002_cli-dev-status-adversarial-review.md`](../reviews/002_cli-dev-status-adversarial-review.md) P0-1、P0-4、P1-8
 > 同类病：会话的身份、保留、恢复、同意这条契约链各环节都有缺口。
 > 复杂度：高｜建议分支：`codex/issue-<n>-agent-session`（建议用 `scripts/worktree-create.sh`）
 

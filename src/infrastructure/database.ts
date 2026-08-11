@@ -1121,7 +1121,7 @@ const MIGRATIONS: Migration[] = [
     // 智能体设计改造：新流水线阶段 screening/phase（智能体设计 v4 二节）。
     // SQLite 无法 ALTER CHECK，按 0010 先例重建表：新 CHECK 加两个阶段，
     // 新增 phase_code/audience/rule_package_status 列（一律可空，回滚兼容；
-    // 旧代码只 SELECT 旧列不受影响，见 docs/reviews/010 二轮 P0-1）。
+    // 旧代码只 SELECT 旧列不受影响，见 docs/reviews/004 二轮 P0-1）。
     // 可行性已由有界实验验证（_work/20260809-bounded-slice/migration-rebuild.mjs）。
     version: "0011_agent_decisions_stages",
     apply: (connection) => {
@@ -1211,6 +1211,54 @@ const MIGRATIONS: Migration[] = [
       }
       if (!has("audience")) {
         connection.exec("ALTER TABLE agent_plans ADD COLUMN audience TEXT");
+      }
+    }
+  },
+  {
+    // 小程序站内消息已读回执：消息发布后面向全部登录患者可见，回执按
+    // patient_id 隔离；删除患者或消息时级联删除，不保留孤立状态。
+    version: "0016_patient_message_reads",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS patient_message_reads (
+          message_id TEXT NOT NULL REFERENCES content_messages(id) ON DELETE CASCADE,
+          patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+          read_at TEXT NOT NULL,
+          PRIMARY KEY(message_id, patient_id)
+        ) STRICT;
+
+        CREATE INDEX IF NOT EXISTS patient_message_reads_patient
+        ON patient_message_reads(patient_id, read_at DESC);
+      `);
+    }
+  },
+  {
+    // 微信小程序身份只保存 AppID+OpenID 的不可逆摘要；原始 OpenID、
+    // session_key 与 AppSecret 均不落库。
+    version: "0017_patient_external_identities",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS patient_external_identities (
+          provider TEXT NOT NULL CHECK(provider IN ('wechat_mini_program')),
+          subject_hash TEXT NOT NULL,
+          patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(provider, subject_hash),
+          UNIQUE(provider, patient_id)
+        ) STRICT;
+      `);
+    }
+  },
+  {
+    version: "0018_knowledge_category",
+    apply: (connection) => {
+      const hasTable = connection.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_knowledge_items'"
+      ).get() !== undefined;
+      if (!hasTable) return;
+      const columns = connection.prepare("PRAGMA table_info(agent_knowledge_items)").all() as unknown as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "category")) {
+        connection.exec("ALTER TABLE agent_knowledge_items ADD COLUMN category TEXT");
       }
     }
   }

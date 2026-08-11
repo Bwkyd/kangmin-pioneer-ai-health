@@ -8,8 +8,10 @@ import { createApplication } from "../app/composition-root.js";
 import type { CommandResult } from "../kernel/result.js";
 import type {
   BrowseHome,
+  PatientMessage,
   PublicContent
 } from "../modules/browse/contracts.js";
+import { KangminDatabase } from "../infrastructure/database.js";
 import { seedContent } from "./content-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
@@ -116,5 +118,78 @@ test("Browse SQLite 在应用重启后保持相同可见投影", async () => {
     assert.equal(shown.source, "已审核测试来源");
   } finally {
     restarted.close();
+  }
+});
+
+test("站内消息要求登录，未发布不可见，已读状态按患者隔离", async () => {
+  const { application, databasePath } = fixture();
+  try {
+    for (const username of ["message-user-a", "message-user-b"]) {
+      dataOf<{ patientId: string }>(await application.execute({
+        command: "account register",
+        input: { username, password: "message-pass-123" }
+      }));
+    }
+    const loginA = dataOf<{ token: string }>(await application.execute({
+      command: "account login",
+      input: { username: "message-user-a", password: "message-pass-123" }
+    }));
+    const loginB = dataOf<{ token: string }>(await application.execute({
+      command: "account login",
+      input: { username: "message-user-b", password: "message-pass-123" }
+    }));
+
+    const database = new KangminDatabase(databasePath);
+    try {
+      const now = new Date().toISOString();
+      const insert = database.connection.prepare(`
+        INSERT INTO content_messages(
+          id, title, body, summary, status, revision, published_at,
+          created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, 1, ?, ?, ?)
+      `);
+      insert.run("message-published", "本周鼻健康提醒", "记得记录症状", "每周提醒", "published", now, now, now);
+      insert.run("message-draft", "草稿", "不可见", null, "draft", null, now, now);
+    } finally {
+      database.close();
+    }
+
+    const anonymous = await application.execute({ command: "browse message list" });
+    assert.equal(anonymous.ok, false);
+    if (!anonymous.ok) assert.equal(anonymous.error.code, "authentication_required");
+
+    const first = dataOf<{ items: PatientMessage[] }>(await application.execute({
+      command: "browse message list",
+      sessionToken: loginA.token
+    }));
+    assert.deepEqual(first.items.map((item) => item.id), ["message-published"]);
+    assert.equal(first.items[0]?.readAt, null);
+
+    const countBefore = dataOf<{ count: number }>(await application.execute({
+      command: "browse message unread-count",
+      sessionToken: loginA.token
+    }));
+    assert.equal(countBefore.count, 1);
+
+    const read = dataOf<PatientMessage>(await application.execute({
+      command: "browse message read",
+      input: { id: "message-published" },
+      sessionToken: loginA.token
+    }));
+    assert.notEqual(read.readAt, null);
+
+    const countAfter = dataOf<{ count: number }>(await application.execute({
+      command: "browse message unread-count",
+      sessionToken: loginA.token
+    }));
+    assert.equal(countAfter.count, 0);
+
+    const otherPatient = dataOf<{ items: PatientMessage[] }>(await application.execute({
+      command: "browse message list",
+      sessionToken: loginB.token
+    }));
+    assert.equal(otherPatient.items[0]?.readAt, null);
+  } finally {
+    application.close();
   }
 });

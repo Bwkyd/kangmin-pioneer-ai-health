@@ -1,6 +1,6 @@
-# 修复 Issue R1：配置开关域（组合根接线）
+# 004 修复 Issue R1：配置开关域（组合根接线）
 
-> 来源：[`../reviews/008_cli-dev-status-adversarial-review.md`](../reviews/008_cli-dev-status-adversarial-review.md) P0-5、P0-6
+> 来源：[`../reviews/002_cli-dev-status-adversarial-review.md`](../reviews/002_cli-dev-status-adversarial-review.md) P0-5、P0-6
 > 同类病：默认行为在错误环境下"太宽容"或"焊死"，都是 `composition-root.ts` 的接线缺口。
 > 复杂度：低｜建议分支：`codex/issue-<n>-config-gates`
 

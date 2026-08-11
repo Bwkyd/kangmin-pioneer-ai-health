@@ -567,5 +567,36 @@ export const PG_MIGRATIONS: PgMigration[] = [
       `ALTER TABLE agent_plans ADD COLUMN phase_code TEXT`,
       `ALTER TABLE agent_plans ADD COLUMN audience TEXT`
     ]
+  },
+  {
+    // 小程序站内消息已读回执，与 SQLite 0016 语义一致。
+    version: "0005_patient_message_reads",
+    statements: [
+      `CREATE TABLE patient_message_reads (
+        message_id TEXT NOT NULL REFERENCES content_messages(id) ON DELETE CASCADE,
+        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        read_at TEXT NOT NULL,
+        PRIMARY KEY(message_id, patient_id)
+      )`,
+      `CREATE INDEX patient_message_reads_patient
+        ON patient_message_reads(patient_id, read_at DESC)`
+    ]
+  },
+  {
+    version: "0006_patient_external_identities",
+    statements: [
+      `CREATE TABLE patient_external_identities (
+        provider TEXT NOT NULL CHECK(provider IN ('wechat_mini_program')),
+        subject_hash TEXT NOT NULL,
+        patient_id TEXT NOT NULL REFERENCES patients(id) ON DELETE CASCADE,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(provider, subject_hash),
+        UNIQUE(provider, patient_id)
+      )`
+    ]
+  },
+  {
+    version: "0007_knowledge_category",
+    statements: ["ALTER TABLE agent_knowledge_items ADD COLUMN category TEXT"]
   }
 ];

@@ -611,6 +611,24 @@ export class KangminAdminApplication {
             await this.agent.getKnowledge(requiredString(input, "id")),
             request.requestId
           );
+        case "agent knowledge update":
+          return success(
+            command,
+            await this.agent.updateKnowledge(adminId, requiredString(input, "id"), {
+              name: opt(input, "name"),
+              category: opt(input, "category"),
+              source: opt(input, "source"),
+              description: opt(input, "description")
+            }, request.requestId),
+            request.requestId
+          );
+        case "agent knowledge delete":
+          requireConfirmation(input);
+          return success(
+            command,
+            await this.agent.deleteKnowledge(adminId, requiredString(input, "id"), request.requestId),
+            request.requestId
+          );
         case "agent knowledge add":
           return success(
             command,
