@@ -1,7 +1,7 @@
 # AGENTS.md - 抗敏先锋AI鼻健康管理系统开发必读（kangmin）
 
 > Agent 在本仓工作前必读：`state/board.md` + `state/memory/MEMORY.md`。
-> 只放最关键的决策与纪律；目录语义展开见 `meta/kangmin_directory-protocol.md`（v1.4，唯一现行版）。
+> 只放最关键的决策与纪律；目录语义展开见 `meta/kangmin_directory-protocol.md`（v1.5，唯一现行版）。
 
 ## 是什么？
 
@@ -19,9 +19,9 @@
 ## 目录速查
 
 - `src/` 当前主实现 | `legacy/` 迁移前系统，仅作需求、行为和验收参考，禁止向 `src/` 导入其业务实现
-- `vault/truth/` 唯一真相源（报价、临床、内容、页面）| `vault/style/` 品牌与表达规范；不维护同内容 raw/加工副本
+- `vault/truth/` 唯一真相源（报价、临床、内容、页面）| `vault/style/` 品牌与表达规范；不维护同内容 raw/加工副本 | `resources/` 外部参考区（只读、不裁决）
 - `state/` board（AI 每轮）· changelog（人类里程碑）· memory/（**项目记忆一律读写这里**，不用用户目录；涉隐私除外）
-- `docs/{plan,reviews,research}` 编号过程文档 | `docs/{product,changes}` 客户决策与已采用变更 | `skills/` 自产技能源 | `meta/` 规约 | `notes/` 私区（**不修改不提交**）
+- `docs/{plan,reviews,research,experiments}` 编号过程文档 | `docs/{product,changes}` 客户决策与已采用变更 | `skills/` 自产技能源 | `meta/` 规约 | `notes/` 私区（**不修改不提交**）
 - `_build/`（可重建）`_work/`（过程材料）`_archive/`（快照）—Git 忽略，仅 `-delisted` 结尾的下线件放行入库；旧系统见 `legacy/` 作参考
   - 三个忽略区**日期一律打头**，方能一路排序、一眼看出时间；均禁裸文件与目录混住（找起来累、管起来更累）
   - **`_work/`、`_archive/` 只许 `YYYYMMDD‑slug/` 目录**（最后更新日期制）；`_archive/` 里需入库可追溯的下线件以 `-delisted` 结尾（gitignore 靠该 glob 放行）

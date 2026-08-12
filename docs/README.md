@@ -13,6 +13,7 @@
 | 设计、交付计划和已完成修复方案 | [`plan/`](plan/) |
 | 完成度、安全、代码和交付评审 | [`reviews/`](reviews/) |
 | 专题调研 | [`research/`](research/) |
+| 有界实验的过程、成本、证据与限制 | [`experiments/`](experiments/) |
 | 客户待决策事项 | [`product/`](product/) |
 | 已采用的重要变更 | [`changes/`](changes/) |
 | 项目权威资料 | [`../vault/truth/`](../vault/truth/)（私密、本地例外） |
@@ -22,6 +23,7 @@
 - `plan/` 回答“准备或曾经准备怎样实现”，包括目标设计、交付计划和修复方案；
 - `reviews/` 回答“在指定基线发现了什么”，包括复核结论和保留的原始输出；
 - `research/` 回答“为了决策研究了什么”，不得把调研推断写成当前事实；
+- `experiments/` 回答“为了验证做了什么”，记录有界实验的假设、成本、证据与限制；
 - `product/` 只保存需要客户选择的决策单和模板，普通产品计划放 `plan/`；
 - `changes/` 保存已经采用、需要长期追溯的架构、运维和修复记录；
 - 报价及客户确认采用资料统一存放在 `vault/truth/`，不维护同内容 raw/加工副本；
@@ -29,7 +31,7 @@
 
 ## 编号
 
-- `plan/`、`reviews/`、`research/`、`changes/` **各自在分类内**使用三位流水号，
+- `plan/`、`reviews/`、`research/`、`experiments/`、`changes/` **各自在分类内**使用三位流水号，
   格式为 `NNN_kebab-case.md`；每个分类均从 `001` 开始，已使用编号不删除、不复用；
 - `changes/` 下的 `arch/`、`ops/`、`fix/` 共同使用 changes 分类流水号；
 - 客户决策是例外，按 `YYYY-MM-DD-<topic>-decision.md` 命名，便于按沟通日期检索；
@@ -42,6 +44,7 @@
 | [`plan/`](plan/) | 001–008 | 009 |
 | [`reviews/`](reviews/) | 001–004 | 005 |
 | [`research/`](research/) | 001 | 002 |
+| [`experiments/`](experiments/) | – | 001 |
 | [`changes/`](changes/) | 001–004 | 005 |
 
 ## 文档最低信息

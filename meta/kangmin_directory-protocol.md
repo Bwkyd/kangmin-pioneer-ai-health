@@ -1,6 +1,6 @@
 # kangmin 目录规约（Directory Protocol）
 
-> 本文件是 `AGENTS.md` 引用之“目录语义展开”的唯一现行版（v1.4），被
+> 本文件是 `AGENTS.md` 引用之“目录语义展开”的唯一现行版（v1.5），被
 > `AGENTS.md` 路径引用，必须保持稳定：不编号、不带日期，版本走文件内记录 + Git。
 >
 > 语义来源：`AGENTS.md`（2026-08-07 整理，忠实收录，不扩写稀释）。
@@ -17,6 +17,7 @@
 | v1.2 | 2026-08-07 | 统一 board、客户确认资料和本地保留目录语义；修复 Git 与结构检查规则 |
 | v1.3 | 2026-08-08 | 旧 `work/` 已完成分流归档并入忽略区，根目录不再保留；AGENTS.md 与 CLAUDE.md 双文件一致性纳入结构检查 |
 | v1.4 | 2026-08-11 | vault 收敛为 truth 唯一真相源；文档编号改为各分类从 001 独立递增 |
+| v1.5 | 2026-08-13 | docs 增设 experiments 有界实验分类；新增 resources 外部参考区（只读、不裁决） |
 
 ## 分区总览
 
@@ -24,11 +25,12 @@
 | --- | --- | --- |
 | `vault/` | 项目权威资料 | truth 是唯一真相源；style 保存品牌规范 |
 | `state/` | 状态区 | board（Agent 每轮）· changelog（人类里程碑）· memory（项目记忆） |
-| `docs/{plan,reviews,research}` | 编号过程文档 | 文件名使用英文 `NNN_kebab-case.md`，流水不重排 |
+| `docs/{plan,reviews,research,experiments}` | 编号过程文档 | 文件名使用英文 `NNN_kebab-case.md`，流水不重排 |
 | `docs/{product,changes}` | 决策与已采用变更 | product 放客户决策；changes 放长期变更记录 |
 | `skills/` | 项目自有技能 | 只收已经验证、值得复用的能力 |
 | `meta/` | 稳定规约 | 稳定文件名，不编号、不带日期 |
 | `notes/` | 作者私区 | Agent 不修改、不提交 |
+| `resources/` | 外部参考区 | 只读、不裁决，遵守版权红线 |
 | `_build/` `_work/` `_archive/` | 忽略区 | 可重建输出、过程材料和快照 |
 | `scripts/` | 检查与治理脚本 | 结构检查入口为 `scripts/structure-lint.py` |
 | `src/` | 当前代码区 | CLI、应用服务、领域模块、适配器、测试和前端薄壳 |
@@ -58,9 +60,10 @@
 - `plan/`：目标设计、交付计划和实施方案。
 - `reviews/`：指定基线的代码、安全、业务和交付评审。
 - `research/`：需要长期追溯的专题调研。
+- `experiments/`：有界实验的假设、成本、证据与限制。
 - `product/`：客户决策单，命名 `YYYY-MM-DD-<topic>-decision.md`。
 - `changes/`：已经采用的重要架构、运维和修复记录。
-- `plan/`、`reviews/`、`research/`、`changes/` 各自在分类内使用三位流水号，
+- `plan/`、`reviews/`、`research/`、`experiments/`、`changes/` 各自在分类内使用三位流水号，
   文件名一律英文 `NNN_kebab-case.md`；每类从 `001` 开始，编号永不重排、
   删除后不复用，同主题以该分类最新编号为准。
 - 各分类当前索引和下一个编号以对应目录 `README.md` 为准；`docs/README.md`
@@ -80,6 +83,12 @@
 ### notes/
 
 作者私区，Agent 不修改、不提交，除非作者明确指定文件。
+
+### resources/
+
+外部参考区，保存他人的材料（文献、竞品、参考文章、行业资料）。只读、可引用不
+修改；不参与权威裁决（唯一真相源仍是 `vault/truth/`）；只放可合法引用的内容，
+不可公开复制的材料进 `notes/` 或 `_work/`。
 
 ### src/ 与 legacy/
 

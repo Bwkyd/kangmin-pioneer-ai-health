@@ -3,6 +3,14 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🏗️ 按 aias-meta-init 框架补齐实验与参考分区（2026-08-13 第三十九轮 · 基线 `main@2abfef8`）
+> 对照 aias-meta-init 技能六组骨架对 kangmin 做差距分析：六组（手册规约 · 真相源 · 脚本扩展 · 作品 · 状态文档 · 过程材料）均有对应区且协议更严，真正缺口仅两处，已按作者拍板补齐：
+> ① 新增 `docs/experiments/` 有界实验分类——「实证驱动」原则（有界实验记录成本、证据与限制）此前无专门落点（进 `_work/` 会扔、进 board 会被压缩），现与 plan/reviews/research/changes 并列三位流水编号、从 001 起；`docs/README.md` 导航表、分类规则、编号表已同步。
+> ② 新增 `resources/` 外部参考区（只读、不裁决、遵守版权红线），供文献、竞品、行业资料参考；不参与权威裁决（唯一真相源仍是 `vault/truth/`）；默认随仓库提交（gitignore 未忽略），不可公开复制的材料进 `notes/` 或 `_work/`。
+> 明确不引入技能默认骨架：`.42cog/`（v1.4 协议已记作者删除，收敛方向权威在 `vault/truth/`，避免双真相）、`specs/`（meta 协议 + `vault/style/` 已覆盖）、`plugin.json`（插件打包用，kangmin 非技能集）。
+> 协议 `meta/kangmin_directory-protocol.md` 升级 v1.5（分区总览、docs 细则、resources 细则、版本记录），CLAUDE.md/AGENTS.md 双入口已同步（目录速查 + 协议版本引用）。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；未改业务代码，本轮改动未 commit（含 4 修改 + 2 新增），待作者确认后提交。
+
 > ## ⛔ 无依据六步树撤销并停止相关开发（2026-08-11 第三十八轮 · 基线 `main@46f9df6`）
 > 作者明确指出原 `vault/raw/clinical/syndrome-six-step-decision-tree.md` 不是其取得或可采用的客户资料。该文件及其直接派生的 truth 文件已删除，vault 索引已撤销“客户确认六步树”结论。按作者最终明确指令，`vault/raw/` 原有 4 份材料已原样移动到 `vault/truth/`，与报价 Markdown 一起构成 5 份唯一真相源；没有删除、回退或加工资料正文。`raw/` 当前只保留迁移说明，`business/` 已撤除。作者随后明确允许将报价 `.xlsx` 原件归档以便 AI 直接读取 Markdown；原件现位于 `_archive/20260811-quotation-original/`，不得删除。
 > 现有 `src/` 的 `clinical-rules-v3`、六步树实现与相关测试，以及 007 计划和两份产品决策记录，仍包含这份无依据材料派生出的结论。本轮未擅自改业务代码或改写历史文档，后续开发立即停止；必须先依据《前置规则》重新核对受影响实现，形成有界回退清单并由作者确认后处理，不能继续把六步树当真相源。
