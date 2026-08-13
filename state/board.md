@@ -6,7 +6,8 @@
 > ## 🔎 业界方案调研：有零件无整机，检索升级获业界背书（2026-08-14 第四十九轮 · PR #200）
 > 针对「约束生成/防越界/检索是否有现成框架」并行检索四路业界方案：结构化输出（Outlines/Instructor/Pydantic AI，Thoughtworks 已列为生产默认）、Guardrails 输出校验层（NeMo Guardrails、Guardrails AI，医疗场景强制免责声明）；医疗 RAG 标准做法是混合检索（BM25+向量+重排，BioASQ 实证混合 > 纯向量 > 纯 BM25；中文可用 bge-reranker-v2-m3 或账号现成 qwen3.7-text-embedding）；StrictCitations/EBMChat/VerifAI 佐证「只依据已审核材料+带出处回答」与客户口径一致。
 > 结论：无现成「穴位白名单约束对话」整机，但每环节有成熟零件；建议不引重框架（NeMo/LangChain 过重，项目背不动），借思想自写轻量四件套：输出校验函数（原型断言升级为生产版）+ 混合检索（bigram+向量，数据量小全量余弦即可）+ 免责声明强制注入 + 重排后置，零新增框架依赖。② 检索升级获业界背书，建议升，待作者最终拍板后写入接入方案。
-> 验证：结构检查通过；本块随 PR #200 合并，合并 sha 与分支清理结果收尾后回写。
+> 收尾：PR #200 已 squash 合并为 `676ad86`（quality CI 通过后合并，rebase 到含 3 个 dependabot 提交的 origin/main）；本地与远程分支已清理，main 与 origin/main 一致。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。
 
 > ## ✅ exp001 原型跑通：千问约束对话 6/6 断言通过（2026-08-13 第四十八轮 · 基线 `main@e90f3ed`）
 > H3/H4 原型两轮迭代收敛（产物与日志在 `_work/20260813-shiyi-shouce-inspect/`，看门狗全程值守）：首轮 6 回合暴露 F1（模型编造「3–5分钟/每日1次」操作数值）与两处断言 bug（A2 漏检 T1、A3「灸疗/灸」子串误报）；修断言 + 提示词加示范句后二轮全部 6/6 PASS，对已存答案重判确认无 API 额外成本。
