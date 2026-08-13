@@ -1,7 +1,80 @@
 # kangmin · 项目状态板（唯一真相源 · 跨会话可接续）
 
-> 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
+> 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
+
+> ## 🔎 业界方案调研：有零件无整机，检索升级获业界背书（2026-08-14 第四十九轮 · PR #200）
+> 针对「约束生成/防越界/检索是否有现成框架」并行检索四路业界方案：结构化输出（Outlines/Instructor/Pydantic AI，Thoughtworks 已列为生产默认）、Guardrails 输出校验层（NeMo Guardrails、Guardrails AI，医疗场景强制免责声明）；医疗 RAG 标准做法是混合检索（BM25+向量+重排，BioASQ 实证混合 > 纯向量 > 纯 BM25；中文可用 bge-reranker-v2-m3 或账号现成 qwen3.7-text-embedding）；StrictCitations/EBMChat/VerifAI 佐证「只依据已审核材料+带出处回答」与客户口径一致。
+> 结论：无现成「穴位白名单约束对话」整机，但每环节有成熟零件；建议不引重框架（NeMo/LangChain 过重，项目背不动），借思想自写轻量四件套：输出校验函数（原型断言升级为生产版）+ 混合检索（bigram+向量，数据量小全量余弦即可）+ 免责声明强制注入 + 重排后置，零新增框架依赖。② 检索升级获业界背书，建议升，待作者最终拍板后写入接入方案。
+> 验证：结构检查通过；本块随 PR #200 合并，合并 sha 与分支清理结果收尾后回写。
+
+> ## ✅ exp001 原型跑通：千问约束对话 6/6 断言通过（2026-08-13 第四十八轮 · 基线 `main@e90f3ed`）
+> H3/H4 原型两轮迭代收敛（产物与日志在 `_work/20260813-shiyi-shouce-inspect/`，看门狗全程值守）：首轮 6 回合暴露 F1（模型编造「3–5分钟/每日1次」操作数值）与两处断言 bug（A2 漏检 T1、A3「灸疗/灸」子串误报）；修断言 + 提示词加示范句后二轮全部 6/6 PASS，对已存答案重判确认无 API 额外成本。
+> 证据要点：T1 生成通俗、名单外穴位零出现、数值编造消失（改用「以皮肤微红温热为度」）；T2/T3 越界疗法追问（刮痧/艾灸）均安全拒绝——「方案未包含，请咨询医生」，不展开越界操作；「迎香位置」追问给出通俗定位（小荷医生对标体验成立）。
+> 三条发现已回写 exp001：F1 数值编造→提示词加固有效+生产层加输出校验；F2 操作方式自补（按揉/温敷/压豆）→接入时诊疗参数必须携带 truth 操作说明与视频引用，模型只做转译；F3 手册不含「鼻三线」（与 truth 互补、入库两者都进）+朴素检索召回差→向量（qwen3.7-text-embedding）或重排候选，报价外待拍板。
+> 结论：可行性成立；生产化还需 F1–F3 闭环、模型定版（qwen-plus 可用，qwen3.7 系列候选）、检索拍板。待作者回场后：出接入方案 + 需求确认文档 v2。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；本轮未 commit。
+
+> ## 🔬 exp001 实验探索：冒烟通过、H2 检索实证、原型后台跑（2026-08-13 第四十七轮 · 基线 `main@e90f3ed`）
+> 作者拍板：① 千问 API key 已入 `src/.env`（Git 忽略），`src/.env.example` 同步新增 KANGMIN_QWEN_* 三个空变量；② intent.md 已确认；③ 实验自主推进，作者离场。
+> 冒烟三连通过：key 有效（账号 236 个模型、qwen 系 178 个，含 qwen3.5-ocr、qwen3.7-text-embedding）；qwen-plus 约束生成 PASS（名单外穴位零出现）；qwen-vl-plus 识别手册穴位图（合谷定位+操作）可用。发现 F1：模型自创「刮10–15次/揉1分钟」操作数值——穴位白名单守住但操作参数（次数/时长/力度）会编造，约束与断言须扩展，与 DeepSeek 抽取提示同一口径。
+> H2 切块证据：142 块（71 块带穴位标签）；朴素 bigram 检索对患者提问召回差（目录块/动物实验块/拔罐块噪声），标签加权有限改善；手册正文不含「鼻三线」（与 truth 方案互补的语料缺口）。检索升级（向量 qwen3.7-text-embedding 或模型重排）列为候选，未实施（报价外基础设施需拍板）。
+> H3/H4 原型已后台运行（`_work/20260813-shiyi-shouce-inspect/prototype_qwen.py`，2 案例×3 回合，断言 A1 白名单/A2 数值编造/A3 越界疗法追问），已挂 Monitor 看门狗盯 FAIL/越界信号；完成后回填 exp001 与 board。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；本轮未 commit。
+
+> ## 🧪 千问拍板、intent 确认、exp001 实验开跑（2026-08-13 第四十六轮 · 基线 `main@e90f3ed`）
+> 作者拍板：① 模型用通义千问（具备图像识别能力，可用于手册穴位图识别）；② intent.md 确认无误（状态改「作者已确认 2026-08-13」）；③ 开始有界实验。
+> 已落：`.42cog/real.md` 模型行回写（千问+视觉，DeepSeek 仍服务已上线 knowledge-qa）；`docs/experiments/001_zhenyiwen-constrained-dialogue.md` 开题（H1–H5 假设/做法/成本/限制，结论栏待回填）。
+> H1 已通过：手册 17 个 docx 批量转 md 成功（76,065 字符，0 失败），目录/章节/表格保留，内嵌图片导出 `_work/20260813-shiyi-shouce-inspect/md/assets/`；转换脚本与产物均在忽略区（客户材料不入仓）。
+> 遗留：H3–H5 需作者提供 DashScope API key 与千问模型名（生成/视觉用哪个）；H2 切块方案下一步（对齐现有知识库 knowledgeId+chunkIndex 结构）；本轮改动未 commit。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。
+
+> ## 🗃️ 过期起草件归档，活动文档只留当前有效（2026-08-13 第四十五轮 · 基线 `main@e90f3ed`）
+> 作者指出 AI 这几轮搭的三份流程件已过期，全部归档至 `_archive/20260813-superseded-docs/`（含归档原因与取代者对照）：① 原始意图存档决策单（原文在 `vault/raw/chats/`，口径在 board）；② 需求确认文档（发送前必须先内部跑通可行方案，届时按 board 已拍板口径重出 v2）；③ research 002 五件套（方向已在对话直接拍板：追问入口 B、视频=文字回答+引用、分期按 truth 急性/缓解、手册实验先行、范围写死不反复改）。
+> 索引与指针同步：docs/product/README 撤两条 2026-08-13 记录；docs/research/README 撤 002 链接（编号保留不复用，下一份 003）；docs/README 编号表更新（research 001–002 已归档 → 下一 003）；docs/plan/README 撤 002 取舍卡指针；`.42cog/intent.md` 上游锚点改指聊天原件与 board、冒烟三问第 3 答改「内部实验跑通后再出需求确认」；`.42cog/real.md` 模型选型指向 board 遗留；CLAUDE.md/AGENTS.md 智能体纪律改为「先内部实验跑通，再对客户承诺」。
+> 遗留：① 模型选型（千问 vs DeepSeek vs 双适配器）仍待拍板；② 有界实验待开（手册切块 + 千问约束生成原型）；③ `.42cog/intent.md` 收敛方向第一句仍待作者表态；本轮改动未 commit。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。
+
+> ## 📋 需求确认文档按作者口径修订，手册解压盘点（2026-08-13 第四十四轮 · 基线 `main@e90f3ed`）
+> 作者对需求确认文档提出修正：① 追问入口按客户聊天记录最终口径改为 B（入口=通用科普内容+引导问卷，问卷结束后才可追问），原推荐「入口即开放问答」与客户口径冲突且增加工作量，已撤；② 视频对标改为陈述「文字回答+视频引用」（小荷医生同款做法，千问不生成视频）；③ 手册改为内部测试先行——先解压转 md、切块、做问答实验，跑通可行后再请客户审核启用，不承诺做不到的效果；④ 年龄选择题保留；⑤ 轻重症不再设「新增判定」选项——已查 truth 前置规则：分期只有急性期/缓解期（Q12–Q14 判定，Q1 A/B→急性期，Q1C+Q2B+Q3B→缓解期），差异化话术按此分期表达即可；⑥ 范围约定写死「确认后按口径实施不反复调整，超出口径另行沟通单独排期」。
+> 手册已解压到 `_work/20260813-shiyi-shouce-inspect/`（GBK 文件名用 Python 转码）：4 章 20 个文件（docx/doc 为主，含嵌套 rar/zip），转 md、切块与问答效果测试留待有界实验（expNNN）。
+> 遗留：① 过期材料归档清单待作者圈定（候选：vault/style 未确认的 login 图、docs/research/001 旧基线调研、智能体设计决策记录中已标注失效的 v3 旧表）；② `.42cog/intent.md` 收敛方向第一段待作者表态；③ 需求确认文档发送时机=内部方案跑通之后；本轮改动未 commit。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。
+
+> ## 📋 起草客户需求确认文档（2026-08-13 第四十三轮 · 基线 `main@e90f3ed`）
+> 已读作者 worklog（`notes/worklog/20260813.md`，只读不改）；聊天记录新增两条补充：客户发来小荷医生截图与《福建省中医药适宜技术手册》（完整收集版）zip，问「有没有必要喂给AI」，作者答复会出需求确认文档对齐后再开发，客户同意。
+> 落档对外需求确认单 `docs/product/2026-08-13-zhenyiwen-requirement-confirmation-decision.md`（待作者审阅后发送）：已对齐口径五条复核 + 六道选择题（追问入口 / 回答+视频对标 / 手册喂不喂 AI / 年龄采集 / 轻重症口径 / 风险与范围约定），每项带推荐与影响说明；「超出口径的调整另行沟通单独排期」写进约定，防止无限返工。报价与商务口径未写入客户文档，是否提及由作者另行决定。
+> 遗留：`.42cog/` 四份待作者过目（intent.md 收敛方向一句为重点）；客户文档推荐项（手册「先喂核心章节」、年龄「加一道题」等）待作者认可后发出；本轮改动仍未 commit。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。
+
+> ## 🗂️ 客户聊天记录归档职责确立（2026-08-13 第四十二轮 · 基线 `main@e90f3ed`）
+> 作者确认两问：① 客户沟通原始聊天记录归 `vault/raw/chats/`（私密、随 vault 被 Git 忽略、只作追溯证据、不参与裁决；确认结论按职责进 truth 或 docs/product）；② vault/style 的客户 login 图不搬 specs/style——品牌事实归 vault/style、产出标准归 specs/style，两处分工不复制。
+> 已落：`vault/raw/chats/README.md` + 首份记录 `20260813-zhenyiwen-ai-dialogue.md`（诊一诊对话原文）；`vault/raw/README.md` 恢复职责说明；协议 v1.7（raw/chats 语义）；决策单补原始记录指针。
+> 遗留：login 图是否客户确认采用待作者答复（确认→留 vault/style 补来源注记；未确认→按 vault/style 规矩挪 `_work/`）；本轮改动仍未 commit，待作者确认后提交。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。
+
+> ## 🧱 按 aias-meta-init 内容标准重建初始化文档（2026-08-13 第四十一轮 · 基线 `main@e90f3ed`）
+> 作者拍板三项（推翻第三十九轮「不引入技能默认骨架」决定）：① 重建 `.42cog/` 四份（intent 意向书 / real 现实约束 / cog 认知模型 / meta 项目身份）；② 新建 `specs/` 产出标准区（含 `specs/style/`，与 `vault/style/` 分工：品牌事实 vs 产出风格标准）；③ CLAUDE.md/AGENTS.md 按技能分工线改造为全祈使句+指针（「是什么」陈述段移入 `.42cog/meta.md`，必读行加 `.42cog/intent.md`，新增「系统与方向」「智能体纪律」两节）。
+> `.42cog/intent.md` 已落：收敛方向「让过敏性鼻炎患者的每个健康问题得到有依据、说得俗、问得下去的回答与方案」+ 三闭环关联度量 + 真难题（医疗安全约束下的生成式对话，三级过滤）+ 五条排除清单 + 冒烟三问，标「待作者过目」；与 truth 分工写明：方向不改变医学事实，冲突时 truth 胜（回应第三十九轮双真相顾虑）。
+> 协议升 v1.6：版本记录、本地化记录、分区总览与细则同步 `.42cog/`、`specs/` 语义；board 必读行同步加 `.42cog/intent.md`。
+> 冒烟自检（技能放行判据）通过：全新上下文子代理只喂 `intent.md`，三问（朝哪使劲 / 不做什么 / 下一步=research 002 拍板 P1–P6 → 开 expNNN 实验）均凭原句答齐。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。本轮与第四十轮改动均未 commit，待作者确认后提交。
+
+> ## 🧭 客户原始意图落档，诊一诊调研重构为对话智能体方案（2026-08-13 第四十轮 · 基线 `main@e90f3ed`）
+> 承接上一段会话未落板的收尾：作者拍板 `resources/clones/` 与 `resources/` 根分两区（外部克隆仓不进 git，手工材料随仓提交），`.gitignore` 已放行 `clones/README.md`；`docs/plan`、`docs/research` 索引已挂 002 调研。
+> 客户 2026-08-13 就「诊一诊」提出理解偏差：问卷后输出固定模板、无法继续对话，与电话沟通的「知识约束赋能千问 + 持续追问」不符。原始对话全文与已确认口径落档 `docs/product/2026-08-13-zhenyiwen-ai-dialogue-decision.md`（`docs/product/README.md` 已登记）：判定逻辑保持不动；判定后把结构化参数（证型、分期、穴位清单、外治方式、约束规范）作为 Prompt 传给通义千问动态生成科普化、差异化文本；方案后可持续追问；最终口径「AI 仅提供通用科普 + 引导问卷，问卷结束后患者可追问」。
+> research 002 由「患者知识问答（RAG）实现方案」重构为「诊一诊 AI 对话化（智能体）实现方案」，目录更名 `docs/research/002_zhenyiwen-ai-dialogue/`（未提交件，更名安全），五份文件按客户口径重填草稿：must-know 四条命门（判定由知识库管控 / 动态生成 / 持续追问 / 成本不超报价），sources 登记自有积累（src/agent 模块、research 001、truth）与他人积累（cc mini 要学的、cc/src 泄露源码红线不抄不克隆、opencode/pi 待克隆、小荷医生/豆包要比的、千问 API），gap 列出六项差距分级并建议开有界实验，decision 给出取舍卡草稿与 P1–P6 拍板栏（AI 不代填）；assign.md 派活模板保持原样。
+> 新增项目记忆 `state/memory/20260813-agent-lens-patient-qa.md`：智能体调研先定角色——患者科普问答型，借鉴写码型框架只取最小循环结构，标杆是小荷医生，泄露源码不抄不克隆。
+> 遗留（下一轮问作者，见 decision.md 拍板栏）：P1 模型选型（客户点名千问 vs 现网 DeepSeek，建议双适配器先跑实验）、P2 追问入口（建议按客户最终口径入口即开放科普问答）、P3 视频对标（千问不生成视频，拟以 truth 视频大全做回答+视频引用并向客户说明）、P4 追问与动态生成是否按报价 1,700 元内交付（客户口径认为电话沟通已含）、P5 检索是否升级（建议先保持 bigram+LIKE，实验取证再议）、P6 是否浅克隆 opencode/pi 进 `resources/clones/`。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过。本轮含上一段会话未提交件（.gitignore、两份 docs 索引、research 002、clones README），共 6 修改 + 4 新增，未 commit，待作者确认后提交。
+
+> ## 🏗️ 按 aias-meta-init 框架补齐实验与参考分区（2026-08-13 第三十九轮 · 基线 `main@2abfef8`）
+> 对照 aias-meta-init 技能六组骨架对 kangmin 做差距分析：六组（手册规约 · 真相源 · 脚本扩展 · 作品 · 状态文档 · 过程材料）均有对应区且协议更严，真正缺口仅两处，已按作者拍板补齐：
+> ① 新增 `docs/experiments/` 有界实验分类——「实证驱动」原则（有界实验记录成本、证据与限制）此前无专门落点（进 `_work/` 会扔、进 board 会被压缩），现与 plan/reviews/research/changes 并列三位流水编号、从 001 起；`docs/README.md` 导航表、分类规则、编号表已同步。
+> ② 新增 `resources/` 外部参考区（只读、不裁决、遵守版权红线），供文献、竞品、行业资料参考；不参与权威裁决（唯一真相源仍是 `vault/truth/`）；默认随仓库提交（gitignore 未忽略），不可公开复制的材料进 `notes/` 或 `_work/`。
+> 明确不引入技能默认骨架：`.42cog/`（v1.4 协议已记作者删除，收敛方向权威在 `vault/truth/`，避免双真相）、`specs/`（meta 协议 + `vault/style/` 已覆盖）、`plugin.json`（插件打包用，kangmin 非技能集）。
+> 协议 `meta/kangmin_directory-protocol.md` 升级 v1.5（分区总览、docs 细则、resources 细则、版本记录），CLAUDE.md/AGENTS.md 双入口已同步（目录速查 + 协议版本引用）。
+> 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；未改业务代码，本轮改动未 commit（含 4 修改 + 2 新增），待作者确认后提交。
 
 > ## ⛔ 无依据六步树撤销并停止相关开发（2026-08-11 第三十八轮 · 基线 `main@46f9df6`）
 > 作者明确指出原 `vault/raw/clinical/syndrome-six-step-decision-tree.md` 不是其取得或可采用的客户资料。该文件及其直接派生的 truth 文件已删除，vault 索引已撤销“客户确认六步树”结论。按作者最终明确指令，`vault/raw/` 原有 4 份材料已原样移动到 `vault/truth/`，与报价 Markdown 一起构成 5 份唯一真相源；没有删除、回退或加工资料正文。`raw/` 当前只保留迁移说明，`business/` 已撤除。作者随后明确允许将报价 `.xlsx` 原件归档以便 AI 直接读取 Markdown；原件现位于 `_archive/20260811-quotation-original/`，不得删除。
