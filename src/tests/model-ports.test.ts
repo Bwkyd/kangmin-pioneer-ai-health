@@ -350,6 +350,39 @@ test("自由文本医学校验：该穴等代词不被误判为新增穴位", ()
     "用指腹在迎香穴进行擦拭，其他穴位仍按当前方案执行。"
   );
   assert.equal(validateGeneratedMedicalText("可以改用假迎香穴。", verdict), null);
+
+  const onlineAnswer =
+    "根据已审核资料，迎香穴位于鼻翼外缘中点旁开约0.5寸的鼻唇沟中。" +
+    "当前方案包含迎香穴指腹擦操作，建议以指腹进行擦拭。" +
+    "关于具体操作手法、力度及时长等细节，因现有资料未提供，依据不足无法补充。" +
+    "此外，方案还包含其他穴位按揉及刮痧操作，请严格遵循方案说明执行。";
+  const onlineVerdict: ClinicalVerdict = {
+    ...verdict,
+    planBundle: {
+      acute: {
+        ...verdict.planBundle!.acute!,
+        method: "鼻三线姜刮；迎香穴指腹擦",
+        steps: JSON.stringify(["鼻三线姜刮", "迎香穴指腹擦"])
+      },
+      constitution: {
+        ...verdict.planBundle!.acute!,
+        planId: "plan-constitution",
+        name: "寒热错杂调体方案",
+        method: "肺俞穴按揉；风门穴按揉；大椎穴按揉；耳穴过敏区按压",
+        steps: JSON.stringify(["肺俞穴按揉", "风门穴按揉", "大椎穴按揉", "耳穴过敏区按压"])
+      }
+    }
+  };
+  assert.equal(
+    validateGeneratedMedicalText(onlineAnswer, onlineVerdict, [{
+      knowledgeId: "manual-location",
+      name: "迎香定位摘录",
+      source: "客户资料",
+      text: "迎香位于鼻翼外缘中点旁开约0.5寸的鼻唇沟中。"
+    }]),
+    onlineAnswer,
+    "普通名词“操作手法”不得被误判为新增推拿疗法"
+  );
 });
 
 test("方案模板：可选项称为方法，删除重复手法段，并在每个方法下放视频", () => {
