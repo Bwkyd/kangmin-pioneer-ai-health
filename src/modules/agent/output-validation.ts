@@ -73,7 +73,7 @@ const GENERIC_ACUPOINT = /[\p{Script=Han}]{1,10}穴/gu;
 const ACUPOINT_REFERENCES = [
   "该穴", "此穴", "本穴", "其他穴", "其它穴", "各穴", "上述穴", "这些穴"
 ] as const;
-const APPROVED_ACUPOINT_PREFIX = /(?:在|于|取|用|按|揉|擦|找|含|选|为|是|的)$/u;
+const APPROVED_ACUPOINT_PREFIX = /(?:在|于|取|用|按|揉|擦|找|含|选|为|是|的|里|中|问|讲|说|看)$/u;
 const NUMBER_WITH_UNIT = /\d+(?:\.\d+)?(?:\s*[～~—\-至]\s*\d+(?:\.\d+)?)?\s*(?:次|分钟|小时|天|周|个月|厘米|毫米|cm|mm|寸|壮)/giu;
 const EFFICACY_CLAIMS = /(?:保证|确保|一定|彻底)(?:治愈|根治|有效)|包治|永不复发|药到病除/u;
 

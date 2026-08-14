@@ -337,6 +337,7 @@ test("自由文本医学校验：方案外穴位疗法和无依据数值拒绝�
       ?.content.includes("适宜技术手册·迎香")
   );
   assert.equal(questionWithinApprovedPlan("迎香具体在哪里？", verdict), true);
+  assert.equal(questionWithinApprovedPlan("手册里迎香穴定位在哪里？", verdict), true);
   assert.equal(questionWithinApprovedPlan("艾灸上火怎么办？", verdict), false);
   assert.equal(questionWithinApprovedPlan("新奇穴怎么找？", verdict), false);
 });
