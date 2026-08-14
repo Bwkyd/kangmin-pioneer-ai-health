@@ -3,8 +3,8 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
-> ## 🧭 按初始化模板归位并校正意向书（2026-08-14 第六十二轮 · 基线 `main@82ad6ad`）
-> 按作者指定的 `aias-meta-init/templates/intent.md.tpl` 重写 `.42cog/intent.md` 的版式：恢复模板标题、开场说明、收敛方向及行内量法、真难题、不做什么两列表、真相源与权重、作品区和末尾起草说明。原有三个业务闭环与医学刚性边界继续保留；把容易暗示诊疗承诺的“调理方案/最终方案”收窄为“调理建议/不替代诊断”，并明确真相源按职责裁决，客户原始材料须经作者确认写回 truth 才取得开发权威，过程文档、代码和测试不能反向覆盖。作品区按报价落为患者小程序与管理后台，并以确定性判定、受约束表达、内容维护到患者使用的完整闭环作为合格口径。本轮未修改 skill 模板或业务代码，改动尚未 commit。
+> ## 🧭 按初始化模板归位并校正意向书（2026-08-14 第六十二轮 · 提交 `5d25eaa`，PR #201）
+> 按作者指定的 `aias-meta-init/templates/intent.md.tpl` 重写 `.42cog/intent.md` 的版式：恢复模板标题、开场说明、收敛方向及行内量法、真难题、不做什么两列表、真相源与权重、作品区和末尾起草说明。原有三个业务闭环与医学刚性边界继续保留；把容易暗示诊疗承诺的“调理方案/最终方案”收窄为“调理建议/不替代诊断”，并明确真相源按职责裁决，客户原始材料须经作者确认写回 truth 才取得开发权威，过程文档、代码和测试不能反向覆盖。作品区按报价落为患者小程序与管理后台，并以确定性判定、受约束表达、内容维护到患者使用的完整闭环作为合格口径。本轮未修改 skill 模板或业务代码；作者已确认 `.42cog` 内容无问题，改动已提交并进入 PR #201。
 > 验证：`python3 scripts/structure-lint.py .` 与 `git diff --check` 通过；未改 `src/`，不重复运行 `npm run check`。
 
 > ## 🧠 按模板层级收敛认知模型核心实体（2026-08-14 第六十一轮 · 基线 `main@82ad6ad`）
@@ -20,7 +20,7 @@
 > 验证：`python3 scripts/structure-lint.py .`、`git diff --check` 通过；本轮未改 `src/`，未重复运行 `npm run check`。
 
 > ## 🧹 统一临床规则状态说明与现行来源（2026-08-14 第五十八轮 · 基线 `main@82ad6ad`）
-> 按作者要求清理“代码已 approved、README 仍称 candidate、sourceRefs 指向失效路径”的状态冲突。`clinical-rules-v3` 的来源已改为现行 `vault/truth/前置规则.md`、`页面展示.md` 和 `急性期方案、调体方案（缓解期方案）.md`，相应元数据测试同步更新；未修改问卷、证型、分期或方案规则内容。`src/README.md`、患者 CLI 帮助、组合根及患者浏览相关注释已统一说明：默认规则包为 `approved`，正式确定性输出和后台 enabled 方案可用；注入 `candidate` 时继续 fail-closed，既有安全回归测试保留。`.42cog/real.md` 同步改为冲突已消除。本轮改动尚未 commit。
+> 按作者要求清理“代码已 approved、README 仍称 candidate、sourceRefs 指向失效路径”的状态冲突。`clinical-rules-v3` 的来源已改为现行 `vault/truth/前置规则.md`、`页面展示.md` 和 `急性期方案、调体方案（缓解期方案）.md`，相应元数据测试同步更新；未修改问卷、证型、分期或方案规则内容。`src/README.md`、患者 CLI 帮助、组合根及患者浏览相关注释已统一说明：默认规则包为 `approved`，正式确定性输出和后台 enabled 方案可用；注入 `candidate` 时继续 fail-closed，既有安全回归测试保留。`.42cog/real.md` 同步改为冲突已消除。本轮改动已提交为 `bd79e97`，并进入 PR #201。
 > 验证：相关窄测 55 项通过；`npm run check` 通过（Node 测试 260 pass、76 项因未配置 PostgreSQL/S3 跳过，浏览器 E2E 通过）；`python3 scripts/structure-lint.py .`、`git diff --check` 通过。
 
 > ## 🎯 按 2,800 元创业验证项目校准资源现实（2026-08-14 第五十七轮 · 基线 `main@82ad6ad`）
