@@ -157,7 +157,7 @@ test("评审 R2 P1 双门禁：candidate 下方案浏览关闭（list 空、show
   try {
     // 临床规则包未冻结（candidate）时，browse plan 患者可见门禁关闭：
     // 管理端启用（agent_plans.status='enabled'）的方案也绝不公开给
-    // 匿名患者——HELP"当前无获批临床规则和方案"承诺一致，患者无法经
+    // 匿名患者——candidate 包应关闭患者方案入口，患者无法经
     // browse plan show 拿到完整调理方案（含穴位/疗程文本）。
     const listed = dataOf<{ items: Array<{ id: string }> }>(
       await application.execute({ command: "browse plan list" })

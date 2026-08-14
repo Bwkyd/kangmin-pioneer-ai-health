@@ -254,8 +254,8 @@ export function renderValidatedOutput(
         return output("clinical_freeze", CLINICAL_FREEZE_BLOCK, fields);
       }
       const syndrome = SYNDROME_LABELS[verdict.syndromeCode ?? ""] ?? "未定";
-      // 两套模板按《页面展示》（客户确认版本，vault/truth/product/
-      // assessment-page-content.md）纯文本化；期别由 Q1 派生（P-01/P-02）。
+      // 两套模板按《页面展示》（vault/truth/页面展示.md）纯文本化；
+      // 期别由 Q1 派生（P-01/P-02）。
       // 防御（评审并发 P2-1）：phaseCode 缺失（异常包）时 fail-closed
       // 输出"期别未定"，绝不默认渲染缓解期医学断言。
       if (verdict.phaseCode !== "acute" && verdict.phaseCode !== "remission") {

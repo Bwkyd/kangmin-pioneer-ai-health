@@ -63,8 +63,8 @@ browse 命令：
   browse video categories
   browse video search <query>
   browse video show <id>
-  browse plan list（临床规则包冻结后开放，当前返回空）
-  browse plan show <id>（临床规则包冻结后开放，当前不可见）
+  browse plan list（返回后台已启用且通过规则门禁的方案）
+  browse plan show <id>（查看后台已启用且通过规则门禁的方案）
   browse search <query>
   browse environment current [--city X]
   browse environment forecast [--days N]
@@ -116,12 +116,12 @@ account 命令：
   密码不会出现在命令行参数、历史或日志中。
 
 当前真实可用：
-  agent 确定性安全会话 + 自由对话管线（临床规则包为 candidate，正式输出阻断）、
-  record 全部命令、browse 已发布文章/视频/环境快照（方案待临床冻结后开放）、
+  agent 确定性安全会话 + 自由对话管线（默认规则包 clinical-rules-v3 已启用）、
+  record 全部命令、browse 已发布文章/视频/环境快照及后台已启用方案、
   account 注册/登录/状态/退出/资料/同意/隐私。
 
 临床边界：
-  当前无获批临床规则和方案，Agent 不输出证型、穴位、疗程或调理方案。
+  默认规则包为 approved；Agent 只能解释确定性规则结果和已启用方案，不能改变判断。
 
 身份：
   通过 KANGMIN_SESSION_TOKEN 传递不透明会话令牌。

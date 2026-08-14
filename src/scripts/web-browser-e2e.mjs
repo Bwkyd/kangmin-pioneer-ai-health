@@ -301,8 +301,8 @@ try {
   );
 
   // ---- 学一学（discover）内容页 ----
-  // 空库下进入"学一学"：默认进入成人视频分类目录；方案 tab 在 candidate 门禁下
-  // browse plan list 返回空是设计行为，如实提示暂未开放。
+  // 空库下进入"学一学"：默认进入成人视频分类目录；规则包虽已启用，
+  // 但数据库没有已启用方案，browse plan list 仍应如实提示暂未开放。
   await page.locator(".bottom-nav button", { hasText: "首页" }).click();
   await page.locator(".learn-module").click();
   await page.getByTestId("discover-view").waitFor({ state: "visible" });

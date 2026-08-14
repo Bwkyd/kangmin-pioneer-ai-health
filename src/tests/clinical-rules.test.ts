@@ -100,10 +100,9 @@ test("生产规则包元数据：v3 页面问卷、六步树与稳定哈希", ()
   assert.match(kernel.rulePackageHash, /^[0-9a-f]{64}$/u);
   assert.equal(DRAFT_RULE_PACKAGE.questionnaireStrategy, "page_q1_q14");
   assert.deepEqual(DRAFT_RULE_PACKAGE.sourceRefs, [
-    "vault/truth/clinical/syndrome-six-step-decision-tree.md",
-    "vault/truth/clinical/assessment-rules.md",
-    "vault/truth/product/assessment-page-content.md",
-    "vault/truth/clinical/care-plans.md"
+    "vault/truth/前置规则.md",
+    "vault/truth/页面展示.md",
+    "vault/truth/急性期方案、调体方案（缓解期方案）.md"
   ]);
 });
 

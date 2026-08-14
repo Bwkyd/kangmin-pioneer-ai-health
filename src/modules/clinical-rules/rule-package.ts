@@ -7,8 +7,9 @@
  * 旧安全/筛查/严重度规则保留作历史包兼容，不再插入 page_q1_q14 页面流程。
  *
  * 当前开发和验收采用的客户确认资料引用见 sourceRefs：
- * - assessment-rules：前置规则、证型决策树及急性期/缓解期判定；
- * - care-plans：急性期方案和各证型调体方案。
+ * - 《前置规则》：证型决策树及急性期/缓解期判定；
+ * - 《页面展示》：Q1-Q14 题面、选项、顺序和结果结构；
+ * - 《急性期方案、调体方案（缓解期方案）》：急性期方案和各证型调体方案。
  * 开发侧补充的高风险兜底规则属于程序安全约束，不冒充客户资料原文。
  *
  * 临床红线：正式患者输出路径只允许 approved 包；规则变更须走开发发布流程
@@ -27,10 +28,9 @@ export const DRAFT_PACKAGE_VERSION = "clinical-rules-v3";
 export const DRAFT_PACKAGE_STATUS = "approved" as const;
 
 export const SOURCE_REFS: string[] = [
-  "vault/truth/clinical/syndrome-six-step-decision-tree.md",
-  "vault/truth/clinical/assessment-rules.md",
-  "vault/truth/product/assessment-page-content.md",
-  "vault/truth/clinical/care-plans.md"
+  "vault/truth/前置规则.md",
+  "vault/truth/页面展示.md",
+  "vault/truth/急性期方案、调体方案（缓解期方案）.md"
 ];
 
 const SAFETY_RULES: readonly ClinicalRule[] = [

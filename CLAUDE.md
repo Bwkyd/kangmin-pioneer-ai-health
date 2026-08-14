@@ -2,7 +2,8 @@
 
 > Agent 在本仓工作前必读：`state/board.md` + `state/memory/MEMORY.md` + `.42cog/intent.md`。
 > 只放最关键的决策与纪律；系统是什么样见 `.42cog/`（陈述句），产出该长什么样见
-> `specs/`（标准），目录语义展开见 `meta/kangmin_directory-protocol.md`（v1.6，唯一现行版）。
+> `specs/`（标准），目录语义展开见 `meta/kangmin_directory-protocol.md`（v1.8，唯一现行版）。
+> `hi.md` 是我的手稿，你只读，不修改、不重排、不格式化、不加提示语。
 
 ## 系统与方向（指针，不抄副本）
 
