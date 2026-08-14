@@ -20,7 +20,7 @@
  *
  * 方案浏览门禁：与临床规则包冻结状态同源（评审 P1-12）——生效规则包
  * （options.rulePackage ?? DRAFT_RULE_PACKAGE）status 为 approved 时注入
- * planBrowseEnabled=true；clinical-rules-v2 已冻结，Web 试用即放开，
+ * planBrowseEnabled=true；默认 clinical-rules-v3 已启用，Web 试用即放开，
  * SQLite 与 PostgreSQL 路径同一派生，不再读环境变量。
  *
  * 生产存储策略（fail-closed，见 assertProductionStorage）：
@@ -120,9 +120,9 @@ export interface ApplicationOptions {
   extraction?: ModelExtractionPort | undefined;
   /** 模型解释端口（测试用）；默认 DeepSeek 适配器。 */
   explanation?: ModelExplanationPort | undefined;
-  /** 方案注册表端口；默认无任何已批准方案（规则包未冻结）。 */
+  /** 方案注册表端口；未提供时读取数据库中已启用的统一方案表。 */
   planRegistry?: PlanRegistryPort | undefined;
-  /** 临床规则包注入点（测试用）；默认加载冻结包 clinical-rules-v2。 */
+  /** 临床规则包注入点（测试用）；默认加载 approved 包 clinical-rules-v3。 */
   rulePackage?: RulePackage | undefined;
   /** 显式覆盖 KANGMIN_APP_ENV（测试用）；未提供时读环境变量。 */
   appEnvironment?: AppEnvironment | undefined;
@@ -775,7 +775,7 @@ export function createApplicationWithOps(
       sessions,
       new SqliteRecordRepository(database, encryption),
       // 方案浏览门禁（设计 §17 患者侧门禁）：与规则包冻结状态同源
-      // （评审 P1-12）——生效规则包 approved（clinical-rules-v2 已冻结）
+      // （评审 P1-12）——生效规则包 approved（默认 clinical-rules-v3 已启用）
       // 即放开，不再读 KANGMIN_PLAN_BROWSE_ENABLED。
       new SqliteContentReadRepository(database, {
         planBrowseEnabled: rulePackage.status === "approved"

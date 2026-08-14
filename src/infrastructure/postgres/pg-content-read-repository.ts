@@ -164,8 +164,8 @@ function toPlanDetail(row: PlanRow): CarePlanDetail {
  * - 患者浏览可见门禁：planBrowseEnabled（= 临床规则包是否 approved），
  *   由组合根按规则包状态注入，candidate 期间恒 false。
  * 两个门禁相互独立：candidate 期间管理端"启用方案"不再把完整调理方案
- * （含穴位/疗程文本）公开给匿名患者（评审 R2 P1，与 HELP"当前无获批
- * 临床规则和方案"一致）；approved 后组合根注入 true 才开放浏览。
+ * （含穴位/疗程文本）公开给匿名患者（评审 R2 P1）；approved 后组合根
+ * 注入 true 才开放浏览。
  * （agent_care_plans 0007 历史表不再读写，保留在迁移账本中。）
  *
  * 门禁关闭（planBrowseEnabled=false）时方案方法在触达存储前短路返回
@@ -182,7 +182,7 @@ export class PgContentReadRepository implements ContentReadRepository {
     private readonly database: KangminPgDatabase,
     options: PlanBrowseVisibility = {}
   ) {
-    // 默认 false（fail-closed）：组合根当前未注入即 candidate，方案不
+    // 默认 false（fail-closed）：组合根未注入可见性判断时，方案不
     // 对患者开放；规则包 approved 后由组合根传 { planBrowseEnabled: true }。
     this.planBrowseEnabled = options.planBrowseEnabled ?? false;
   }

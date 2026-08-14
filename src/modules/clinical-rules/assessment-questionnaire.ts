@@ -2,7 +2,7 @@
  * 客户确认的页面问卷单一来源。
  *
  * 题目、选项与顺序逐项来自：
- * vault/truth/product/assessment-page-content.md（原件：页面展示.md）。
+ * vault/truth/页面展示.md。
  * 本文件只定义页面内容，不包含证型跳转；跳转由
  * syndrome-decision-tree.ts 按《前置规则》独立负责。
  */
