@@ -308,6 +308,20 @@ test("自由文本医学校验：方案外穴位疗法和无依据数值拒绝�
     null
   );
   assert.equal(
+    renderGeneratedFollowUpOutput(
+      "资料记载可向内上方斜刺迎香0.3寸。",
+      verdict,
+      [{
+        knowledgeId: "manual-acupuncture",
+        name: "原手册针刺段落",
+        source: "客户资料",
+        text: "迎香略向内上方斜刺或平刺，0.3～0.5寸。"
+      }]
+    ),
+    null,
+    "来源中存在但当前方案未允许的针刺操作仍须拒绝"
+  );
+  assert.equal(
     renderGeneratedPlanOutput("迎香每次按揉1分钟。", verdict),
     null
   );
