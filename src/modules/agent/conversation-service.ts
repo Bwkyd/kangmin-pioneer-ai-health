@@ -49,12 +49,19 @@ import type {
   ExplanationFields,
   ExtractionCandidate,
   ModelExplanationPort,
-  ModelExtractionPort
+  ModelExtractionPort,
+  PlanDialoguePort,
+  PlanDialogueSource
 } from "./model-ports.js";
+import type { KnowledgeRetrievalPort } from "./knowledge-qa.js";
 import {
   EXTRACTION_UNAVAILABLE_NOTICE,
   FAIL_CLOSED_INFO_NOTICE,
   FAIL_CLOSED_SAFETY_NOTICE,
+  questionWithinApprovedPlan,
+  renderFixedFollowUp,
+  renderGeneratedFollowUpOutput,
+  renderGeneratedPlanOutput,
   renderValidatedOutput,
   systemNotice
 } from "./output-validation.js";
@@ -105,7 +112,9 @@ export class ConversationService {
     private readonly extraction: ModelExtractionPort,
     private readonly explanation: ModelExplanationPort,
     private readonly encryption: EncryptionPort,
-    private readonly consentGate: ConsentGatePort
+    private readonly consentGate: ConsentGatePort,
+    private readonly planDialogue: PlanDialoguePort | null = null,
+    private readonly knowledgeRetrieval: KnowledgeRetrievalPort | null = null
   ) {}
 
   /** 单轮对话：创建或续接会话、评估、校验输出、保存决策凭证。 */
@@ -192,6 +201,15 @@ export class ConversationService {
     }
 
     if (session.state !== "active") {
+      if (session.state === "completed" && message !== "") {
+        return this.execCompletedFollowUp({
+          session,
+          message,
+          saved,
+          saveConfirmationRequired,
+          timestamp
+        });
+      }
       if (saved) {
         // 已结束的匿名对话仍可确认保存（只绑定，不再产生新轮次）。
         return {
@@ -386,8 +404,25 @@ export class ConversationService {
       this.kernel.rulePackageStatus,
       modelFields
     );
+    let generatedPlan = null;
+    if (
+      escalated === null &&
+      verdict.outcome === "classified" &&
+      verdict.planBundle !== null &&
+      this.kernel.rulePackageStatus === "approved" &&
+      this.planDialogue !== null
+    ) {
+      try {
+        generatedPlan = renderGeneratedPlanOutput(
+          await this.planDialogue.generatePlan(verdict),
+          verdict
+        );
+      } catch {
+        generatedPlan = null;
+      }
+    }
     const finalOutput =
-      escalated ?? validated;
+      escalated ?? generatedPlan ?? validated;
 
     // 6-8. 决策凭证 + 消息 + 会话状态：构造后单事务提交
     //      （评审 B P1-2 原子化：任何一步失败整轮回滚；
@@ -579,6 +614,175 @@ export class ConversationService {
       messages,
       decisionCount: decisions.length,
       lastDecision: last === null ? null : this.summarizeDecision(last)
+    };
+  }
+
+  /** 已完成且成功分类的评估可在同一会话内继续追问当前方案。 */
+  private async execCompletedFollowUp(input: {
+    session: ConversationSession;
+    message: string;
+    saved: boolean;
+    saveConfirmationRequired: boolean;
+    timestamp: string;
+  }): Promise<ConversationTurnResult> {
+    const { session, message, timestamp } = input;
+    const answers = await this.repository.listConfirmedAnswers(session.id);
+    const facts = answersToFacts(answers);
+    const verdict = await this.kernel.evaluate(facts);
+    if (
+      verdict.outcome !== "classified" ||
+      verdict.planBundle === null ||
+      this.kernel.rulePackageStatus !== "approved"
+    ) {
+      throw new DomainError(
+        "validation_failed",
+        "只有已完成并取得有效方案的评估才能继续追问"
+      );
+    }
+
+    const planQuestion = questionWithinApprovedPlan(message, verdict);
+    let sources: PlanDialogueSource[] = [];
+    if (planQuestion && this.knowledgeRetrieval !== null) {
+      try {
+        sources = (await this.knowledgeRetrieval.searchEnabled(message, 3)).map(
+          (source) => ({
+            knowledgeId: source.knowledgeId,
+            name: source.name,
+            source: source.source,
+            text: source.text
+          })
+        );
+      } catch {
+        sources = [];
+      }
+    }
+
+    let finalOutput: ReturnType<typeof renderFixedFollowUp>;
+    if (!planQuestion) {
+      finalOutput = renderFixedFollowUp(
+        "follow_up_out_of_plan",
+        "您问到的穴位或疗法不在当前方案中，本工具不能新增操作建议。请咨询专业医生。",
+        verdict
+      );
+    } else if (sources.length === 0) {
+      finalOutput = renderFixedFollowUp(
+        "follow_up_no_evidence",
+        "当前已审核知识资料中没有找到足够依据，我不能凭空补充这个操作细节。请换一种问法或咨询专业医生。",
+        verdict
+      );
+    } else {
+      let generated: string | null = null;
+      if (this.planDialogue !== null) {
+        try {
+          generated = await this.planDialogue.answerFollowUp({
+            question: message,
+            verdict,
+            sources
+          });
+        } catch {
+          generated = null;
+        }
+      }
+      finalOutput =
+        renderGeneratedFollowUpOutput(generated, verdict, sources) ??
+        renderFixedFollowUp(
+          "follow_up_degraded",
+          "当前暂时无法生成可靠回答。您可以查看下方依据，或稍后重试；本工具不会补充未经审核的医学细节。",
+          verdict,
+          sources
+        );
+    }
+
+    const decisions = await this.repository.listDecisions(session.id);
+    const lastDecision = decisions[decisions.length - 1] ?? null;
+    const snapshotJson = canonicalJson(facts);
+    const decisionId = randomUUID();
+    const decision: DecisionRow = {
+      id: decisionId,
+      sessionId: session.id,
+      decisionSequence: (lastDecision?.decisionSequence ?? 0) + 1,
+      sessionRevision: session.revision,
+      inputSnapshotEncrypted: this.encryption.encrypt(snapshotJson),
+      inputSnapshotHash: sha256(snapshotJson),
+      outcome: verdict.outcome,
+      stage: verdict.stage,
+      severityCode: verdict.severityCode,
+      syndromeCode: verdict.syndromeCode,
+      phaseCode: verdict.phaseCode,
+      audience: verdict.audience,
+      rulePackageStatus: this.kernel.rulePackageStatus,
+      nextQuestionsJson: "[]",
+      matchedRuleIdsJson: JSON.stringify(verdict.matchedRuleIds),
+      rulePackageVersion: session.rulePackageVersion,
+      rulePackageHash: session.rulePackageHash,
+      planId: verdict.planId,
+      planRevision: verdict.planRevision,
+      createdAt: timestamp
+    };
+
+    const visibleMessage = patientVisibleMessage(message);
+    const userSequence = session.lastSequence + 1;
+    const messages: ConversationMessage[] = [
+      {
+        id: randomUUID(),
+        sessionId: session.id,
+        sequence: userSequence,
+        role: "user",
+        decisionId: null,
+        contentEncrypted: this.encryption.encrypt(visibleMessage),
+        contentHash: sha256(visibleMessage),
+        createdAt: timestamp
+      },
+      {
+        id: randomUUID(),
+        sessionId: session.id,
+        sequence: userSequence + 1,
+        role: "assistant",
+        decisionId,
+        contentEncrypted: this.encryption.encrypt(finalOutput.content),
+        contentHash: finalOutput.contentHash,
+        createdAt: timestamp
+      }
+    ];
+    const next: ConversationSession = {
+      ...session,
+      revision: session.revision + 1,
+      lastSequence: userSequence + 2,
+      updatedAt: timestamp
+    };
+    const outcome = await this.repository.commitTurn({
+      sessionId: session.id,
+      expectedRevision: session.revision,
+      answers: [],
+      candidates: [],
+      decision,
+      messages,
+      next
+    });
+    if (outcome.kind === "version_conflict") {
+      throw new DomainError("version_conflict", "对话已更新，请重新读取", {
+        details: {
+          expectedRevision: session.revision,
+          currentRevision: outcome.currentRevision
+        }
+      });
+    }
+
+    return {
+      conversationId: session.id,
+      state: "completed",
+      message: {
+        role: "assistant",
+        content: finalOutput.content,
+        contentHash: finalOutput.contentHash,
+        decisionId
+      },
+      notices: [],
+      verdict: this.patientVerdict(verdict),
+      proposedCandidates: [],
+      saveConfirmationRequired: input.saveConfirmationRequired,
+      saved: input.saved,
+      closed: true
     };
   }
 

@@ -258,6 +258,7 @@ export default function App() {
     }
   });
   const [conversationState, setConversationState] = useState<AgentConversationState | null>(null);
+  const [followUpEnabled, setFollowUpEnabled] = useState(false);
   const [conversationEndReason, setConversationEndReason] = useState<string | null>(null);
   const [chatHydrated, setChatHydrated] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
@@ -332,6 +333,10 @@ export default function App() {
     profileLoadError &&
     exposureStatus === "error" &&
     medicationStatus === "error";
+  const chatCanSend =
+    conversationState === null ||
+    conversationState === "active" ||
+    (conversationState === "completed" && followUpEnabled);
 
   useEffect(() => {
     let cancelled = false;
@@ -369,6 +374,10 @@ export default function App() {
         if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
         setMessages(restoredMessages(detail));
         setConversationState(detail.session.state);
+        setFollowUpEnabled(
+          detail.session.state === "completed" &&
+          detail.lastDecision?.outcome === "classified"
+        );
         setConversationEndReason(
           detail.session.state === "abandoned"
             ? "评估规则已更新，请新建对话后重新评估。"
@@ -384,6 +393,7 @@ export default function App() {
         if (cancelled || !chatLoadRequest.isCurrent(requestVersion)) return;
         setConversationId(null);
         setConversationState(null);
+        setFollowUpEnabled(false);
         setConversationEndReason(null);
         setMessages([WELCOME_MESSAGE]);
         setPendingQuestions(null);
@@ -652,6 +662,7 @@ export default function App() {
     chatLoadRequest.next();
     setConversationId(null);
     setConversationState(null);
+    setFollowUpEnabled(false);
     setConversationEndReason(null);
     setMessages([WELCOME_MESSAGE]);
     setPendingQuestions(null);
@@ -681,6 +692,10 @@ export default function App() {
       if (!chatLoadRequest.isCurrent(requestVersion)) return;
       setConversationId(detail.session.id);
       setConversationState(detail.session.state);
+      setFollowUpEnabled(
+        detail.session.state === "completed" &&
+        detail.lastDecision?.outcome === "classified"
+      );
       setConversationEndReason(
         detail.session.state === "abandoned"
           ? "评估规则已更新，请新建对话后重新评估。"
@@ -745,7 +760,7 @@ export default function App() {
     echoUser = true,
     optionMessage: Extract<Message, { kind: "option" }> | null = null
   ) => {
-    if (!chatHydrated || (conversationState !== null && conversationState !== "active")) {
+    if (!chatHydrated || !chatCanSend) {
       setChatError("本对话已结束，请新建对话后继续");
       setChatRetryMessage(null);
       return;
@@ -766,6 +781,7 @@ export default function App() {
       if (!chatRequest.isCurrent(requestVersion)) return;
       setConversationId(turn.conversationId);
       setConversationState(turn.state);
+      setFollowUpEnabled(turn.verdict?.outcome === "classified");
       setConversationEndReason(null);
       try {
         sessionStorage.setItem(AGENT_CONVERSATION_KEY, turn.conversationId);
@@ -785,6 +801,7 @@ export default function App() {
       setMessages((current) => current.filter((message) => message.kind !== "thinking"));
       if (error instanceof CommandError && error.code === "protocol_incompatible") {
         setConversationState("abandoned");
+        setFollowUpEnabled(false);
         setConversationEndReason("评估规则已更新，请新建对话后重新评估。");
         setPendingQuestions(null);
         setChatError("");
@@ -793,6 +810,7 @@ export default function App() {
       } else if (error instanceof CommandError && error.code === "resource_not_found") {
         setConversationId(null);
         setConversationState(null);
+        setFollowUpEnabled(false);
         setConversationEndReason(null);
         setPendingQuestions(null);
         setChatError("当前对话已过期或不可用，请新建对话后重新发送");
@@ -807,6 +825,7 @@ export default function App() {
         error.message.includes("对话已结束")
       ) {
         setConversationState("completed");
+        setFollowUpEnabled(false);
         setConversationEndReason(null);
         setPendingQuestions(null);
         setChatError("本对话已结束，请新建对话后继续");
@@ -822,7 +841,7 @@ export default function App() {
   const sendCustom = (event: FormEvent) => {
     event.preventDefault();
     const value = input.trim();
-    if (!value || chatSending || !chatHydrated || (conversationState !== null && conversationState !== "active")) return;
+    if (!value || chatSending || !chatHydrated || !chatCanSend) return;
     setInput("");
     void sendChatMessage(value);
   };
@@ -1423,9 +1442,15 @@ export default function App() {
                     )}
                   </div>
                 )}
-                {conversationState !== null && conversationState !== "active" && (
+                {conversationState !== null && conversationState !== "active" && !followUpEnabled && (
                   <div className="conversation-ended" role="status">
                     <span>{conversationEndReason ?? "本对话已结束，历史内容仍可查看。"}</span>
+                    <button type="button" onClick={startNewConversation}>新建对话</button>
+                  </div>
+                )}
+                {followUpEnabled && (
+                  <div className="conversation-ended" role="status">
+                    <span>评估已完成，你可以继续追问当前方案。</span>
                     <button type="button" onClick={startNewConversation}>新建对话</button>
                   </div>
                 )}
@@ -1434,10 +1459,10 @@ export default function App() {
                     aria-label="输入症状或问题"
                     value={input}
                     onChange={(event) => setInput(event.target.value)}
-                    placeholder={!chatHydrated ? "正在恢复对话…" : conversationState !== null && conversationState !== "active" ? "该对话已结束" : chatSending ? "正在发送…" : "问问题或描述症状…"}
-                    disabled={!chatHydrated || chatSending || (conversationState !== null && conversationState !== "active")}
+                    placeholder={!chatHydrated ? "正在恢复对话…" : !chatCanSend ? "该对话已结束" : chatSending ? "正在发送…" : followUpEnabled ? "继续追问当前方案…" : "问问题或描述症状…"}
+                    disabled={!chatHydrated || chatSending || !chatCanSend}
                   />
-                  <button className="send-button" type="submit" aria-label="发送" disabled={!chatHydrated || chatSending || (conversationState !== null && conversationState !== "active")}>{chatSending ? "…" : "↑"}</button>
+                  <button className="send-button" type="submit" aria-label="发送" disabled={!chatHydrated || chatSending || !chatCanSend}>{chatSending ? "…" : "↑"}</button>
                 </form>
               </div>
             )}

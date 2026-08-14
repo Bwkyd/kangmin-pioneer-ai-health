@@ -75,6 +75,7 @@ export interface AgentConversationDetail {
   }>;
   decisionCount: number;
   lastDecision: {
+    outcome: string;
     nextQuestions: Array<{ fieldCode: string; prompt: string }>;
   } | null;
 }

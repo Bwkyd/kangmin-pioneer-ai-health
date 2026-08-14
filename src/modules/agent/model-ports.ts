@@ -64,3 +64,25 @@ export interface ModelExplanationPort {
     packageStatus: RulePackageStatus
   ): Promise<ExplanationFields | null>;
 }
+
+export interface PlanDialogueSource {
+  knowledgeId: string;
+  name: string;
+  source: string | null;
+  text: string;
+}
+
+/**
+ * 规则判定后的患者对话端口。
+ *
+ * 输入中的证型、期别、方案和资料都由服务端准备；模型只能转译和答疑，
+ * 无权改变裁决或补充方案。输出仍须经过服务端医学校验后才能展示。
+ */
+export interface PlanDialoguePort {
+  generatePlan(verdict: ClinicalVerdict): Promise<string | null>;
+  answerFollowUp(input: {
+    question: string;
+    verdict: ClinicalVerdict;
+    sources: readonly PlanDialogueSource[];
+  }): Promise<string | null>;
+}

@@ -4,22 +4,40 @@ import assert from "node:assert/strict";
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 import { createHash } from "node:crypto";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
+import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { DomainError } from "../kernel/errors.js";
 import type { CommandResult } from "../kernel/result.js";
 import type { RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
-import type { ExtractionCandidate } from "../modules/agent/model-ports.js";
+import type {
+  ExtractionCandidate,
+  PlanDialoguePort,
+  PlanDialogueSource
+} from "../modules/agent/model-ports.js";
+import type {
+  KnowledgeRetrievalPort,
+  KnowledgeSource
+} from "../modules/agent/knowledge-qa.js";
+import type {
+  ApprovedPlan,
+  ClinicalVerdict,
+  PlanRegistryPort
+} from "../modules/clinical-rules/contracts.js";
 import { writeConsentForTest } from "./consent-fixture.js";
 import type {
   ConversationSession,
   ConversationTurnResult
 } from "../modules/agent/conversation-contracts.js";
+import type {
+  AgentPlan,
+  KnowledgeItem
+} from "../modules/agent-admin/contracts.js";
 import type { CommitTurnInput } from "../modules/agent/conversation-repository.js";
 import { CLINICAL_FREEZE_BLOCK } from "../modules/agent/output-validation.js";
 import {
@@ -75,6 +93,63 @@ class NullExplanation {
   }
 }
 
+class FixedPlanDialogue implements PlanDialoguePort {
+  followUpCalls = 0;
+
+  async generatePlan(): Promise<string> {
+    return "已根据规则结果整理为通俗说明，请只选择当前方案列出的操作，并先阅读注意事项。";
+  }
+
+  async answerFollowUp(input: {
+    question: string;
+    verdict: ClinicalVerdict;
+    sources: readonly PlanDialogueSource[];
+  }): Promise<string> {
+    this.followUpCalls += 1;
+    assert.ok(input.question.includes("迎香"));
+    assert.equal(input.sources[0]?.name, "过敏性鼻炎适宜技术手册·迎香穴");
+    return "迎香位于鼻翼外缘附近，具体定位请以已审核资料和操作视频为准；当前只采用方案列出的指腹擦迎香。";
+  }
+}
+
+class FixedKnowledgeRetrieval implements KnowledgeRetrievalPort {
+  async searchEnabled(): Promise<KnowledgeSource[]> {
+    return [{
+      knowledgeId: "manual-yingxiang",
+      name: "过敏性鼻炎适宜技术手册·迎香穴",
+      source: "客户授权测试资料",
+      chunkIndex: 1,
+      text: "迎香位于鼻翼外缘附近。当前方案采用指腹擦迎香。"
+    }];
+  }
+}
+
+class FixedPlanRegistry implements PlanRegistryPort {
+  async findApprovedPlanBundle(): Promise<{
+    acute: ApprovedPlan;
+    constitution: ApprovedPlan;
+  }> {
+    const acute = {
+      planId: "acute-yingxiang",
+      planRevision: 1,
+      name: "急性期迎香调理方案",
+      method: "指腹擦迎香",
+      steps: JSON.stringify(["指腹轻擦迎香，以皮肤温热为度"]),
+      precautions: "皮肤破损时暂停操作。",
+      videoResourceId: "video-yingxiang",
+      attributes: {}
+    };
+    return {
+      acute,
+      constitution: {
+        ...acute,
+        planId: "constitution-yingxiang",
+        name: "体质调理方案"
+      }
+    };
+  }
+}
+
 interface Fixture {
   application: ReturnType<typeof createApplication>;
   extraction: FixedExtraction;
@@ -96,15 +171,41 @@ async function fixture(
   return { application, extraction, databasePath };
 }
 
-async function currentFixture(): Promise<Fixture> {
+async function currentFixture(options: {
+  planDialogue?: PlanDialoguePort;
+  planKnowledgeRetrieval?: KnowledgeRetrievalPort;
+  planRegistry?: PlanRegistryPort;
+} = {}): Promise<Fixture> {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-conv-current-"));
   const databasePath = join(directory, "conv.sqlite");
   const extraction = new FixedExtraction([]);
   const application = createApplication(databasePath, {
     extraction,
-    explanation: new NullExplanation()
+    explanation: new NullExplanation(),
+    ...options
   });
   return { application, extraction, databasePath };
+}
+
+async function completeCurrentAssessment(
+  application: ReturnType<typeof createApplication>,
+  token: string
+): Promise<ConversationTurnResult> {
+  let turn = await exec(application, { message: "开始评估" }, token);
+  const answers = [
+    "q1=C", "q2=B", "q3=B", "q4=C", "q5=D", "q6=B", "q7=C",
+    "q8=C", "q9=A", "q10=B", "q11=D", "q8=B", "q10=A",
+    "q12=C", "q13=B", "q14=B"
+  ];
+  for (const message of answers) {
+    turn = await exec(
+      application,
+      { message, conversationId: turn.conversationId },
+      token
+    );
+  }
+  assert.equal(turn.verdict?.outcome, "classified");
+  return turn;
 }
 
 /**
@@ -361,6 +462,190 @@ test("生产 E2E：页面 Q1-Q14、六步二次确认与分期完整闭环", asy
     assert.ok(fields.includes("step6_q10_confirm"));
   } finally {
     database.close();
+  }
+});
+
+test("诊一诊小闭环：规则后动态生成、完成会话继续追问、方案外疗法确定性拒绝", async () => {
+  const planDialogue = new FixedPlanDialogue();
+  const { application } = await currentFixture({
+    planDialogue,
+    planKnowledgeRetrieval: new FixedKnowledgeRetrieval(),
+    planRegistry: new FixedPlanRegistry()
+  });
+  const token =
+    (await application.sessions.createDevelopmentSession("conv-plan-follow-up")).token;
+  try {
+    const completed = await completeCurrentAssessment(application, token);
+    assert.equal(completed.state, "completed");
+    assert.ok(completed.message?.content.includes("已根据规则结果整理为通俗说明"));
+    assert.ok(completed.message?.content.includes("【已审核方案】"));
+    assert.ok(completed.message?.content.includes("皮肤破损时暂停操作"));
+    assert.ok(completed.message?.content.includes("【依据】"));
+
+    const followUp = await exec(
+      application,
+      {
+        message: "迎香穴具体位置在哪里？",
+        conversationId: completed.conversationId
+      },
+      token
+    );
+    assert.equal(followUp.state, "completed");
+    assert.equal(followUp.verdict?.outcome, "classified");
+    assert.ok(followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
+    assert.ok(followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
+    assert.equal(planDialogue.followUpCalls, 1);
+
+    const refused = await exec(
+      application,
+      {
+        message: "艾灸上火怎么办？",
+        conversationId: completed.conversationId
+      },
+      token
+    );
+    assert.ok(refused.message?.content.includes("不在当前方案中"));
+    assert.ok(refused.message?.content.includes("不能新增操作建议"));
+    assert.equal(planDialogue.followUpCalls, 1, "方案外疗法不得调用模型");
+
+    const show = dataOf<{ messages: Array<{ role: string; content: string }> }>(
+      await application.execute({
+        command: "agent conversations show",
+        input: { id: completed.conversationId },
+        sessionToken: token
+      })
+    );
+    assert.ok(show.messages.some((message) => message.content.includes("迎香穴具体位置")));
+    assert.ok(show.messages.some((message) => message.content.includes("艾灸上火")));
+  } finally {
+    application.close();
+  }
+});
+
+test("诊一诊真实 SQLite E2E：后台启用方案与知识后，患者完成评估并追问", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-plan-dialogue-e2e-"));
+  const databasePath = join(directory, "e2e.sqlite");
+  const mediaDirectory = join(directory, "admin-media");
+  mkdirSync(mediaDirectory, { recursive: true });
+
+  const admin = createAdminApplication(databasePath, { mediaDirectory });
+  const adminSession = await admin.sessions.createDevelopmentSession("plan-dialogue-owner");
+  const adminToken = adminSession.token;
+  try {
+    const createAndEnablePlan = async (input: {
+      name: string;
+      syndrome: string;
+      phaseCode?: "acute";
+      method: string;
+      steps: string[];
+    }): Promise<AgentPlan> => {
+      const created = dataOf<AgentPlan>(await admin.execute({
+        command: "agent plan create",
+        adminToken,
+        input: {
+          ...input,
+          audience: "adult",
+          precautions: "仅用于自动化验证，不作为真实操作说明。",
+          risks: "测试数据不替代已审核医学资料。",
+          contraindications: "真实使用前必须由客户启用正式方案。"
+        }
+      }));
+      return dataOf<AgentPlan>(await admin.execute({
+        command: "agent plan enable",
+        adminToken,
+        input: { id: created.id, expectedRevision: created.revision, yes: true }
+      }));
+    };
+
+    await createAndEnablePlan({
+      name: "急性期迎香测试方案",
+      syndrome: "ACUTE",
+      phaseCode: "acute",
+      method: "指腹擦迎香",
+      steps: ["指腹擦迎香"]
+    });
+    await createAndEnablePlan({
+      name: "寒热错杂测试调体方案",
+      syndrome: "COLD_HEAT_COMPLEX",
+      method: "肺俞、风门、大椎、耳穴过敏区",
+      steps: ["肺俞", "风门", "大椎", "耳穴过敏区"]
+    });
+
+    const knowledgeFile = join(mediaDirectory, "迎香测试资料.md");
+    writeFileSync(
+      knowledgeFile,
+      "# 迎香测试资料\n\n迎香位于鼻翼外缘附近。当前测试方案采用指腹擦迎香。"
+    );
+    const added = dataOf<KnowledgeItem>(await admin.execute({
+      command: "agent knowledge add",
+      adminToken,
+      input: { file: knowledgeFile, source: "客户授权测试资料" }
+    }));
+    const named = dataOf<KnowledgeItem>(await admin.execute({
+      command: "agent knowledge update",
+      adminToken,
+      input: {
+        id: added.id,
+        name: "过敏性鼻炎适宜技术手册·迎香穴",
+        source: "客户授权测试资料"
+      }
+    }));
+    const indexed = dataOf<KnowledgeItem>(await admin.execute({
+      command: "agent knowledge index",
+      adminToken,
+      input: { id: named.id }
+    }));
+    dataOf<KnowledgeItem>(await admin.execute({
+      command: "agent knowledge enable",
+      adminToken,
+      input: { id: indexed.id, yes: true }
+    }));
+  } finally {
+    admin.close();
+  }
+
+  const planDialogue = new FixedPlanDialogue();
+  const patient = createApplication(databasePath, {
+    extraction: new FixedExtraction([]),
+    explanation: new NullExplanation(),
+    planDialogue
+  });
+  const patientToken =
+    (await patient.sessions.createDevelopmentSession("plan-dialogue-patient")).token;
+  try {
+    const completed = await completeCurrentAssessment(patient, patientToken);
+    assert.equal(completed.verdict?.syndromeCode, "COLD_HEAT_COMPLEX");
+    assert.ok(completed.message?.content.includes("急性期迎香测试方案"));
+    assert.ok(completed.message?.content.includes("寒热错杂测试调体方案"));
+
+    const followUp = await exec(
+      patient,
+      {
+        message: "迎香穴具体位置在哪里？",
+        conversationId: completed.conversationId
+      },
+      patientToken
+    );
+    assert.ok(followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
+    assert.ok(followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
+    assert.equal(planDialogue.followUpCalls, 1);
+
+    const database = new KangminDatabase(databasePath);
+    try {
+      const counts = database.connection.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM agent_plans WHERE status = 'enabled') AS plans,
+          (SELECT COUNT(*) FROM agent_knowledge_items WHERE status = 'enabled') AS knowledge,
+          (SELECT COUNT(*) FROM agent_conversations WHERE state = 'completed') AS conversations
+      `).get() as unknown as { plans: number; knowledge: number; conversations: number };
+      assert.equal(counts.plans, 2);
+      assert.equal(counts.knowledge, 1);
+      assert.equal(counts.conversations, 1);
+    } finally {
+      database.close();
+    }
+  } finally {
+    patient.close();
   }
 });
 

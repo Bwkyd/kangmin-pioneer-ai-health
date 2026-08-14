@@ -8,8 +8,8 @@
  * - assistant 消息只能绑定已完成的 decision，content_hash 必须等于
  *   已校验输出；失败时只允许代码生成的固定 system_notice。
  *
- * 本模块是唯一允许生成患者可见正文的代码路径：
- * 所有输出都从固定模板 + 规则结果字段渲染，模型不写自由文本。
+ * 本模块是唯一允许生成患者可见正文的代码路径：固定模板直接渲染；
+ * 模型自由文本只有通过方案白名单、医学术语、数值与疗效承诺校验后才放行。
  */
 
 import { createHash } from "node:crypto";
@@ -24,7 +24,10 @@ import {
   SYNDROME_LABELS,
   FIELD_LABELS
 } from "../clinical-rules/domain.js";
-import type { ExplanationFields } from "./model-ports.js";
+import type {
+  ExplanationFields,
+  PlanDialogueSource
+} from "./model-ports.js";
 
 export interface ValidatedOutput {
   templateId: string;
@@ -41,6 +44,35 @@ const CONFLICT_MESSAGE =
   "您的回答同时符合多个证型特征，当前信息不足以确定证型。本工具不做猜测，请以门诊诊断为准。";
 const NO_MATCH_MESSAGE =
   "根据您的回答，未匹配到明确的证型。本工具不做猜测，请以门诊诊断为准。";
+
+const KNOWN_ACUPOINTS = [
+  "鼻三线", "迎香", "印堂", "上迎香", "鼻通", "肺俞", "身柱", "风门",
+  "大椎", "天枢", "足三里", "耳穴过敏区", "合谷", "曲池", "百会", "关元",
+  "气海", "肾俞", "脾俞", "风池", "涌泉", "太阳", "攒竹", "四白", "睛明",
+  "列缺", "外关", "太渊", "中脘", "神阙", "膻中", "丰隆", "血海"
+] as const;
+
+const METHOD_ALIASES = [
+  ["刮痧", "姜刮", "刮"],
+  ["艾灸", "灸"],
+  ["拔罐"],
+  ["针刺", "针灸", "毫针"],
+  ["按揉", "点揉", "揉", "按摩"],
+  ["推拿", "手法"],
+  ["耳穴", "压豆"],
+  ["温敷"],
+  ["贴敷"],
+  ["熏洗"],
+  ["放血", "刺络"],
+  ["注射"],
+  ["药物", "服药", "口服"],
+  ["擦法", "指腹擦", "擦"]
+] as const;
+
+const GENERIC_ACUPOINT = /[\p{Script=Han}]{1,10}穴/gu;
+const ACUPOINT_REFERENCES = ["该穴", "此穴", "本穴"] as const;
+const NUMBER_WITH_UNIT = /\d+(?:\.\d+)?(?:\s*[～~—\-至]\s*\d+(?:\.\d+)?)?\s*(?:次|分钟|小时|天|周|个月|厘米|毫米|cm|mm|寸|壮)/giu;
+const EFFICACY_CLAIMS = /(?:保证|确保|一定|彻底)(?:治愈|根治|有效)|包治|永不复发|药到病除/u;
 
 /** 补问信息无法取得进展时的 fail-closed 固定文案（unknown 不等于 no）。 */
 export const FAIL_CLOSED_SAFETY_NOTICE =
@@ -176,6 +208,140 @@ const REMISSION_HEADER = (syndrome: string): string =>
 
 const DISCLAIMER =
   "⚠️ 温馨提示：本方案为居家辅助调理建议，不能替代专业医疗诊断";
+
+function planText(verdict: ClinicalVerdict): string {
+  const plans = [verdict.planBundle?.acute, verdict.planBundle?.constitution]
+    .filter((plan): plan is ApprovedPlan => plan !== null && plan !== undefined);
+  return plans
+    .map((plan) => [plan.name, plan.method, plan.steps, plan.precautions].join("\n"))
+    .join("\n");
+}
+
+function compact(value: string): string {
+  return value.replace(/\s+/gu, "").toLowerCase();
+}
+
+function methodAllowed(term: string, allowed: string): boolean {
+  const group = METHOD_ALIASES.find((aliases) => aliases.includes(term as never));
+  return group === undefined
+    ? allowed.includes(term)
+    : group.some((alias) => allowed.includes(alias));
+}
+
+function containsUnapprovedAcupoint(text: string, allowed: string): boolean {
+  for (const point of KNOWN_ACUPOINTS) {
+    if (text.includes(point) && !allowed.includes(point)) return true;
+  }
+  const genericPoints = text.match(GENERIC_ACUPOINT) ?? [];
+  GENERIC_ACUPOINT.lastIndex = 0;
+  return genericPoints.some((point) => {
+    // “轻擦该穴位”一类代词引用可能被贪婪正则整体命中，引用对象仍须由
+    // 上面的已知穴位白名单判定；这里只排除代词误伤，不新增任何穴位。
+    if (ACUPOINT_REFERENCES.some((reference) => point.endsWith(reference))) {
+      return false;
+    }
+    const withoutSuffix = point.slice(0, -1);
+    return !allowed.includes(point) && !allowed.includes(withoutSuffix);
+  });
+}
+
+/** 追问若点名当前方案外的穴位或疗法，模型调用前即确定性拒绝。 */
+export function questionWithinApprovedPlan(
+  question: string,
+  verdict: ClinicalVerdict
+): boolean {
+  const allowed = planText(verdict);
+  if (containsUnapprovedAcupoint(question, allowed)) return false;
+  for (const aliases of METHOD_ALIASES) {
+    for (const term of aliases) {
+      if (question.includes(term) && !methodAllowed(term, allowed)) return false;
+    }
+  }
+  return true;
+}
+
+/**
+ * 自由文本医学校验：穴位与疗法只能来自方案，操作数值还须能在方案或
+ * 本轮已审核来源中逐字找到；疗效承诺一律拒绝。
+ */
+export function validateGeneratedMedicalText(
+  generated: string | null,
+  verdict: ClinicalVerdict,
+  sources: readonly PlanDialogueSource[] = []
+): string | null {
+  const text = generated?.trim() ?? "";
+  if (text === "" || text.length > 800 || EFFICACY_CLAIMS.test(text)) return null;
+
+  const allowedPlan = planText(verdict);
+  if (containsUnapprovedAcupoint(text, allowedPlan)) return null;
+  for (const aliases of METHOD_ALIASES) {
+    for (const term of aliases) {
+      if (text.includes(term) && !methodAllowed(term, allowedPlan)) return null;
+    }
+  }
+
+  const evidence = compact([
+    allowedPlan,
+    ...sources.map((source) => source.text)
+  ].join("\n"));
+  const numericDetails = text.match(NUMBER_WITH_UNIT) ?? [];
+  NUMBER_WITH_UNIT.lastIndex = 0;
+  if (numericDetails.some((detail) => !evidence.includes(compact(detail)))) return null;
+  return text;
+}
+
+function evidenceFooter(
+  verdict: ClinicalVerdict,
+  sources: readonly PlanDialogueSource[]
+): string {
+  const planNames = [verdict.planBundle?.acute?.name, verdict.planBundle?.constitution?.name]
+    .filter((name): name is string => typeof name === "string" && name !== "");
+  const sourceNames = sources.map((source) => source.name);
+  const names = [...new Set([...planNames, ...sourceNames])];
+  return [
+    names.length === 0 ? "【依据】当前已审核方案" : `【依据】${names.join("；")}`,
+    DISCLAIMER
+  ].join("\n");
+}
+
+export function renderGeneratedPlanOutput(
+  generated: string | null,
+  verdict: ClinicalVerdict
+): ValidatedOutput | null {
+  const validated = validateGeneratedMedicalText(generated, verdict);
+  if (validated === null) return null;
+  const fixed = renderValidatedOutput(verdict, "approved", null).content;
+  const fixedWithoutDisclaimer = fixed.endsWith(DISCLAIMER)
+    ? fixed.slice(0, -DISCLAIMER.length).trimEnd()
+    : fixed;
+  const content = [
+    validated,
+    "【已审核方案】",
+    fixedWithoutDisclaimer,
+    evidenceFooter(verdict, [])
+  ].join("\n\n");
+  return output("generated_plan", content, null);
+}
+
+export function renderGeneratedFollowUpOutput(
+  generated: string | null,
+  verdict: ClinicalVerdict,
+  sources: readonly PlanDialogueSource[]
+): ValidatedOutput | null {
+  const validated = validateGeneratedMedicalText(generated, verdict, sources);
+  if (validated === null) return null;
+  const content = `${validated}\n\n${evidenceFooter(verdict, sources)}`;
+  return output("generated_follow_up", content, null);
+}
+
+export function renderFixedFollowUp(
+  templateId: "follow_up_out_of_plan" | "follow_up_no_evidence" | "follow_up_degraded",
+  content: string,
+  verdict: ClinicalVerdict,
+  sources: readonly PlanDialogueSource[] = []
+): ValidatedOutput {
+  return output(templateId, `${content}\n\n${evidenceFooter(verdict, sources)}`, null);
+}
 
 /** 急性期模板（《页面展示》纯文本化：去 ###/**，保留【】与换行）。 */
 function acuteTemplate(syndrome: string, bundle: PlanBundle | null): string {

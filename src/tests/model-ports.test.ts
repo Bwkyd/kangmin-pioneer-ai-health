@@ -6,11 +6,16 @@ process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 import test from "node:test";
 
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
+import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
 import { DomainError } from "../kernel/errors.js";
 import type { ClinicalVerdict } from "../modules/clinical-rules/contracts.js";
 import {
   renderValidatedOutput,
+  questionWithinApprovedPlan,
+  renderGeneratedFollowUpOutput,
+  renderGeneratedPlanOutput,
   systemNotice,
+  validateGeneratedMedicalText,
   validateExplanationFields,
   CLINICAL_FREEZE_BLOCK
 } from "../modules/agent/output-validation.js";
@@ -75,6 +80,31 @@ test("未配置 API key 时抛 provider_unavailable（绝不伪造回答）", as
   );
   await assert.rejects(
     () => adapter.explain(classifiedVerdict(), "candidate"),
+    (error: unknown) =>
+      error instanceof DomainError && error.code === "provider_unavailable"
+  );
+});
+
+test("千问方案对话端口：使用指定模型并只接收 answer JSON", async () => {
+  let requestedModel: unknown;
+  const adapter = new QwenPlanDialogueAdapter({
+    apiKey: "test-qwen-key",
+    model: "qwen3.7-flash",
+    baseUrl: BASE_URL,
+    fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestedModel = body.model;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ answer: "通俗方案说明" }) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch
+  });
+  assert.equal(await adapter.generatePlan(classifiedPlanVerdict()), "通俗方案说明");
+  assert.equal(requestedModel, "qwen3.7-flash");
+
+  const unavailable = new QwenPlanDialogueAdapter({ baseUrl: BASE_URL });
+  await assert.rejects(
+    () => unavailable.generatePlan(classifiedPlanVerdict()),
     (error: unknown) =>
       error instanceof DomainError && error.code === "provider_unavailable"
   );
@@ -204,6 +234,25 @@ function classifiedVerdict(): ClinicalVerdict {
   };
 }
 
+function classifiedPlanVerdict(): ClinicalVerdict {
+  const plan = {
+    planId: "plan-yingxiang",
+    planRevision: 1,
+    name: "急性期迎香调理方案",
+    method: "指腹擦迎香",
+    steps: JSON.stringify(["指腹轻擦迎香，以皮肤温热为度"]),
+    precautions: "皮肤破损时暂停操作。",
+    videoResourceId: "video-yingxiang",
+    attributes: {}
+  };
+  return {
+    ...classifiedVerdict(),
+    planId: plan.planId,
+    planRevision: plan.planRevision,
+    planBundle: { acute: plan, constitution: null }
+  };
+}
+
 test("输出校验：模型字段与规则结果不一致即拒绝，一致才通过", () => {
   const verdict = classifiedVerdict();
   assert.equal(
@@ -235,6 +284,53 @@ test("模板输出：candidate 规则包 classified 只渲染临床冻结阻断�
   assert.equal(output.templateId, "clinical_freeze");
   assert.equal(output.content, CLINICAL_FREEZE_BLOCK);
   assert.ok(output.contentHash.length === 64);
+});
+
+test("自由文本医学校验：方案外穴位疗法和无依据数值拒绝，来源内细节可放行", () => {
+  const verdict = classifiedPlanVerdict();
+  const generatedPlan = renderGeneratedPlanOutput(
+    "当前方案采用指腹擦迎香，以皮肤温热为度。",
+    verdict
+  );
+  assert.ok(generatedPlan?.content.includes("【依据】急性期迎香调理方案"));
+  assert.ok(generatedPlan?.content.includes("【已审核方案】"));
+  assert.ok(generatedPlan?.content.includes("皮肤破损时暂停操作"));
+  assert.equal(
+    renderGeneratedPlanOutput("可以配合足三里按揉。", verdict),
+    null
+  );
+  assert.equal(
+    renderGeneratedPlanOutput("可以配合未登记的新奇穴。", verdict),
+    null
+  );
+  assert.equal(
+    renderGeneratedPlanOutput("可以增加艾灸。", verdict),
+    null
+  );
+  assert.equal(
+    renderGeneratedPlanOutput("迎香每次按揉1分钟。", verdict),
+    null
+  );
+
+  const sources = [{
+    knowledgeId: "manual-yingxiang",
+    name: "适宜技术手册·迎香",
+    source: "客户授权测试资料",
+    text: "迎香采用指腹轻擦1分钟。"
+  }];
+  assert.ok(
+    renderGeneratedFollowUpOutput("资料记载可用指腹轻擦迎香1分钟。", verdict, sources)
+      ?.content.includes("适宜技术手册·迎香")
+  );
+  assert.equal(questionWithinApprovedPlan("迎香具体在哪里？", verdict), true);
+  assert.equal(questionWithinApprovedPlan("艾灸上火怎么办？", verdict), false);
+  assert.equal(questionWithinApprovedPlan("新奇穴怎么找？", verdict), false);
+});
+
+test("自由文本医学校验：该穴等代词不被误判为新增穴位", () => {
+  const verdict = classifiedPlanVerdict();
+  const generated = "使用指腹轻擦该穴位，力度以局部产生温热感为宜。";
+  assert.equal(validateGeneratedMedicalText(generated, verdict), generated);
 });
 
 test("方案模板：可选项称为方法，删除重复手法段，并在每个方法下放视频", () => {
