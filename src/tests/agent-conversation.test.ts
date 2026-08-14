@@ -112,6 +112,16 @@ class FixedPlanDialogue implements PlanDialoguePort {
   }
 }
 
+class NullPlanDialogue implements PlanDialoguePort {
+  async generatePlan(): Promise<null> {
+    return null;
+  }
+
+  async answerFollowUp(): Promise<null> {
+    return null;
+  }
+}
+
 class FixedKnowledgeRetrieval implements KnowledgeRetrievalPort {
   async searchEnabled(): Promise<KnowledgeSource[]> {
     return [{
@@ -517,6 +527,32 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
     );
     assert.ok(show.messages.some((message) => message.content.includes("迎香穴具体位置")));
     assert.ok(show.messages.some((message) => message.content.includes("艾灸上火")));
+  } finally {
+    application.close();
+  }
+});
+
+test("诊一诊模型波动：只回退到再次通过方案边界校验的已启用知识原文", async () => {
+  const { application } = await currentFixture({
+    planDialogue: new NullPlanDialogue(),
+    planKnowledgeRetrieval: new FixedKnowledgeRetrieval(),
+    planRegistry: new FixedPlanRegistry()
+  });
+  const token =
+    (await application.sessions.createDevelopmentSession("conv-plan-evidence-fallback")).token;
+  try {
+    const completed = await completeCurrentAssessment(application, token);
+    const followUp = await exec(
+      application,
+      {
+        message: "迎香穴具体位置在哪里？",
+        conversationId: completed.conversationId
+      },
+      token
+    );
+    assert.ok(followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
+    assert.ok(followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
+    assert.ok(!followUp.message?.content.includes("当前暂时无法生成可靠回答"));
   } finally {
     application.close();
   }

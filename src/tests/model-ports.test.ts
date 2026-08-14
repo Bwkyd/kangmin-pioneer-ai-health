@@ -14,6 +14,7 @@ import {
   questionWithinApprovedPlan,
   renderGeneratedFollowUpOutput,
   renderGeneratedPlanOutput,
+  renderRetrievedEvidenceFollowUp,
   systemNotice,
   validateGeneratedMedicalText,
   validateExplanationFields,
@@ -336,6 +337,29 @@ test("自由文本医学校验：方案外穴位疗法和无依据数值拒绝�
     renderGeneratedFollowUpOutput("资料记载可用指腹轻擦迎香1分钟。", verdict, sources)
       ?.content.includes("适宜技术手册·迎香")
   );
+  assert.ok(
+    renderRetrievedEvidenceFollowUp(verdict, sources)
+      ?.content.includes("迎香采用指腹轻擦1分钟。"),
+    "模型失败时可展示再次通过方案边界校验的已启用知识原文"
+  );
+  assert.equal(
+    renderRetrievedEvidenceFollowUp(verdict, [{
+      knowledgeId: "manual-acupuncture",
+      name: "原手册针刺段落",
+      source: "客户资料",
+      text: "迎香略向内上方斜刺或平刺，0.3～0.5寸。"
+    }]),
+    null,
+    "知识原文也不得绕过方案外针刺拦截"
+  );
+  const locationFallback = renderRetrievedEvidenceFollowUp(verdict, [{
+    knowledgeId: "manual-location",
+    name: "《福建省中医药适宜技术手册》·迎香定位摘录",
+    source: "客户授权手册定位摘录",
+    text: "# 迎香定位摘录\n适用边界：本知识切片只提供迎香穴定位；操作方式必须以系统当前已启用方案为准。\n【定位】鼻翼外缘中点旁开约 0.5 寸，鼻唇沟中。"
+  }]);
+  assert.ok(locationFallback?.content.includes("鼻翼外缘中点旁开约 0.5 寸"));
+  assert.ok(locationFallback?.content.includes("《福建省中医药适宜技术手册》·迎香定位摘录"));
   assert.equal(questionWithinApprovedPlan("迎香具体在哪里？", verdict), true);
   assert.equal(questionWithinApprovedPlan("手册里迎香穴定位在哪里？", verdict), true);
   assert.equal(questionWithinApprovedPlan("艾灸上火怎么办？", verdict), false);

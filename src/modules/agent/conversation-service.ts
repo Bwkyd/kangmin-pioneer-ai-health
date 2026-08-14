@@ -62,6 +62,7 @@ import {
   renderFixedFollowUp,
   renderGeneratedFollowUpOutput,
   renderGeneratedPlanOutput,
+  renderRetrievedEvidenceFollowUp,
   renderValidatedOutput,
   systemNotice
 } from "./output-validation.js";
@@ -685,6 +686,7 @@ export class ConversationService {
       }
       finalOutput =
         renderGeneratedFollowUpOutput(generated, verdict, sources) ??
+        renderRetrievedEvidenceFollowUp(verdict, sources) ??
         renderFixedFollowUp(
           "follow_up_degraded",
           "当前暂时无法生成可靠回答。您可以查看下方依据，或稍后重试；本工具不会补充未经审核的医学细节。",
