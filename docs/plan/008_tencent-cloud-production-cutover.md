@@ -45,6 +45,9 @@
 
 - 2026-08-11 将提交 `b8246fb` 部署至 `https://49.232.26.48`，服务仍沿用现有 SQLite 与本地素材目录，仅用于客户 Web 功能确认，不冒充 PostgreSQL/COS 正式环境。
 - 新 release 先后通过空库和线上数据库副本 8788 预检；副本迁移由 17 项升至 20 项且 `PRAGMA quick_check` 为 `ok`。
-- 停服切换前备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260811-134712-before-b8246fb.sqlite`；当前 release 为 `/srv/kangmin-cli/releases/b8246fb5b65f6490061a82a2538db63b1516f4cf`，旧 release 保留回滚。
+- 停服切换前备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260811-134712-before-b8246fb.sqlite`；当时 release 为 `/srv/kangmin-cli/releases/b8246fb5b65f6490061a82a2538db63b1516f4cf`，旧 release 保留回滚。
 - 公网患者端、管理端、站内消息列表和知识问答冒烟通过，患者与管理 HTML 的 SHA-256 均与本地构建一致；服务 active，`NRestarts=0`。
 - 服务器模型密钥已从 systemd 单元明文项迁入权限 `0600` 的 `/etc/kangmin-cli.env`；环境数据和微信登录均显式关闭。`/ready` 当前仅保留试用环境既有的加密密钥 `not_configured`，不作为正式生产就绪结论。
+- 2026-08-14 将诊一诊受约束追问版本 `31c975a` 部署至同一 Web 试用环境；切换前备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260814-233337-before-switch-31c975a.sqlite`，旧 release 保留回滚。服务 active、`NRestarts=0`、数据库 `PRAGMA quick_check=ok`。
+- 试用库仅新增并启用 1 条《福建省中医药适宜技术手册》迎香定位摘录，千问密钥只写入权限 `0600` 的服务器环境文件。公网模拟患者完成问卷后可追问迎香定位；模型输出不合规或波动时，仅展示再次通过同一方案边界校验的 enabled 知识原文。
+- 公网浏览器验收确认回答含“鼻翼外缘中点旁开约 0.5 寸，鼻唇沟中”和资料名，不含斜刺、平刺或针刺建议；刷新后消息仍在、输入框可继续追问，控制台无 warning/error。`/ready` 仍只因试用环境未配置加密密钥返回 503。
