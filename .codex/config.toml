@@ -1,0 +1,4 @@
+# Codex 项目级配置。只有在用户信任本仓库时，Codex 才会加载本层。
+# AGENTS.md 始终是主入口；仅在同层缺少 AGENTS.md 时兼容读取 CLAUDE.md。
+project_doc_fallback_filenames = ["CLAUDE.md"]
+project_doc_max_bytes = 65536

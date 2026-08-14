@@ -24,6 +24,7 @@
 # 三个忽略区
 /_build/
 /_work/
+/_tmp/
 /_archive/*
 !/_archive/*-delisted/
 !/_archive/*-delisted/**
@@ -31,7 +32,7 @@
 # 私密客户资料与作者私区
 /vault/
 /docs/客户资料/
-/notes/
+/notes/*
 /spce/
 /examples/
 
@@ -54,6 +55,9 @@ next-env.d.ts
 __pycache__/
 *.pyc
 
-# 参考区分两区：resources/ 根手工材料进仓；clones/ 外部克隆仓可重建，不进仓
-resources/clones/**
+# 外部参考默认本地留存，只提交边界说明；clones/ 中同样只提交说明
+/resources/**
+!/resources/README.md
+!/resources/clones/
+/resources/clones/**
 !resources/clones/README.md

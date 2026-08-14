@@ -44,7 +44,7 @@
 | [`plan/`](plan/) | 001–008 | 009 |
 | [`reviews/`](reviews/) | 001–004 | 005 |
 | [`research/`](research/) | 001–002（002 已归档） | 003 |
-| [`experiments/`](experiments/) | – | 001 |
+| [`experiments/`](experiments/) | 001 | 002 |
 | [`changes/`](changes/) | 001–004 | 005 |
 
 ## 文档最低信息

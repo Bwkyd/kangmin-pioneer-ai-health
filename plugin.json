@@ -1,0 +1,8 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "km",
+  "version": "0.1.0",
+  "description": "kangmin · 抗敏先锋 AI 鼻健康管理系统",
+  "license": "MIT",
+  "keywords": ["aias", "nasal-health"]
+}

@@ -2,7 +2,7 @@
 
 <meta>
   <document-id>km-real</document-id>
-  <version>1.1.0</version>
+  <version>1.1.1</version>
   <project>kangmin · 抗敏先锋 AI 鼻健康管理系统</project>
   <type>Reality Constraints</type>
   <created>2026-08-13</created>
@@ -13,8 +13,8 @@
 这个系统**改不了的那些条件**。
 
 决策前置化的载体：**开工前把需要作者拍板的现实一次性定死，干活中不再反复询问已经
-确认的事项。**这里写的是**现实**（就是这样），不是**规矩**（应该这样）——规矩在
-`CLAUDE.md`。
+确认的事项。**这里写的是**现实**（就是这样），不是**规矩**（应该这样）——规矩以
+`AGENTS.md` 为主，`CLAUDE.md` 为兼容副本。
 
 ---
 

@@ -1,7 +1,8 @@
 # kangmin 目录规约（Directory Protocol）
 
-> 本文件是 `AGENTS.md` 引用之“目录语义展开”的唯一现行版（v1.8），被
+> 本文件是 `AGENTS.md` 引用之“目录语义展开”的唯一现行版（v1.10），被
 > `AGENTS.md` 路径引用，必须保持稳定：不编号、不带日期，版本走文件内记录 + Git。
+> 当前版本为 v1.10。
 >
 > 语义来源：`AGENTS.md`（2026-08-07 整理，忠实收录，不扩写稀释）。
 > 本地化记录：`.42cog/` 于 2026-08-13 按作者拍板重建（陈述句四份：意向/现实/认知/
@@ -23,6 +24,8 @@
 | v1.6 | 2026-08-13 | 按 aias-meta-init 内容标准重建 .42cog/（意向/现实/认知/身份），新增 specs/ 产出标准区；CLAUDE.md/AGENTS.md 改为全祈使句+指针分工线 |
 | v1.7 | 2026-08-13 | vault/raw 恢复职责：raw/chats/ 存放客户沟通原始聊天记录（私密不提交、只作追溯证据、不参与裁决） |
 | v1.8 | 2026-08-14 | 收紧 .42cog 四份职责：intent 只管方向，real 只管当前现实，cog 只管实体与关系，meta 只管稳定身份；即时状态统一归 board |
+| v1.9 | 2026-08-14 | 按 aias-meta-init 六组模板补齐插件清单、确定性检查、动态评审和可跟踪的 notes 边界说明；README 回归人类入口，双入口吸收模板机制并保留项目特例 |
+| v1.10 | 2026-08-14 | 明确 Codex 为主要 Agent、AGENTS.md 为主规约；新增 .codex 项目设置与 .agents/skills 官方发现入口，km-review 以 skills 正本加符号链接同时服务 Codex，并保留 Claude 兼容工作流 |
 
 ## 分区总览
 
@@ -34,7 +37,10 @@
 | `state/` | 状态区 | board（Agent 每轮）· changelog（人类里程碑）· memory（项目记忆） |
 | `docs/{plan,reviews,research,experiments}` | 编号过程文档 | 文件名使用英文 `NNN_kebab-case.md`，流水不重排 |
 | `docs/{product,changes}` | 决策与已采用变更 | product 放客户决策；changes 放长期变更记录 |
-| `skills/` | 项目自有技能 | 只收已经验证、值得复用的能力 |
+| `skills/` `.agents/skills/` | 技能正本与 Codex 发现入口 | 正文只放 skills；Codex 入口使用相对符号链接，不复制 |
+| `.codex/` | Codex 项目设置 | 只放可共享的仓库级设置；AGENTS.md 是主规约 |
+| `plugin.json` `42plugin.json` | 插件清单 | 自产身份与外部依赖分开登记 |
+| `.claude/workflows/` | Claude Code 兼容编排 | 只保存 Claude 专属语法；Codex 优先使用项目技能 |
 | `meta/` | 稳定规约 | 稳定文件名，不编号、不带日期 |
 | `notes/` | 作者私区 | Agent 不修改、不提交 |
 | `resources/` | 外部参考区 | 只读、不裁决，遵守版权红线 |
@@ -64,7 +70,7 @@
 - `cog.md`：认知模型（实体、产生者、输入输出、权威关系与变化传播）。
 - `meta.md`：稳定项目身份（系统名、系统码、作品区、外部交接、依赖类别、粗粒度生命周期）；
   每轮进展与下一步只写 `state/board.md`。
-- 四份均为陈述句；祈使纪律在 `CLAUDE.md`，产出标准在 `specs/`。
+- 四份均为陈述句；祈使纪律以 `AGENTS.md` 为主、`CLAUDE.md` 为兼容副本，产出标准在 `specs/`。
 
 ### specs/ 产出标准
 
@@ -100,7 +106,23 @@
 ### skills/
 
 项目自有技能源。只有流程已经验证、输入输出稳定且值得跨任务复用时才固化；不存在
-的技能不得宣称“已可用”。
+的技能不得宣称“已可用”。自产插件身份写在根目录 `plugin.json`，外部插件依赖写在
+`42plugin.json`；修改后运行 `python3 scripts/check-manifests.py`。技能正文只保存在
+`skills/<name>/`；Codex 从 `.agents/skills/<name>` 的相对符号链接发现同一正本。
+
+### .codex/ 与 Agent 入口
+
+- 把 `AGENTS.md` 作为 Codex 仓库级指令主入口；把 `CLAUDE.md` 作为除首行外同步的兼容副本。
+- `.codex/config.toml` 只保存团队可共享的 Codex 项目设置；个人模型、账号和机器偏好留在
+  用户级配置，密钥不得进入仓库。
+- Codex 只有在用户信任仓库时才加载项目 `.codex/` 设置；不要把配置存在当成已加载证据。
+
+### scripts/ 与动态编排
+
+- `scripts/` 保存可机械判断的项目检查与治理命令；一个脚本只管一类判断，检查默认只报告。
+- Codex 主要使用 `.agents/skills/km-review` 发现的 `$km-review`；Claude Code 兼容入口
+  `.claude/workflows/km-review.js` 保留相同三视角与 P0–P2 收工线。
+- 脚本、技能与动态编排分别负责硬判断、可复用软流程与现场路线，不互相伪装。
 
 ### meta/
 
@@ -109,7 +131,9 @@
 
 ### notes/
 
-作者私区，Agent 不修改、不提交，除非作者明确指定文件。
+作者私区，整体由 Git 忽略。Agent 不修改、不重排、不格式化、不代提交，除非作者明确
+指定文件与用途。需长期接续的项目状态
+不得只留在 notes，应按职责进入 board、docs、memory 或 truth。
 
 ### resources/
 
@@ -153,5 +177,6 @@
 ## 检查
 
 ```bash
+python3 scripts/check-manifests.py
 python3 scripts/structure-lint.py .
 ```
