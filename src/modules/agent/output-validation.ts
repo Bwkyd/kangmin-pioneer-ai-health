@@ -70,7 +70,10 @@ const METHOD_ALIASES = [
 ] as const;
 
 const GENERIC_ACUPOINT = /[\p{Script=Han}]{1,10}穴/gu;
-const ACUPOINT_REFERENCES = ["该穴", "此穴", "本穴"] as const;
+const ACUPOINT_REFERENCES = [
+  "该穴", "此穴", "本穴", "其他穴", "其它穴", "各穴", "上述穴", "这些穴"
+] as const;
+const APPROVED_ACUPOINT_PREFIX = /(?:在|于|取|用|按|揉|擦|找|含|选|为|是|的)$/u;
 const NUMBER_WITH_UNIT = /\d+(?:\.\d+)?(?:\s*[～~—\-至]\s*\d+(?:\.\d+)?)?\s*(?:次|分钟|小时|天|周|个月|厘米|毫米|cm|mm|寸|壮)/giu;
 const EFFICACY_CLAIMS = /(?:保证|确保|一定|彻底)(?:治愈|根治|有效)|包治|永不复发|药到病除/u;
 
@@ -239,6 +242,17 @@ function containsUnapprovedAcupoint(text: string, allowed: string): boolean {
     // 上面的已知穴位白名单判定；这里只排除代词误伤，不新增任何穴位。
     if (ACUPOINT_REFERENCES.some((reference) => point.endsWith(reference))) {
       return false;
+    }
+    const approvedSuffix = KNOWN_ACUPOINTS
+      .flatMap((knownPoint) => [knownPoint, `${knownPoint}穴`])
+      .find(
+        (candidate) =>
+          point.endsWith(candidate) &&
+          allowed.includes(candidate.endsWith("穴") ? candidate.slice(0, -1) : candidate)
+      );
+    if (approvedSuffix !== undefined) {
+      const prefix = point.slice(0, -approvedSuffix.length);
+      if (prefix === "" || APPROVED_ACUPOINT_PREFIX.test(prefix)) return false;
     }
     const withoutSuffix = point.slice(0, -1);
     return !allowed.includes(point) && !allowed.includes(withoutSuffix);

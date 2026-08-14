@@ -345,6 +345,11 @@ test("自由文本医学校验：该穴等代词不被误判为新增穴位", ()
   const verdict = classifiedPlanVerdict();
   const generated = "使用指腹轻擦该穴位，力度以局部产生温热感为宜。";
   assert.equal(validateGeneratedMedicalText(generated, verdict), generated);
+  assert.equal(
+    validateGeneratedMedicalText("用指腹在迎香穴进行擦拭，其他穴位仍按当前方案执行。", verdict),
+    "用指腹在迎香穴进行擦拭，其他穴位仍按当前方案执行。"
+  );
+  assert.equal(validateGeneratedMedicalText("可以改用假迎香穴。", verdict), null);
 });
 
 test("方案模板：可选项称为方法，删除重复手法段，并在每个方法下放视频", () => {
