@@ -2,7 +2,7 @@
 
 <meta>
   <document-id>km-meta</document-id>
-  <version>1.0.0</version>
+  <version>1.0.1</version>
   <project>kangmin · 抗敏先锋 AI 鼻健康管理系统</project>
   <type>Project Metadata</type>
   <created>2026-08-13</created>
@@ -12,7 +12,7 @@
 
 这个系统的**项目身份**：它是什么、归谁、在哪、跟谁交接。
 
-**这里只描述事实，不定规矩。** 怎么干看 `CLAUDE.md`，产出该长什么样（含命名）看
+**这里只描述事实，不定规矩。** 怎么干以 `AGENTS.md` 为主、`CLAUDE.md` 为兼容副本，产出该长什么样（含命名）看
 `specs/`，朝哪儿使劲看 `intent.md`，有哪些改不了的现实看 `real.md`；每轮变化与下一步
 见 `state/board.md`。
 

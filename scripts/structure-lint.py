@@ -9,15 +9,46 @@ from pathlib import Path
 
 
 REQUIRED_FILES = (
+    ".gitignore",
     "AGENTS.md",
     "CLAUDE.md",
+    "README.md",
+    ".42cog/intent.md",
+    ".42cog/real.md",
+    ".42cog/cog.md",
+    ".42cog/meta.md",
+    "specs/README.md",
+    "specs/style/README.md",
+    ".codex/config.toml",
+    ".codex/README.md",
+    ".agents/README.md",
+    ".agents/skills/km-review/SKILL.md",
+    "skills/km-review/SKILL.md",
+    "skills/km-review/agents/openai.yaml",
+    "vault/raw/README.md",
+    "resources/README.md",
+    "plugin.json",
+    "42plugin.json",
+    "scripts/README.md",
+    "scripts/check-manifests.py",
+    "scripts/check-tools.sh",
+    ".claude/workflows/README.md",
+    ".claude/workflows/km-review.js",
     "state/board.md",
     "state/changelog.md",
     "state/memory/MEMORY.md",
+    "docs/plan/README.md",
+    "docs/research/README.md",
+    "docs/reviews/README.md",
+    "docs/experiments/README.md",
     "meta/kangmin_directory-protocol.md",
 )
 
 REQUIRED_DIRECTORIES = (
+    ".42cog",
+    ".codex",
+    ".agents/skills",
+    "specs/style",
     "src",
     "legacy",
     "state/memory",
@@ -27,6 +58,7 @@ REQUIRED_DIRECTORIES = (
     "docs/plan",
     "docs/reviews",
     "docs/research",
+    "docs/experiments",
     "docs/product",
     "docs/changes",
     "skills",
@@ -45,6 +77,12 @@ NAVIGATION_FILES = (
     "meta/kangmin_directory-protocol.md",
     "state/memory/MEMORY.md",
     "skills/README.md",
+    "scripts/README.md",
+    "specs/README.md",
+    "specs/style/README.md",
+    ".codex/README.md",
+    ".agents/README.md",
+    ".claude/workflows/README.md",
     "vault/README.md",
     "vault/truth/README.md",
 )
@@ -155,6 +193,21 @@ def check_agents_claude_sync(root: Path, errors: list[str]) -> None:
         errors.append("AGENTS.md 与 CLAUDE.md 除首行标题外不一致，请同步修改")
 
 
+def check_codex_entrypoints(root: Path, errors: list[str]) -> None:
+    config = root / ".codex/config.toml"
+    if config.is_file():
+        text = config.read_text(encoding="utf-8")
+        if 'project_doc_fallback_filenames = ["CLAUDE.md"]' not in text:
+            errors.append(".codex/config.toml 必须把 CLAUDE.md 设为 AGENTS.md 缺失时的兼容回退")
+
+    discovered = root / ".agents/skills/km-review"
+    canonical = root / "skills/km-review"
+    if discovered.exists() and not discovered.is_symlink():
+        errors.append(".agents/skills/km-review 必须是指向 skills/km-review 的符号链接，禁止维护副本")
+    elif discovered.is_symlink() and discovered.resolve() != canonical.resolve():
+        errors.append(".agents/skills/km-review 符号链接目标错误")
+
+
 def check_removed_paths(root: Path, errors: list[str]) -> None:
     for relative in ("vault/business",):
         if (root / relative).exists():
@@ -187,6 +240,7 @@ def main() -> int:
     check_document_numbers(root, errors)
     check_navigation_links(root, errors)
     check_agents_claude_sync(root, errors)
+    check_codex_entrypoints(root, errors)
     check_removed_paths(root, errors)
 
     if errors:

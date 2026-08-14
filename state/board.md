@@ -3,6 +3,16 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🤖 建立 Codex 主入口并同步 Agent 索引（2026-08-14 第六十四轮 · 基线 `agent/align-project-cognition@35f67bd`）
+> 作者明确项目主要使用 Codex。依据 OpenAI 官方 Codex 手册核对后，确立根 `AGENTS.md` 为仓库规约主入口、`CLAUDE.md` 为除首行外同步的 Claude Code 兼容副本；项目设置放入 `.codex/config.toml`，只配置 `CLAUDE.md` 兼容回退与 64 KiB 指令容量，不写个人模型、权限或凭据。新增 `.codex/README.md` 和 `.agents/README.md`；把三视角评审写成唯一正本 `skills/km-review/SKILL.md`，通过相对符号链接 `.agents/skills/km-review` 接入 Codex 官方仓库技能发现路径，Claude 专属 JS workflow 仅作兼容入口。
+> 同步 README、skills/specs、实验索引、目录协议 v1.10、changelog 与 `.42cog/{meta,real}.md` 中的通用 Agent 指针；后两份仅调整规约入口并分别升至 v1.0.1、v1.1.1，未改变业务事实。结构检查新增 `.codex`、`.agents`、技能正本、符号链接目标与 Codex 回退配置门禁；“多工具入口按官方发现规则指向同一技能正本”沉淀为项目记忆。并把本机已安装 `aias-meta-init` 缓存升至 v6.3.0：后续初始化会同时生成 `AGENTS.md`/`CLAUDE.md`、`.codex/`、技能正本及 `.agents/skills` 发现链接；该路径仍是 42plugin 本机缓存，插件更新可能覆盖，尚不代表上游发布。本轮成果已提交并进入 PR #202。
+> 验证：Skill Creator 分别校验项目 `skills/km-review` 与已安装 `aias-meta-init` 通过；隔离目录完整初始化后，生成的 Codex 配置可解析、AGENTS/CLAUDE 正文一致、技能链接正确且重复执行保持幂等。`python3 scripts/check-manifests.py` 识别 1 个技能并校验两份清单全绿；`python3 scripts/structure-lint.py .`、双入口一致性与 `git diff --check` 通过。新开 Codex 只读会话显式调用 `$km-review`，实际加载 `/Users/chenqiqiang/work/kangmin/skills/km-review/SKILL.md`，证明 `.agents/skills` 发现入口和唯一正本生效。PR #202 首轮 CI 因 legacy E2E 随机端口被占用而超时，原提交重跑后 `quality` 与 `image` 全绿；未改 `src/` 或 `legacy/`。
+
+> ## 🧱 按 aias-meta-init 补齐六组骨架（2026-08-14 第六十三轮 · 基线 `agent/align-project-cognition@35f67bd`）
+> 作者确认按 `aias-meta-init` 技能模板继续完善项目。四份 `.42cog` 保持已确认的模板结构与 kangmin 事实；本轮把根 README 收回为人类入口，把 `AGENTS.md` / `CLAUDE.md` 扩展为除首行外一致的完整开工规约，补入六组目录、确定性分流、工具三层降级、动态编排、三层验证、医学护栏、状态持久化与 Git 收尾。项目既有特例继续有效：作品区为 `src/`，过程区使用 `_work/` 而非模板 `_tmp/`，commit 只使用三行已授权 trailer，truth 按职责裁决。
+> 新建 `plugin.json`、`42plugin.json`、`scripts/{README.md,check-manifests.py,check-tools.sh}` 与 `.claude/workflows/{README.md,km-review.js}`；`notes/` 继续作为整体忽略的作者私区，未修改、未提交。同步 `skills/README.md`、`specs/`、目录协议 v1.9、changelog、docs 实验编号和 `.gitignore`，并让结构检查机械要求模板核心骨架存在。把“按初始化脚本完整生成清单核对、区分结构定制/真实缺失/项目特例”沉淀为 `state/memory/20260814-template-alignment-full-inventory.md`。本轮未改 `src/`、`legacy/`、`.42cog/`、vault 私密资料或作者 `hi.md`；成果随 PR #202 交付。
+> 验证：`python3 scripts/check-manifests.py` 校验两份清单全绿；`bash -n scripts/check-tools.sh` 通过，工具只读检查确认必需工具齐全；`python3 scripts/structure-lint.py .`、双入口正文一致性、Python 语法编译与 `git diff --check` 均通过。按技能要求在仓库外启动空白 Codex 会话，只提供 `_work/20260814-init-smoke/prompt.md` 中的意向书内容，能够完整答出收敛方向、七项排除和“先系统分析再确定首个闭环任务”的下一步，初始化冒烟通过。未改业务代码，不运行 `npm run check`。
+
 > ## 🧭 按初始化模板归位并校正意向书（2026-08-14 第六十二轮 · 提交 `5d25eaa`，PR #201）
 > 按作者指定的 `aias-meta-init/templates/intent.md.tpl` 重写 `.42cog/intent.md` 的版式：恢复模板标题、开场说明、收敛方向及行内量法、真难题、不做什么两列表、真相源与权重、作品区和末尾起草说明。原有三个业务闭环与医学刚性边界继续保留；把容易暗示诊疗承诺的“调理方案/最终方案”收窄为“调理建议/不替代诊断”，并明确真相源按职责裁决，客户原始材料须经作者确认写回 truth 才取得开发权威，过程文档、代码和测试不能反向覆盖。作品区按报价落为患者小程序与管理后台，并以确定性判定、受约束表达、内容维护到患者使用的完整闭环作为合格口径。本轮未修改 skill 模板或业务代码；作者已确认 `.42cog` 内容无问题，改动已提交并进入 PR #201。
 > 验证：`python3 scripts/structure-lint.py .` 与 `git diff --check` 通过；未改 `src/`，不重复运行 `npm run check`。

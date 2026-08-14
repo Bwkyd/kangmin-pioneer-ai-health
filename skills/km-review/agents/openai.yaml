@@ -1,0 +1,4 @@
+interface:
+  display_name: "Kangmin 多视角评审"
+  short_description: "从患者可懂性、工程事实与医学安全三个视角汇总风险清单"
+  default_prompt: "使用 $km-review 对当前改动做多视角评审并按 P0–P3 汇总。"
