@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 诊一诊连续对话闭环已合并并清理任务分支（2026-08-15 第七十五轮 · 合并 `8ba09e5`，PR #203）
+> 作者授权提交、合并与分支清理。完整智能体改动提交为 `858af38` 并推送 PR #203；GitHub `quality` 与 `image` 两项 CI 均成功，随后 squash 合并到 `main` 为 `8ba09e5`。回读 PR 状态为 `MERGED`，任务提交树与合并提交树均为 `dc871d50ec4049d61139e45364c3db97eaf23154`，确认没有因 squash 丢失成果。
+> 本地 `main` 已 fast-forward 到 `8ba09e5`；远端与本地 `agent/zhenyiwen-plan-dialogue` 均已删除。作者原件 `hi.md` 保持未跟踪且未进入提交。线上继续运行已完成公网 E2E 的 `/srv/kangmin-cli/releases/speed-no-thinking-20260815-1321`；其业务代码树对应本次合并成果，纯 Git 状态收尾不重复部署。项目状态保持“作者侧技术验收完成，待客户体验反馈”。
+> 本轮仅补合并事实与部署记录，不改业务代码；清单、差异和敏感信息检查通过后，经独立收尾 PR 合并。结构检查仍只被既有 `_work/20260814-福建省中医药适宜技术手册-md` 命名拦截，未改作者过程材料。完成后工作区除作者原件 `hi.md` 外无未提交成果，原任务分支满足清理条件且已清理。
+
 > ## 📦 Web 智能体小闭环收尾并转入待客户反馈（2026-08-15 第七十四轮 · 基线 `f6ae648`，未提交）
 > 作者决定先把当前成果交给客户体验，后续等待真实反馈再继续。本轮没有沿用缓存：重新核对本地分支与未提交范围、线上 release、systemd、Nginx、SQLite 和公网健康状态；当前线上仍为 `/srv/kangmin-cli/releases/speed-no-thinking-20260815-1321`，应用与 Nginx active、`NRestarts=0`、SQLite `quick_check=ok`、公网 `/live` 200。
 > 状态正式收口为“作者侧技术验收完成，待客户体验反馈”：研究 003 的执行状态已补齐患者级评估继承、安全分片、四条最小审核知识和关闭推理后的公网性能；`state/changelog.md` 新增客户试用里程碑；`.42cog/real.md` 同步当前交付节奏。没有修改历史派活基线，没有把自动化和作者侧公网 E2E 扩大为客户验收，也没有新增业务代码、部署、提交或推送。
