@@ -87,13 +87,18 @@ const directory = mkdtempSync(join(tmpdir(), "kangmin-browser-"));
 const databasePath = join(directory, "records.sqlite");
 const mediaDirectory = join(directory, "admin-media");
 mkdirSync(mediaDirectory, { recursive: true });
+const browserFollowUps = [];
 const browserPlanDialogue = {
   async generatePlan() {
     return "已根据规则结果整理为通俗说明，完整已审核方案如下。";
   },
-  async answerFollowUp({ sources }) {
-    assert.ok(sources.some((source) => source.name === "过敏性鼻炎适宜技术手册·迎香穴"));
-    return "迎香位于鼻翼外缘附近；当前只采用方案列出的指腹擦迎香。";
+  async answerFollowUp({ question, sources, context }) {
+    browserFollowUps.push({ question, sources, context });
+    if (sources.some((source) => source.name === "过敏性鼻炎适宜技术手册·迎香穴")) {
+      return "迎香位于鼻翼外缘附近；当前只采用方案列出的指腹擦迎香。";
+    }
+    assert.ok(context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
+    return "我换一种简单说法：这是沿用你刚完成的评估，不需要重新填写问卷。";
   }
 };
 let application = createApplication(databasePath, { planDialogue: browserPlanDialogue });
@@ -574,11 +579,30 @@ try {
   await expectText(page.locator(".conversation-ended"), "可以继续追问当前方案");
   assert.equal(await chatInput.isDisabled(), false);
   await chatInput.fill("迎香穴具体位置在哪里？");
+  await page.evaluate(() => {
+    globalThis.__kangminStreamLengths = [];
+    const chat = document.querySelector(".chat");
+    const observer = new MutationObserver(() => {
+      const current = document.querySelector('[data-testid="streaming-response"]');
+      if (current instanceof HTMLElement) {
+        globalThis.__kangminStreamLengths.push(current.innerText.length);
+      }
+    });
+    if (chat !== null) observer.observe(chat, { childList: true, subtree: true, characterData: true });
+    globalThis.__kangminStreamObserver = observer;
+  });
   await page.locator(".send-button").click();
   await page.locator(".user-bubble", { hasText: "迎香穴具体位置在哪里" }).waitFor({ state: "visible" });
+  await page.getByTestId("streaming-response").waitFor({ state: "visible" });
   await page.locator(".typing").waitFor({ state: "detached" });
   await expectText(page.locator(".chat"), "迎香位于鼻翼外缘附近");
   await expectText(page.locator(".chat"), "过敏性鼻炎适宜技术手册·迎香穴");
+  const streamLengths = await page.evaluate(() => {
+    globalThis.__kangminStreamObserver?.disconnect();
+    return globalThis.__kangminStreamLengths ?? [];
+  });
+  const positiveStreamLengths = [...new Set(streamLengths.filter((length) => length > 0))];
+  assert.ok(positiveStreamLengths.length >= 2, "患者端应观察到至少两次递增的流式正文");
 
   // 刷新后结果、追问与可继续输入状态都从服务端恢复。
   await page.reload();
@@ -592,6 +616,23 @@ try {
     return chat instanceof HTMLElement &&
       chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 2;
   });
+
+  // 新建聊天继承患者级评估：不再出现 Q1；承接式追问使用完整问卷与最近对话。
+  await page.getByTestId("chat-new").click();
+  await page.locator(".start-card", { hasText: "沿用最近评估开始聊天" }).click();
+  await expectText(page.locator(".chat"), "不需要重新填写问卷");
+  assert.equal(await page.locator(".question-card").count(), 0);
+  await chatInput.fill("我不明白");
+  await page.locator(".send-button").click();
+  await page.locator(".typing").waitFor({ state: "detached" });
+  await expectText(page.locator(".chat"), "我换一种简单说法");
+  const contextual = browserFollowUps.at(-1);
+  assert.equal(contextual.question, "我不明白");
+  assert.ok(contextual.context.recentMessages.some(
+    (message) => message.role === "assistant" && message.content.includes("不需要重新填写问卷")
+  ));
+  assert.ok(contextual.context.assessment.answers.some((answer) => answer.fieldCode === "q1"));
+  assert.ok(contextual.context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
 
   // ---- 管理 Web：真实账号、HttpOnly 会话、文章发布闭环、知识上传 ----
   const adminPage = await context.newPage();

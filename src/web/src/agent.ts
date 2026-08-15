@@ -10,7 +10,11 @@
  * 冻结前不送服务端，界面文案已如实说明，绝不伪造“已评估”。
  */
 
-import { command } from "./command-client";
+import {
+  command,
+  streamAgentCommand,
+  type StreamCommandHandlers
+} from "./command-client";
 
 export type TriState = "yes" | "no" | "unknown";
 
@@ -52,6 +56,26 @@ export async function runAgentTurn(
   });
 }
 
+/**
+ * 流式发送一轮自由对话。服务端只在完整医学校验和持久化完成后分片，
+ * 前端不会接触未经校验的模型 token。
+ */
+export async function runAgentTurnStreaming(
+  message: string,
+  conversationId: string | undefined,
+  handlers: StreamCommandHandlers,
+  startMode?: "inherit_assessment" | "reassess"
+): Promise<AgentTurnResult> {
+  return streamAgentCommand<AgentTurnResult>(
+    {
+      message,
+      ...(conversationId === undefined ? {} : { conversationId }),
+      ...(conversationId === undefined && startMode !== undefined ? { startMode } : {})
+    },
+    handlers
+  );
+}
+
 export type AgentConversationState = "active" | "completed" | "abandoned";
 
 export interface AgentConversationSummary {
@@ -78,6 +102,19 @@ export interface AgentConversationDetail {
     outcome: string;
     nextQuestions: Array<{ fieldCode: string; prompt: string }>;
   } | null;
+}
+
+export interface AgentAssessmentSummary {
+  id: string;
+  completedAt: string;
+  severityCode: string | null;
+  syndromeCode: string;
+  phaseCode: "acute" | "remission";
+  audience: "child" | "adult";
+}
+
+export async function getCurrentAgentAssessment(): Promise<AgentAssessmentSummary | null> {
+  return command<AgentAssessmentSummary | null>("agent assessments current");
 }
 
 /** 当前患者的已保存自由对话，按最近更新时间倒序。 */

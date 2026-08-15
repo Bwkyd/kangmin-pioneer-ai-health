@@ -13,6 +13,7 @@ import {
   renderValidatedOutput,
   questionWithinApprovedPlan,
   renderGeneratedFollowUpOutput,
+  renderContextualPlanFollowUp,
   renderGeneratedPlanOutput,
   renderRetrievedEvidenceFollowUp,
   systemNotice,
@@ -88,6 +89,8 @@ test("未配置 API key 时抛 provider_unavailable（绝不伪造回答）", as
 
 test("千问方案对话端口：使用指定模型并只接收 answer JSON", async () => {
   let requestedModel: unknown;
+  let requestedThinking: unknown;
+  let requestedPayload: Record<string, unknown> = {};
   const adapter = new QwenPlanDialogueAdapter({
     apiKey: "test-qwen-key",
     model: "qwen3.7-flash",
@@ -95,6 +98,9 @@ test("千问方案对话端口：使用指定模型并只接收 answer JSON", as
     fetchImpl: (async (_url: unknown, init?: RequestInit) => {
       const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
       requestedModel = body.model;
+      requestedThinking = body.enable_thinking;
+      const messages = body.messages as Array<{ role: string; content: string }>;
+      requestedPayload = JSON.parse(messages.at(-1)?.content ?? "{}") as Record<string, unknown>;
       return new Response(JSON.stringify({
         choices: [{ message: { content: JSON.stringify({ answer: "通俗方案说明" }) } }]
       }), { status: 200, headers: { "content-type": "application/json" } });
@@ -102,6 +108,28 @@ test("千问方案对话端口：使用指定模型并只接收 answer JSON", as
   });
   assert.equal(await adapter.generatePlan(classifiedPlanVerdict()), "通俗方案说明");
   assert.equal(requestedModel, "qwen3.7-flash");
+  assert.equal(requestedThinking, false, "患者方案对话必须显式关闭千问推理模式");
+
+  await adapter.answerFollowUp({
+    question: "我不明白",
+    verdict: classifiedPlanVerdict(),
+    sources: [],
+    context: {
+      assessment: {
+        completedAt: "2026-08-15T00:00:00.000Z",
+        answers: [{ fieldCode: "q1", state: "value", value: "A", source: "patient_confirmation" }]
+      },
+      recentMessages: [{ role: "assistant", content: "这是当前评估方案。" }]
+    }
+  });
+  const assessment = requestedPayload.assessment as {
+    questionnaire: Array<{ question: string; answer: string }>;
+  };
+  assert.equal(assessment.questionnaire[0]?.question, "您打喷嚏的情况是？");
+  assert.match(assessment.questionnaire[0]?.answer ?? "", /频繁打喷嚏/u);
+  assert.deepEqual(requestedPayload.recentConversation, [
+    { role: "assistant", content: "这是当前评估方案。" }
+  ]);
 
   const unavailable = new QwenPlanDialogueAdapter({ baseUrl: BASE_URL });
   await assert.rejects(
@@ -408,6 +436,39 @@ test("自由文本医学校验：该穴等代词不被误判为新增穴位", ()
     onlineAnswer,
     "普通名词“操作手法”不得被误判为新增推拿疗法"
   );
+});
+
+test("自由文本医学校验：完整批准的耳穴过敏区不被截成方案外耳穴", () => {
+  const verdict = classifiedPlanVerdict();
+  const earPlan = {
+    ...verdict.planBundle!.acute!,
+    method: "耳穴过敏区按压",
+    steps: JSON.stringify(["耳穴过敏区按压"])
+  };
+  const withEarPlan = {
+    ...verdict,
+    planBundle: { acute: earPlan, constitution: null }
+  };
+  assert.ok(renderGeneratedFollowUpOutput(
+    "当前方案包括按压耳穴过敏区；如果皮肤有明显不适，请暂停操作。因资料有限，无法提供更详细的穴位定位，例如穴位位置或手法细节。",
+    withEarPlan,
+    []
+  ));
+  assert.equal(renderGeneratedFollowUpOutput(
+    "可以另外按压耳穴神门。",
+    withEarPlan,
+    []
+  ), null);
+});
+
+test("泛化解释降级：首轮说明继承评估，后续轮次承接上条且文案不同", () => {
+  const verdict = classifiedPlanVerdict();
+  const first = renderContextualPlanFollowUp(verdict, false);
+  const continued = renderContextualPlanFollowUp(verdict, true);
+  assert.match(first.content, /不需要重新做问卷/u);
+  assert.match(continued.content, /承接上一条/u);
+  assert.notEqual(first.content, continued.content);
+  assert.equal((first.content.match(/【依据】/gu) ?? []).length, 1);
 });
 
 test("方案模板：可选项称为方法，删除重复手法段，并在每个方法下放视频", () => {

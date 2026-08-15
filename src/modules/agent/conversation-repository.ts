@@ -10,7 +10,8 @@ import type {
   ConversationMessage,
   ConversationSession,
   DecisionRow,
-  FeedbackRow
+  FeedbackRow,
+  PatientAssessmentRow
 } from "./conversation-contracts.js";
 
 export type UpdateSessionOutcome =
@@ -29,6 +30,8 @@ export interface CommitTurnInput {
   messages: ConversationMessage[];
   /** 提交后的会话状态（revision=expected+1、lastSequence、state、closedAt）。 */
   next: ConversationSession;
+  /** classified 问卷完成时与本轮消息、决策同事务写入。 */
+  completedAssessment?: PatientAssessmentRow | undefined;
 }
 
 export type CommitTurnOutcome =
@@ -46,6 +49,10 @@ export interface ConversationRepository {
   findAnonymousSession(id: string): Promise<ConversationSession | null>;
   findPatientSession(patientId: string, id: string): Promise<ConversationSession | null>;
   listPatientSessions(patientId: string): Promise<ConversationSession[]>;
+  findCurrentAssessment(patientId: string): Promise<PatientAssessmentRow | null>;
+  findAssessment(patientId: string, id: string): Promise<PatientAssessmentRow | null>;
+  /** 旧已完成问卷的幂等患者级提升；不改写聊天正文或规则事实。 */
+  saveAssessment(assessment: PatientAssessmentRow): Promise<void>;
   /**
    * 清理过期匿名会话（issue-155）：单事务按序删除 5 张子表
    * （schema 无 ON DELETE CASCADE）再删主表，返回删除的主表行数。

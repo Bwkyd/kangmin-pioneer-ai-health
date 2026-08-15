@@ -72,6 +72,17 @@ export interface PlanDialogueSource {
   text: string;
 }
 
+export interface PlanDialogueContext {
+  assessment: {
+    completedAt: string;
+    answers: readonly ConfirmedFact[];
+  };
+  recentMessages: ReadonlyArray<{
+    role: "user" | "assistant";
+    content: string;
+  }>;
+}
+
 /**
  * 规则判定后的患者对话端口。
  *
@@ -84,5 +95,6 @@ export interface PlanDialoguePort {
     question: string;
     verdict: ClinicalVerdict;
     sources: readonly PlanDialogueSource[];
+    context: PlanDialogueContext;
   }): Promise<string | null>;
 }

@@ -349,6 +349,18 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .typing b:nth-child(2) { animation-delay: .15s; }
 .typing b:nth-child(3) { animation-delay: .3s; }
 
+.streaming-response::after {
+  content: "";
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 3px;
+  vertical-align: -2px;
+  border-radius: 1px;
+  background: currentColor;
+  animation: blink .8s infinite;
+}
+
 /* 服务端 system_notice（如提取服务降级提示）：固定文案，如实展示。 */
 .chat-notice {
   margin: -4px 0 13px 34px;

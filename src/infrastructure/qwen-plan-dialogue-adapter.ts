@@ -10,10 +10,13 @@ import type {
   PlanDialoguePort,
   PlanDialogueSource
 } from "../modules/agent/model-ports.js";
+import { assessmentQuestion } from "../modules/clinical-rules/assessment-questionnaire.js";
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_MODEL = "qwen3.7-flash";
-const DEFAULT_TIMEOUT_MS = 20_000;
+// 完整患者评估（Q1-Q14）与最近对话会增加提示长度；腾讯云实测千问常在
+// 20 秒附近才完成。保留有界超时，但给通过医学边界校验的回答足够时间。
+const DEFAULT_TIMEOUT_MS = 45_000;
 
 const SYSTEM_PROMPT = `你是过敏性鼻炎患者科普助手。服务端已经用固定规则完成判定并给出允许的方案。
 你只能依据输入中的【规则结果】【允许方案】和【已审核资料】回答：
@@ -21,7 +24,9 @@ const SYSTEM_PROMPT = `你是过敏性鼻炎患者科普助手。服务端已经
 2. 资料未提供的细节必须明确说依据不足，不得使用模型原生医学知识补全；
 3. 患者询问当前方案未包含的疗法时，说明当前方案未包含，并建议咨询专业医生；
 4. 使用普通患者听得懂的中文，不称为诊断，不承诺治愈；
-5. 只输出 JSON 对象 {"answer":"..."}，answer 不超过 800 个中文字符。`;
+5. 不要输出【依据】或温馨提示，服务端会在校验后统一追加；
+6. 只能复述输入中出现的穴位和疗法原词；未给定位或手法细节时不要主动追问这些细节；
+7. 只输出 JSON 对象 {"answer":"..."}，answer 不超过 800 个中文字符。`;
 
 export interface QwenPlanDialogueOptions {
   apiKey?: string | undefined;
@@ -90,11 +95,27 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
     question: string;
     verdict: ClinicalVerdict;
     sources: readonly PlanDialogueSource[];
+    context: Parameters<PlanDialoguePort["answerFollowUp"]>[0]["context"];
   }): Promise<string | null> {
+    const questionnaire = input.context.assessment.answers.map((answer) => {
+      const question = assessmentQuestion(answer.fieldCode);
+      const option = question?.options.find((candidate) => candidate.code === answer.value);
+      return {
+        fieldCode: answer.fieldCode,
+        question: question?.title ?? answer.fieldCode,
+        answerCode: answer.value ?? answer.state,
+        answer: option?.text ?? answer.value ?? answer.state
+      };
+    });
     return this.chat({
       task: "回答患者对当前方案的追问。资料不足或问题超出当前方案时安全拒绝。",
       question: input.question,
       ruleResult: planPayload(input.verdict),
+      assessment: {
+        completedAt: input.context.assessment.completedAt,
+        questionnaire
+      },
+      recentConversation: input.context.recentMessages,
       approvedSources: input.sources.map((source, index) => ({
         index: index + 1,
         name: source.name,
@@ -123,7 +144,11 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
         },
         body: JSON.stringify({
           model: this.model,
+          // qwen3.7-flash 是混合思考模型，默认会开启推理。患者方案转译与
+          // 受约束追问已有确定性规则结果，不需要额外推理延迟。
+          enable_thinking: false,
           temperature: 0.2,
+          max_tokens: 512,
           response_format: { type: "json_object" },
           messages: [
             { role: "system", content: SYSTEM_PROMPT },

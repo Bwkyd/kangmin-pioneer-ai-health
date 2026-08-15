@@ -17,7 +17,8 @@ import type {
   ConversationSession,
   DecisionRow,
   EncryptedContent,
-  FeedbackRow
+  FeedbackRow,
+  PatientAssessmentRow
 } from "../../modules/agent/conversation-contracts.js";
 import type {
   CommitTurnInput,
@@ -40,6 +41,7 @@ interface ConversationRow {
   patient_id: string | null;
   state: string;
   save_consent_id: string | null;
+  assessment_id: string | null;
   rule_package_version: string;
   rule_package_hash: string;
   revision: number;
@@ -67,6 +69,7 @@ function parseSession(row: ConversationRow): ConversationSession {
     patientId: row.patient_id,
     state: row.state as ConversationSession["state"],
     saveConsentId: row.save_consent_id,
+    assessmentId: row.assessment_id,
     rulePackageVersion: row.rule_package_version,
     rulePackageHash: row.rule_package_hash,
     revision: row.revision,
@@ -86,15 +89,16 @@ export class PgConversationRepository implements ConversationRepository {
       await this.database.queryIn(
         client,
         `INSERT INTO agent_conversations(
-          id, patient_id, state, save_consent_id, rule_package_version,
+          id, patient_id, state, save_consent_id, assessment_id, rule_package_version,
           rule_package_hash, revision, last_sequence, closed_at,
           retention_until, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
         [
           session.id,
           session.patientId,
           session.state,
           session.saveConsentId,
+          session.assessmentId,
           session.rulePackageVersion,
           session.rulePackageHash,
           session.revision,
@@ -178,6 +182,47 @@ export class PgConversationRepository implements ConversationRepository {
     return rows.map(parseSession);
   }
 
+  async findCurrentAssessment(patientId: string): Promise<PatientAssessmentRow | null> {
+    const { rows } = await this.database.query<AssessmentRow>(
+      `SELECT * FROM agent_assessments
+       WHERE patient_id = $1 AND status = 'current'
+       ORDER BY completed_at DESC LIMIT 1`,
+      [patientId]
+    );
+    return rows[0] === undefined ? null : parseAssessment(rows[0]);
+  }
+
+  async findAssessment(patientId: string, id: string): Promise<PatientAssessmentRow | null> {
+    const { rows } = await this.database.query<AssessmentRow>(
+      "SELECT * FROM agent_assessments WHERE id = $1 AND patient_id = $2",
+      [id, patientId]
+    );
+    return rows[0] === undefined ? null : parseAssessment(rows[0]);
+  }
+
+  async saveAssessment(assessment: PatientAssessmentRow): Promise<void> {
+    await this.database.transaction(async (client) => {
+      await this.database.queryIn(client,
+        `UPDATE agent_assessments SET status = 'superseded', superseded_at = $1
+         WHERE patient_id = $2 AND status = 'current' AND id <> $3`,
+        [assessment.completedAt, assessment.patientId, assessment.id]
+      );
+      await this.database.queryIn(client, `
+        INSERT INTO agent_assessments(
+          id, patient_id, source_session_id, decision_id, status,
+          answers_snapshot_encrypted, answers_snapshot_hash, severity_code,
+          syndrome_code, phase_code, audience, plan_refs_json,
+          rule_package_version, rule_package_hash, completed_at, superseded_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        ON CONFLICT(id) DO NOTHING
+      `, assessmentValues(assessment));
+      await this.database.queryIn(client,
+        "UPDATE agent_conversations SET assessment_id = $1 WHERE id = $2 AND patient_id = $3",
+        [assessment.id, assessment.sourceSessionId, assessment.patientId]
+      );
+    });
+  }
+
   async updateSession(
     expectedRevision: number,
     session: ConversationSession
@@ -199,13 +244,14 @@ export class PgConversationRepository implements ConversationRepository {
         client,
         `UPDATE agent_conversations
          SET patient_id = $1, state = $2, save_consent_id = $3,
-             revision = $4, last_sequence = $5, closed_at = $6,
-             retention_until = $7, updated_at = $8
-         WHERE id = $9 AND revision = $10`,
+             assessment_id = $4, revision = $5, last_sequence = $6, closed_at = $7,
+             retention_until = $8, updated_at = $9
+         WHERE id = $10 AND revision = $11`,
         [
           session.patientId,
           session.state,
           session.saveConsentId,
+          session.assessmentId,
           session.revision,
           session.lastSequence,
           session.closedAt,
@@ -251,13 +297,14 @@ export class PgConversationRepository implements ConversationRepository {
         client,
         `UPDATE agent_conversations
          SET patient_id = $1, state = $2, save_consent_id = $3,
-             revision = $4, last_sequence = $5, closed_at = $6,
-             retention_until = $7, updated_at = $8
-         WHERE id = $9 AND revision = $10`,
+             assessment_id = $4, revision = $5, last_sequence = $6, closed_at = $7,
+             retention_until = $8, updated_at = $9
+         WHERE id = $10 AND revision = $11`,
         [
           session.patientId,
           session.state,
           session.saveConsentId,
+          session.assessmentId,
           session.revision,
           session.lastSequence,
           session.closedAt,
@@ -332,10 +379,11 @@ export class PgConversationRepository implements ConversationRepository {
           id, session_id, decision_sequence, session_revision,
           input_snapshot_encrypted, input_snapshot_hash,
           outcome, stage, severity_code, syndrome_code,
+          phase_code, audience, rule_package_status,
           next_questions_json, matched_rule_ids_json,
           rule_package_version, rule_package_hash,
           plan_id, plan_revision, created_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20)`,
         [
           decision.id,
           decision.sessionId,
@@ -347,6 +395,9 @@ export class PgConversationRepository implements ConversationRepository {
           decision.stage,
           decision.severityCode,
           decision.syndromeCode,
+          decision.phaseCode,
+          decision.audience,
+          decision.rulePackageStatus,
           decision.nextQuestionsJson,
           decision.matchedRuleIdsJson,
           decision.rulePackageVersion,
@@ -376,6 +427,24 @@ export class PgConversationRepository implements ConversationRepository {
             message.createdAt
           ]
         );
+      }
+
+      if (input.completedAssessment !== undefined) {
+        const assessment = input.completedAssessment;
+        await this.database.queryIn(
+          client,
+          `UPDATE agent_assessments SET status = 'superseded', superseded_at = $1
+           WHERE patient_id = $2 AND status = 'current'`,
+          [assessment.completedAt, assessment.patientId]
+        );
+        await this.database.queryIn(client, `
+          INSERT INTO agent_assessments(
+            id, patient_id, source_session_id, decision_id, status,
+            answers_snapshot_encrypted, answers_snapshot_hash, severity_code,
+            syndrome_code, phase_code, audience, plan_refs_json,
+            rule_package_version, rule_package_hash, completed_at, superseded_at
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        `, assessmentValues(assessment));
       }
 
       return { kind: "committed" };
@@ -688,4 +757,39 @@ export class PgConversationRepository implements ConversationRepository {
       createdAt: row.created_at
     };
   }
+}
+
+interface AssessmentRow {
+  id: string; patient_id: string; source_session_id: string; decision_id: string;
+  status: string; answers_snapshot_encrypted: string; answers_snapshot_hash: string;
+  severity_code: string | null; syndrome_code: string; phase_code: string;
+  audience: string; plan_refs_json: string; rule_package_version: string;
+  rule_package_hash: string; completed_at: string; superseded_at: string | null;
+}
+
+function parseAssessment(row: AssessmentRow): PatientAssessmentRow {
+  return {
+    id: row.id, patientId: row.patient_id, sourceSessionId: row.source_session_id,
+    decisionId: row.decision_id, status: row.status as PatientAssessmentRow["status"],
+    answersSnapshotEncrypted: parseEncrypted(row.answers_snapshot_encrypted),
+    answersSnapshotHash: row.answers_snapshot_hash, severityCode: row.severity_code,
+    syndromeCode: row.syndrome_code,
+    phaseCode: row.phase_code as PatientAssessmentRow["phaseCode"],
+    audience: row.audience as PatientAssessmentRow["audience"],
+    planRefsJson: row.plan_refs_json, rulePackageVersion: row.rule_package_version,
+    rulePackageHash: row.rule_package_hash, completedAt: row.completed_at,
+    supersededAt: row.superseded_at
+  };
+}
+
+function assessmentValues(assessment: PatientAssessmentRow): unknown[] {
+  return [
+    assessment.id, assessment.patientId, assessment.sourceSessionId,
+    assessment.decisionId, assessment.status,
+    serializeEncrypted(assessment.answersSnapshotEncrypted),
+    assessment.answersSnapshotHash, assessment.severityCode,
+    assessment.syndromeCode, assessment.phaseCode, assessment.audience,
+    assessment.planRefsJson, assessment.rulePackageVersion,
+    assessment.rulePackageHash, assessment.completedAt, assessment.supersededAt
+  ];
 }

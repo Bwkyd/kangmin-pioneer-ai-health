@@ -73,7 +73,7 @@ const GENERIC_ACUPOINT = /[\p{Script=Han}]{1,10}穴/gu;
 const ACUPOINT_REFERENCES = [
   "该穴", "此穴", "本穴", "其他穴", "其它穴", "各穴", "上述穴", "这些穴"
 ] as const;
-const APPROVED_ACUPOINT_PREFIX = /(?:在|于|取|用|按|揉|擦|找|含|选|为|是|的|里|中|问|讲|说|看|供)$/u;
+const APPROVED_ACUPOINT_PREFIX = /(?:在|于|取|用|按|压|揉|擦|找|含|选|为|是|的|里|中|问|讲|说|看|供)$/u;
 const NUMBER_WITH_UNIT = /\d+(?:\.\d+)?(?:\s*[～~—\-至]\s*\d+(?:\.\d+)?)?\s*(?:次|分钟|小时|天|周|个月|厘米|毫米|cm|mm|寸|壮)/giu;
 const EFFICACY_CLAIMS = /(?:保证|确保|一定|彻底)(?:治愈|根治|有效)|包治|永不复发|药到病除/u;
 
@@ -235,13 +235,38 @@ function containsUnapprovedAcupoint(text: string, allowed: string): boolean {
   for (const point of KNOWN_ACUPOINTS) {
     if (text.includes(point) && !allowed.includes(point)) return true;
   }
-  const genericPoints = text.match(GENERIC_ACUPOINT) ?? [];
+  const genericPoints = [...text.matchAll(GENERIC_ACUPOINT)];
   GENERIC_ACUPOINT.lastIndex = 0;
-  return genericPoints.some((point) => {
+  return genericPoints.some((match) => {
+    const point = match[0];
+    const nextCharacter = text[(match.index ?? 0) + point.length];
+    // “更详细的穴位定位”中的“穴位”是普通名词，不是穴名；但
+    // “神门穴位”没有这些语言修饰，仍按未知穴位拒绝。
+    if (
+      nextCharacter === "位" &&
+      /(?:例如|详细|具体|相关|上述|这些|其他|其它|各个|所有).*穴$/u.test(point)
+    ) return false;
     // “轻擦该穴位”一类代词引用可能被贪婪正则整体命中，引用对象仍须由
     // 上面的已知穴位白名单判定；这里只排除代词误伤，不新增任何穴位。
     if (ACUPOINT_REFERENCES.some((reference) => point.endsWith(reference))) {
       return false;
+    }
+    // “耳穴过敏区”含有中间的“穴”字，通用正则会先截成“按压耳穴”。
+    // 只有当完整复合名称同时出现在正文和当前方案中时才视为已批准；
+    // 不能把单独的“耳穴”或其他未知复合词借此放行。
+    const approvedCompound = KNOWN_ACUPOINTS.find((knownPoint) => {
+      const holeIndex = knownPoint.indexOf("穴");
+      if (holeIndex < 0 || holeIndex === knownPoint.length - 1) return false;
+      const prefixThroughHole = knownPoint.slice(0, holeIndex + 1);
+      return text.includes(knownPoint) && allowed.includes(knownPoint) &&
+        point.endsWith(prefixThroughHole);
+    });
+    if (approvedCompound !== undefined) {
+      const prefix = point.slice(0, -approvedCompound.slice(
+        0,
+        approvedCompound.indexOf("穴") + 1
+      ).length);
+      if (prefix === "" || APPROVED_ACUPOINT_PREFIX.test(prefix)) return false;
     }
     const approvedSuffix = KNOWN_ACUPOINTS
       .flatMap((knownPoint) => [knownPoint, `${knownPoint}穴`])
@@ -257,6 +282,17 @@ function containsUnapprovedAcupoint(text: string, allowed: string): boolean {
     const withoutSuffix = point.slice(0, -1);
     return !allowed.includes(point) && !allowed.includes(withoutSuffix);
   });
+}
+
+/** 只有明确点名当前方案内穴位的追问才检索知识，避免“解释方案”误召回无关切片。 */
+export function shouldRetrieveApprovedKnowledge(
+  question: string,
+  verdict: ClinicalVerdict
+): boolean {
+  const allowed = planText(verdict);
+  return KNOWN_ACUPOINTS.some(
+    (point) => question.includes(point) && allowed.includes(point)
+  );
 }
 
 /** 追问若点名当前方案外的穴位或疗法，模型调用前即确定性拒绝。 */
@@ -349,6 +385,48 @@ export function renderGeneratedFollowUpOutput(
 }
 
 /**
+ * 泛化解释的确定性降级：只拼接规则结果和已批准方案原文，并根据是否已有
+ * 上一轮回答改变表达。它不补充任何医学细节，也不会退回无上下文的重复拒绝。
+ */
+export function renderContextualPlanFollowUp(
+  verdict: ClinicalVerdict,
+  hasRecentConversation: boolean
+): ValidatedOutput {
+  const syndrome = verdict.syndromeCode === null
+    ? "当前体质类型"
+    : (SYNDROME_LABELS[verdict.syndromeCode] ?? verdict.syndromeCode);
+  const phase = verdict.phaseCode === "acute" ? "急性发作期" : "缓解期";
+  const acute = verdict.planBundle?.acute ?? null;
+  const constitution = verdict.planBundle?.constitution ?? null;
+  const content = hasRecentConversation
+    ? [
+        "承接上一条，先记住一个重点：",
+        `您最近一次自测结果仍是【${phase}】，体质类型为【${syndrome}】。`,
+        constitution === null
+          ? "当前没有可用的调体方案。"
+          : `缓解期以【${constitution.name}】为主：${constitution.method}。`,
+        acute === null
+          ? "症状突然加重时请及时咨询专业医生。"
+          : `症状突然发作时，再参考【${acute.name}】：${acute.method}。`
+      ].join("\n")
+    : [
+        "我换成简单说法：",
+        `系统沿用了您最近一次自测：目前是【${phase}】，体质类型为【${syndrome}】，不需要重新做问卷。`,
+        constitution === null
+          ? "当前没有可用的调体方案。"
+          : `当前重点是【${constitution.name}】：${constitution.method}。`,
+        acute === null
+          ? "症状突然加重时请及时咨询专业医生。"
+          : `如果症状突然发作，再参考【${acute.name}】：${acute.method}。`
+      ].join("\n");
+  return output(
+    "contextual_plan_follow_up",
+    `${content}\n\n${evidenceFooter(verdict, [])}`,
+    null
+  );
+}
+
+/**
  * 模型回答不可用时，允许把单条已启用知识切片原文作为确定性兜底。
  * 原文仍须经过与模型输出相同的方案白名单、数值与疗效校验；任一来源
  * 不合格就跳过，绝不因为“来自知识库”而绕过临床边界。
@@ -374,6 +452,15 @@ export function renderFixedFollowUp(
   sources: readonly PlanDialogueSource[] = []
 ): ValidatedOutput {
   return output(templateId, `${content}\n\n${evidenceFooter(verdict, sources)}`, null);
+}
+
+/** 纯寒暄不调用模型，也不重复问卷；只提示可继续询问的安全范围。 */
+export function renderAssessmentGreeting(): ValidatedOutput {
+  return output(
+    "assessment_greeting",
+    "您好，我已接续您最近的评估结果。您可以直接问我当前方案是什么意思、如何理解，或有哪些注意事项。",
+    null
+  );
 }
 
 /** 急性期模板（《页面展示》纯文本化：去 ###/**，保留【】与换行）。 */

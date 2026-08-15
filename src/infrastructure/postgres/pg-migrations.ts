@@ -598,5 +598,33 @@ export const PG_MIGRATIONS: PgMigration[] = [
   {
     version: "0007_knowledge_category",
     statements: ["ALTER TABLE agent_knowledge_items ADD COLUMN category TEXT"]
+  },
+  {
+    version: "0008_patient_assessment_context",
+    statements: [
+      `CREATE TABLE agent_assessments (
+        id TEXT PRIMARY KEY,
+        patient_id TEXT NOT NULL REFERENCES patients(id),
+        source_session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+        decision_id TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('current', 'superseded')),
+        answers_snapshot_encrypted TEXT NOT NULL,
+        answers_snapshot_hash TEXT NOT NULL,
+        severity_code TEXT,
+        syndrome_code TEXT NOT NULL,
+        phase_code TEXT NOT NULL CHECK(phase_code IN ('acute', 'remission')),
+        audience TEXT NOT NULL CHECK(audience IN ('child', 'adult')),
+        plan_refs_json TEXT NOT NULL,
+        rule_package_version TEXT NOT NULL,
+        rule_package_hash TEXT NOT NULL,
+        completed_at TEXT NOT NULL,
+        superseded_at TEXT
+      )`,
+      `CREATE INDEX agent_assessments_patient_current
+        ON agent_assessments(patient_id, status, completed_at DESC)`,
+      `CREATE UNIQUE INDEX agent_assessments_one_current_per_patient
+        ON agent_assessments(patient_id) WHERE status = 'current'`,
+      `ALTER TABLE agent_conversations ADD COLUMN assessment_id TEXT`
+    ]
   }
 ];

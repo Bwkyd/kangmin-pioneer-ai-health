@@ -495,6 +495,64 @@ function requestTimeoutResult(
   );
 }
 
+const AGENT_STREAM_CHUNK_SIZE = 8;
+const AGENT_STREAM_CHUNK_DELAY_MS = 20;
+
+function streamDelay(): Promise<void> {
+  return new Promise((resolveDelay) => {
+    setTimeout(resolveDelay, AGENT_STREAM_CHUNK_DELAY_MS);
+  });
+}
+
+async function writeNdjson(
+  response: ServerResponse,
+  event: Record<string, unknown>
+): Promise<boolean> {
+  if (response.destroyed || response.writableEnded) return false;
+  const writable = response.write(`${JSON.stringify(event)}\n`);
+  if (!writable) {
+    await new Promise<void>((resolveDrain) => {
+      const settled = () => {
+        response.off("drain", settled);
+        response.off("close", settled);
+        resolveDrain();
+      };
+      response.once("drain", settled);
+      response.once("close", settled);
+    });
+  }
+  return !response.destroyed && !response.writableEnded;
+}
+
+/**
+ * 只把已完成规则裁决、输出校验并持久化的助手正文分片发送。
+ * 千问原始 token 在完整医学校验前绝不进入患者响应流。
+ */
+async function streamValidatedAgentTurn(
+  response: ServerResponse,
+  turn: Record<string, unknown>
+): Promise<void> {
+  const message = isRecord(turn.message) ? turn.message : null;
+  const content = message !== null && typeof message.content === "string"
+    ? message.content
+    : "";
+  response.statusCode = 200;
+  response.setHeader("content-type", "application/x-ndjson; charset=utf-8");
+  response.setHeader("cache-control", "private, no-store");
+  response.setHeader("x-accel-buffering", "no");
+  response.setHeader("x-content-type-options", "nosniff");
+  response.flushHeaders();
+  if (!await writeNdjson(response, { type: "start" })) return;
+  const characters = Array.from(content);
+  for (let index = 0; index < characters.length; index += AGENT_STREAM_CHUNK_SIZE) {
+    const delta = characters.slice(index, index + AGENT_STREAM_CHUNK_SIZE).join("");
+    if (!await writeNdjson(response, { type: "delta", content: delta })) return;
+    await streamDelay();
+  }
+  if (!await writeNdjson(response, { type: "done", data: turn })) return;
+  response.end();
+}
+
 export function createKangminHttpServer(
   application: KangminApplication,
   options: HttpServerOptions = {}
@@ -540,7 +598,11 @@ export function createKangminHttpServer(
     // 单请求整体超时：超时即 408（传输层补充码 request_timeout），
     // 处理器迟到的写入由 json/staticAsset 的 writableEnded 守卫丢弃。
     const timeout = setTimeout(() => {
-      json(response, 408, requestTimeoutResult(requestId));
+      if (response.headersSent) {
+        if (!response.writableEnded) response.end();
+      } else {
+        json(response, 408, requestTimeoutResult(requestId));
+      }
     }, requestTimeoutMs);
     timeout.unref();
 
@@ -871,6 +933,62 @@ export function createKangminHttpServer(
       } catch (error) {
         const result = failure("development session create", error, requestId);
         json(response, httpStatusForCode(result.error.code), result);
+      }
+      return;
+    }
+
+    if (
+      request.method === "POST" &&
+      requestUrl.pathname === "/v1/patient/agent/stream"
+    ) {
+      try {
+        const body = await readJson(request, bodyLimitBytes);
+        if (
+          !isRecord(body) ||
+          body.schemaVersion !== COMMAND_SCHEMA_VERSION ||
+          !isRecord(body.input) ||
+          typeof body.requestId !== "string" ||
+          body.requestId.trim() === "" ||
+          body.requestId.length > 120
+        ) {
+          throw new DomainError(
+            "command_invalid",
+            "流式对话请求格式无效"
+          );
+        }
+        requestId = body.requestId;
+        response.setHeader("x-request-id", requestId);
+        const decision = rateLimiter.check(clientIp(request), "commands");
+        if (!decision.allowed) {
+          response.setHeader("retry-after", String(decision.retryAfterSeconds));
+          json(
+            response,
+            429,
+            rateLimitedResult("agent exec", requestId, decision.retryAfterSeconds)
+          );
+          return;
+        }
+        const result = await application.execute({
+          command: "agent exec",
+          input: body.input,
+          sessionToken: sessionToken(request),
+          requestId
+        });
+        if (!result.ok) {
+          json(response, httpStatusForCode(result.error.code), result);
+          return;
+        }
+        if (!isRecord(result.data)) {
+          throw new DomainError("internal_error", "流式对话结果格式无效");
+        }
+        await streamValidatedAgentTurn(response, result.data);
+      } catch (error) {
+        if (!response.headersSent) {
+          const result = failure("agent exec", error, requestId);
+          json(response, httpStatusForCode(result.error.code), result);
+        } else if (!response.writableEnded) {
+          response.end();
+        }
       }
       return;
     }

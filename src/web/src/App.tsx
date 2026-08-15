@@ -1,10 +1,12 @@
 import { FormEvent, useEffect, useRef, useState } from "react";
 
 import {
+  getCurrentAgentAssessment,
   listAgentConversations,
-  runAgentTurn,
+  runAgentTurnStreaming,
   showAgentConversation,
   type AgentConversationDetail,
+  type AgentAssessmentSummary,
   type AgentConversationState,
   type AgentConversationSummary,
   type AgentTurnResult
@@ -79,6 +81,14 @@ const WELCOME_MESSAGE: Message = {
   role: "ai",
   kind: "text",
   text: "敏友您好，本工具依据福建中医药大学抗敏先锋团队体质调理方案开发，为您推荐个性化外治建议"
+};
+
+const SYNDROME_NAMES: Record<string, string> = {
+  LUNG_QI_COLD: "肺气虚寒",
+  SPLEEN_QI_DEF: "脾气虚弱",
+  KIDNEY_YANG_DEF: "肾阳不足",
+  LUNG_HEAT: "肺经伏热",
+  COLD_HEAT_COMPLEX: "寒热错杂"
 };
 
 /** 页面只渲染共享问卷；题面与规则跳转不得在前端各维护一份。 */
@@ -260,6 +270,9 @@ export default function App() {
   const [conversationState, setConversationState] = useState<AgentConversationState | null>(null);
   const [followUpEnabled, setFollowUpEnabled] = useState(false);
   const [conversationEndReason, setConversationEndReason] = useState<string | null>(null);
+  const [nextStartMode, setNextStartMode] = useState<"inherit_assessment" | "reassess">("inherit_assessment");
+  const [currentAgentAssessment, setCurrentAgentAssessment] = useState<AgentAssessmentSummary | null>(null);
+  const [agentAssessmentReload, setAgentAssessmentReload] = useState(0);
   const [chatHydrated, setChatHydrated] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [conversationHistory, setConversationHistory] = useState<AgentConversationSummary[]>([]);
@@ -337,6 +350,19 @@ export default function App() {
     conversationState === null ||
     conversationState === "active" ||
     (conversationState === "completed" && followUpEnabled);
+
+  useEffect(() => {
+    if (previewConsentStatus !== "ready") return;
+    let cancelled = false;
+    getCurrentAgentAssessment()
+      .then((assessment) => {
+        if (!cancelled) setCurrentAgentAssessment(assessment);
+      })
+      .catch(() => {
+        if (!cancelled) setCurrentAgentAssessment(null);
+      });
+    return () => { cancelled = true; };
+  }, [previewConsentStatus, agentAssessmentReload]);
 
   useEffect(() => {
     let cancelled = false;
@@ -663,6 +689,7 @@ export default function App() {
     setConversationId(null);
     setConversationState(null);
     setFollowUpEnabled(false);
+    setNextStartMode("inherit_assessment");
     setConversationEndReason(null);
     setMessages([WELCOME_MESSAGE]);
     setPendingQuestions(null);
@@ -677,6 +704,12 @@ export default function App() {
     } catch {
       // sessionStorage 不可用时，组件状态仍已开启一段新对话。
     }
+  };
+
+  /** 重新评估与新聊天分离；旧评估仅在新问卷完成后才被替代。 */
+  const startReassessment = () => {
+    startNewConversation();
+    setNextStartMode("reassess");
   };
 
   /** 从服务端历史切换对话；结束会话只读，进行中会话可继续。 */
@@ -725,7 +758,11 @@ export default function App() {
   /** "开始了解我的情况"：发送首条消息，驱动内核补问流水线（服务端只问不猜）。 */
   const beginConsultation = () => {
     if (!chatHydrated || chatSending || conversationState !== null || messages.length !== 1) return;
-    void sendChatMessage("我想了解我的鼻炎情况");
+    void sendChatMessage(
+      nextStartMode === "reassess"
+        ? "我想重新评估我的鼻炎情况"
+        : "请结合我最近的评估，告诉我当前方案重点"
+    );
   };
 
   /** 问卷原题选项卡：点击发送稳定选项值（qN=选项），用户气泡显示原题与选项。 */
@@ -766,6 +803,7 @@ export default function App() {
       return;
     }
     const requestVersion = chatRequest.next();
+    const streamingMessageId = `stream-${requestVersion}`;
     setChatSending(true);
     setChatError("");
     setChatRetryMessage(null);
@@ -777,11 +815,35 @@ export default function App() {
     }
     setMessages((current) => [...current, { id: Date.now() + 1, role: "ai", kind: "thinking" }]);
     try {
-      const turn = await runAgentTurn(value, conversationId ?? undefined);
+      const turn = await runAgentTurnStreaming(
+        value,
+        conversationId ?? undefined,
+        {
+          onStart: () => {
+            if (!chatRequest.isCurrent(requestVersion)) return;
+            setMessages((current) => [
+              ...current.filter((message) => message.kind !== "thinking"),
+              { id: streamingMessageId, role: "ai", kind: "text", text: "" }
+            ]);
+          },
+          onDelta: (content) => {
+            if (!chatRequest.isCurrent(requestVersion)) return;
+            setMessages((current) => current.map((message) =>
+              message.id === streamingMessageId && message.kind === "text"
+                ? { ...message, text: message.text + content }
+                : message
+            ));
+          }
+        },
+        conversationId === null ? nextStartMode : undefined
+      );
       if (!chatRequest.isCurrent(requestVersion)) return;
       setConversationId(turn.conversationId);
       setConversationState(turn.state);
       setFollowUpEnabled(turn.verdict?.outcome === "classified");
+      if (turn.verdict?.outcome === "classified") {
+        setAgentAssessmentReload((current) => current + 1);
+      }
       setConversationEndReason(null);
       try {
         sessionStorage.setItem(AGENT_CONVERSATION_KEY, turn.conversationId);
@@ -789,7 +851,9 @@ export default function App() {
         // sessionStorage 不可用时仅在本次页面生命周期内续接。
       }
       setMessages((current) => [
-        ...current.filter((message) => message.kind !== "thinking"),
+        ...current.filter((message) =>
+          message.kind !== "thinking" && message.id !== streamingMessageId
+        ),
         ...(optionMessage === null ? [] : [optionMessage]),
         ...agentTurnMessages(turn),
       ]);
@@ -798,7 +862,9 @@ export default function App() {
       setHistoryReload((current) => current + 1);
     } catch (error) {
       if (!chatRequest.isCurrent(requestVersion)) return;
-      setMessages((current) => current.filter((message) => message.kind !== "thinking"));
+      setMessages((current) => current.filter((message) =>
+        message.kind !== "thinking" && message.id !== streamingMessageId
+      ));
       if (error instanceof CommandError && error.code === "protocol_incompatible") {
         setConversationState("abandoned");
         setFollowUpEnabled(false);
@@ -1330,7 +1396,9 @@ export default function App() {
               <div className="chat-view">
                 <div className="safety-banner">
                   <span>库</span>
-                  <p><strong>安全评估与方案建议</strong><small>固定规则优先 · 不替代门诊诊断</small></p>
+                  <p><strong>安全评估与方案建议</strong><small>{currentAgentAssessment === null
+                    ? "固定规则优先 · 暂无有效评估"
+                    : `沿用 ${currentAgentAssessment.completedAt.slice(0, 10)} 评估 · ${currentAgentAssessment.phaseCode === "acute" ? "急性发作期" : "缓解期"} · ${SYNDROME_NAMES[currentAgentAssessment.syndromeCode] ?? currentAgentAssessment.syndromeCode}`}</small></p>
                 </div>
                 <div className="chat-toolbar" aria-label="对话管理">
                   <button
@@ -1342,7 +1410,7 @@ export default function App() {
                     ☰ 历史对话
                   </button>
                   <button type="button" data-testid="chat-new" onClick={startNewConversation}>
-                    ＋ 新建对话
+                    ＋ 新建聊天
                   </button>
                 </div>
                 {historyOpen && (
@@ -1378,10 +1446,17 @@ export default function App() {
                     if (message.kind === "result") {
                       return <ResultCard message={message} key={message.id} />;
                     }
+                    const isStreaming =
+                      typeof message.id === "string" &&
+                      message.id.startsWith("stream-");
                     return (
                       <div className={`message-row ${message.role}-row`} key={message.id}>
                         {message.role === "ai" && <div className="mini-avatar">抗</div>}
-                        <div className={`bubble ${message.role}-bubble`}>
+                        <div
+                          className={`bubble ${message.role}-bubble${isStreaming ? " streaming-response" : ""}`}
+                          data-testid={isStreaming ? "streaming-response" : undefined}
+                          aria-busy={isStreaming ? true : undefined}
+                        >
                           {message.kind === "option"
                             ? <><strong className="option-answer">{message.label}</strong><small className="option-caption">{message.caption}</small></>
                             : message.text}
@@ -1392,7 +1467,7 @@ export default function App() {
 
                   {chatHydrated && conversationState === null && messages.length === 1 && (
                     <button className="start-card" type="button" onClick={beginConsultation} disabled={chatSending}>
-                      <span className="start-icon">聊</span><span><strong>开始了解我的情况</strong><small>约 2 分钟 · 随时可以退出</small></span><b>›</b>
+                      <span className="start-icon">聊</span><span><strong>{nextStartMode === "reassess" ? "开始重新评估" : currentAgentAssessment === null ? "开始了解我的情况" : "沿用最近评估开始聊天"}</strong><small>{nextStartMode === "reassess" ? "新评估完成后才会替代原结果" : currentAgentAssessment === null ? "约 2 分钟 · 完成后可持续追问" : "直接讨论当前方案，不重复问卷"}</small></span><b>›</b>
                     </button>
                   )}
 
@@ -1445,13 +1520,15 @@ export default function App() {
                 {conversationState !== null && conversationState !== "active" && !followUpEnabled && (
                   <div className="conversation-ended" role="status">
                     <span>{conversationEndReason ?? "本对话已结束，历史内容仍可查看。"}</span>
-                    <button type="button" onClick={startNewConversation}>新建对话</button>
+                    <button type="button" onClick={startNewConversation}>新建聊天</button>
+                    <button type="button" onClick={startReassessment}>重新评估</button>
                   </div>
                 )}
                 {followUpEnabled && (
                   <div className="conversation-ended" role="status">
                     <span>评估已完成，你可以继续追问当前方案。</span>
-                    <button type="button" onClick={startNewConversation}>新建对话</button>
+                    <button type="button" onClick={startNewConversation}>新建聊天</button>
+                    <button type="button" onClick={startReassessment}>重新评估</button>
                   </div>
                 )}
                 <form className="composer" onSubmit={sendCustom}>

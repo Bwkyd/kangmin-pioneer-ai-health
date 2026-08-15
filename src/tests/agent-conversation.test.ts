@@ -17,6 +17,7 @@ import type { RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type {
   ExtractionCandidate,
+  PlanDialogueContext,
   PlanDialoguePort,
   PlanDialogueSource
 } from "../modules/agent/model-ports.js";
@@ -119,6 +120,29 @@ class NullPlanDialogue implements PlanDialoguePort {
 
   async answerFollowUp(): Promise<null> {
     return null;
+  }
+}
+
+class CapturingPlanDialogue implements PlanDialoguePort {
+  followUps: Array<{ question: string; context: PlanDialogueContext; sourceCount: number }> = [];
+
+  async generatePlan(): Promise<string> {
+    return "已根据当前评估整理方案，请继续询问不清楚的内容。";
+  }
+
+  async answerFollowUp(input: Parameters<PlanDialoguePort["answerFollowUp"]>[0]): Promise<string> {
+    this.followUps.push({
+      question: input.question,
+      context: input.context,
+      sourceCount: input.sources.length
+    });
+    return "我换一种简单说法：请只使用当前评估结果中已经列出的方案。";
+  }
+}
+
+class EmptyKnowledgeRetrieval implements KnowledgeRetrievalPort {
+  async searchEnabled(): Promise<KnowledgeSource[]> {
+    return [];
   }
 }
 
@@ -249,7 +273,12 @@ async function fixtureWithCandidate(
 
 async function exec(
   application: ReturnType<typeof createApplication>,
-  input: { message: string; conversationId?: string; saveConsent?: boolean },
+  input: {
+    message: string;
+    conversationId?: string;
+    saveConsent?: boolean;
+    startMode?: "inherit_assessment" | "reassess";
+  },
   token?: string
 ): Promise<ConversationTurnResult> {
   return dataOf<ConversationTurnResult>(
@@ -527,6 +556,91 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
     );
     assert.ok(show.messages.some((message) => message.content.includes("迎香穴具体位置")));
     assert.ok(show.messages.some((message) => message.content.includes("艾灸上火")));
+  } finally {
+    application.close();
+  }
+});
+
+test("患者级评估上下文：新聊天继承完整问卷，多轮承接不重复问卷，重新评估不提前覆盖", async () => {
+  const planDialogue = new CapturingPlanDialogue();
+  const { application, databasePath } = await currentFixture({
+    planDialogue,
+    planKnowledgeRetrieval: new EmptyKnowledgeRetrieval(),
+    planRegistry: new FixedPlanRegistry()
+  });
+  const token =
+    (await application.sessions.createDevelopmentSession("assessment-context-patient")).token;
+  try {
+    const completed = await completeCurrentAssessment(application, token);
+    const greeting = await exec(application, {
+      message: "你好",
+      startMode: "inherit_assessment"
+    }, token);
+    assert.notEqual(greeting.conversationId, completed.conversationId);
+    assert.match(greeting.message?.content ?? "", /已接续您最近的评估结果/u);
+    assert.equal(planDialogue.followUps.length, 0, "纯寒暄不应调用千问");
+
+    const inherited = await exec(application, {
+      message: "我不明白",
+      startMode: "inherit_assessment"
+    }, token);
+    assert.notEqual(inherited.conversationId, completed.conversationId);
+    assert.equal(inherited.state, "completed");
+    assert.equal(inherited.verdict?.outcome, "classified");
+    assert.match(inherited.message?.content ?? "", /换一种简单说法/u);
+    assert.equal(planDialogue.followUps.length, 1);
+    const firstContext = planDialogue.followUps[0]?.context;
+    assert.ok(firstContext);
+    for (let index = 1; index <= 14; index += 1) {
+      assert.ok(
+        firstContext.assessment.answers.some((answer) => answer.fieldCode === `q${index}`),
+        `继承上下文缺少 q${index}`
+      );
+    }
+    assert.equal(firstContext.recentMessages.length, 0);
+    assert.equal(planDialogue.followUps[0]?.sourceCount, 0, "解释当前方案不强制命中新知识");
+
+    await exec(application, {
+      message: "能再说简单一点吗？",
+      conversationId: inherited.conversationId
+    }, token);
+    assert.equal(planDialogue.followUps.length, 2);
+    assert.ok(planDialogue.followUps[1]?.context.recentMessages.some(
+      (message) => message.role === "assistant" && message.content.includes("换一种简单说法")
+    ));
+    assert.ok(planDialogue.followUps[1]?.context.recentMessages.every(
+      (message) => message.role !== "assistant" || !message.content.includes("【依据】")
+    ));
+
+    const reassessment = await exec(application, {
+      message: "我想重新评估",
+      startMode: "reassess"
+    }, token);
+    assert.equal(reassessment.state, "active");
+    assert.ok(reassessment.verdict?.nextQuestions.length);
+
+    const database = new KangminDatabase(databasePath);
+    try {
+      const counts = database.connection.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM agent_assessments WHERE status = 'current') AS current_count,
+          (SELECT COUNT(*) FROM agent_assessments WHERE status = 'superseded') AS old_count
+      `).get() as unknown as { current_count: number; old_count: number };
+      assert.equal(counts.current_count, 1);
+      assert.equal(counts.old_count, 0);
+      database.connection.prepare(
+        "UPDATE agent_assessments SET status = 'superseded', superseded_at = ? WHERE status = 'current'"
+      ).run(new Date().toISOString());
+    } finally {
+      database.close();
+    }
+
+    const oldChatFollowUp = await exec(application, {
+      message: "刚才那段还能继续解释吗？",
+      conversationId: inherited.conversationId
+    }, token);
+    assert.equal(oldChatFollowUp.verdict?.outcome, "classified");
+    assert.match(oldChatFollowUp.message?.content ?? "", /换一种简单说法/u);
   } finally {
     application.close();
   }
@@ -1374,6 +1488,7 @@ test("commitTurn 并发 CAS：旧 revision 提交返回 version_conflict 且无�
       patientId: null,
       state: "active",
       saveConsentId: null,
+      assessmentId: null,
       rulePackageVersion: "draft-2026-07",
       rulePackageHash: "rule-hash",
       revision: 1,
@@ -1557,6 +1672,7 @@ function sessionRow(
     patientId,
     state: "active",
     saveConsentId: null,
+    assessmentId: null,
     rulePackageVersion: "draft-2026-07",
     rulePackageHash: "rule-hash",
     revision: 1,
