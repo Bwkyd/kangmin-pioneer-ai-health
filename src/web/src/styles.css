@@ -302,8 +302,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .chat {
   flex: 1;
   min-height: 0;
-  /* 给输入框上沿的助手动画留出空间，最后一条消息不被遮挡。 */
-  padding: 12px 13px 108px;
+  padding: 12px 13px 20px;
   overflow-y: auto;
   scroll-behavior: smooth;
 }
@@ -439,7 +438,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .video-copy span { color: #84948e; font-size: 9px; line-height: 1.5; }
 
 .composer {
-  min-height: 65px;
+  min-height: 84px;
   padding: 9px 12px 13px;
   display: flex;
   align-items: center;
@@ -449,12 +448,12 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   border-top: 1px solid #e4e9e6;
 }
 .assistant-mascot {
-  width: 76px;
-  height: 114px;
+  width: 58px;
+  height: 87px;
   position: absolute;
   z-index: 2;
-  left: 42px;
-  bottom: 56px;
+  left: 12px;
+  bottom: 3px;
   display: block;
   pointer-events: none;
   user-select: none;
@@ -484,7 +483,7 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
   font-weight: 700;
   cursor: pointer;
 }
-.composer input { flex: 1; min-width: 0; padding: 10px 12px; border: 0; outline: 0; border-radius: 11px; background: #f1f4f2; font-size: 12px; }
+.composer input { flex: 1; min-width: 0; margin-left: 60px; padding: 10px 12px; border: 0; outline: 0; border-radius: 11px; background: #f1f4f2; font-size: 12px; }
 .composer input::placeholder { color: #9ca9a4; }
 .send-button { width: 33px; height: 33px; border: 0; border-radius: 10px; background: var(--green); color: white; cursor: pointer; }
 .send-button:disabled { cursor: wait; opacity: .6; }
