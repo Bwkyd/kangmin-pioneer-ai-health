@@ -379,6 +379,7 @@ function staticContentType(filename: string): string {
   if (filename.endsWith(".js")) return "text/javascript; charset=utf-8";
   if (filename.endsWith(".css")) return "text/css; charset=utf-8";
   if (filename.endsWith(".jpg") || filename.endsWith(".jpeg")) return "image/jpeg";
+  if (filename.endsWith(".apng")) return "image/apng";
   if (filename.endsWith(".png")) return "image/png";
   if (filename.endsWith(".svg")) return "image/svg+xml";
   if (filename.endsWith(".webp")) return "image/webp";
@@ -815,11 +816,13 @@ export function createKangminHttpServer(
       return;
     }
 
-    // 公共静态资源（品牌横幅、站点图标）。
+    // 公共静态资源（品牌横幅、站点图标与输入区动画助手）。
     if (
       request.method === "GET" &&
       (requestUrl.pathname === "/brand-banner.jpg" ||
-        requestUrl.pathname === "/favicon.svg")
+        requestUrl.pathname === "/favicon.svg" ||
+        requestUrl.pathname === "/assistant-mascot.apng" ||
+        requestUrl.pathname === "/assistant-mascot-static.png")
     ) {
       const filename = requestUrl.pathname.slice(1);
       await staticAsset(

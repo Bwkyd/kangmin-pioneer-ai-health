@@ -158,6 +158,19 @@ try {
   await expectAddButtonInsideNavigation(page, "首页");
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   await expectAddButtonInsideNavigation(page, "问助手");
+  const mascot = page.getByTestId("assistant-mascot");
+  await mascot.waitFor({ state: "visible" });
+  const mascotBox = await mascot.boundingBox();
+  const composerBox = await page.locator(".composer").boundingBox();
+  assert.ok(mascotBox && composerBox, "问助手输入区应显示动画助手");
+  assert.ok(
+    await mascot.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0),
+    "动画助手资源应成功加载"
+  );
+  assert.ok(
+    mascotBox.y < composerBox.y && mascotBox.x >= composerBox.x,
+    "动画助手应位于输入框左上沿"
+  );
   await page.getByTestId("nav-calendar").click();
   await expectAddButtonInsideNavigation(page, "日历");
   await page.locator(".bottom-nav button", { hasText: "我的" }).click();
