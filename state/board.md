@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 动画助手已提交并部署到 Web 试用环境（2026-08-15 第七十七轮 · 代码提交 `3897e11`）
+> 作者授权提交与部署。上线前按 `km-review` 分患者可懂性、工程事实与医学安全复核，P0/P1/P2 为 0；保留一项不阻塞的 P3：公共静态资源沿用现有 `no-store`，重复进入页面可能重新获取约 488 KB 动画。代码已提交为 `3897e11`，原始客户 MP4 与作者 `hi.md` 未进入提交。
+> 制品 SHA-256 为 `26a88d09b728d12f14f3d28904a0fc88a81b613359b066d84b48e7ae394bf6ea`；在 8788 + 线上 SQLite 副本预检患者页、管理页、APNG 类型/字节哈希与数据库均通过后，原子切换到 `/srv/kangmin-cli/releases/assistant-mascot-3897e11`。切换前备份 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-135659-before-assistant-mascot-3897e11.sqlite`，旧 release 保留回滚。
+> 公网 `https://140.143.120.176` 的 `/live`、患者页和动画资源为 200，首页与本地构建哈希一致；应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`。Chrome 390×844 验证透明动画完整加载、位置正确、输入不被阻挡且控制台无 warning/error。`/ready` 仍只因试用环境既有 encryption 未配置返回 503，不扩大为正式生产就绪或客户验收。
+
 > ## 🧑‍⚕️ 问助手输入区增加眨眼动画助手（2026-08-15 第七十六轮 · 未提交，基线 `main@e6f066c`）
 > 按客户参考图把其提供的博士帽小人固定在“问助手”输入框左上沿：动画不随消息滚动、不接收点击，消息区预留空间避免遮挡最后一条内容；系统开启“减少动态效果”时自动改用静态帧。原始 MP4 保持只读；因素材为 HEVC、有无用音轨且实际无透明通道，已派生为去黑底、静音、15 fps 循环 APNG（488 KB）及静态 PNG，不直接向浏览器投放兼容性不足的原件。HTTP 服务补充两项公共资源白名单和 `image/apng` 类型，避免构建虽包含素材但运行时 404；浏览器回归同时校验素材真实加载和相对输入框位置。
 > 验证：`cd src && npm run check` 通过（Node 测试 270 pass、76 项因未配置 PostgreSQL/S3 跳过，真实浏览器 E2E 通过且动画资源返回 200）；Chrome 390×844 移动视口确认透明背景、位置、输入与发送按钮无阻挡。未修改对话协议、医学规则或 `vault/raw/` 原件，未提交、未部署。

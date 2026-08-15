@@ -96,3 +96,10 @@
 - 上述患者级评估、连续追问、安全分片与关闭推理改动已通过 PR #203 的 `quality`、`image`
   两项 CI，并于 2026-08-15 squash 合并为 `main@8ba09e5`。任务分支代码树与合并代码树完全
   一致；本次 Git 收尾不改变已验证的线上 release，也不重复部署。
+- 2026-08-15 部署输入区动画助手 release `assistant-mascot-3897e11`。客户提供的 HEVC MP4
+  保持只读，患者端使用去黑底、静音的透明循环 APNG，并为“减少动态效果”提供静态 PNG；
+  两项资源经 HTTP 明确白名单提供。8788 + SQLite 副本预检通过后切换，切换前备份为
+  `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-135659-before-assistant-mascot-3897e11.sqlite`，
+  旧 release 保留。公网 APNG 返回 `image/apng` 且字节哈希与本地一致；Chrome 390×844
+  验证透明动画、位置、输入操作和控制台均正常。应用/Nginx active、`NRestarts=0`、SQLite
+  `quick_check=ok`；`/ready` 仍只因试用环境既有 encryption 未配置返回 503。
