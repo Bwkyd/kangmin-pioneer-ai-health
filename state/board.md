@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🔚 动画助手任务完成收尾并推送任务分支（2026-08-15 第七十九轮 · 收尾提交 `d011e26`）
+> 作者要求结束对话前提交、推送、清理分支并做重大遗漏自检。按 `km-review` 隔离检查患者可懂性、工程事实与医学安全后，唯一 P2 是 `.42cog/real.md` 仍指向旧 release 且称代码未提交；已升至 v1.1.7，并修正为当前 `assistant-mascot-fix-12ed9fa`。修正后 P0/P1/P2 清零；未发现新的跨任务记忆模式。既有 P3 仍是公共动画沿用 `no-store`，重复进入可能重新下载约 474 KB，不阻塞客户试用。
+> `3897e11` 至 `d011e26` 共 5 个提交已推送到 `origin/agent/assistant-mascot`，远端与本地 SHA 均为 `d011e26bce9f6231e39e8894106a61bc4b2e98d7`；敏感信息扫描覆盖这 5 个提交且无发现，生产依赖 `npm audit --omit=dev` 为 0。完整开发依赖审计发现既有 `vite → postcss → nanoid@3.3.16` 有 1 个 high 告警；它不进入生产依赖且非本任务引入，自动升级会改变锁文件与构建基线，留待独立依赖修复任务处理。清单与 `git diff --check` 通过；结构检查仍只被既有 `_work/20260814-福建省中医药适宜技术手册-md` 命名拦截。
+> 仓库 pre-push 明确禁止 AI 直推 `main`，只有作者可人工设置 `ALLOW_MAIN_PUSH=1`，故未绕过保护；远端 `main` 仍为 `e6f066c`。任务分支尚未进入远端 `main`，不满足“已推送、已合并、目标分支已核验”的清理条件，因此本地/远端 `agent/assistant-mascot` 均按规约保留，未冒险删除。线上继续运行 `/srv/kangmin-cli/releases/assistant-mascot-fix-12ed9fa`，公网 `/live` 正常，应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`；作者原件 `hi.md` 保持未修改、未跟踪。
+
 > ## 🧹 收紧动画助手毛边并移出文字区域（2026-08-15 第七十八轮 · 代码提交 `12ed9fa`）
 > 客户截图确认首版存在两项可复现问题：透明素材外沿残留浅色像素，且角色悬浮在输入框上方时遮挡“评估已完成”提示。本轮收紧 APNG 与静态 PNG 的透明蒙版，将角色从 76×114 缩至 58×87，并移入输入区左侧独立预留位；输入框同步留出 60 px，不再覆盖提示或输入文字。浏览器回归新增两组几何断言，分别约束角色与输入文字、完成提示不相交。
 > `cd src && npm run check` 全绿，补充浏览器 E2E 同样通过；Chrome 390×844 本地和公网实测角色与输入框无重叠、控制台无 warning/error。按 `km-review` 从患者、工程、医学安全三视角复核，P0/P1/P2 为 0；本轮不改问卷、临床规则或方案。清单与 `git diff --check` 通过；结构检查仍仅被既有 `_work/20260814-福建省中医药适宜技术手册-md` 命名拦截。
