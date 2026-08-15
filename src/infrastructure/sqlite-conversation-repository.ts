@@ -11,7 +11,8 @@ import type {
   ConversationSession,
   DecisionRow,
   EncryptedContent,
-  FeedbackRow
+  FeedbackRow,
+  PatientAssessmentRow
 } from "../modules/agent/conversation-contracts.js";
 import type {
   CommitTurnInput,
@@ -33,6 +34,7 @@ interface ConversationRow {
   patient_id: string | null;
   state: string;
   save_consent_id: string | null;
+  assessment_id: string | null;
   rule_package_version: string;
   rule_package_hash: string;
   revision: number;
@@ -60,6 +62,7 @@ function parseSession(row: ConversationRow): ConversationSession {
     patientId: row.patient_id,
     state: row.state as ConversationSession["state"],
     saveConsentId: row.save_consent_id,
+    assessmentId: row.assessment_id,
     rulePackageVersion: row.rule_package_version,
     rulePackageHash: row.rule_package_hash,
     revision: row.revision,
@@ -79,16 +82,17 @@ export class SqliteConversationRepository implements ConversationRepository {
       this.database.connection
         .prepare(`
           INSERT INTO agent_conversations(
-            id, patient_id, state, save_consent_id, rule_package_version,
+            id, patient_id, state, save_consent_id, assessment_id, rule_package_version,
             rule_package_hash, revision, last_sequence, closed_at,
             retention_until, created_at, updated_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `)
         .run(
           session.id,
           session.patientId,
           session.state,
           session.saveConsentId,
+          session.assessmentId,
           session.rulePackageVersion,
           session.rulePackageHash,
           session.revision,
@@ -168,6 +172,54 @@ export class SqliteConversationRepository implements ConversationRepository {
     return rows.map(parseSession);
   }
 
+  async findCurrentAssessment(patientId: string): Promise<PatientAssessmentRow | null> {
+    const row = this.database.connection.prepare(
+      `SELECT * FROM agent_assessments
+       WHERE patient_id = ? AND status = 'current'
+       ORDER BY completed_at DESC LIMIT 1`
+    ).get(patientId) as unknown as AssessmentRow | undefined;
+    return row === undefined ? null : parseAssessment(row);
+  }
+
+  async findAssessment(patientId: string, id: string): Promise<PatientAssessmentRow | null> {
+    const row = this.database.connection.prepare(
+      "SELECT * FROM agent_assessments WHERE id = ? AND patient_id = ?"
+    ).get(id, patientId) as unknown as AssessmentRow | undefined;
+    return row === undefined ? null : parseAssessment(row);
+  }
+
+  async saveAssessment(assessment: PatientAssessmentRow): Promise<void> {
+    this.database.transaction(() => {
+      this.database.connection.prepare(
+        `UPDATE agent_assessments SET status = 'superseded', superseded_at = ?
+         WHERE patient_id = ? AND status = 'current' AND id <> ?`
+      ).run(assessment.completedAt, assessment.patientId, assessment.id);
+      this.insertAssessment(assessment);
+      this.database.connection.prepare(
+        "UPDATE agent_conversations SET assessment_id = ? WHERE id = ? AND patient_id = ?"
+      ).run(assessment.id, assessment.sourceSessionId, assessment.patientId);
+    });
+  }
+
+  private insertAssessment(assessment: PatientAssessmentRow): void {
+    this.database.connection.prepare(`
+      INSERT OR IGNORE INTO agent_assessments(
+        id, patient_id, source_session_id, decision_id, status,
+        answers_snapshot_encrypted, answers_snapshot_hash, severity_code,
+        syndrome_code, phase_code, audience, plan_refs_json,
+        rule_package_version, rule_package_hash, completed_at, superseded_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      assessment.id, assessment.patientId, assessment.sourceSessionId,
+      assessment.decisionId, assessment.status,
+      serializeEncrypted(assessment.answersSnapshotEncrypted),
+      assessment.answersSnapshotHash, assessment.severityCode,
+      assessment.syndromeCode, assessment.phaseCode, assessment.audience,
+      assessment.planRefsJson, assessment.rulePackageVersion,
+      assessment.rulePackageHash, assessment.completedAt, assessment.supersededAt
+    );
+  }
+
   async updateSession(
     expectedRevision: number,
     session: ConversationSession
@@ -186,14 +238,15 @@ export class SqliteConversationRepository implements ConversationRepository {
         .prepare(`
           UPDATE agent_conversations
           SET patient_id = ?, state = ?, save_consent_id = ?,
-              revision = ?, last_sequence = ?, closed_at = ?,
-              retention_until = ?, updated_at = ?
-          WHERE id = ? AND revision = ?
+             assessment_id = ?, revision = ?, last_sequence = ?, closed_at = ?,
+             retention_until = ?, updated_at = ?
+         WHERE id = ? AND revision = ?
         `)
         .run(
           session.patientId,
           session.state,
           session.saveConsentId,
+          session.assessmentId,
           session.revision,
           session.lastSequence,
           session.closedAt,
@@ -235,14 +288,15 @@ export class SqliteConversationRepository implements ConversationRepository {
         .prepare(`
           UPDATE agent_conversations
           SET patient_id = ?, state = ?, save_consent_id = ?,
-              revision = ?, last_sequence = ?, closed_at = ?,
-              retention_until = ?, updated_at = ?
-          WHERE id = ? AND revision = ?
+             assessment_id = ?, revision = ?, last_sequence = ?, closed_at = ?,
+             retention_until = ?, updated_at = ?
+         WHERE id = ? AND revision = ?
         `)
         .run(
           session.patientId,
           session.state,
           session.saveConsentId,
+          session.assessmentId,
           session.revision,
           session.lastSequence,
           session.closedAt,
@@ -361,6 +415,15 @@ export class SqliteConversationRepository implements ConversationRepository {
           message.contentEncrypted.keyVersion,
           message.createdAt
         );
+      }
+
+      if (input.completedAssessment !== undefined) {
+        const assessment = input.completedAssessment;
+        this.database.connection.prepare(
+          `UPDATE agent_assessments SET status = 'superseded', superseded_at = ?
+           WHERE patient_id = ? AND status = 'current'`
+        ).run(assessment.completedAt, assessment.patientId);
+        this.insertAssessment(assessment);
       }
 
       return { kind: "committed" };
@@ -683,4 +746,27 @@ export class SqliteConversationRepository implements ConversationRepository {
       createdAt: row.created_at
     };
   }
+}
+
+interface AssessmentRow {
+  id: string; patient_id: string; source_session_id: string; decision_id: string;
+  status: string; answers_snapshot_encrypted: string; answers_snapshot_hash: string;
+  severity_code: string | null; syndrome_code: string; phase_code: string;
+  audience: string; plan_refs_json: string; rule_package_version: string;
+  rule_package_hash: string; completed_at: string; superseded_at: string | null;
+}
+
+function parseAssessment(row: AssessmentRow): PatientAssessmentRow {
+  return {
+    id: row.id, patientId: row.patient_id, sourceSessionId: row.source_session_id,
+    decisionId: row.decision_id, status: row.status as PatientAssessmentRow["status"],
+    answersSnapshotEncrypted: parseEncrypted(row.answers_snapshot_encrypted),
+    answersSnapshotHash: row.answers_snapshot_hash, severityCode: row.severity_code,
+    syndromeCode: row.syndrome_code,
+    phaseCode: row.phase_code as PatientAssessmentRow["phaseCode"],
+    audience: row.audience as PatientAssessmentRow["audience"],
+    planRefsJson: row.plan_refs_json, rulePackageVersion: row.rule_package_version,
+    rulePackageHash: row.rule_package_hash, completedAt: row.completed_at,
+    supersededAt: row.superseded_at
+  };
 }

@@ -2,7 +2,7 @@
 
 `src/` 是抗敏先锋当前主实现。它以同一组应用服务为核心，交付患者 CLI
 `kangmin`、管理 CLI `kangmin-admin`、HTTP 命令服务和患者 Web 薄壳，并
-提供 SQLite/PostgreSQL、文件系统/S3 和 DeepSeek 等可替换适配器。
+提供 SQLite/PostgreSQL、文件系统/S3、DeepSeek 和通义千问等可替换适配器。
 
 本文件描述当前可执行实现，不是生产就绪声明。开始修改前先读仓库根目录的
 [`AGENTS.md`](../AGENTS.md) 和 [`README.md`](../README.md)。如果本文与 CLI
@@ -31,7 +31,7 @@
 | 数据库 | SQLite 本地模式与 PostgreSQL 适配器均已实现 | staging/production 禁止回退 SQLite |
 | 对象存储 | 本地文件系统与 S3 兼容后端均已实现 | staging/production 必须使用 S3 后端 |
 | 临床规则 | 确定性规则链和输出校验已实现 | 默认规则包 `clinical-rules-v3` 为 `approved`；测试仍覆盖 `candidate` 阻断 |
-| 模型 | DeepSeek 适配器和无模型降级已实现 | 模型不能改变规则结果或补写诊断 |
+| 模型 | DeepSeek 负责候选提取/知识问答，千问负责规则结果转译/方案追问，均有降级 | 模型不能改变规则结果、扩展方案或补写诊断 |
 | 容器与供应链 | Dockerfile、生产依赖审计和 SBOM 已实现 | 当前生产启动仍受真实 Provider、正式身份和环境配置阻塞 |
 
 不要用“命令可解析”“仓储类存在”或“某个窄测通过”替代真实链路验收。
@@ -278,6 +278,8 @@ kangmin-admin CLI ─────────┤                         ↓
 | `KANGMIN_SESSION_TOKEN` | 患者令牌 |
 | `KANGMIN_ADMIN_TOKEN` | 管理员令牌，与患者令牌隔离 |
 | `KANGMIN_DEEPSEEK_API_KEY` | 自由对话模型密钥；缺失时按代码定义降级 |
+| `KANGMIN_QWEN_API_KEY` | 规则结果转译与方案后追问密钥；缺失时回退固定模板 |
+| `KANGMIN_QWEN_MODEL` | 千问模型名；默认 `qwen3.7-flash` |
 | `KANGMIN_ALLOW_DEV_SESSION` | 开发会话/开发降级开关；staging/production 禁止 |
 | `KANGMIN_ALLOW_DEV_ADMIN_SESSION` | 仅开发管理员会话脚本使用，且要求 local/integration |
 | `KANGMIN_ENV_PROVIDER_MODE` | `fixed` / `unavailable` / `timeout` 测试替身；正式环境禁止 |

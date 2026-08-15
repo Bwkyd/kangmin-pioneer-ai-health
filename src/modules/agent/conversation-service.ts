@@ -43,18 +43,30 @@ import type {
   DecisionRow,
   DecisionSummary,
   EncryptedContent,
+  PatientAssessmentRow,
   ProposedCandidateView
 } from "./conversation-contracts.js";
 import type {
   ExplanationFields,
   ExtractionCandidate,
   ModelExplanationPort,
-  ModelExtractionPort
+  ModelExtractionPort,
+  PlanDialoguePort,
+  PlanDialogueSource
 } from "./model-ports.js";
+import type { KnowledgeRetrievalPort } from "./knowledge-qa.js";
 import {
   EXTRACTION_UNAVAILABLE_NOTICE,
   FAIL_CLOSED_INFO_NOTICE,
   FAIL_CLOSED_SAFETY_NOTICE,
+  questionWithinApprovedPlan,
+  shouldRetrieveApprovedKnowledge,
+  renderAssessmentGreeting,
+  renderFixedFollowUp,
+  renderGeneratedFollowUpOutput,
+  renderContextualPlanFollowUp,
+  renderGeneratedPlanOutput,
+  renderRetrievedEvidenceFollowUp,
   renderValidatedOutput,
   systemNotice
 } from "./output-validation.js";
@@ -98,6 +110,17 @@ function answersToFacts(answers: readonly ConfirmedAnswerRow[]): ConfirmedFact[]
   }));
 }
 
+function planRefs(verdict: ClinicalVerdict): Array<{ id: string; revision: number }> {
+  return [verdict.planBundle?.acute, verdict.planBundle?.constitution]
+    .filter((plan): plan is NonNullable<typeof plan> => plan !== null && plan !== undefined)
+    .map((plan) => ({ id: plan.planId, revision: plan.planRevision }));
+}
+
+/** 仅匹配不携带其他问题的纯寒暄，避免误截获“你好，方案是什么意思”。 */
+function isSimpleGreeting(message: string): boolean {
+  return /^(?:你好|您好|嗨|哈喽|hello|hi)[！!。,.，？?\s]*$/iu.test(message);
+}
+
 export class ConversationService {
   constructor(
     private readonly repository: ConversationRepository,
@@ -105,7 +128,9 @@ export class ConversationService {
     private readonly extraction: ModelExtractionPort,
     private readonly explanation: ModelExplanationPort,
     private readonly encryption: EncryptionPort,
-    private readonly consentGate: ConsentGatePort
+    private readonly consentGate: ConsentGatePort,
+    private readonly planDialogue: PlanDialoguePort | null = null,
+    private readonly knowledgeRetrieval: KnowledgeRetrievalPort | null = null
   ) {}
 
   /** 单轮对话：创建或续接会话、评估、校验输出、保存决策凭证。 */
@@ -119,7 +144,19 @@ export class ConversationService {
         : await this.findSessionForCaller(input.conversationId, input.patientId);
     let session: ConversationSession;
     if (existing === null) {
-      session = this.createSession(input.patientId, timestamp);
+      let inheritedAssessment: PatientAssessmentRow | null = null;
+      if (input.patientId !== null && input.startMode !== "reassess") {
+        const current = await this.currentOrBackfilledAssessment(input.patientId);
+        if (current !== null && (await this.assessmentVerdict(current)) !== null) {
+          inheritedAssessment = current;
+        }
+      }
+      session = this.createSession(
+        input.patientId,
+        timestamp,
+        inheritedAssessment?.id ?? null,
+        inheritedAssessment === null ? "active" : "completed"
+      );
       await this.repository.createSession(session);
     } else {
       session = existing;
@@ -192,6 +229,15 @@ export class ConversationService {
     }
 
     if (session.state !== "active") {
+      if (session.state === "completed" && message !== "") {
+        return this.execCompletedFollowUp({
+          session,
+          message,
+          saved,
+          saveConfirmationRequired,
+          timestamp
+        });
+      }
       if (saved) {
         // 已结束的匿名对话仍可确认保存（只绑定，不再产生新轮次）。
         return {
@@ -386,8 +432,25 @@ export class ConversationService {
       this.kernel.rulePackageStatus,
       modelFields
     );
+    let generatedPlan = null;
+    if (
+      escalated === null &&
+      verdict.outcome === "classified" &&
+      verdict.planBundle !== null &&
+      this.kernel.rulePackageStatus === "approved" &&
+      this.planDialogue !== null
+    ) {
+      try {
+        generatedPlan = renderGeneratedPlanOutput(
+          await this.planDialogue.generatePlan(verdict),
+          verdict
+        );
+      } catch {
+        generatedPlan = null;
+      }
+    }
     const finalOutput =
-      escalated ?? validated;
+      escalated ?? generatedPlan ?? validated;
 
     // 6-8. 决策凭证 + 消息 + 会话状态：构造后单事务提交
     //      （评审 B P1-2 原子化：任何一步失败整轮回滚；
@@ -471,8 +534,35 @@ export class ConversationService {
       verdict.outcome === "conflict" ||
       verdict.outcome === "no_match" ||
       verdict.outcome === "classified";
+    const completedAssessment =
+      verdict.outcome === "classified" &&
+      verdict.planBundle !== null &&
+      verdict.syndromeCode !== null &&
+      verdict.phaseCode !== null &&
+      verdict.audience !== null &&
+      session.patientId !== null
+        ? {
+            id: randomUUID(),
+            patientId: session.patientId,
+            sourceSessionId: session.id,
+            decisionId,
+            status: "current" as const,
+            answersSnapshotEncrypted: this.encryption.encrypt(snapshotJson),
+            answersSnapshotHash: sha256(snapshotJson),
+            severityCode: verdict.severityCode,
+            syndromeCode: verdict.syndromeCode,
+            phaseCode: verdict.phaseCode,
+            audience: verdict.audience,
+            planRefsJson: JSON.stringify(planRefs(verdict)),
+            rulePackageVersion: verdict.rulePackageVersion,
+            rulePackageHash: verdict.rulePackageHash,
+            completedAt: timestamp,
+            supersededAt: null
+          } satisfies PatientAssessmentRow
+        : undefined;
     const next: ConversationSession = {
       ...session,
+      assessmentId: completedAssessment?.id ?? session.assessmentId,
       revision: session.revision + 1,
       lastSequence: sequence,
       state: closed ? "completed" : "active",
@@ -487,7 +577,8 @@ export class ConversationService {
       candidates: pendingCandidates,
       decision,
       messages,
-      next
+      next,
+      completedAssessment
     });
     if (outcome.kind === "version_conflict") {
       throw new DomainError("version_conflict", "对话已更新，请重新读取", {
@@ -518,6 +609,28 @@ export class ConversationService {
 
   async listForPatient(patientId: string): Promise<ConversationSession[]> {
     return this.repository.listPatientSessions(patientId);
+  }
+
+  async currentAssessmentForPatient(patientId: string): Promise<{
+    id: string;
+    completedAt: string;
+    severityCode: string | null;
+    syndromeCode: string;
+    phaseCode: "acute" | "remission";
+    audience: "child" | "adult";
+  } | null> {
+    const assessment = await this.currentOrBackfilledAssessment(patientId);
+    if (assessment === null || (await this.assessmentVerdict(assessment)) === null) {
+      return null;
+    }
+    return {
+      id: assessment.id,
+      completedAt: assessment.completedAt,
+      severityCode: assessment.severityCode,
+      syndromeCode: assessment.syndromeCode,
+      phaseCode: assessment.phaseCode,
+      audience: assessment.audience
+    };
   }
 
   async showForPatient(
@@ -579,6 +692,209 @@ export class ConversationService {
       messages,
       decisionCount: decisions.length,
       lastDecision: last === null ? null : this.summarizeDecision(last)
+    };
+  }
+
+  /** 已完成且成功分类的评估可在同一会话内继续追问当前方案。 */
+  private async execCompletedFollowUp(input: {
+    session: ConversationSession;
+    message: string;
+    saved: boolean;
+    saveConfirmationRequired: boolean;
+    timestamp: string;
+  }): Promise<ConversationTurnResult> {
+    const { session, message, timestamp } = input;
+    const inherited =
+      session.patientId !== null && session.assessmentId !== null
+        ? await this.repository.findAssessment(session.patientId, session.assessmentId)
+        : null;
+    const inheritedVerdict = inherited === null
+      ? null
+      : await this.assessmentVerdict(inherited, true);
+    const answers = inherited === null
+      ? await this.repository.listConfirmedAnswers(session.id)
+      : [];
+    const facts = inherited === null
+      ? answersToFacts(answers)
+      : this.assessmentFacts(inherited);
+    const verdict = inheritedVerdict ?? await this.kernel.evaluate(facts);
+    if (
+      verdict.outcome !== "classified" ||
+      verdict.planBundle === null ||
+      this.kernel.rulePackageStatus !== "approved"
+    ) {
+      throw new DomainError(
+        "validation_failed",
+        "只有已完成并取得有效方案的评估才能继续追问"
+      );
+    }
+
+    const planQuestion = questionWithinApprovedPlan(message, verdict);
+    const recentMessages = (await this.readVerifiedMessages(session.id))
+      .filter((entry) => entry.role === "user" || entry.role === "assistant")
+      .slice(-6)
+      .map((entry) => ({
+        role: entry.role as "user" | "assistant",
+        content: entry.role === "assistant"
+          ? entry.content.replace(/\n\n【依据】[\s\S]*$/u, "")
+          : entry.content
+      }));
+    const retrieveKnowledge = shouldRetrieveApprovedKnowledge(message, verdict);
+    let sources: PlanDialogueSource[] = [];
+    if (
+      planQuestion &&
+      retrieveKnowledge &&
+      this.knowledgeRetrieval !== null
+    ) {
+      try {
+        sources = (await this.knowledgeRetrieval.searchEnabled(message, 3)).map(
+          (source) => ({
+            knowledgeId: source.knowledgeId,
+            name: source.name,
+            source: source.source,
+            text: source.text
+          })
+        );
+      } catch {
+        sources = [];
+      }
+    }
+
+    let finalOutput: ReturnType<typeof renderFixedFollowUp>;
+    if (isSimpleGreeting(message)) {
+      finalOutput = renderAssessmentGreeting();
+    } else if (!planQuestion) {
+      finalOutput = renderFixedFollowUp(
+        "follow_up_out_of_plan",
+        "您问到的穴位或疗法不在当前方案中，本工具不能新增操作建议。请咨询专业医生。",
+        verdict
+      );
+    } else {
+      let generated: string | null = null;
+      if (this.planDialogue !== null) {
+        try {
+          generated = await this.planDialogue.answerFollowUp({
+            question: message,
+            verdict,
+            sources,
+            context: {
+              assessment: {
+                completedAt: inherited?.completedAt ?? session.closedAt ?? timestamp,
+                answers: facts
+              },
+              recentMessages
+            }
+          });
+        } catch {
+          generated = null;
+        }
+      }
+      finalOutput =
+        renderGeneratedFollowUpOutput(generated, verdict, sources) ??
+        (sources.length > 0 ? renderRetrievedEvidenceFollowUp(verdict, sources) : null) ??
+        (!retrieveKnowledge
+          ? renderContextualPlanFollowUp(verdict, recentMessages.length > 0)
+          : null) ??
+        renderFixedFollowUp(
+          sources.length > 0 ? "follow_up_degraded" : "follow_up_no_evidence",
+          sources.length > 0
+            ? "当前暂时无法生成可靠回答。您可以查看下方依据，或稍后重试；本工具不会补充未经审核的医学细节。"
+            : "当前评估和已审核方案不足以支持这个操作细节，我不能凭空补充。您可以换一种问法或咨询专业医生。",
+          verdict,
+          sources
+        );
+    }
+
+    const decisions = await this.repository.listDecisions(session.id);
+    const lastDecision = decisions[decisions.length - 1] ?? null;
+    const snapshotJson = canonicalJson(facts);
+    const decisionId = randomUUID();
+    const decision: DecisionRow = {
+      id: decisionId,
+      sessionId: session.id,
+      decisionSequence: (lastDecision?.decisionSequence ?? 0) + 1,
+      sessionRevision: session.revision,
+      inputSnapshotEncrypted: this.encryption.encrypt(snapshotJson),
+      inputSnapshotHash: sha256(snapshotJson),
+      outcome: verdict.outcome,
+      stage: verdict.stage,
+      severityCode: verdict.severityCode,
+      syndromeCode: verdict.syndromeCode,
+      phaseCode: verdict.phaseCode,
+      audience: verdict.audience,
+      rulePackageStatus: this.kernel.rulePackageStatus,
+      nextQuestionsJson: "[]",
+      matchedRuleIdsJson: JSON.stringify(verdict.matchedRuleIds),
+      rulePackageVersion: session.rulePackageVersion,
+      rulePackageHash: session.rulePackageHash,
+      planId: verdict.planId,
+      planRevision: verdict.planRevision,
+      createdAt: timestamp
+    };
+
+    const visibleMessage = patientVisibleMessage(message);
+    const userSequence = session.lastSequence + 1;
+    const messages: ConversationMessage[] = [
+      {
+        id: randomUUID(),
+        sessionId: session.id,
+        sequence: userSequence,
+        role: "user",
+        decisionId: null,
+        contentEncrypted: this.encryption.encrypt(visibleMessage),
+        contentHash: sha256(visibleMessage),
+        createdAt: timestamp
+      },
+      {
+        id: randomUUID(),
+        sessionId: session.id,
+        sequence: userSequence + 1,
+        role: "assistant",
+        decisionId,
+        contentEncrypted: this.encryption.encrypt(finalOutput.content),
+        contentHash: finalOutput.contentHash,
+        createdAt: timestamp
+      }
+    ];
+    const next: ConversationSession = {
+      ...session,
+      revision: session.revision + 1,
+      lastSequence: userSequence + 2,
+      updatedAt: timestamp
+    };
+    const outcome = await this.repository.commitTurn({
+      sessionId: session.id,
+      expectedRevision: session.revision,
+      answers: [],
+      candidates: [],
+      decision,
+      messages,
+      next
+    });
+    if (outcome.kind === "version_conflict") {
+      throw new DomainError("version_conflict", "对话已更新，请重新读取", {
+        details: {
+          expectedRevision: session.revision,
+          currentRevision: outcome.currentRevision
+        }
+      });
+    }
+
+    return {
+      conversationId: session.id,
+      state: "completed",
+      message: {
+        role: "assistant",
+        content: finalOutput.content,
+        contentHash: finalOutput.contentHash,
+        decisionId
+      },
+      notices: [],
+      verdict: this.patientVerdict(verdict),
+      proposedCandidates: [],
+      saveConfirmationRequired: input.saveConfirmationRequired,
+      saved: input.saved,
+      closed: true
     };
   }
 
@@ -711,12 +1027,18 @@ export class ConversationService {
     );
   }
 
-  private createSession(patientId: string | null, timestamp: string): ConversationSession {
+  private createSession(
+    patientId: string | null,
+    timestamp: string,
+    assessmentId: string | null = null,
+    state: ConversationSession["state"] = "active"
+  ): ConversationSession {
     return {
       id: randomUUID(),
       patientId,
-      state: "active",
+      state,
       saveConsentId: null,
+      assessmentId,
       rulePackageVersion: this.kernel.rulePackageVersion,
       rulePackageHash: this.kernel.rulePackageHash,
       revision: 1,
@@ -729,6 +1051,122 @@ export class ConversationService {
       createdAt: timestamp,
       updatedAt: timestamp
     };
+  }
+
+  private assessmentFacts(assessment: PatientAssessmentRow): ConfirmedFact[] {
+    let snapshot: string;
+    try {
+      snapshot = this.encryption.decrypt(assessment.answersSnapshotEncrypted);
+    } catch (cause) {
+      throw new DomainError("storage_unavailable", "评估记录暂时无法读取", { cause });
+    }
+    if (sha256(snapshot) !== assessment.answersSnapshotHash) {
+      throw new DomainError("storage_unavailable", "评估记录完整性校验失败");
+    }
+    return JSON.parse(snapshot) as ConfirmedFact[];
+  }
+
+  private async readVerifiedMessages(sessionId: string): Promise<Array<{
+    role: ConversationMessage["role"];
+    content: string;
+  }>> {
+    const messages = await this.repository.listMessages(sessionId);
+    return messages.map((message) => {
+      let content: string;
+      try {
+        content = this.encryption.decrypt(message.contentEncrypted);
+      } catch (cause) {
+        throw new DomainError("storage_unavailable", "对话记录暂时无法读取", { cause });
+      }
+      if (sha256(content) !== message.contentHash) {
+        throw new DomainError("storage_unavailable", "对话记录完整性校验失败");
+      }
+      return { role: message.role, content };
+    });
+  }
+
+  private async assessmentVerdict(
+    assessment: PatientAssessmentRow,
+    allowSuperseded = false
+  ): Promise<ClinicalVerdict | null> {
+    if (
+      (!allowSuperseded && assessment.status !== "current") ||
+      assessment.rulePackageVersion !== this.kernel.rulePackageVersion ||
+      assessment.rulePackageHash !== this.kernel.rulePackageHash
+    ) {
+      return null;
+    }
+    const verdict = await this.kernel.evaluate(this.assessmentFacts(assessment));
+    if (
+      verdict.outcome !== "classified" || verdict.planBundle === null ||
+      verdict.syndromeCode !== assessment.syndromeCode ||
+      verdict.phaseCode !== assessment.phaseCode || verdict.audience !== assessment.audience ||
+      JSON.stringify(planRefs(verdict)) !== assessment.planRefsJson
+    ) {
+      return null;
+    }
+    return verdict;
+  }
+
+  private async currentOrBackfilledAssessment(
+    patientId: string
+  ): Promise<PatientAssessmentRow | null> {
+    const current = await this.repository.findCurrentAssessment(patientId);
+    if (current !== null) return current;
+
+    const sessions = await this.repository.listPatientSessions(patientId);
+    for (const session of sessions) {
+      if (
+        session.state !== "completed" ||
+        session.rulePackageVersion !== this.kernel.rulePackageVersion ||
+        session.rulePackageHash !== this.kernel.rulePackageHash
+      ) continue;
+      const answers = await this.repository.listConfirmedAnswers(session.id);
+      if (!Array.from({ length: 14 }, (_, index) => `q${index + 1}`)
+        .every((fieldCode) => answers.some((answer) => answer.fieldCode === fieldCode))) {
+        continue;
+      }
+      const facts = answersToFacts(answers);
+      const verdict = await this.kernel.evaluate(facts);
+      const decisions = await this.repository.listDecisions(session.id);
+      const decision = [...decisions].reverse().find((entry) =>
+        entry.outcome === "classified" && entry.rulePackageStatus === "approved"
+      );
+      if (
+        decision === undefined || verdict.outcome !== "classified" ||
+        verdict.planBundle === null || verdict.syndromeCode === null ||
+        verdict.phaseCode === null || verdict.audience === null ||
+        decision.rulePackageVersion !== verdict.rulePackageVersion ||
+        decision.rulePackageHash !== verdict.rulePackageHash ||
+        decision.syndromeCode !== verdict.syndromeCode ||
+        decision.phaseCode !== verdict.phaseCode ||
+        decision.audience !== verdict.audience ||
+        decision.planId !== verdict.planId ||
+        decision.planRevision !== verdict.planRevision
+      ) continue;
+      const snapshot = canonicalJson(facts);
+      const assessment: PatientAssessmentRow = {
+        id: `assessment-${session.id}`,
+        patientId,
+        sourceSessionId: session.id,
+        decisionId: decision.id,
+        status: "current",
+        answersSnapshotEncrypted: this.encryption.encrypt(snapshot),
+        answersSnapshotHash: sha256(snapshot),
+        severityCode: verdict.severityCode,
+        syndromeCode: verdict.syndromeCode,
+        phaseCode: verdict.phaseCode,
+        audience: verdict.audience,
+        planRefsJson: JSON.stringify(planRefs(verdict)),
+        rulePackageVersion: verdict.rulePackageVersion,
+        rulePackageHash: verdict.rulePackageHash,
+        completedAt: session.closedAt ?? session.updatedAt,
+        supersededAt: null
+      };
+      await this.repository.saveAssessment(assessment);
+      return assessment;
+    }
+    return null;
   }
 
   private boundRetention(timestamp: string): string {

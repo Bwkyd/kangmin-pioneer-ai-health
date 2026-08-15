@@ -1261,6 +1261,46 @@ const MIGRATIONS: Migration[] = [
         connection.exec("ALTER TABLE agent_knowledge_items ADD COLUMN category TEXT");
       }
     }
+  },
+  {
+    version: "0019_patient_assessment_context",
+    apply: (connection) => {
+      const hasConversations = connection.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_conversations'"
+      ).get() !== undefined;
+      if (!hasConversations) return;
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS agent_assessments (
+          id TEXT PRIMARY KEY,
+          patient_id TEXT NOT NULL REFERENCES patients(id),
+          source_session_id TEXT NOT NULL REFERENCES agent_conversations(id),
+          decision_id TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('current', 'superseded')),
+          answers_snapshot_encrypted TEXT NOT NULL,
+          answers_snapshot_hash TEXT NOT NULL,
+          severity_code TEXT,
+          syndrome_code TEXT NOT NULL,
+          phase_code TEXT NOT NULL CHECK(phase_code IN ('acute', 'remission')),
+          audience TEXT NOT NULL CHECK(audience IN ('child', 'adult')),
+          plan_refs_json TEXT NOT NULL,
+          rule_package_version TEXT NOT NULL,
+          rule_package_hash TEXT NOT NULL,
+          completed_at TEXT NOT NULL,
+          superseded_at TEXT
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS agent_assessments_patient_current
+          ON agent_assessments(patient_id, status, completed_at DESC);
+        CREATE UNIQUE INDEX IF NOT EXISTS agent_assessments_one_current_per_patient
+          ON agent_assessments(patient_id) WHERE status = 'current';
+      `);
+      const columns = connection.prepare("PRAGMA table_info(agent_conversations)")
+        .all() as unknown as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "assessment_id")) {
+        connection.exec(
+          "ALTER TABLE agent_conversations ADD COLUMN assessment_id TEXT"
+        );
+      }
+    }
   }
 ];
 

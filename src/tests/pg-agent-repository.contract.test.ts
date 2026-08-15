@@ -101,6 +101,7 @@ function sessionFixture(
     patientId: null,
     state: "active",
     saveConsentId: null,
+    assessmentId: null,
     rulePackageVersion: "draft-2026-07",
     rulePackageHash: "rule-hash",
     revision: 1,

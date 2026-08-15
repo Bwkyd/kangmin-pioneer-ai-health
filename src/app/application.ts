@@ -346,7 +346,8 @@ export class KangminApplication {
               patientId,
               message,
               conversationId: this.optionalString(input, "conversationId"),
-              saveConsent: input.saveConsent === true
+              saveConsent: input.saveConsent === true,
+              startMode: this.agentStartMode(input.startMode)
             }),
             request.requestId
           );
@@ -449,6 +450,12 @@ export class KangminApplication {
               patientId,
               requiredString(input, "id")
             ),
+            request.requestId
+          );
+        case "agent assessments current":
+          return success(
+            command,
+            await this.conversations.currentAssessmentForPatient(patientId),
             request.requestId
           );
 
@@ -919,6 +926,7 @@ export class KangminApplication {
     if (
       command.startsWith("agent ") &&
       !command.startsWith("agent conversations ") &&
+      command !== "agent assessments current" &&
       command !== "agent continue" &&
       command !== "agent resume" &&
       command !== "agent sessions list" &&
@@ -970,6 +978,14 @@ export class KangminApplication {
         `消息长度不能超过 ${AGENT_MESSAGE_MAX_LENGTH} 字符`
       );
     }
+  }
+
+  private agentStartMode(
+    value: unknown
+  ): "inherit_assessment" | "reassess" | undefined {
+    if (value === undefined) return undefined;
+    if (value === "inherit_assessment" || value === "reassess") return value;
+    throw new DomainError("validation_failed", "startMode 仅支持 inherit_assessment 或 reassess");
   }
 
   private optionalString(

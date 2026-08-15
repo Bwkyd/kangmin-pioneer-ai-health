@@ -29,6 +29,8 @@ export interface ConversationSession {
   state: ConversationState;
   /** 患者确认保存会话的凭证 ID；未保存为 null。 */
   saveConsentId: string | null;
+  /** 当前聊天继承的患者级评估；问卷会话完成后指向自身产出的评估。 */
+  assessmentId: string | null;
   rulePackageVersion: string;
   rulePackageHash: string;
   revision: number;
@@ -126,6 +128,26 @@ export interface DecisionRow {
   createdAt: string;
 }
 
+/** 患者级当前评估：完整规则输入独立于聊天保存，供新聊天安全继承。 */
+export interface PatientAssessmentRow {
+  id: string;
+  patientId: string;
+  sourceSessionId: string;
+  decisionId: string;
+  status: "current" | "superseded";
+  answersSnapshotEncrypted: EncryptedContent;
+  answersSnapshotHash: string;
+  severityCode: string | null;
+  syndromeCode: string;
+  phaseCode: "acute" | "remission";
+  audience: "child" | "adult";
+  planRefsJson: string;
+  rulePackageVersion: string;
+  rulePackageHash: string;
+  completedAt: string;
+  supersededAt: string | null;
+}
+
 export interface FeedbackRow {
   id: string;
   sessionId: string;
@@ -143,6 +165,8 @@ export interface ConversationTurnInput {
   message: string;
   /** 匿名会话在登录后再次确认是否保存/绑定；true 才绑定，绝不自动绑定。 */
   saveConsent?: boolean | undefined;
+  /** 仅创建新会话时有效；缺省为继承当前有效评估。 */
+  startMode?: "inherit_assessment" | "reassess" | undefined;
 }
 
 export interface ProposedCandidateView {

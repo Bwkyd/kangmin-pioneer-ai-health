@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -57,6 +57,11 @@ async function expectText(locator, text) {
   assert.match((await locator.textContent()) ?? "", new RegExp(text, "u"));
 }
 
+function dataOf(result, message) {
+  assert.equal(result.ok, true, message ?? "命令应成功");
+  return result.data;
+}
+
 /** 中央新增按钮必须完整收纳在底栏内，避免跨页面遮挡正文。 */
 async function expectAddButtonInsideNavigation(page, pageName) {
   const navigationBox = await page.locator(".bottom-nav").boundingBox();
@@ -81,7 +86,22 @@ async function openCalendarList(page) {
 const directory = mkdtempSync(join(tmpdir(), "kangmin-browser-"));
 const databasePath = join(directory, "records.sqlite");
 const mediaDirectory = join(directory, "admin-media");
-let application = createApplication(databasePath);
+mkdirSync(mediaDirectory, { recursive: true });
+const browserFollowUps = [];
+const browserPlanDialogue = {
+  async generatePlan() {
+    return "已根据规则结果整理为通俗说明，完整已审核方案如下。";
+  },
+  async answerFollowUp({ question, sources, context }) {
+    browserFollowUps.push({ question, sources, context });
+    if (sources.some((source) => source.name === "过敏性鼻炎适宜技术手册·迎香穴")) {
+      return "迎香位于鼻翼外缘附近；当前只采用方案列出的指腹擦迎香。";
+    }
+    assert.ok(context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
+    return "我换一种简单说法：这是沿用你刚完成的评估，不需要重新填写问卷。";
+  }
+};
+let application = createApplication(databasePath, { planDialogue: browserPlanDialogue });
 let adminOps = createAdminApplicationWithOps(databasePath, { mediaDirectory });
 const ownerCreated = await adminOps.application.execute({
   command: "auth admins add",
@@ -281,7 +301,7 @@ try {
   await close(server);
   application.close();
   adminOps.application.close();
-  application = createApplication(databasePath);
+  application = createApplication(databasePath, { planDialogue: browserPlanDialogue });
   adminOps = createAdminApplicationWithOps(databasePath, { mediaDirectory });
   server = createKangminHttpServer(application, {
     appEnvironment: "integration",
@@ -317,6 +337,77 @@ try {
   await expectText(page.getByTestId("discover-video-catalog"), "调体方案");
   await page.locator(".discover-tabs button", { hasText: "调理方案" }).click();
   await expectText(page.getByTestId("discover-empty"), "方案内容暂未开放");
+
+  // 为诊一诊动态方案浏览器路径准备真实 SQLite 数据：走管理应用创建并启用
+  // 两个方案和一条知识，不注入方案注册表/知识检索替身，不污染仓库本地库。
+  const planDataSession = await adminOps.application.sessions.createDevelopmentSession(
+    "e2e-plan-dialogue-owner"
+  );
+  const planAdminToken = planDataSession.token;
+  const createAndEnableBrowserPlan = async (input) => {
+    const createdPlan = dataOf(await adminOps.application.execute({
+      command: "agent plan create",
+      adminToken: planAdminToken,
+      input: {
+        ...input,
+        audience: "adult",
+        precautions: "仅用于自动化验证，不作为真实操作说明。",
+        risks: "测试数据不替代已审核医学资料。",
+        contraindications: "真实使用前必须由客户启用正式方案。"
+      }
+    }), "浏览器 E2E 应创建方案");
+    return dataOf(await adminOps.application.execute({
+      command: "agent plan enable",
+      adminToken: planAdminToken,
+      input: {
+        id: createdPlan.id,
+        expectedRevision: createdPlan.revision,
+        yes: true
+      }
+    }), "浏览器 E2E 应启用方案");
+  };
+  await createAndEnableBrowserPlan({
+    name: "急性期迎香测试方案",
+    syndrome: "ACUTE",
+    phaseCode: "acute",
+    method: "指腹擦迎香",
+    steps: ["指腹擦迎香"]
+  });
+  await createAndEnableBrowserPlan({
+    name: "寒热错杂测试调体方案",
+    syndrome: "COLD_HEAT_COMPLEX",
+    method: "肺俞、风门、大椎、耳穴过敏区",
+    steps: ["肺俞", "风门", "大椎", "耳穴过敏区"]
+  });
+  const planKnowledgeFile = join(mediaDirectory, "迎香测试资料.md");
+  writeFileSync(
+    planKnowledgeFile,
+    "# 迎香测试资料\n\n迎香位于鼻翼外缘附近。当前测试方案采用指腹擦迎香。"
+  );
+  const planKnowledge = dataOf(await adminOps.application.execute({
+    command: "agent knowledge add",
+    adminToken: planAdminToken,
+    input: { file: planKnowledgeFile, source: "客户授权测试资料" }
+  }), "浏览器 E2E 应添加知识");
+  const namedPlanKnowledge = dataOf(await adminOps.application.execute({
+    command: "agent knowledge update",
+    adminToken: planAdminToken,
+    input: {
+      id: planKnowledge.id,
+      name: "过敏性鼻炎适宜技术手册·迎香穴",
+      source: "客户授权测试资料"
+    }
+  }), "浏览器 E2E 应更新知识名称");
+  const indexedPlanKnowledge = dataOf(await adminOps.application.execute({
+    command: "agent knowledge index",
+    adminToken: planAdminToken,
+    input: { id: namedPlanKnowledge.id }
+  }), "浏览器 E2E 应建立知识索引");
+  dataOf(await adminOps.application.execute({
+    command: "agent knowledge enable",
+    adminToken: planAdminToken,
+    input: { id: indexedPlanKnowledge.id, yes: true }
+  }), "浏览器 E2E 应启用知识");
 
   // 管理 CLI 造数（与 e2e 服务同一 SQLite；local/integration 的开发管理员
   // 会话由 KANGMIN_ALLOW_DEV_ADMIN_SESSION 放行，令牌经环境变量传入）。
@@ -485,16 +576,63 @@ try {
   await sixStepResult.waitFor({ state: "visible" });
   await page.locator(".conversation-ended").waitFor({ state: "visible" });
   assert.match((await sixStepResult.textContent()) ?? "", /寒热错杂/u);
+  await expectText(page.locator(".conversation-ended"), "可以继续追问当前方案");
+  assert.equal(await chatInput.isDisabled(), false);
+  await chatInput.fill("迎香穴具体位置在哪里？");
+  await page.evaluate(() => {
+    globalThis.__kangminStreamLengths = [];
+    const chat = document.querySelector(".chat");
+    const observer = new MutationObserver(() => {
+      const current = document.querySelector('[data-testid="streaming-response"]');
+      if (current instanceof HTMLElement) {
+        globalThis.__kangminStreamLengths.push(current.innerText.length);
+      }
+    });
+    if (chat !== null) observer.observe(chat, { childList: true, subtree: true, characterData: true });
+    globalThis.__kangminStreamObserver = observer;
+  });
+  await page.locator(".send-button").click();
+  await page.locator(".user-bubble", { hasText: "迎香穴具体位置在哪里" }).waitFor({ state: "visible" });
+  await page.getByTestId("streaming-response").waitFor({ state: "visible" });
+  await page.locator(".typing").waitFor({ state: "detached" });
+  await expectText(page.locator(".chat"), "迎香位于鼻翼外缘附近");
+  await expectText(page.locator(".chat"), "过敏性鼻炎适宜技术手册·迎香穴");
+  const streamLengths = await page.evaluate(() => {
+    globalThis.__kangminStreamObserver?.disconnect();
+    return globalThis.__kangminStreamLengths ?? [];
+  });
+  const positiveStreamLengths = [...new Set(streamLengths.filter((length) => length > 0))];
+  assert.ok(positiveStreamLengths.length >= 2, "患者端应观察到至少两次递增的流式正文");
 
-  // 刷新后结果仍恢复到最新位置。
+  // 刷新后结果、追问与可继续输入状态都从服务端恢复。
   await page.reload();
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   await page.locator(".result-card", { hasText: "寒热错杂" }).waitFor({ state: "visible" });
+  await expectText(page.locator(".chat"), "迎香位于鼻翼外缘附近");
+  await expectText(page.locator(".conversation-ended"), "可以继续追问当前方案");
+  assert.equal(await chatInput.isDisabled(), false);
   await page.waitForFunction(() => {
     const chat = document.querySelector(".chat");
     return chat instanceof HTMLElement &&
       chat.scrollTop + chat.clientHeight >= chat.scrollHeight - 2;
   });
+
+  // 新建聊天继承患者级评估：不再出现 Q1；承接式追问使用完整问卷与最近对话。
+  await page.getByTestId("chat-new").click();
+  await page.locator(".start-card", { hasText: "沿用最近评估开始聊天" }).click();
+  await expectText(page.locator(".chat"), "不需要重新填写问卷");
+  assert.equal(await page.locator(".question-card").count(), 0);
+  await chatInput.fill("我不明白");
+  await page.locator(".send-button").click();
+  await page.locator(".typing").waitFor({ state: "detached" });
+  await expectText(page.locator(".chat"), "我换一种简单说法");
+  const contextual = browserFollowUps.at(-1);
+  assert.equal(contextual.question, "我不明白");
+  assert.ok(contextual.context.recentMessages.some(
+    (message) => message.role === "assistant" && message.content.includes("不需要重新填写问卷")
+  ));
+  assert.ok(contextual.context.assessment.answers.some((answer) => answer.fieldCode === "q1"));
+  assert.ok(contextual.context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
 
   // ---- 管理 Web：真实账号、HttpOnly 会话、文章发布闭环、知识上传 ----
   const adminPage = await context.newPage();
@@ -608,7 +746,7 @@ try {
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
   await adminPage.close();
   process.stdout.write(
-    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication reload restart discover overview-stats chat-exec admin-cookie article-publish-unpublish video-upload-publish-unpublish knowledge-upload-index-search\n"
+    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication reload restart discover overview-stats chat-exec plan-dialogue-follow-up admin-cookie article-publish-unpublish video-upload-publish-unpublish knowledge-upload-index-search\n"
   );
 } finally {
   if (isolatedContext !== undefined) {

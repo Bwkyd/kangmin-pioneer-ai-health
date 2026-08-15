@@ -45,6 +45,51 @@
 
 - 2026-08-11 将提交 `b8246fb` 部署至 `https://49.232.26.48`，服务仍沿用现有 SQLite 与本地素材目录，仅用于客户 Web 功能确认，不冒充 PostgreSQL/COS 正式环境。
 - 新 release 先后通过空库和线上数据库副本 8788 预检；副本迁移由 17 项升至 20 项且 `PRAGMA quick_check` 为 `ok`。
-- 停服切换前备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260811-134712-before-b8246fb.sqlite`；当前 release 为 `/srv/kangmin-cli/releases/b8246fb5b65f6490061a82a2538db63b1516f4cf`，旧 release 保留回滚。
+- 停服切换前备份至 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260811-134712-before-b8246fb.sqlite`；当时 release 为 `/srv/kangmin-cli/releases/b8246fb5b65f6490061a82a2538db63b1516f4cf`，旧 release 保留回滚。
 - 公网患者端、管理端、站内消息列表和知识问答冒烟通过，患者与管理 HTML 的 SHA-256 均与本地构建一致；服务 active，`NRestarts=0`。
 - 服务器模型密钥已从 systemd 单元明文项迁入权限 `0600` 的 `/etc/kangmin-cli.env`；环境数据和微信登录均显式关闭。`/ready` 当前仅保留试用环境既有的加密密钥 `not_configured`，不作为正式生产就绪结论。
+- 2026-08-14 将诊一诊受约束追问版本 `31c975a` 部署至同一 Web 试用环境；切换前备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260814-233337-before-switch-31c975a.sqlite`，旧 release 保留回滚。服务 active、`NRestarts=0`、数据库 `PRAGMA quick_check=ok`。
+- 试用库仅新增并启用 1 条《福建省中医药适宜技术手册》迎香定位摘录，千问密钥只写入权限 `0600` 的服务器环境文件。公网模拟患者完成问卷后可追问迎香定位；模型输出不合规或波动时，仅展示再次通过同一方案边界校验的 enabled 知识原文。
+- 公网浏览器验收确认回答含“鼻翼外缘中点旁开约 0.5 寸，鼻唇沟中”和资料名，不含斜刺、平刺或针刺建议；刷新后消息仍在、输入框可继续追问，控制台无 warning/error。`/ready` 仍只因试用环境未配置加密密钥返回 503。
+- 2026-08-15 原服务器 `49.232.26.48` 到期后，按作者授权将同一 release `31c975a` 重建至
+  腾讯云轻量服务器 `140.143.120.176`。旧机 SSH 在认证前断开且 HTTP/HTTPS 无响应，故未将
+  “旧状态缓存”冒充迁移依据；若需精确恢复旧患者、会话、文章、视频和管理员状态，仍需临时
+  续费旧实例或挂载其磁盘快照后另行导出。
+- 新机使用经官方校验和验证的 Node.js `22.23.1`、systemd、Nginx 和本地 SQLite；应用只监听
+  `127.0.0.1:8787`，公网由 `https://140.143.120.176` 反向代理。原机预装的 `myapp.service`
+  仅停止并禁用，未删除。模型密钥仍只在权限 `0600` 的服务器环境文件中，微信与环境数据功能
+  显式关闭。
+- 新库由受控 seed 重建 11 个 enabled 方案，并按审核边界导入 1 条 enabled 的迎香定位切片；
+  未伪造无法核验的旧患者、会话、文章或视频。公网模拟患者完成 14 题问卷，得到“缓解期 / 寒热
+  错杂”，追问后返回正确定位且不含针刺操作，刷新后 1 个会话、36 条消息仍可恢复，浏览器无
+  warning/error。
+- Let's Encrypt 已为该 IPv4 签发 6 天短期 ECDSA 证书，systemd 定时器每日两次尝试续期；
+  `certbot renew --dry-run` 已成功。应用、Nginx、续期定时器均 active/enabled，应用
+  `NRestarts=0`，SQLite `quick_check=ok`；`/ready` 仍仅因试用环境未配置加密密钥为 503。
+- 2026-08-15 根据作者对 AI 输出体验的反馈，把工作树构建为 release
+  `stream-b060f7cf45d6` 并切换到新机；切换前数据库备份为
+  `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-111624-before-stream.sqlite`，旧 release
+  保留回滚。该 release 基于 `f6ae648` 加本轮未提交的流式改动，不能冒充对应 Git 提交。
+- 患者端新增 HTTPS NDJSON 流式通道与递增正文/光标；Nginx 接收上游“不缓冲”标记。出于
+  医学安全，千问原始 token 仍不会直接到达患者：模型完整输出先经既有医学边界校验并落库，
+  通过后才分片展示。公网实际收到 5 次网络读取，分片正文与最终落库正文完全一致；断流时
+  提示刷新恢复而非自动重复写入。
+- 2026-08-15 部署患者级评估上下文 release `context-stable-20260815-1300`。SQLite 迁移升至
+  `0019_patient_assessment_context`，问卷快照、规则版本、期别/证型与方案引用成为患者级评估
+  档案；新聊天默认继承，重新评估才创建问卷，数据库唯一索引保证每位患者只有一份 current
+  评估。切换前备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-1300-before-stable.sqlite`，
+  旧 releases 全部保留。
+- 手册继续按最小审核范围启用：除既有迎香定位外，仅新增大椎、肺俞、足三里三条非侵入性
+  说明，共 4 条 enabled；未导入针刺、注射、剂量、时长或名单外穴位。泛问方案不检索知识，
+  只有明确点名当前方案内穴位才检索，避免无关切片兜底。
+- 公网模拟患者完整完成 Q1–Q14 后，新聊天取得独立 conversation id 且不重复问卷；连续两轮
+  分别收到 34/33 个安全分片，正文不同、无固定拒绝、无无关知识召回，每条仅一个依据脚注。
+  应用 active、`NRestarts=0`、SQLite `quick_check=ok`；`/ready` 仍仅受试用环境未配置加密密钥
+  限制，本记录不等于正式生产就绪或客户验收。
+- 2026-08-15 针对公网追问 18–26 秒的等待，确认 `qwen3.7-flash` 请求未显式关闭默认推理；
+  部署 release `speed-no-thinking-20260815-1321`，统一发送 `enable_thinking=false`，纯寒暄改为
+  确定性承接回复，真实医学追问仍保留“完整生成→医学校验→持久化→安全分片”的顺序。切换前
+  备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-1323-before-speed-fix.sqlite`，旧 release
+  保留回滚。公网无身份模拟患者实测：完整问卷 6.738 秒、寒暄 0.250 秒、携带完整评估上下文的
+  真实追问 2.280 秒；千问直连验证为 0.582 秒且 reasoning 字符数为 0。应用与 Nginx active、
+  `NRestarts=0`、SQLite `quick_check=ok`。

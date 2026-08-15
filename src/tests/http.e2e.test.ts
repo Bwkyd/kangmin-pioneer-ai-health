@@ -244,6 +244,69 @@ test("Agent 通过 HTTP 命令契约执行同一安全状态机", async () => {
   }
 });
 
+test("患者 Agent 流式接口只分片已校验并已持久化的完整结果", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-agent-stream-"));
+  const application = createApplication(join(directory, "agent.sqlite"));
+  const token =
+    (await application.sessions.createDevelopmentSession("agent-stream-http")).token;
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
+
+  try {
+    const response = await fetch(`${origin}/v1/patient/agent/stream`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        accept: "application/x-ndjson"
+      },
+      body: JSON.stringify({
+        schemaVersion: "1",
+        requestId: "agent-stream-e2e",
+        input: { message: "我想了解我的鼻炎情况" }
+      })
+    });
+    assert.equal(response.status, 200);
+    assert.match(response.headers.get("content-type") ?? "", /application\/x-ndjson/u);
+    assert.equal(response.headers.get("x-accel-buffering"), "no");
+    const events = (await response.text())
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line) as {
+        type: string;
+        content?: string;
+        data?: { conversationId: string; message: { content: string } | null };
+      });
+    assert.equal(events[0]?.type, "start");
+    assert.equal(events.at(-1)?.type, "done");
+    const deltas = events.filter((event) => event.type === "delta");
+    assert.ok(deltas.length > 1, "患者应在多个分片中看到逐步输出");
+    const streamed = deltas.map((event) => event.content ?? "").join("");
+    const completed = events.at(-1)?.data;
+    assert.equal(streamed, completed?.message?.content);
+    assert.ok(completed?.conversationId);
+
+    const detail = await application.execute({
+      command: "agent conversations show",
+      input: { id: completed?.conversationId },
+      sessionToken: token
+    });
+    assert.equal(detail.ok, true);
+    if (detail.ok) {
+      const messages = (detail.data as {
+        messages: Array<{ role: string; content: string }>;
+      }).messages;
+      assert.equal(
+        messages.filter((message) => message.role === "assistant").at(-1)?.content,
+        streamed
+      );
+    }
+  } finally {
+    await close(server);
+    application.close();
+  }
+});
+
 test("客户预览从空库授权，刷新可恢复且两个浏览器互不串数据", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-web-http-"));
   const databasePath = join(directory, "records.sqlite");

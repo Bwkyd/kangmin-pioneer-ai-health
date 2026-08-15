@@ -9,8 +9,8 @@
  * - 其余任何环境（含默认）→ 启动失败 config_missing，绝不在缺少
  *   密钥时明文启动。
  *
- * 模型端口默认 DeepSeek 适配器：未配置 KANGMIN_DEEPSEEK_API_KEY 时
- * 抛 provider_unavailable，对话降级为结构化问答；测试可注入替身。
+ * 问卷候选提取与知识问答沿用 DeepSeek；规则结果动态转译与方案后追问
+ * 使用通义千问。任一提供方未配置或失败均 fail-closed 到确定性问答或固定模板。
  *
  * 环境 Provider 门禁（fail-closed，与加密降级同一谓词）：测试替身仅在
  * KANGMIN_APP_ENV 为 local/integration，或显式 KANGMIN_ALLOW_DEV_SESSION=1
@@ -67,6 +67,7 @@ import { SqliteSessionRepository } from "../infrastructure/sqlite-session-reposi
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
 import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-environment-provider.js";
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
+import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
 import { WechatCodeLogin } from "../infrastructure/wechat-code-login.js";
@@ -94,7 +95,8 @@ import { ConversationService } from "../modules/agent/conversation-service.js";
 import type { ConversationRepository } from "../modules/agent/conversation-repository.js";
 import type {
   ModelExplanationPort,
-  ModelExtractionPort
+  ModelExtractionPort,
+  PlanDialoguePort
 } from "../modules/agent/model-ports.js";
 import { ClinicalRuleKernel } from "../modules/clinical-rules/clinical-rule-kernel.js";
 import type { PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
@@ -102,7 +104,10 @@ import type { RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
 import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
-import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
+import {
+  KnowledgeQaService,
+  type KnowledgeRetrievalPort
+} from "../modules/agent/knowledge-qa.js";
 
 /** HTTP 入口使用的微信登录适配器工厂，保持基础设施依赖只出现在组合根。 */
 export function createWechatLogin(appId: string, appSecret: string): WechatLoginPort {
@@ -120,6 +125,10 @@ export interface ApplicationOptions {
   extraction?: ModelExtractionPort | undefined;
   /** 模型解释端口（测试用）；默认 DeepSeek 适配器。 */
   explanation?: ModelExplanationPort | undefined;
+  /** 规则结果动态转译与方案后追问端口；默认通义千问。 */
+  planDialogue?: PlanDialoguePort | undefined;
+  /** 方案后追问的已审核知识检索端口（测试用）。 */
+  planKnowledgeRetrieval?: KnowledgeRetrievalPort | undefined;
   /** 方案注册表端口；未提供时读取数据库中已启用的统一方案表。 */
   planRegistry?: PlanRegistryPort | undefined;
   /** 临床规则包注入点（测试用）；默认加载 approved 包 clinical-rules-v3。 */
@@ -534,16 +543,19 @@ function staticDoctorChecks(environment: NodeJS.ProcessEnv): DoctorCheck[] {
           message:
             "环境数据供应商未配置：当前环境环境命令返回 provider_unavailable（fail-closed），待接入真实供应商"
         },
-    environment.KANGMIN_DEEPSEEK_API_KEY
+    environment.KANGMIN_DEEPSEEK_API_KEY || environment.KANGMIN_QWEN_API_KEY
       ? {
           name: "model",
           status: "ok",
-          message: "已配置模型 API 密钥（KANGMIN_DEEPSEEK_API_KEY）"
+          message: [
+            environment.KANGMIN_DEEPSEEK_API_KEY ? "DeepSeek 提取/知识问答" : null,
+            environment.KANGMIN_QWEN_API_KEY ? "通义千问方案转译/追问" : null
+          ].filter((value): value is string => value !== null).join("；")
         }
       : {
           name: "model",
           status: "not_configured",
-          message: "未配置模型 API 密钥，自由对话将降级为结构化问答"
+          message: "未配置模型 API 密钥，对话将降级为结构化问答或固定模板"
         }
   ];
 }
@@ -668,10 +680,16 @@ export function createApplicationWithOps(
   }
   const encryption = options.encryption ?? resolveEncryption(environment);
   const modelAdapter = new DeepSeekModelAdapter({
-    apiKey: process.env.KANGMIN_DEEPSEEK_API_KEY
+    apiKey: environment.KANGMIN_DEEPSEEK_API_KEY
   });
   const extraction: ModelExtractionPort = options.extraction ?? modelAdapter;
   const explanation: ModelExplanationPort = options.explanation ?? modelAdapter;
+  const planDialogue: PlanDialoguePort =
+    options.planDialogue ??
+    new QwenPlanDialogueAdapter({
+      apiKey: environment.KANGMIN_QWEN_API_KEY,
+      model: environment.KANGMIN_QWEN_MODEL
+    });
   // 对象存储（媒体交付链 issue-151）：与管理端同一解析规则，本地后端
   // 默认指向管理端素材目录（KANGMIN_ADMIN_MEDIA_DIR 或 <db目录>/admin-media），
   // HTTP 媒体路由经 browse 服务读取已发布内容引用的字节。
@@ -706,6 +724,8 @@ export function createApplicationWithOps(
     const kernel = new ClinicalRuleKernel(rulePackage, planRegistry);
     const accountRepository = new PgAccountRepository(database);
     const conversationRepository = new PgConversationRepository(database);
+    const knowledgeRetrieval =
+      options.planKnowledgeRetrieval ?? new PgKnowledgeRetrieval(database);
     // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
     const consentGate = new ConsentGateAdapter(accountRepository);
     const conversations = new ConversationService(
@@ -714,7 +734,9 @@ export function createApplicationWithOps(
       extraction,
       explanation,
       encryption,
-      consentGate
+      consentGate,
+      planDialogue,
+      knowledgeRetrieval
     );
     cleanupExpiredAnonymousSessions(conversationRepository);
     return {
@@ -737,7 +759,7 @@ export function createApplicationWithOps(
         },
         () => runPgPatientDoctor(database, environment),
         objectStorage,
-        new KnowledgeQaService(new PgKnowledgeRetrieval(database), modelAdapter)
+        new KnowledgeQaService(knowledgeRetrieval, modelAdapter)
       ),
       readinessProbes
     };
@@ -758,6 +780,8 @@ export function createApplicationWithOps(
   const kernel = new ClinicalRuleKernel(rulePackage, planRegistry);
   const accountRepository = new SqliteAccountRepository(database);
   const conversationRepository = new SqliteConversationRepository(database);
+  const knowledgeRetrieval =
+    options.planKnowledgeRetrieval ?? new SqliteKnowledgeRetrieval(database);
   // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
   const consentGate = new ConsentGateAdapter(accountRepository);
   const conversations = new ConversationService(
@@ -766,7 +790,9 @@ export function createApplicationWithOps(
     extraction,
     explanation,
     encryption,
-    consentGate
+    consentGate,
+    planDialogue,
+    knowledgeRetrieval
   );
   cleanupExpiredAnonymousSessions(conversationRepository);
 
@@ -791,7 +817,7 @@ export function createApplicationWithOps(
       },
       () => Promise.resolve(runPatientDoctor(databasePath, environment)),
       objectStorage,
-      new KnowledgeQaService(new SqliteKnowledgeRetrieval(database), modelAdapter)
+      new KnowledgeQaService(knowledgeRetrieval, modelAdapter)
     ),
     readinessProbes
   };

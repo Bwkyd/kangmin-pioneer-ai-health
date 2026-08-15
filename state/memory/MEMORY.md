@@ -19,3 +19,5 @@
 - [零材料模板不得制造隐性授权](20260814-zero-context-template-authority.md) — 未核实事实明确待核实，角色模板不默认扩大人或 AI 的权限
 - [模板对齐必须核对完整生成清单](20260814-template-alignment-full-inventory.md) — 从初始化脚本生成基线逐项核对，区分结构定制、真实缺失和项目特例
 - [多工具入口必须指向同一技能正本](20260814-tool-native-discovery-single-source.md) — 按工具官方发现规则接入，同一技能正文只留一份并用新会话核验路径
+- [知识兜底必须复用正式输出校验](20260814-validated-knowledge-fallback.md) — 模型波动时可展示 enabled 知识原文，但必须逐条通过与模型答案相同的医学边界校验
+- [生成式输出先验证再流式展示](20260815-validated-output-streaming.md) — 高风险患者输出先完整校验并落库，再分片展示；断流从权威存储恢复而不自动重写

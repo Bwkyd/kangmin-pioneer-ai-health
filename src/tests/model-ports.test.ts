@@ -6,11 +6,18 @@ process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 import test from "node:test";
 
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
+import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
 import { DomainError } from "../kernel/errors.js";
 import type { ClinicalVerdict } from "../modules/clinical-rules/contracts.js";
 import {
   renderValidatedOutput,
+  questionWithinApprovedPlan,
+  renderGeneratedFollowUpOutput,
+  renderContextualPlanFollowUp,
+  renderGeneratedPlanOutput,
+  renderRetrievedEvidenceFollowUp,
   systemNotice,
+  validateGeneratedMedicalText,
   validateExplanationFields,
   CLINICAL_FREEZE_BLOCK
 } from "../modules/agent/output-validation.js";
@@ -75,6 +82,58 @@ test("未配置 API key 时抛 provider_unavailable（绝不伪造回答）", as
   );
   await assert.rejects(
     () => adapter.explain(classifiedVerdict(), "candidate"),
+    (error: unknown) =>
+      error instanceof DomainError && error.code === "provider_unavailable"
+  );
+});
+
+test("千问方案对话端口：使用指定模型并只接收 answer JSON", async () => {
+  let requestedModel: unknown;
+  let requestedThinking: unknown;
+  let requestedPayload: Record<string, unknown> = {};
+  const adapter = new QwenPlanDialogueAdapter({
+    apiKey: "test-qwen-key",
+    model: "qwen3.7-flash",
+    baseUrl: BASE_URL,
+    fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      requestedModel = body.model;
+      requestedThinking = body.enable_thinking;
+      const messages = body.messages as Array<{ role: string; content: string }>;
+      requestedPayload = JSON.parse(messages.at(-1)?.content ?? "{}") as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ answer: "通俗方案说明" }) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch
+  });
+  assert.equal(await adapter.generatePlan(classifiedPlanVerdict()), "通俗方案说明");
+  assert.equal(requestedModel, "qwen3.7-flash");
+  assert.equal(requestedThinking, false, "患者方案对话必须显式关闭千问推理模式");
+
+  await adapter.answerFollowUp({
+    question: "我不明白",
+    verdict: classifiedPlanVerdict(),
+    sources: [],
+    context: {
+      assessment: {
+        completedAt: "2026-08-15T00:00:00.000Z",
+        answers: [{ fieldCode: "q1", state: "value", value: "A", source: "patient_confirmation" }]
+      },
+      recentMessages: [{ role: "assistant", content: "这是当前评估方案。" }]
+    }
+  });
+  const assessment = requestedPayload.assessment as {
+    questionnaire: Array<{ question: string; answer: string }>;
+  };
+  assert.equal(assessment.questionnaire[0]?.question, "您打喷嚏的情况是？");
+  assert.match(assessment.questionnaire[0]?.answer ?? "", /频繁打喷嚏/u);
+  assert.deepEqual(requestedPayload.recentConversation, [
+    { role: "assistant", content: "这是当前评估方案。" }
+  ]);
+
+  const unavailable = new QwenPlanDialogueAdapter({ baseUrl: BASE_URL });
+  await assert.rejects(
+    () => unavailable.generatePlan(classifiedPlanVerdict()),
     (error: unknown) =>
       error instanceof DomainError && error.code === "provider_unavailable"
   );
@@ -204,6 +263,25 @@ function classifiedVerdict(): ClinicalVerdict {
   };
 }
 
+function classifiedPlanVerdict(): ClinicalVerdict {
+  const plan = {
+    planId: "plan-yingxiang",
+    planRevision: 1,
+    name: "急性期迎香调理方案",
+    method: "指腹擦迎香",
+    steps: JSON.stringify(["指腹轻擦迎香，以皮肤温热为度"]),
+    precautions: "皮肤破损时暂停操作。",
+    videoResourceId: "video-yingxiang",
+    attributes: {}
+  };
+  return {
+    ...classifiedVerdict(),
+    planId: plan.planId,
+    planRevision: plan.planRevision,
+    planBundle: { acute: plan, constitution: null }
+  };
+}
+
 test("输出校验：模型字段与规则结果不一致即拒绝，一致才通过", () => {
   const verdict = classifiedVerdict();
   assert.equal(
@@ -235,6 +313,162 @@ test("模板输出：candidate 规则包 classified 只渲染临床冻结阻断�
   assert.equal(output.templateId, "clinical_freeze");
   assert.equal(output.content, CLINICAL_FREEZE_BLOCK);
   assert.ok(output.contentHash.length === 64);
+});
+
+test("自由文本医学校验：方案外穴位疗法和无依据数值拒绝，来源内细节可放行", () => {
+  const verdict = classifiedPlanVerdict();
+  const generatedPlan = renderGeneratedPlanOutput(
+    "当前方案采用指腹擦迎香，以皮肤温热为度。",
+    verdict
+  );
+  assert.ok(generatedPlan?.content.includes("【依据】急性期迎香调理方案"));
+  assert.ok(generatedPlan?.content.includes("【已审核方案】"));
+  assert.ok(generatedPlan?.content.includes("皮肤破损时暂停操作"));
+  assert.equal(
+    renderGeneratedPlanOutput("可以配合足三里按揉。", verdict),
+    null
+  );
+  assert.equal(
+    renderGeneratedPlanOutput("可以配合未登记的新奇穴。", verdict),
+    null
+  );
+  assert.equal(
+    renderGeneratedPlanOutput("可以增加艾灸。", verdict),
+    null
+  );
+  assert.equal(
+    renderGeneratedFollowUpOutput(
+      "资料记载可向内上方斜刺迎香0.3寸。",
+      verdict,
+      [{
+        knowledgeId: "manual-acupuncture",
+        name: "原手册针刺段落",
+        source: "客户资料",
+        text: "迎香略向内上方斜刺或平刺，0.3～0.5寸。"
+      }]
+    ),
+    null,
+    "来源中存在但当前方案未允许的针刺操作仍须拒绝"
+  );
+  assert.equal(
+    renderGeneratedPlanOutput("迎香每次按揉1分钟。", verdict),
+    null
+  );
+
+  const sources = [{
+    knowledgeId: "manual-yingxiang",
+    name: "适宜技术手册·迎香",
+    source: "客户授权测试资料",
+    text: "迎香采用指腹轻擦1分钟。"
+  }];
+  assert.ok(
+    renderGeneratedFollowUpOutput("资料记载可用指腹轻擦迎香1分钟。", verdict, sources)
+      ?.content.includes("适宜技术手册·迎香")
+  );
+  assert.ok(
+    renderRetrievedEvidenceFollowUp(verdict, sources)
+      ?.content.includes("迎香采用指腹轻擦1分钟。"),
+    "模型失败时可展示再次通过方案边界校验的已启用知识原文"
+  );
+  assert.equal(
+    renderRetrievedEvidenceFollowUp(verdict, [{
+      knowledgeId: "manual-acupuncture",
+      name: "原手册针刺段落",
+      source: "客户资料",
+      text: "迎香略向内上方斜刺或平刺，0.3～0.5寸。"
+    }]),
+    null,
+    "知识原文也不得绕过方案外针刺拦截"
+  );
+  const locationFallback = renderRetrievedEvidenceFollowUp(verdict, [{
+    knowledgeId: "manual-location",
+    name: "《福建省中医药适宜技术手册》·迎香定位摘录",
+    source: "客户授权手册定位摘录",
+    text: "# 迎香定位摘录\n适用边界：本知识切片只提供迎香穴定位；操作方式必须以系统当前已启用方案为准。\n【定位】鼻翼外缘中点旁开约 0.5 寸，鼻唇沟中。"
+  }]);
+  assert.ok(locationFallback?.content.includes("鼻翼外缘中点旁开约 0.5 寸"));
+  assert.ok(locationFallback?.content.includes("《福建省中医药适宜技术手册》·迎香定位摘录"));
+  assert.equal(questionWithinApprovedPlan("迎香具体在哪里？", verdict), true);
+  assert.equal(questionWithinApprovedPlan("手册里迎香穴定位在哪里？", verdict), true);
+  assert.equal(questionWithinApprovedPlan("艾灸上火怎么办？", verdict), false);
+  assert.equal(questionWithinApprovedPlan("新奇穴怎么找？", verdict), false);
+});
+
+test("自由文本医学校验：该穴等代词不被误判为新增穴位", () => {
+  const verdict = classifiedPlanVerdict();
+  const generated = "使用指腹轻擦该穴位，力度以局部产生温热感为宜。";
+  assert.equal(validateGeneratedMedicalText(generated, verdict), generated);
+  assert.equal(
+    validateGeneratedMedicalText("用指腹在迎香穴进行擦拭，其他穴位仍按当前方案执行。", verdict),
+    "用指腹在迎香穴进行擦拭，其他穴位仍按当前方案执行。"
+  );
+  assert.equal(validateGeneratedMedicalText("可以改用假迎香穴。", verdict), null);
+
+  const onlineAnswer =
+    "根据已审核资料，迎香穴位于鼻翼外缘中点旁开约0.5寸的鼻唇沟中。" +
+    "当前方案包含迎香穴指腹擦操作，建议以指腹进行擦拭。" +
+    "关于具体操作手法、力度及时长等细节，因现有资料未提供，依据不足无法补充。" +
+    "此外，方案还包含其他穴位按揉及刮痧操作，请严格遵循方案说明执行。";
+  const onlineVerdict: ClinicalVerdict = {
+    ...verdict,
+    planBundle: {
+      acute: {
+        ...verdict.planBundle!.acute!,
+        method: "鼻三线姜刮；迎香穴指腹擦",
+        steps: JSON.stringify(["鼻三线姜刮", "迎香穴指腹擦"])
+      },
+      constitution: {
+        ...verdict.planBundle!.acute!,
+        planId: "plan-constitution",
+        name: "寒热错杂调体方案",
+        method: "肺俞穴按揉；风门穴按揉；大椎穴按揉；耳穴过敏区按压",
+        steps: JSON.stringify(["肺俞穴按揉", "风门穴按揉", "大椎穴按揉", "耳穴过敏区按压"])
+      }
+    }
+  };
+  assert.equal(
+    validateGeneratedMedicalText(onlineAnswer, onlineVerdict, [{
+      knowledgeId: "manual-location",
+      name: "迎香定位摘录",
+      source: "客户资料",
+      text: "迎香位于鼻翼外缘中点旁开约0.5寸的鼻唇沟中。"
+    }]),
+    onlineAnswer,
+    "普通名词“操作手法”不得被误判为新增推拿疗法"
+  );
+});
+
+test("自由文本医学校验：完整批准的耳穴过敏区不被截成方案外耳穴", () => {
+  const verdict = classifiedPlanVerdict();
+  const earPlan = {
+    ...verdict.planBundle!.acute!,
+    method: "耳穴过敏区按压",
+    steps: JSON.stringify(["耳穴过敏区按压"])
+  };
+  const withEarPlan = {
+    ...verdict,
+    planBundle: { acute: earPlan, constitution: null }
+  };
+  assert.ok(renderGeneratedFollowUpOutput(
+    "当前方案包括按压耳穴过敏区；如果皮肤有明显不适，请暂停操作。因资料有限，无法提供更详细的穴位定位，例如穴位位置或手法细节。",
+    withEarPlan,
+    []
+  ));
+  assert.equal(renderGeneratedFollowUpOutput(
+    "可以另外按压耳穴神门。",
+    withEarPlan,
+    []
+  ), null);
+});
+
+test("泛化解释降级：首轮说明继承评估，后续轮次承接上条且文案不同", () => {
+  const verdict = classifiedPlanVerdict();
+  const first = renderContextualPlanFollowUp(verdict, false);
+  const continued = renderContextualPlanFollowUp(verdict, true);
+  assert.match(first.content, /不需要重新做问卷/u);
+  assert.match(continued.content, /承接上一条/u);
+  assert.notEqual(first.content, continued.content);
+  assert.equal((first.content.match(/【依据】/gu) ?? []).length, 1);
 });
 
 test("方案模板：可选项称为方法，删除重复手法段，并在每个方法下放视频", () => {
