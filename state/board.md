@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧹 收紧动画助手毛边并移出文字区域（2026-08-15 第七十八轮 · 代码提交 `12ed9fa`）
+> 客户截图确认首版存在两项可复现问题：透明素材外沿残留浅色像素，且角色悬浮在输入框上方时遮挡“评估已完成”提示。本轮收紧 APNG 与静态 PNG 的透明蒙版，将角色从 76×114 缩至 58×87，并移入输入区左侧独立预留位；输入框同步留出 60 px，不再覆盖提示或输入文字。浏览器回归新增两组几何断言，分别约束角色与输入文字、完成提示不相交。
+> `cd src && npm run check` 全绿，补充浏览器 E2E 同样通过；Chrome 390×844 本地和公网实测角色与输入框无重叠、控制台无 warning/error。按 `km-review` 从患者、工程、医学安全三视角复核，P0/P1/P2 为 0；本轮不改问卷、临床规则或方案。清单与 `git diff --check` 通过；结构检查仍仅被既有 `_work/20260814-福建省中医药适宜技术手册-md` 命名拦截。
+> 修复已原子部署到 `/srv/kangmin-cli/releases/assistant-mascot-fix-12ed9fa`，切换前备份 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-141051-before-assistant-mascot-fix-12ed9fa.sqlite`，旧 release 保留。首次 8788 预检因未显式继承 systemd 的 local/dev 环境而安全失败，未切换线上；补齐同线上一致的非密钥环境后预检通过再切换。公网 `/live`、首页、APNG 均为 200，资源哈希 `404fc29723892897d48f4ace52c1f4ebc32453f2df5e301395ba543b3d0091e7`；应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`。`/ready` 的既有 encryption 限制不变，不扩大为正式生产或客户验收。
+
 > ## 🚀 动画助手已提交并部署到 Web 试用环境（2026-08-15 第七十七轮 · 代码提交 `3897e11`）
 > 作者授权提交与部署。上线前按 `km-review` 分患者可懂性、工程事实与医学安全复核，P0/P1/P2 为 0；保留一项不阻塞的 P3：公共静态资源沿用现有 `no-store`，重复进入页面可能重新获取约 488 KB 动画。代码已提交为 `3897e11`，原始客户 MP4 与作者 `hi.md` 未进入提交。
 > 制品 SHA-256 为 `26a88d09b728d12f14f3d28904a0fc88a81b613359b066d84b48e7ae394bf6ea`；在 8788 + 线上 SQLite 副本预检患者页、管理页、APNG 类型/字节哈希与数据库均通过后，原子切换到 `/srv/kangmin-cli/releases/assistant-mascot-3897e11`。切换前备份 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-135659-before-assistant-mascot-3897e11.sqlite`，旧 release 保留回滚。

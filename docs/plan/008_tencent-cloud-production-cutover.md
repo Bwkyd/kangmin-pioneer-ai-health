@@ -103,3 +103,10 @@
   旧 release 保留。公网 APNG 返回 `image/apng` 且字节哈希与本地一致；Chrome 390×844
   验证透明动画、位置、输入操作和控制台均正常。应用/Nginx active、`NRestarts=0`、SQLite
   `quick_check=ok`；`/ready` 仍只因试用环境既有 encryption 未配置返回 503。
+- 2026-08-15 根据客户截图修正动画助手毛边和文字遮挡，部署 release
+  `assistant-mascot-fix-12ed9fa`。透明蒙版向内收紧，角色缩小并进入输入区左侧预留位；浏览器
+  回归明确约束角色不得覆盖输入文字或评估完成提示。首次空闲端口预检因未显式携带 systemd
+  的 local/dev 非密钥环境而安全失败，线上未切换；补齐一致环境后预检通过并原子切换。切换前
+  备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-141051-before-assistant-mascot-fix-12ed9fa.sqlite`，
+  旧 release 保留。公网 APNG 返回 `image/apng` 且哈希与 release 一致；应用/Nginx active、
+  `NRestarts=0`、SQLite `quick_check=ok`。
