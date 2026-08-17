@@ -675,6 +675,10 @@ try {
   await adminPage.getByTestId("admin-password").fill("browser-owner-password");
   await adminPage.getByTestId("admin-login").click();
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
+  await adminPage.getByRole("heading", { name: "让每一条内容安全地到达小程序" }).waitFor({ state: "visible" });
+  await adminPage.getByText("校验", { exact: true }).waitFor({ state: "visible" });
+  await adminPage.getByText("服务端同步", { exact: true }).waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByRole("link", { name: /查看用户端/u }).count(), 0, "管理后台不再跳转患者 Web，患者入口统一为小程序");
   assert.deepEqual(await adminPage.evaluate(() => ({
     local: Object.keys(localStorage).filter((key) => /admin|token/iu.test(key)),
     session: Object.keys(sessionStorage).filter((key) => /admin|token/iu.test(key))

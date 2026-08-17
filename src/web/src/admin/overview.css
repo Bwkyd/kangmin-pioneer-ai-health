@@ -1,0 +1,321 @@
+.admin-overview {
+  max-width: 1280px;
+}
+
+.welcome-card {
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(300px, .85fr);
+  gap: 40px;
+  min-height: 224px;
+  padding: 34px 38px;
+  border: 1px solid rgba(134, 191, 235, .3);
+  border-radius: 24px;
+  background:
+    linear-gradient(115deg, rgba(255,255,255,.08) 0 1px, transparent 1px 100%),
+    linear-gradient(135deg, #2b76b7 0%, #174b82 54%, #102f55 100%);
+  background-size: 34px 34px, auto;
+  box-shadow: 0 22px 48px rgba(18, 65, 112, .2);
+}
+
+.welcome-card::before {
+  position: absolute;
+  z-index: -1;
+  top: -72px;
+  right: 23%;
+  width: 220px;
+  height: 220px;
+  border: 1px solid rgba(255,255,255,.13);
+  border-radius: 50%;
+  content: "";
+  box-shadow: 0 0 0 28px rgba(255,255,255,.035), 0 0 0 56px rgba(255,255,255,.025);
+}
+
+.welcome-copy {
+  align-self: center;
+}
+
+.welcome-eyebrow {
+  color: #d3e8f8;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.welcome-eyebrow span {
+  margin-right: 7px;
+  color: #8de0c1;
+  font-size: 10px;
+}
+
+.welcome-card h2 {
+  margin: 12px 0 10px;
+  font-size: 28px;
+  letter-spacing: .01em;
+}
+
+.welcome-card p {
+  max-width: 600px;
+  margin: 0;
+  color: #dbeaf7;
+  font-size: 13px;
+  line-height: 1.8;
+}
+
+.welcome-flow {
+  align-self: center;
+  padding: 22px 24px 20px;
+  border: 1px solid rgba(255,255,255,.17);
+  border-radius: 18px;
+  background: rgba(6, 34, 66, .22);
+  backdrop-filter: blur(3px);
+}
+
+.welcome-flow > small {
+  color: #bad6ec;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.flow-track {
+  display: flex;
+  align-items: center;
+  margin-top: 22px;
+}
+
+.flow-track i {
+  flex: 1;
+  height: 1px;
+  background: rgba(207, 231, 249, .35);
+}
+
+.flow-node {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  place-items: center;
+  border: 1px solid rgba(219, 239, 252, .5);
+  border-radius: 50%;
+  color: #d7eafa;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.flow-node.active {
+  border-color: #8de0c1;
+  color: #103c66;
+  background: #8de0c1;
+}
+
+.flow-labels {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.flow-labels span {
+  display: grid;
+  gap: 3px;
+}
+
+.flow-labels strong {
+  color: #f3f9fd;
+  font-size: 12px;
+}
+
+.flow-labels small {
+  color: #a9c7df;
+  font-size: 10px;
+}
+
+.stat-grid {
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.stat-grid article {
+  position: relative;
+  min-height: 108px;
+  padding: 18px 18px 16px;
+  border-color: #e0e9f1;
+  border-radius: 18px;
+  box-shadow: 0 9px 24px rgba(36, 75, 111, .045);
+}
+
+.stat-grid article::after {
+  position: absolute;
+  right: 18px;
+  bottom: 16px;
+  width: 28px;
+  height: 2px;
+  border-radius: 2px;
+  background: #dcebf5;
+  content: "";
+}
+
+.stat-grid strong {
+  margin-top: 3px;
+  color: #173d64;
+  font-size: 28px;
+  line-height: 1.1;
+}
+
+.stat-grid p {
+  margin-top: 5px;
+}
+
+.recent-card {
+  margin-top: 20px;
+  border-color: #dce6ef;
+  border-radius: 19px;
+  box-shadow: 0 9px 28px rgba(36, 75, 111, .04);
+}
+
+.card-heading {
+  padding: 22px 26px;
+}
+
+.card-heading h2 {
+  color: #1b3e62;
+  font-size: 19px;
+}
+
+.sync-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border: 1px solid #cfe7df;
+  border-radius: 99px;
+  color: #24745f;
+  background: #f1fbf7;
+  font-size: 11px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.sync-badge i {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #35aa82;
+}
+
+.workflow-list {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.workflow-item {
+  display: grid;
+  grid-template-columns: 30px 1fr;
+  gap: 12px;
+  min-height: 142px;
+  padding: 23px 24px;
+  border-right: 1px solid #e7edf3;
+}
+
+.workflow-item:last-child {
+  border-right: 0;
+}
+
+.workflow-item > span {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 9px;
+  color: #2c6eaa;
+  background: #e8f2fb;
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.workflow-item strong,
+.workflow-item p {
+  display: block;
+}
+
+.workflow-item strong {
+  color: #294c6c;
+  font-size: 13px;
+}
+
+.workflow-item p {
+  margin: 7px 0 0;
+  color: #71859a;
+  font-size: 12px;
+  line-height: 1.7;
+}
+
+.workflow-item em {
+  grid-column: 2;
+  align-self: end;
+  justify-self: start;
+  margin-top: 13px;
+  padding: 4px 7px;
+  border-radius: 5px;
+  color: #73889d;
+  background: #f2f6fa;
+  font-size: 10px;
+  font-style: normal;
+}
+
+@media (max-width: 900px) {
+  .welcome-card {
+    grid-template-columns: 1fr;
+    gap: 24px;
+  }
+
+  .welcome-flow {
+    max-width: 440px;
+  }
+
+  .workflow-list {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-item {
+    min-height: auto;
+    border-right: 0;
+    border-bottom: 1px solid #e7edf3;
+  }
+
+  .workflow-item:last-child {
+    border-bottom: 0;
+  }
+}
+
+@media (max-width: 760px) {
+  .welcome-card {
+    gap: 22px;
+    padding: 26px 24px;
+    border-radius: 20px;
+  }
+
+  .welcome-card h2 {
+    font-size: 23px;
+  }
+
+  .welcome-card p {
+    font-size: 12px;
+  }
+
+  .welcome-flow {
+    padding: 18px;
+  }
+
+  .card-heading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 12px;
+    padding: 19px 20px;
+  }
+
+  .workflow-item {
+    padding: 20px;
+  }
+}

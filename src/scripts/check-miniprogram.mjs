@@ -77,7 +77,7 @@ for (const file of javascriptFiles) {
   new vm.Script(read(file), { filename: file });
 }
 
-const nativeTags = new Set(["button", "image", "picker", "slider", "text", "video", "view"]);
+const nativeTags = new Set(["button", "image", "input", "picker", "slider", "text", "video", "view"]);
 for (const page of app.pages) {
   const source = read(`${page}.wxml`);
   for (const match of source.matchAll(/<\/?([A-Za-z][\w-]*)\b/gu)) {
@@ -101,6 +101,13 @@ const requestSource = read("utils/request.js");
 for (const forbidden of ["AppSecret", "session_key", "openId", "openid"]) {
   if (requestSource.includes(forbidden)) {
     throw new Error(`小程序请求层不得持有服务端身份字段：${forbidden}`);
+  }
+}
+
+const assistantSource = read("pages/assistant/index.js");
+for (const requiredCommand of ["agent exec", "agent conversations list", "agent conversations show"]) {
+  if (!assistantSource.includes(requiredCommand)) {
+    throw new Error(`原生问助手缺少服务端会话命令：${requiredCommand}`);
   }
 }
 

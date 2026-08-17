@@ -15,6 +15,9 @@
 .profile-item > view:nth-child(2) text:first-child { font-size: 22rpx; font-weight: 700; }
 .profile-item > view:nth-child(2) text:last-child { margin-top: 5rpx; overflow: hidden; color: #8a98a9; font-size: 16rpx; text-overflow: ellipsis; white-space: nowrap; }
 .profile-item > text { color: #a6b1bf; font-size: 31rpx; }
+.message-action { display: flex; align-items: center; gap: 10rpx; color: #a6b1bf; }
+.message-action > text:last-child { font-size: 31rpx; }
+.message-badge { min-width: 30rpx; padding: 3rpx 8rpx; border-radius: 18rpx; color: #fff; background: #d66b58; text-align: center; font-size: 15rpx; line-height: 1.3; }
 .item-icon { display: flex; width: 56rpx; height: 56rpx; align-items: center; justify-content: center; border-radius: 17rpx; font-size: 20rpx; font-weight: 700; }
 .blue { color: #2d6aad; background: #e7f0fb; }.amber { color: #9a6d12; background: #fff4d8; }.mint { color: #277a68; background: #e5f4ef; }.violet { color: #6e5ba4; background: #eeeafb; }.gray { color: #68788b; background: #edf1f5; }
 .profile-disclaimer { padding: 24rpx 18rpx 0; color: #8492a6; text-align: center; font-size: 16rpx; line-height: 1.65; }
