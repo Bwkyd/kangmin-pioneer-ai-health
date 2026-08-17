@@ -13,7 +13,7 @@
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && vite build web",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "lint": "node scripts/architecture-check.mjs",
+    "lint": "node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs",
     "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",
     "check": "npm run typecheck && npm run lint && npm test",
     "dev:session": "npm run build --silent && node dist/dev/create-session.js",

@@ -1,0 +1,27 @@
+<view class="page">
+  <view wx:if="{{loading}}" class="empty-box">正在准备症状记录…</view>
+  <view wx:if="{{error}}" class="error-box">{{error}}</view>
+  <view wx:if="{{!loading && !consentGranted && !error}}" class="card consent-card">
+    <view class="section-title">先确认健康数据授权</view>
+    <view class="muted">{{privacyStatement}}</view>
+    <view class="consent-row" bindtap="toggleConsent"><view class="checkbox {{consentAccepted ? 'checked' : ''}}">{{consentAccepted ? '✓' : ''}}</view><text>我已阅读并同意保存本人的症状记录</text></view>
+    <button class="primary-button" bindtap="grantConsent">同意并继续</button>
+  </view>
+  <view wx:if="{{!loading && consentGranted}}">
+    <view class="card">
+      <view class="section-title">记录日期</view>
+      <picker mode="date" value="{{date}}" end="{{today}}" bindchange="changeDate"><view class="date-picker">{{date}} ›</view></picker>
+    </view>
+    <view class="card score-card">
+      <view class="section-title">TNSS 症状量表</view>
+      <view class="muted scale-help">0 无 · 1 轻微 · 2 明显 · 3 严重</view>
+      <view class="scale-item"><view class="scale-label"><text>喷嚏</text><text class="score-value">{{scores.sneezing}}</text></view><slider min="0" max="3" step="1" value="{{scores.sneezing}}" activeColor="#1765ad" data-key="sneezing" bindchange="changeScore" /></view>
+      <view class="scale-item"><view class="scale-label"><text>流涕</text><text class="score-value">{{scores.runnyNose}}</text></view><slider min="0" max="3" step="1" value="{{scores.runnyNose}}" activeColor="#1765ad" data-key="runnyNose" bindchange="changeScore" /></view>
+      <view class="scale-item"><view class="scale-label"><text>鼻塞</text><text class="score-value">{{scores.nasalCongestion}}</text></view><slider min="0" max="3" step="1" value="{{scores.nasalCongestion}}" activeColor="#1765ad" data-key="nasalCongestion" bindchange="changeScore" /></view>
+      <view class="scale-item"><view class="scale-label"><text>鼻痒</text><text class="score-value">{{scores.nasalItching}}</text></view><slider min="0" max="3" step="1" value="{{scores.nasalItching}}" activeColor="#1765ad" data-key="nasalItching" bindchange="changeScore" /></view>
+      <view class="total">当前总分 <text class="total-value">{{scores.sneezing + scores.runnyNose + scores.nasalCongestion + scores.nasalItching}}</text> / 12</view>
+    </view>
+    <view class="safety-note">量表用于个人症状变化回看，不构成疾病诊断或严重程度判定。</view>
+    <button class="primary-button save-button" loading="{{saving}}" disabled="{{saving}}" bindtap="save">{{current ? '更新记录' : '保存记录'}}</button>
+  </view>
+</view>

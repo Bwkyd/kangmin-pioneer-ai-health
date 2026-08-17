@@ -1,0 +1,32 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/assistant/index",
+    "pages/calendar/index",
+    "pages/mine/index",
+    "pages/symptom-edit/index",
+    "pages/learn/index",
+    "pages/content-detail/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#15569a",
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "抗敏先锋",
+    "backgroundColor": "#f4f8fd"
+  },
+  "tabBar": {
+    "custom": true,
+    "color": "#66758a",
+    "selectedColor": "#155eaa",
+    "backgroundColor": "#ffffff",
+    "list": [
+      { "pagePath": "pages/home/index", "text": "首页" },
+      { "pagePath": "pages/assistant/index", "text": "问助手" },
+      { "pagePath": "pages/calendar/index", "text": "日历" },
+      { "pagePath": "pages/mine/index", "text": "我的" }
+    ]
+  },
+  "sitemapLocation": "sitemap.json",
+  "style": "v2"
+}

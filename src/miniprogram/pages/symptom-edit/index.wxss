@@ -1,0 +1,14 @@
+.consent-card { margin-top: 30rpx; }
+.consent-row { display: flex; align-items: flex-start; gap: 15rpx; margin: 24rpx 0; color: #334e6f; font-size: 20rpx; line-height: 1.6; }
+.checkbox { display: flex; flex: 0 0 34rpx; width: 34rpx; height: 34rpx; margin-top: 2rpx; align-items: center; justify-content: center; box-sizing: border-box; border: 2rpx solid #9bb2ca; border-radius: 8rpx; color: #fff; }
+.checkbox.checked { border-color: #1e5aa3; background: #1e5aa3; }
+.date-picker { padding: 18rpx; border-radius: 18rpx; color: #1e5aa3; background: #eef5fd; text-align: center; font-weight: 700; }
+.scale-card { padding-top: 12rpx; }
+.scale-help { margin-bottom: 14rpx; font-size: 17rpx; }
+.scale-item { padding: 19rpx 0; border-top: 2rpx solid #edf0ee; }
+.scale-label { display: flex; justify-content: space-between; padding: 0 8rpx; color: #324c67; font-size: 22rpx; font-weight: 700; }
+.score-value { color: #1e5aa3; font-size: 28rpx; }
+.total { margin-top: 16rpx; padding: 18rpx; border-radius: 19rpx; color: #315574; background: #edf4fc; text-align: center; }
+.total-value { color: #1e5aa3; font-size: 35rpx; font-weight: 700; }
+.safety-note { margin: 16rpx 12rpx; color: #7b6848; font-size: 17rpx; line-height: 1.6; }
+.save-button { margin-top: 20rpx; }

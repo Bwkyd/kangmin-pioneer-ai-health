@@ -1,0 +1,32 @@
+<view class="page assessment-view">
+  <view class="assessment-intro">
+    <view><text>症状</text><text>评估</text></view>
+    <view><text>患者自述记录</text><text>过敏性鼻炎症状日历</text><text>按天记录 TNSS，用于回看变化</text></view>
+  </view>
+  <view class="allergy-calendar">
+    <view class="calendar-top">
+      <view><text>症状日历</text><text>选择日期查看或补记</text></view>
+      <view bindtap="addToday">＋ 记录今天</view>
+    </view>
+    <view class="month-switch">
+      <text bindtap="previousMonth">‹</text><text>{{month}}</text><text bindtap="nextMonth">›</text>
+    </view>
+    <view class="week-row"><text wx:for="{{weekdays}}" wx:key="*this">{{item}}</text></view>
+    <view class="calendar-grid">
+      <view wx:for="{{cells}}" wx:key="date" class="day {{item.muted ? 'muted' : ''}} {{item.today ? 'today' : ''}} {{item.severity}}" data-cell="{{item}}" bindtap="openDate">
+        <text>{{item.day}}</text>
+      </view>
+    </view>
+    <view class="calendar-legend"><view><view class="good"></view><text>无症状</text></view><view><view class="mild"></view><text>轻</text></view><view><view class="moderate"></view><text>中</text></view><view><view class="severe"></view><text>明显</text></view></view>
+    <view wx:if="{{error}}" class="inline-error">{{error}}</view>
+  </view>
+
+  <view class="trend-card">
+    <view class="trend-title"><view><text>症状趋势</text><text>本月 TNSS 变化</text></view><text>患者自述</text></view>
+    <view wx:if="{{trend.length}}" class="trend-chart">
+      <view wx:for="{{trend}}" wx:key="symptomId" class="trend-column"><text>{{item.tnssTotal}}</text><view style="height: {{item.height}}rpx"></view><text>{{item.shortDate}}</text></view>
+    </view>
+    <view wx:else class="empty-state">本月还没有症状记录。</view>
+    <view class="chart-legend"><view><view></view><text>TNSS 总分</text></view><text>仅用于变化回看</text></view>
+  </view>
+</view>

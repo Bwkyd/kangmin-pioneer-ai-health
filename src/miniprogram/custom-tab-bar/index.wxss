@@ -1,0 +1,15 @@
+.tab-bar { position: fixed; z-index: 1000; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(5,1fr); box-sizing: border-box; min-height: 108rpx; padding: 10rpx 16rpx calc(12rpx + env(safe-area-inset-bottom)); gap: 6rpx; border-top: 2rpx solid #e2e8ef; background: rgba(255,255,255,.98); }
+.tab-item { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; gap: 3rpx; border-radius: 18rpx; color: #91a099; font-size: 18rpx; }
+.glyph { position: relative; display: block; width: 35rpx; height: 35rpx; color: #879991; font-size: 0; }
+.selected { color: #1e5aa3; background: #eaf2fb; font-weight: 700; }
+.selected .glyph { color: #1e5aa3; }
+.nav-home::before { content: ""; position: absolute; left: 7rpx; top: 14rpx; width: 19rpx; height: 16rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-top: 0; border-radius: 3rpx; }
+.nav-home::after { content: ""; position: absolute; left: 9rpx; top: 7rpx; width: 16rpx; height: 16rpx; box-sizing: border-box; border-top: 3rpx solid currentColor; border-left: 3rpx solid currentColor; border-radius: 2rpx; transform: rotate(45deg); }
+.nav-chat::before { content: ""; position: absolute; inset: 4rpx 4rpx 7rpx; border: 3rpx solid currentColor; border-radius: 50%; }
+.nav-chat::after { content: ""; position: absolute; left: 6rpx; bottom: 4rpx; width: 10rpx; height: 10rpx; border-left: 3rpx solid currentColor; transform: rotate(25deg); }
+.nav-calendar::before { content: ""; position: absolute; inset: 5rpx 4rpx 3rpx; border: 3rpx solid currentColor; border-radius: 5rpx; }
+.nav-calendar::after { content: ""; position: absolute; left: 9rpx; top: 14rpx; width: 4rpx; height: 4rpx; background: currentColor; box-shadow: 7rpx 0 currentColor,14rpx 0 currentColor,0 7rpx currentColor,7rpx 7rpx currentColor,14rpx 7rpx currentColor; }
+.nav-profile::before { content: ""; position: absolute; left: 12rpx; top: 3rpx; width: 10rpx; height: 10rpx; border: 3rpx solid currentColor; border-radius: 50%; }
+.nav-profile::after { content: ""; position: absolute; left: 5rpx; bottom: 2rpx; width: 25rpx; height: 15rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-bottom: 0; border-radius: 18rpx 18rpx 3rpx 3rpx; }
+.action { transform: translateY(-18rpx); color: #1e5aa3; }
+.action .glyph { display: flex; width: 82rpx; height: 82rpx; margin-bottom: 1rpx; align-items: center; justify-content: center; box-sizing: border-box; border: 7rpx solid #f3f6fb; border-radius: 50%; color: #fff; background: #1e5aa3; font-size: 54rpx; font-weight: 300; line-height: 1; box-shadow: 0 9rpx 24rpx rgba(30,90,163,.24); }

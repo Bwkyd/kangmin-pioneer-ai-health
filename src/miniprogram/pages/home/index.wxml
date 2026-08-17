@@ -1,0 +1,70 @@
+<view class="page home-view">
+  <view class="brand-banner">
+    <image src="/assets/brand-banner.jpg" mode="aspectFill" />
+  </view>
+
+  <view class="home-modules">
+    <view class="service-module diagnose-module" bindtap="openAssistant">
+      <view class="module-icon">诊</view>
+      <text class="module-kicker">安全评估与方案建议</text>
+      <text class="module-title">诊一诊</text>
+      <text class="module-copy">先做服务端规则和操作安全筛查，再匹配已审核康复方案。</text>
+      <text class="module-link">开始安全评估　→</text>
+      <text class="module-watermark">诊</text>
+    </view>
+    <view class="service-module learn-module" bindtap="openLearn">
+      <view class="module-icon">学</view>
+      <text class="module-kicker">已发布科普内容</text>
+      <text class="module-title">学一学</text>
+      <text class="module-copy">了解鼻健康知识，掌握日常防护方法。</text>
+      <text class="module-link">去学习　→</text>
+      <text class="module-watermark">学</text>
+    </view>
+  </view>
+
+  <view class="basis-card">
+    <view class="basis-icon">据</view>
+    <view class="basis-copy">
+      <text class="basis-title">抗敏先锋鼻健康服务</text>
+      <text>方案来自已审核内容，基于福建中医药大学抗敏先锋团队体质调理方案开发。</text>
+      <text class="basis-note">结果仅供参考，最终方案请以门诊诊断为准。</text>
+    </view>
+  </view>
+
+  <view class="today-grid">
+    <view class="today-card" bindtap="openAssessment">
+      <view class="feature-icon">↘</view>
+      <text class="today-kicker">今日待完成 · 患者自述</text>
+      <text class="today-title">症状记录</text>
+      <text class="today-link">记录今天</text>
+    </view>
+    <view class="today-card" bindtap="openLearn">
+      <view class="feature-icon book-icon">知</view>
+      <text class="today-kicker">鼻健康科普</text>
+      <text class="today-title">科普文章与视频</text>
+      <text class="today-link">去看看</text>
+    </view>
+  </view>
+
+  <view class="mini-trend" bindtap="openCalendar">
+    <view class="trend-copy">
+      <text>{{overview ? '真实健康记录' : '趋势展示占位'}}</text>
+      <text class="trend-title">{{overview ? '连续记录 ' + overview.consecutiveDays + ' 天 · 本月 ' + overview.monthRecordCount + ' 次' : '暂无真实健康记录'}}</text>
+      <text class="trend-link">{{overview ? '查看记录 ›' : '微信登录配置后查看 ›'}}</text>
+    </view>
+    <view class="sparkline">
+      <view style="height: 84%"></view><view style="height: 73%"></view><view style="height: 64%"></view><view style="height: 55%"></view><view class="active" style="height: 42%"></view>
+    </view>
+  </view>
+  <view wx:if="{{overviewError}}" class="inline-notice">{{overviewError}}</view>
+
+  <view class="section-heading">
+    <view><text>为你推荐</text><text class="heading-title">今天读点什么</text></view>
+    <text class="heading-link" bindtap="openLearn">全部 ›</text>
+  </view>
+  <view class="article-feature" bindtap="openLearn">
+    <view class="article-art"><view class="art-circle"></view><view class="art-leaf"></view><text>学</text></view>
+    <view class="article-copy"><text>鼻健康科普</text><text class="article-title">学一学</text><text class="article-meta">科普文章 · 操作视频 · 调理方案</text></view>
+  </view>
+  <view wx:if="{{contentError}}" class="inline-notice">{{contentError}}</view>
+</view>
