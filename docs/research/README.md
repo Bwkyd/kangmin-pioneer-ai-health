@@ -7,6 +7,7 @@
 | --- | --- | --- |
 | 001 | 2026-08-09 | [受约束的灵活问诊 Agent 调研](001_constrained-conversational-agent-research.md) |
 | 003 | 2026-08-14 | [诊一诊客户需求与首项工作取舍](003_zhenyiwen-customer-needs/) |
+| 004 | 2026-08-17 | [通用鼻炎科普问答知识边界与检索降级取舍](004_general-rhinitis-qa-boundary/) |
 
 编号 `002` 已于 2026-08-13 按作者指示归档（`_archive/20260813-superseded-docs/`），
-编号保留不复用；下一份调研编号从 `004` 开始。
+编号保留不复用；下一份调研编号从 `005` 开始。

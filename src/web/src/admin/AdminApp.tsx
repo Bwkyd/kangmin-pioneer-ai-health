@@ -193,6 +193,27 @@ function Stat({ icon, label, value, tone }: { icon: string; label: string; value
 
 const blank = (kind: ContentKind): Omit<ContentItem, "id" | "revision" | "status" | "updatedAt"> => ({ kind, title: "", category: "", summary: "", body: "", source: "", coverMediaId: null, mediaId: null, instructions: "", precautions: "", disclaimer: "", displayOrder: 0 });
 
+/**
+ * 列表响应还可能包含 publishedAt、methodTags 等服务端字段。编辑表单只保留页面明确
+ * 可编辑的字段，避免把隐藏元数据（尤其空 methodTags）原样回传并触发更新契约校验。
+ */
+function editableContent(item: ContentItem): ReturnType<typeof blank> {
+  return {
+    kind: item.kind,
+    title: item.title,
+    category: item.category,
+    summary: item.summary,
+    body: item.body,
+    source: item.source,
+    coverMediaId: item.coverMediaId,
+    mediaId: item.mediaId,
+    instructions: item.instructions,
+    precautions: item.precautions,
+    disclaimer: item.disclaimer,
+    displayOrder: item.displayOrder
+  };
+}
+
 function ContentManager({ kind, items, media, categories, busy, run }: { kind: ContentKind; items: ContentItem[]; media: MediaItem[]; categories: CategoryItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<void> }) {
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [draft, setDraft] = useState(blank(kind));
@@ -201,7 +222,7 @@ function ContentManager({ kind, items, media, categories, busy, run }: { kind: C
   const label = kind === "article" ? "文章" : "视频";
   const readyMedia = media.filter((item) => item.status === "ready");
   const availableCategories = categories.filter((item) => item.status === "active" && (item.kind === kind || item.kind === "general"));
-  function open(item?: ContentItem) { setEditing(item ?? null); setDraft(item ?? blank(kind)); setShowForm(true); }
+  function open(item?: ContentItem) { setEditing(item ?? null); setDraft(item === undefined ? blank(kind) : editableContent(item)); setShowForm(true); }
   async function save(event: FormEvent) {
     event.preventDefault();
     await run(async () => {
