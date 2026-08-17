@@ -19,7 +19,7 @@
 
   <view class="profile-section">
     <text class="section-label">设置与服务</text>
-    <view class="profile-item"><view class="item-icon violet">铃</view><view><text>消息中心</text><text>查看站内鼻健康提醒</text></view><text>›</text></view>
+    <view class="profile-item" bindtap="openMessages"><view class="item-icon violet">铃</view><view><text>消息中心</text><text>查看站内鼻健康提醒</text></view><view class="message-action"><text wx:if="{{unreadCount > 0}}" class="message-badge">{{unreadCount}}</text><text>›</text></view></view>
     <view class="profile-item"><view class="item-icon gray">盾</view><view><text>隐私与授权</text><text>查看和管理健康数据授权</text></view><text>›</text></view>
     <view class="profile-item"><view class="item-icon gray">关</view><view><text>关于抗敏先锋</text><text>团队介绍、使用说明与意见反馈</text></view><text>›</text></view>
   </view>

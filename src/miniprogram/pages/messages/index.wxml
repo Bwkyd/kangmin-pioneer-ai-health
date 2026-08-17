@@ -1,0 +1,28 @@
+<view class="page messages-page">
+  <view wx:if="{{!selected}}">
+    <view class="messages-intro"><view>通知</view><view><text>应用内通知</text><text>消息中心</text><text>这里展示运营人员发布的鼻健康提醒</text></view></view>
+    <view wx:if="{{loading}}" class="empty-box">正在读取站内消息…</view>
+    <view wx:if="{{error}}" class="error-box"><text>{{error}}</text><text class="retry" bindtap="retry">重新加载</text></view>
+    <view wx:if="{{!loading && !error && !items.length}}" class="empty-box">暂无消息</view>
+    <view wx:if="{{!loading && !error && items.length}}" class="message-list">
+      <view wx:for="{{items}}" wx:key="id" data-id="{{item.id}}" class="message-card {{item.readAt ? 'read' : 'unread'}}" bindtap="openItem">
+        <view class="message-card-head"><text>{{item.title}}</text><text class="message-state">{{item.readAt ? '已读' : '未读'}}</text></view>
+        <view class="message-summary">{{item.summary || item.body}}</view>
+        <view class="message-date">{{item.displayDate}}</view>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{selected}}" class="message-detail">
+    <view class="message-back" bindtap="backToList">‹ 返回消息中心</view>
+    <view wx:if="{{detailLoading}}" class="empty-box">正在读取消息…</view>
+    <view wx:if="{{!detailLoading}}" class="message-detail-card">
+      <view class="message-date">{{selected.displayDate}}</view>
+      <view class="message-title">{{selected.title}}</view>
+      <view wx:if="{{selected.summary}}" class="message-detail-summary">{{selected.summary}}</view>
+      <view class="message-body">{{selected.body}}</view>
+      <view class="message-disclaimer">应用内通知 · 仅展示已发布内容</view>
+    </view>
+    <view wx:if="{{error}}" class="error-box">{{error}}</view>
+  </view>
+</view>

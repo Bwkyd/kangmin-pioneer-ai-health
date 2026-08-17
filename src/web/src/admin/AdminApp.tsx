@@ -164,7 +164,7 @@ export function AdminApp() {
         <div className="admin-account"><span>{session.username?.slice(0, 1).toUpperCase()}</span><div><strong>{session.username}</strong><small>{session.role === "owner" ? "主管理员" : "内容管理员"}</small></div><button onClick={() => void run(async () => { await logout(); setSession(null); }, "已安全退出")}>退出</button></div>
       </aside>
       <section className="admin-main">
-        <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1></div><a href="/" target="_blank" rel="noreferrer">查看用户端 ↗</a></header>
+        <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1></div></header>
         {notice !== "" && <div className="admin-toast" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice("")}>×</button></div>}
         {section === "overview" && <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} media={media} />}
         {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} />}
@@ -194,7 +194,14 @@ function Login({ onSuccess }: { onSuccess: (session: AdminSession) => void }) {
 
 function Overview({ articles, videos, messages, knowledge, media }: { articles: ContentItem[]; videos: ContentItem[]; messages: MessageItem[]; knowledge: KnowledgeItem[]; media: MediaItem[] }) {
   const published = [...articles, ...videos].filter((item) => item.status === "published").length;
-  return <div className="admin-overview"><section className="welcome-card"><div><small>客户试用版内容工作台</small><h2>先用真实闭环收集反馈</h2><p>本后台覆盖报价范围内的文章、视频、站内消息、素材与知识库。发布和下架会直接影响用户端可见内容。</p></div><span>KM</span></section><section className="stat-grid"><Stat icon="发" label="已发布内容" value={published} tone="green"/><Stat icon="信" label="已发布消息" value={messages.filter((item) => item.status === "published").length} tone="green"/><Stat icon="知" label="启用知识" value={knowledge.filter((item) => item.status === "enabled").length} tone="blue"/><Stat icon="材" label="可用素材" value={media.filter((item) => item.status === "ready").length} tone="blue"/></section><section className="recent-card"><div className="card-heading"><div><h2>当前交付边界</h2><p>不包含复杂统计、模型参数和调理方案后台编辑。</p></div></div><div className="scope-note">消息发布后会进入全部登录用户的站内信列表；不调用微信订阅消息，不产生额外模板消息合规范围。</div></section></div>;
+  return <div className="admin-overview">
+    <section className="welcome-card">
+      <div className="welcome-copy"><div className="welcome-eyebrow"><span>●</span> 内容运营 / 小程序同步</div><h2>让每一条内容安全地到达小程序</h2><p>统一管理科普文章、视频、站内消息、素材与智能体知识。发布状态实时同步，关键操作保留审计记录。</p></div>
+      <div className="welcome-flow" aria-label="内容发布链路"><small>发布链路</small><div className="flow-track"><span className="flow-node active">01</span><i></i><span className="flow-node">02</span><i></i><span className="flow-node">03</span></div><div className="flow-labels"><span><strong>准备</strong><small>编辑内容</small></span><span><strong>校验</strong><small>完成校验</small></span><span><strong>发布</strong><small>用户可见</small></span></div></div>
+    </section>
+    <section className="stat-grid"><Stat icon="发" label="已发布内容" value={published} tone="green"/><Stat icon="信" label="已发布消息" value={messages.filter((item) => item.status === "published").length} tone="green"/><Stat icon="知" label="启用知识" value={knowledge.filter((item) => item.status === "enabled").length} tone="blue"/><Stat icon="材" label="可用素材" value={media.filter((item) => item.status === "ready").length} tone="blue"/></section>
+    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 服务端同步</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与校验</strong><p>文章、视频和消息在后台完成内容准备；素材和知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>知识资料建立索引并启用后，才会参与智能体检索；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
+  </div>;
 }
 
 function Stat({ icon, label, value, tone }: { icon: string; label: string; value: number; tone: string }) { return <article><i className={tone}>{icon}</i><small>{label}</small><strong>{value}</strong><p>实时读取服务端</p></article>; }

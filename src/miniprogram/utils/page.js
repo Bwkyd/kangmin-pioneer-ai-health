@@ -7,7 +7,7 @@ function selectTab(page, index) {
 
 function errorMessage(error) {
   if (error && error.code === "capability_unavailable") {
-    return "微信登录尚未配置，文章和视频仍可浏览；症状记录将在正式微信联调时开放。";
+    return "微信登录尚未配置，患者记录、问助手和消息中心将在正式微信联调时开放；文章和视频仍可浏览。";
   }
   if (error && typeof error.message === "string") return error.message;
   return "加载失败，请稍后重试";
