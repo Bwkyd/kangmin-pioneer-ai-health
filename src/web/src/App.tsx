@@ -1532,6 +1532,10 @@ export default function App() {
                   </div>
                 )}
                 <form className="composer" onSubmit={sendCustom}>
+                  <picture className="assistant-mascot" data-testid="assistant-mascot" aria-hidden="true">
+                    <source media="(prefers-reduced-motion: reduce)" srcSet="/assistant-mascot-static.png" />
+                    <img src="/assistant-mascot.apng" alt="" draggable="false" />
+                  </picture>
                   <input
                     aria-label="输入症状或问题"
                     value={input}

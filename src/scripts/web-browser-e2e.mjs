@@ -158,6 +158,23 @@ try {
   await expectAddButtonInsideNavigation(page, "首页");
   await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
   await expectAddButtonInsideNavigation(page, "问助手");
+  const mascot = page.getByTestId("assistant-mascot");
+  await mascot.waitFor({ state: "visible" });
+  const mascotBox = await mascot.boundingBox();
+  const composerBox = await page.locator(".composer").boundingBox();
+  const composerInputBox = await page.locator(".composer input").boundingBox();
+  assert.ok(mascotBox && composerBox && composerInputBox, "问助手输入区应显示动画助手");
+  assert.ok(
+    await mascot.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0),
+    "动画助手资源应成功加载"
+  );
+  assert.ok(
+    mascotBox.y >= composerBox.y - 8 &&
+      mascotBox.y + mascotBox.height <= composerBox.y + composerBox.height &&
+      mascotBox.x >= composerBox.x &&
+      mascotBox.x + mascotBox.width <= composerInputBox.x,
+    "动画助手应位于输入区左侧预留位且不遮挡输入文字"
+  );
   await page.getByTestId("nav-calendar").click();
   await expectAddButtonInsideNavigation(page, "日历");
   await page.locator(".bottom-nav button", { hasText: "我的" }).click();
@@ -575,6 +592,13 @@ try {
   const sixStepResult = page.locator(".result-card", { hasText: "寒热错杂" });
   await sixStepResult.waitFor({ state: "visible" });
   await page.locator(".conversation-ended").waitFor({ state: "visible" });
+  const completedMascotBox = await page.getByTestId("assistant-mascot").boundingBox();
+  const completedNoticeBox = await page.locator(".conversation-ended").boundingBox();
+  assert.ok(completedMascotBox && completedNoticeBox, "评估完成后应同时显示助手和状态提示");
+  assert.ok(
+    completedMascotBox.y >= completedNoticeBox.y + completedNoticeBox.height,
+    "动画助手不应遮挡评估完成提示"
+  );
   assert.match((await sixStepResult.textContent()) ?? "", /寒热错杂/u);
   await expectText(page.locator(".conversation-ended"), "可以继续追问当前方案");
   assert.equal(await chatInput.isDisabled(), false);
