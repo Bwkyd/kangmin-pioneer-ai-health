@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 非智能体报价闭环已合并并部署 Web 试用环境（2026-08-17 第八十三轮 · 合并 `bad463b`，PR #208）
+> 作者授权发车后，将第八十二轮成果拆为调研、代码和验收三个提交推送至 `agent/non-agent-quotation-closure`。三提交的 gitleaks 扫描无发现；PR #208 的 `quality` 与 `image` 两项 CI 均成功，转为可评审后 squash 合并到 `main@bad463b`，任务分支提交树与合并提交树一致。GitHub 连接器创建 PR 返回 403 后，按发布流程改用已认证 `gh` 完成同一仓库操作，没有绕过门禁或直推 `main`。
+> 合并构建制品 SHA-256 为 `b701cf6570e19ddca376a8755bc445f9a5c34a060879e8884dc6be18b750d6cd`。新 release 在 8788 使用线上 SQLite 在线备份副本完成患者页、管理页、21 项迁移和 `quick_check=ok` 预检；随后短暂停服并备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260817-130359-before-non-agent-closure-bad463b.sqlite`，原子切换至 `/srv/kangmin-cli/releases/non-agent-closure-bad463b`，旧 `assistant-mascot-fix-12ed9fa` 完整保留回滚。
+> 公网 `https://140.143.120.176` 的 `/live`、患者页、管理页和两端主 JS 已复核，页面及资源哈希与本地合并构建一致；应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`。当前没有可连接的图形浏览器实例，因此未冒充完成公网 UI 目测；合并前真实浏览器 E2E 已覆盖趋势、文章、视频、站内消息和知识生命周期。`/ready` 仍只因试用环境既有 encryption 未配置返回 503，不扩大为正式生产就绪或客户验收；智能体科普路线继续冻结等待客户拍板，作者原件 `hi.md` 保持未修改、未跟踪。
+
 > ## ✅ 非智能体报价功能完成 Web 闭环复核并修复内容编辑（2026-08-17 第八十二轮 · 基线 `main@30305af`，未提交）
 > 作者决定客户返回并拍板前冻结智能体科普路线，本轮只按报价核验其余 Web 试用功能。以 390×844 真实浏览器补齐六条路径：症状保存后 Canvas 趋势实际绘制且保留非诊断提示；文章和视频从后台新增、编辑、校验、发布到患者读取编辑后正文并下架；站内消息从后台新增、编辑、发布到患者详情、患者级已读并下架；知识资料完成更新名称/分类/来源、索引、启用、检索、停用和删除。知识路径只验证管理生命周期，没有改变智能体检索或回答路线。
 > 新增编辑回归复现一项真实 P2：管理 Web 曾把列表响应整体放入文章/视频编辑状态，服务端隐藏的空 `methodTags` 随请求回传并触发 422，使页面虽有“编辑”按钮但无法保存。现改为白名单选取页面可编辑字段，不再回传修订状态、时间戳或隐藏元数据；文章与视频编辑回归均通过。可复用规则已写入 `state/memory/20260817-web-edit-dto-whitelist.md`，验收矩阵见 `docs/plan/009_non-agent-quotation-web-closure.md`。
