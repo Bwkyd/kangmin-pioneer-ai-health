@@ -110,3 +110,11 @@
   备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260815-141051-before-assistant-mascot-fix-12ed9fa.sqlite`，
   旧 release 保留。公网 APNG 返回 `image/apng` 且哈希与 release 一致；应用/Nginx active、
   `NRestarts=0`、SQLite `quick_check=ok`。
+- 2026-08-17 将非智能体报价闭环合并提交 `bad463b` 构建并部署为
+  `/srv/kangmin-cli/releases/non-agent-closure-bad463b`。制品 SHA-256 为
+  `b701cf6570e19ddca376a8755bc445f9a5c34a060879e8884dc6be18b750d6cd`；先在 8788 使用线上
+  SQLite 在线备份副本预检患者页、管理页、21 项迁移与 `quick_check=ok`，再停服备份为
+  `/srv/kangmin-cli/data/backups/kangmin-mvp-20260817-130359-before-non-agent-closure-bad463b.sqlite`
+  并原子切换，旧 release 保留回滚。公网患者页、管理页及两端主 JS 与本地合并构建哈希一致，
+  应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`；当前无可连接图形浏览器，未声称
+  完成本轮公网 UI 目测。`/ready` 仍只因试用环境既有 encryption 未配置返回 503。

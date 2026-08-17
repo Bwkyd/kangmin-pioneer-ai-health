@@ -1,6 +1,6 @@
 # Web 试用版非智能体报价闭环
 
-> 2026-08-17。当前状态：实现候选已完成，未提交、未部署、未取得客户验收。
+> 2026-08-17。当前状态：已合并并部署 Web 试用环境，未取得客户验收。
 
 ## 目标
 
@@ -51,3 +51,5 @@
 - `km-review`：P0、P1、P2 为 0；P3 为知识编辑仍使用浏览器提示框，不阻塞试用闭环。
 - `python3 scripts/check-manifests.py`、`git diff --check`、`npm audit --omit=dev`：通过，生产依赖漏洞为 0。
 - `python3 scripts/structure-lint.py .`：只被任务前既有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名拦截，本轮未修改作者过程材料。
+- PR #208 的 `quality`、`image` 均通过，随后 squash 合并为 `main@bad463b`；任务分支与合并提交代码树一致。
+- 合并构建先在 8788 与线上 SQLite 副本预检，再原子部署为 `/srv/kangmin-cli/releases/non-agent-closure-bad463b`；切换备份、服务状态与公网资源核验见 `docs/plan/008_tencent-cloud-production-cutover.md`。

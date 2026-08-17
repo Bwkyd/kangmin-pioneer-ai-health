@@ -2,7 +2,7 @@
 
 <meta>
   <document-id>km-real</document-id>
-  <version>1.1.7</version>
+  <version>1.1.8</version>
   <project>kangmin · 抗敏先锋 AI 鼻健康管理系统</project>
   <type>Reality Constraints</type>
   <created>2026-08-13</created>
@@ -57,7 +57,8 @@
 - 硬件 / 网络：原腾讯云试用服务器 `49.232.26.48` 已到期且 SSH 在认证前断开，无法读取
   其 SQLite、素材和服务器配置。2026-08-15 已按作者授权把 Web 试用环境重建到腾讯云轻量
   服务器 `140.143.120.176`；患者级评估上下文、连续追问、关闭千问推理、寒暄快速响应和
-  输入区动画助手均已提交并部署，当前 release 为 `assistant-mascot-fix-12ed9fa`，公网入口为
+  输入区动画助手和非智能体报价功能闭环均已提交并部署，当前 release 为
+  `non-agent-closure-bad463b`，公网入口为
   `https://140.143.120.176`。
   托管 PostgreSQL、COS、正式微信身份链路和其他
   正式云资源由客户支付尾款后购买并部署，当前不为此提前扩建。
