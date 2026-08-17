@@ -3,6 +3,12 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 原生小程序与管理工作台已合并并部署（2026-08-18 第九十四轮 · 合并 `7eb9323`，PR #213）
+> 按报价 truth 完成原生小程序助手、站内消息、正式首页与管理工作台视觉收口；管理 Web 保留为内容运营入口，患者 Web 跳转移除，患者 Web 源码继续作为回归壳，避免在微信小程序真实验收前破坏既有测试与服务入口。管理流程文案经元反思修正为“准备—校验—发布”，没有虚构独立审核状态；未修改问卷、证型、分期、方案、模型、知识或医学 truth。
+> 已调用 sequential-thinking MCP，并按 `km-review` 患者可懂性、工程事实、医学安全三视角复核，P0/P1/P2 均为 0。`cd src && npm run check` 通过：355 项测试中 279 项通过，76 项因本机未配置 PostgreSQL/S3 外部适配器按约定跳过；真实浏览器 E2E、小程序检查、远端 `quality`/`image` 门禁均通过。PR #213 squash 合并为 `main@7eb9323`。
+> 合并制品归档哈希为 `df43cff832b6aa28137ae2bcea595de48933047d84e79e377aeebe85d519462b`，新 release 先在 8788 使用线上 SQLite 副本预检，再切换至 `/srv/kangmin-cli/releases/miniprogram-admin-7eb9323`；切换前备份 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260818-075311-before-miniprogram-admin-7eb9323.sqlite`，旧 `knowledge-inline-bd78951` 保留回滚。公网 `/live`、患者页、管理页和管理 JS 均复核通过，资源哈希与本地构建一致；应用 active、`NRestarts=0`、SQLite `quick_check=ok`，`/ready` 仍只因试用环境既有 encryption 未配置返回 503。
+> 原生小程序代码已进入仓库并随主分支合并，但真实 AppID、合法域名、微信登录、开发者工具上传、真机与客户验收仍是外部步骤，本轮不冒充完成微信体验版发布。作者原件 `hi.md` 保持未修改、未跟踪。
+
 > ## 🎨 管理后台首页正式化视觉收尾（2026-08-18 第九十三轮 · 基线 `main@c0d2309`，未提交）
 > 在上一轮去掉患者 Web 入口、正式化小程序首页和后台文案的基础上，继续处理作者指出的“首页像试用版”问题：管理后台首页新增内容运营/小程序同步主视觉、准备—校验—发布链路、服务端同步标识和三段式发布说明；保留原有四项服务端统计，不新增业务接口、不改变报价范围、权限或医学规则。样式单独落在 `src/web/src/admin/overview.css`，通过后台入口加载，便于后续独立调整而不污染患者 Web 样式。
 > `npm run typecheck`、`node scripts/check-miniprogram.mjs`、`npm run build`、小程序窄测 9/9、真实浏览器 E2E 和 `git diff --check` 均通过；浏览器连接本轮无法提供可视截图，但 E2E 已实际加载新管理构建并完成登录、后台内容全生命周期回归。未提交、未推送、未部署，`hi.md` 未修改。
