@@ -1,0 +1,16 @@
+<view class="page detail-page">
+  <view wx:if="{{loading}}" class="empty-box">正在读取内容…</view>
+  <view wx:if="{{error}}" class="error-box">{{error}}</view>
+  <view wx:if="{{item}}">
+    <video wx:if="{{kind === 'video' && mediaUrl}}" class="video" src="{{mediaUrl}}" poster="{{coverUrl}}" controls show-center-play-btn />
+    <image wx:elif="{{coverUrl}}" class="cover" src="{{coverUrl}}" mode="aspectFill" />
+    <view class="article card">
+      <view class="category">{{item.category}} · {{kind === 'video' ? '操作视频' : '科普文章'}}</view>
+      <view class="title">{{item.title}}</view>
+      <view class="source">来源：{{item.source}}</view>
+      <view class="summary">{{item.summary}}</view>
+      <view wx:if="{{item.body}}" class="body">{{item.body}}</view>
+      <view class="disclaimer">{{item.disclaimer}}</view>
+    </view>
+  </view>
+</view>

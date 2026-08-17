@@ -1,7 +1,8 @@
 # 抗敏先锋 CLI-first 主实现
 
 `src/` 是抗敏先锋当前主实现。它以同一组应用服务为核心，交付患者 CLI
-`kangmin`、管理 CLI `kangmin-admin`、HTTP 命令服务和患者 Web 薄壳，并
+`kangmin`、管理 CLI `kangmin-admin`、HTTP 命令服务、患者 Web 薄壳和原生微信小程序
+非智能体薄壳，并
 提供 SQLite/PostgreSQL、文件系统/S3、DeepSeek 和通义千问等可替换适配器。
 
 本文件描述当前可执行实现，不是生产就绪声明。开始修改前先读仓库根目录的
@@ -28,6 +29,7 @@
 | 管理 CLI | 已实现 `content`、`agent`、`users`、`auth` 四组 | 高影响命令要求 `--yes` |
 | HTTP 命令服务 | 已实现患者/管理分路、协议校验、超时、限流和结构化日志 | 正式身份与真实环境数据供应商尚未接入 |
 | 患者 Web | 已实现 Vite + React 薄壳并调用真实命令协议 | 仍是 demo，部分账户和评估 UI 为简化形态 |
+| 患者微信小程序 | 已实现首页、症状记录、日历趋势、文章与视频的原生薄壳 | 微信身份尚未配置；问助手与原生消息不在本轮实现范围 |
 | 数据库 | SQLite 本地模式与 PostgreSQL 适配器均已实现 | staging/production 禁止回退 SQLite |
 | 对象存储 | 本地文件系统与 S3 兼容后端均已实现 | staging/production 必须使用 S3 后端 |
 | 临床规则 | 确定性规则链和输出校验已实现 | 默认规则包 `clinical-rules-v3` 为 `approved`；测试仍覆盖 `candidate` 阻断 |
@@ -56,6 +58,18 @@ TypeScript 类型检查
 → Node 单元/集成/E2E 测试
 → Playwright 浏览器 E2E
 ```
+
+### 打开原生微信小程序
+
+使用微信开发者工具导入绝对路径
+`/Users/chenqiqiang/work/kangmin/src/miniprogram`。仓库不保存真实 AppID 或
+AppSecret：`project.config.json` 的 `appid` 保持为空，首次导入时由开发者工具在本机选择
+测试号或已获授权的 AppID；AppSecret 只允许留在服务端。
+
+当前配置只连接公开 Web 试用地址，微信登录显式关闭。因此文章、视频等公共内容可以联调，
+症状、日历等患者私有能力会明确提示“微信登录尚未配置”，不会伪造用户，也不会发送身份
+请求。`urlCheck: false` 仅用于本地开发者工具调试；正式联调仍需客户小程序账号、合法 HTTPS
+业务域名和服务端微信登录配置。
 
 构建完成后的入口：
 

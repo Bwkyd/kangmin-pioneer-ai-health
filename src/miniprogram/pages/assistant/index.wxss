@@ -1,0 +1,13 @@
+.assistant-page { padding-right: 0; padding-left: 0; }
+.safety-banner { display: flex; align-items: center; gap: 16rpx; margin: 0 24rpx; padding: 16rpx 20rpx; border: 2rpx solid #d7e5f5; border-radius: 20rpx; background: #eef5fd; }
+.safety-banner > view:first-child { display: flex; width: 42rpx; height: 42rpx; align-items: center; justify-content: center; border-radius: 50%; color: #fff; background: #1e5aa3; font-weight: 700; }
+.safety-banner > view:last-child { display: flex; flex-direction: column; }
+.safety-banner > view:last-child text:first-child { font-size: 22rpx; font-weight: 700; }
+.safety-banner > view:last-child text:last-child { margin-top: 3rpx; color: #739087; font-size: 18rpx; }
+.chat-toolbar { display: flex; justify-content: space-between; padding: 14rpx 26rpx 0; color: #526d8b; font-size: 18rpx; }
+.chat-toolbar text { padding: 10rpx 14rpx; border: 2rpx solid #d7e5f5; border-radius: 15rpx; background: #fff; }
+.assistant-content { display: flex; padding: 50rpx 52rpx; flex-direction: column; align-items: center; text-align: center; }
+.assistant-content image { width: 176rpx; }
+.assistant-title { margin-top: 24rpx; color: #173d70; font-family: STSong, "Songti SC", serif; font-size: 32rpx; font-weight: 700; }
+.assistant-copy { margin-top: 14rpx; color: #718096; font-size: 21rpx; line-height: 1.75; }
+.suggestion { display: flex; width: 100%; box-sizing: border-box; margin-top: 30rpx; padding: 20rpx 22rpx; justify-content: space-between; border: 2rpx solid #dce6f2; border-radius: 20rpx; color: #1e5aa3; background: #fff; font-weight: 700; }

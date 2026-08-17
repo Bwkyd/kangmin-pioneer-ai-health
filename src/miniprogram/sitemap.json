@@ -1,0 +1,4 @@
+{
+  "desc": "抗敏先锋患者端页面",
+  "rules": [{ "action": "allow", "page": "*" }]
+}

@@ -1,0 +1,26 @@
+.assessment-intro { display: flex; align-items: center; gap: 20rpx; padding: 6rpx 8rpx 24rpx; }
+.assessment-intro > view:first-child { display: flex; width: 82rpx; height: 82rpx; flex-direction: column; align-items: center; justify-content: center; border-radius: 26rpx; color: #fff; background: #1e5aa3; text-align: center; font-size: 19rpx; font-weight: 700; line-height: 1.25; }
+.assessment-intro > view:last-child { display: flex; flex-direction: column; }
+.assessment-intro > view:last-child text:first-child { color: #d2a43a; font-size: 14rpx; font-weight: 700; }
+.assessment-intro > view:last-child text:nth-child(2) { margin: 4rpx 0; color: #172b45; font-family: STSong, serif; font-size: 29rpx; font-weight: 700; }
+.assessment-intro > view:last-child text:last-child { color: #86958f; font-size: 16rpx; }
+.allergy-calendar { padding: 27rpx; border: 2rpx solid #dce6f2; border-radius: 31rpx; background: #fff; box-shadow: 0 12rpx 34rpx rgba(18,59,115,.055); }
+.calendar-top { display: flex; align-items: center; justify-content: space-between; }
+.calendar-top > view:first-child { display: flex; flex-direction: column; }
+.calendar-top > view:first-child text:first-child { color: #172b45; font-size: 26rpx; font-weight: 700; }
+.calendar-top > view:first-child text:last-child { margin-top: 4rpx; color: #8b9994; font-size: 16rpx; }
+.calendar-top > view:last-child { padding: 12rpx 17rpx; border-radius: 30rpx; color: #61766f; background: #f1f4f2; font-size: 18rpx; }
+.month-switch { display: grid; grid-template-columns: 58rpx 1fr 58rpx; align-items: center; margin: 30rpx 0 17rpx; text-align: center; }
+.month-switch text:first-child,.month-switch text:last-child { color: #1e5aa3; font-size: 41rpx; }.month-switch text:nth-child(2) { font-size: 29rpx; font-weight: 700; }
+.week-row,.calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 8rpx; }
+.week-row { margin-bottom: 10rpx; }.week-row text { padding: 8rpx 0; color: #95a09c; text-align: center; font-size: 18rpx; }
+.day { position: relative; display: flex; height: 69rpx; align-items: center; justify-content: center; border-radius: 20rpx; color: #556861; font-size: 20rpx; }
+.day.muted { color: #c7cfcc; }.day.good { color: #5f726a; background: #edf1ef; font-weight: 700; }.day.mild { color: #7d5c13; background: #ffe087; font-weight: 700; }.day.moderate { color: #fff; background: #f5a955; font-weight: 700; }.day.severe { color: #fff; background: #de6b55; font-weight: 700; }
+.day.today::after { content: ""; position: absolute; left: 50%; bottom: 4rpx; width: 7rpx; height: 7rpx; border-radius: 50%; background: #1e5aa3; transform: translateX(-50%); }
+.calendar-legend { display: flex; justify-content: center; gap: 20rpx; margin-top: 19rpx; padding-top: 17rpx; border-top: 2rpx solid #edf0ee; }
+.calendar-legend > view { display: flex; align-items: center; gap: 6rpx; color: #7f9089; font-size: 15rpx; }.calendar-legend > view > view { width: 12rpx; height: 12rpx; border-radius: 5rpx; background: #edf1ef; }.calendar-legend .mild { background:#ffe087; }.calendar-legend .moderate { background:#f5a955; }.calendar-legend .severe { background:#de6b55; }
+.inline-error { margin-top: 16rpx; color: #a04436; font-size: 17rpx; }
+.trend-card { margin-top: 18rpx; padding: 24rpx; border: 2rpx solid #dce6f2; border-radius: 29rpx; background: #fff; box-shadow: 0 12rpx 34rpx rgba(18,59,115,.055); }
+.trend-title { display: flex; align-items: flex-start; justify-content: space-between; }.trend-title > view { display:flex; flex-direction:column; }.trend-title > view text:first-child { color:#8b9994; font-size:17rpx; }.trend-title > view text:last-child { margin-top:5rpx; color:#172b45; font-size:24rpx; font-weight:700; }.trend-title > text { padding:7rpx 12rpx; border-radius:14rpx; color:#a96a30; background:#f6efe6; font-size:15rpx; }
+.trend-chart { display: flex; min-height: 270rpx; align-items: flex-end; gap: 12rpx; padding-top: 26rpx; overflow-x: auto; border-bottom: 2rpx solid #edf1f5; }.trend-column { display:flex; flex:0 0 42rpx; flex-direction:column; align-items:center; justify-content:flex-end; }.trend-column > text:first-child { margin-bottom:5rpx; color:#1e5aa3; font-size:15rpx; }.trend-column > view { width:26rpx; min-height:8rpx; border-radius:10rpx 10rpx 0 0; background:#1e5aa3; }.trend-column > text:last-child { margin-top:7rpx; color:#8998a7; font-size:13rpx; writing-mode:vertical-rl; }
+.empty-state { padding: 60rpx 0; color: #94a1ad; text-align: center; font-size: 18rpx; }.chart-legend { display:flex; justify-content:space-between; margin-top:14rpx; color:#9aa6a2; font-size:15rpx; }.chart-legend > view { display:flex; align-items:center; color:#5f756d; }.chart-legend > view > view { width:11rpx; height:11rpx; margin-right:6rpx; border-radius:50%; background:#1e5aa3; }

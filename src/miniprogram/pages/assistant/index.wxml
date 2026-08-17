@@ -1,0 +1,13 @@
+<view class="page assistant-page">
+  <view class="safety-banner">
+    <view>库</view>
+    <view><text>安全评估与方案建议</text><text>固定规则优先 · 暂无有效评估</text></view>
+  </view>
+  <view class="chat-toolbar"><text>☰ 历史对话</text><text>＋ 新建聊天</text></view>
+  <view class="assistant-content">
+    <image src="/assets/assistant-mascot-static.png" mode="widthFix" />
+    <text class="assistant-title">问助手路线等待确认</text>
+    <text class="assistant-copy">本轮先对齐 Web 的原生页面。智能辨证、规则解释和受控追问仍复用服务端确定性规则，不由小程序自行判断证型。</text>
+    <view class="suggestion" bindtap="goCalendar"><text>先记录今天的症状</text><text>→</text></view>
+  </view>
+</view>
