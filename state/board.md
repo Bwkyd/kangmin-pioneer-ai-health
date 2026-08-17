@@ -3,6 +3,12 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 知识库编辑改为内嵌表单并部署 Web 试用环境（2026-08-17 第八十四轮 · 提交 `bd78951`，PR #210）
+> 按作者“优先低难度、低客户依赖事项”的取舍，收口上一轮唯一 P3：管理 Web 不再连续弹出三个 `prompt` 收集知识名称、分类和来源，改为同页内嵌表单。取消编辑不写入，纯空白名称在表单内明确提示，保存失败时保留当前输入；知识状态从英文内部枚举改为“待建索引、已建索引、已启用、已停用、索引失败”。删除仍保留二次确认，分类继续自由文本，不擅自发明客户未确认的分类体系。
+> 浏览器 E2E 已从自动接受三次弹窗改为真实填写表单，覆盖打开、取消不保存、空白校验、名称/分类/来源更新、刷新回显，以及索引、启用、停用的中文状态变化。`cd src && npm run check` 全绿，包含类型、架构、全量 Node 测试和真实浏览器 E2E；清单与 `git diff --check` 通过。结构检查仍只被任务前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名拦截，本轮未修改作者过程材料。
+> `km-review` 三视角复核 P0/P1/P2 为 0，详见 `docs/reviews/006_knowledge-inline-edit-review.md`。代码提交 `bd78951` 的 gitleaks 扫描无发现，生产依赖审计为 0；草稿 PR #210 首轮 `quality` 与 `image` 双门禁通过后才进入部署。制品 SHA-256 为 `e6172ced718a51d7621309b99c5e5e582c84524c7f9b699d52c8aac385de011d`，8788 + 线上 SQLite 在线备份副本预检通过；切换前备份 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260817-132722-before-knowledge-inline-bd78951.sqlite`，随后原子部署至 `/srv/kangmin-cli/releases/knowledge-inline-bd78951`，旧 release 保留回滚。
+> 公网 `/live`、患者页、管理页和新管理 JS 均为 200，管理 JS 与本地构建哈希一致；应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`。`/ready` 仍只因试用环境既有 encryption 未配置返回 503。本轮没有修改患者页面、知识正文、检索/启用门禁、模型、问卷、证型、分期、方案或临床 truth；智能体科普路线继续冻结等待客户拍板，作者原件 `hi.md` 保持未修改、未跟踪。
+
 > ## 🚀 非智能体报价闭环已合并并部署 Web 试用环境（2026-08-17 第八十三轮 · 合并 `bad463b`，PR #208）
 > 作者授权发车后，将第八十二轮成果拆为调研、代码和验收三个提交推送至 `agent/non-agent-quotation-closure`。三提交的 gitleaks 扫描无发现；PR #208 的 `quality` 与 `image` 两项 CI 均成功，转为可评审后 squash 合并到 `main@bad463b`，任务分支提交树与合并提交树一致。GitHub 连接器创建 PR 返回 403 后，按发布流程改用已认证 `gh` 完成同一仓库操作，没有绕过门禁或直推 `main`。
 > 合并构建制品 SHA-256 为 `b701cf6570e19ddca376a8755bc445f9a5c34a060879e8884dc6be18b750d6cd`。新 release 在 8788 使用线上 SQLite 在线备份副本完成患者页、管理页、21 项迁移和 `quick_check=ok` 预检；随后短暂停服并备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260817-130359-before-non-agent-closure-bad463b.sqlite`，原子切换至 `/srv/kangmin-cli/releases/non-agent-closure-bad463b`，旧 `assistant-mascot-fix-12ed9fa` 完整保留回滚。

@@ -118,3 +118,11 @@
   并原子切换，旧 release 保留回滚。公网患者页、管理页及两端主 JS 与本地合并构建哈希一致，
   应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`；当前无可连接图形浏览器，未声称
   完成本轮公网 UI 目测。`/ready` 仍只因试用环境既有 encryption 未配置返回 503。
+- 2026-08-17 将知识库内嵌编辑提交 `bd78951` 构建并部署为
+  `/srv/kangmin-cli/releases/knowledge-inline-bd78951`。制品 SHA-256 为
+  `e6172ced718a51d7621309b99c5e5e582c84524c7f9b699d52c8aac385de011d`；先在 8788 使用线上
+  SQLite 在线备份副本预检患者页、管理页、新管理 JS、21 项迁移与 `quick_check=ok`，再停服
+  备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260817-132722-before-knowledge-inline-bd78951.sqlite`
+  并原子切换，旧 release 保留回滚。公网患者页、管理页和新管理 JS 均为 200，管理 JS 与
+  本地构建哈希一致；应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`。真实浏览器
+  E2E 已在本地覆盖知识编辑完整路径；`/ready` 仍只因试用环境既有 encryption 未配置返回 503。
