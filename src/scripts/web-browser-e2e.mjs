@@ -274,6 +274,16 @@ try {
     page.getByTestId("calendar-list"),
     "喷嚏 2 · 流涕 1 · 鼻塞 3 · 鼻痒 1"
   );
+  const symptomTrend = page.getByLabel("本月过敏严重程度趋势图");
+  await symptomTrend.waitFor({ state: "visible" });
+  await page.waitForFunction(() => {
+    const canvas = document.querySelector('canvas[aria-label="本月过敏严重程度趋势图"]');
+    if (!(canvas instanceof HTMLCanvasElement) || canvas.width === 0 || canvas.height === 0) return false;
+    const context = canvas.getContext("2d");
+    if (context === null) return false;
+    return context.getImageData(0, 0, canvas.width, canvas.height).data.some((value, index) => index % 4 === 3 && value > 0);
+  });
+  await expectText(page.locator(".trend-card"), "仅根据用户主动保存的症状记录展示，不代表诊断");
 
   // ---- 首页/我的统计（record overview）：保存后显示真值 ----
   // 今天一条症状记录（TNSS 7）：连续 1 天、本月 1 次、最近评估 TNSS 7/12。
@@ -683,6 +693,12 @@ try {
   await articleForm.getByRole("button", { name: "保存草稿" }).click();
   const articleRow = adminPage.locator("tbody tr", { hasText: "后台发布闭环测试文章" });
   await articleRow.waitFor({ state: "visible" });
+  await articleRow.getByRole("button", { name: "编辑" }).click();
+  await articleForm.getByLabel("摘要").fill("编辑后用于确认管理后台发布和下架真实生效");
+  await articleForm.getByLabel("正文").fill("这是由管理后台编辑并保存的客户试用内容。");
+  await articleForm.getByRole("button", { name: "保存草稿" }).click();
+  await expectText(adminPage.getByRole("status"), "文章已保存");
+  await expectText(articleRow, "编辑后用于确认");
   await articleRow.getByRole("button", { name: "校验" }).click();
   await expectText(adminPage.getByRole("status"), "校验通过");
   await articleRow.getByRole("button", { name: "发布" }).click();
@@ -694,7 +710,10 @@ try {
   await patientCheckPage.locator(".learn-module").click();
   await patientCheckPage.getByTestId("discover-view").waitFor({ state: "visible" });
   await patientCheckPage.locator(".discover-tabs button", { hasText: "科普文章" }).click();
-  await patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" }).waitFor({ state: "visible" });
+  const editedArticleCard = patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" });
+  await editedArticleCard.waitFor({ state: "visible" });
+  await editedArticleCard.click();
+  await expectText(patientCheckPage.getByTestId("discover-detail"), "管理后台编辑并保存");
 
   await adminPage.bringToFront();
   const publishedRow = adminPage.locator("tbody tr", { hasText: "后台发布闭环测试文章" });
@@ -707,6 +726,43 @@ try {
   await patientCheckPage.locator(".discover-tabs button", { hasText: "科普文章" }).click();
   assert.equal(await patientCheckPage.locator(".discover-grid article", { hasText: "后台发布闭环测试文章" }).count(), 0);
   await patientCheckPage.close();
+
+  await adminPage.getByTestId("admin-nav-message").click();
+  await adminPage.getByRole("button", { name: "新建消息" }).click();
+  const messageForm = adminPage.locator(".content-form");
+  await messageForm.getByLabel("标题").fill("换季鼻健康提醒");
+  await messageForm.getByLabel("摘要").fill("后台到患者端站内消息闭环");
+  await messageForm.getByLabel("正文").fill("请按需查看已发布的鼻健康科普内容。");
+  await messageForm.getByRole("button", { name: "保存草稿" }).click();
+  const messageRow = adminPage.locator("tbody tr", { hasText: "换季鼻健康提醒" });
+  await messageRow.waitFor({ state: "visible" });
+  await messageRow.getByRole("button", { name: "编辑" }).click();
+  await messageForm.getByLabel("摘要").fill("编辑后的后台到患者端站内消息闭环");
+  await messageForm.getByRole("button", { name: "保存草稿" }).click();
+  await expectText(adminPage.getByRole("status"), "站内消息已保存");
+  await expectText(messageRow, "编辑后的后台到患者端");
+  await messageRow.getByRole("button", { name: "发布" }).click();
+  await expectText(adminPage.getByRole("status"), "登录用户现在可见");
+
+  const messageCheckPage = await context.newPage();
+  await messageCheckPage.goto(origin);
+  await messageCheckPage.locator(".bottom-nav button", { hasText: "我的" }).click();
+  await messageCheckPage.getByRole("button", { name: /消息中心/u }).click();
+  const patientMessage = messageCheckPage.locator(".message-list button", { hasText: "换季鼻健康提醒" });
+  await patientMessage.waitFor({ state: "visible" });
+  await patientMessage.click();
+  await expectText(messageCheckPage.locator(".message-detail"), "请按需查看已发布的鼻健康科普内容");
+  await messageCheckPage.getByRole("button", { name: "返回消息列表" }).click();
+  assert.equal(await messageCheckPage.locator(".message-dot.read").count(), 1, "打开消息后应保存患者级已读状态");
+
+  await adminPage.bringToFront();
+  await adminPage.locator("tbody tr", { hasText: "换季鼻健康提醒" }).getByRole("button", { name: "下架" }).click();
+  await expectText(adminPage.getByRole("status"), "消息已下架");
+  await messageCheckPage.reload();
+  await messageCheckPage.locator(".bottom-nav button", { hasText: "我的" }).click();
+  await messageCheckPage.getByRole("button", { name: /消息中心/u }).click();
+  assert.equal(await messageCheckPage.locator(".message-list button", { hasText: "换季鼻健康提醒" }).count(), 0);
+  await messageCheckPage.close();
 
   await adminPage.getByTestId("admin-nav-media").click();
   await adminPage.getByLabel("选择素材").setInputFiles({
@@ -733,6 +789,12 @@ try {
   await videoForm.getByRole("button", { name: "保存草稿" }).click();
   const videoRow = adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" });
   await videoRow.waitFor({ state: "visible" });
+  await videoRow.getByRole("button", { name: "编辑" }).click();
+  await videoForm.getByLabel("摘要").fill("编辑后的客户试用版视频发布闭环");
+  await videoForm.getByLabel("视频说明").fill("这是编辑后的日常鼻腔护理步骤，实际操作请遵循专业人员指导。");
+  await videoForm.getByRole("button", { name: "保存草稿" }).click();
+  await expectText(adminPage.getByRole("status"), "视频已保存");
+  await expectText(videoRow, "编辑后的客户试用版");
   await videoRow.getByRole("button", { name: "校验" }).click();
   await expectText(adminPage.getByRole("status"), "校验通过");
   await videoRow.getByRole("button", { name: "发布" }).click();
@@ -744,7 +806,7 @@ try {
   const publishedVideoCard = videoCheckPage.locator(".discover-video-list article", { hasText: "抗敏要穴之迎香穴" });
   await publishedVideoCard.waitFor({ state: "visible" });
   await publishedVideoCard.click();
-  await expectText(videoCheckPage.getByTestId("discover-detail"), "演示日常鼻腔护理步骤");
+  await expectText(videoCheckPage.getByTestId("discover-detail"), "这是编辑后的日常鼻腔护理步骤");
   assert.equal(await videoCheckPage.locator(".discover-detail-video").count(), 1);
   await videoCheckPage.close();
   await adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" }).getByRole("button", { name: "下架" }).click();
@@ -759,18 +821,39 @@ try {
   await adminPage.getByRole("button", { name: "上传知识" }).click();
   const knowledgeRow = adminPage.locator("tbody tr", { hasText: "browser-guide.md" });
   await knowledgeRow.waitFor({ state: "visible" });
-  await knowledgeRow.getByRole("button", { name: "建立索引" }).click();
+  const promptValues = ["鼻健康清洁指南", "日常防护", "客户试用资料·已复核"];
+  let promptIndex = 0;
+  const acceptKnowledgePrompts = async (dialog) => {
+    assert.equal(dialog.type(), "prompt");
+    await dialog.accept(promptValues[promptIndex]);
+    promptIndex += 1;
+  };
+  adminPage.on("dialog", acceptKnowledgePrompts);
+  await knowledgeRow.getByRole("button", { name: "编辑" }).click();
+  await expectText(adminPage.getByRole("status"), "知识资料已更新");
+  adminPage.off("dialog", acceptKnowledgePrompts);
+  assert.equal(promptIndex, 3, "知识更新应完整收集名称、分类和来源");
+  const updatedKnowledgeRow = adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南" });
+  await expectText(updatedKnowledgeRow, "日常防护");
+  await expectText(updatedKnowledgeRow, "客户试用资料·已复核");
+  await updatedKnowledgeRow.getByRole("button", { name: "建立索引" }).click();
   await expectText(adminPage.getByRole("status"), "索引已建立");
-  await adminPage.locator("tbody tr", { hasText: "browser-guide.md" }).getByRole("button", { name: "启用" }).click();
+  await updatedKnowledgeRow.getByRole("button", { name: "启用" }).click();
   await expectText(adminPage.getByRole("status"), "知识已启用");
   await adminPage.getByPlaceholder("输入客户可能询问的问题").fill("保持室内清洁");
   await adminPage.getByRole("button", { name: "测试检索" }).click();
   await expectText(adminPage.locator(".search-results"), "保持室内清洁");
+  await updatedKnowledgeRow.getByRole("button", { name: "停用" }).click();
+  await expectText(adminPage.getByRole("status"), "知识已停用");
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await updatedKnowledgeRow.getByRole("button", { name: "删除" }).click();
+  await expectText(adminPage.getByRole("status"), "知识资料已删除");
+  assert.equal(await adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南" }).count(), 0);
   await adminPage.reload();
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
   await adminPage.close();
   process.stdout.write(
-    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication reload restart discover overview-stats chat-exec plan-dialogue-follow-up admin-cookie article-publish-unpublish video-upload-publish-unpublish knowledge-upload-index-search\n"
+    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication calendar-trend reload restart discover overview-stats chat-exec plan-dialogue-follow-up admin-cookie article-edit-publish-unpublish message-edit-publish-read-unpublish video-upload-edit-publish-unpublish knowledge-upload-update-index-search-disable-delete\n"
   );
 } finally {
   if (isolatedContext !== undefined) {
