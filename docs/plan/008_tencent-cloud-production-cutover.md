@@ -134,3 +134,11 @@
   `miniprogram-admin-7eb9323` 保留回滚。公网 `/live`、`/admin` 和新管理 bundle 均回读通过，
   应用/Nginx active、`NRestarts=0`；`/ready` 仍只因试用环境既有 encryption 未配置返回 503，
   不扩大为正式生产就绪或客户验收。
+- 2026-08-18 根据截图继续收口管理后台可见文案，PR #224 将导航分组改为
+  `内容运营`、`消息与素材`，PR #226 将工作台和四类管理页面的残留内部“报价/交付”话术改为
+  运营任务语言；PR #226 squash 合并为 `main@5ffa49d`，部署 release
+  `/srv/kangmin-cli/releases/admin-copy-cleanup-5ffa49d`。
+- 本次切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260818-192108-before-admin-copy-cleanup.sqlite`，
+  预检与切换后 `quick_check=ok`、服务 active、`NRestarts=0`，公网 `/live`、`/admin` 均为
+  200，旧 release 保留回滚；PR #227 只补充状态与复核文档，不产生新的运行时部署。
