@@ -3,11 +3,12 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
-> ## 🎨 管理后台导航分组名称收口（2026-08-18 第105轮 · 基线 `main@f7125d8`，状态未提交）
+> ## 🎨 管理后台导航分组名称收口（2026-08-18 第105轮 · PR #224，合并 `f5d53a7`，已部署）
 > 根据作者截图反馈，将侧栏内部交付语 `报价交付`、`配套管理` 改为用户可理解的 `内容运营`、`消息与素材`；仅调整导航文案，文章、视频、知识库、站内消息、素材库的路由、权限和服务端命令不变。
 > 新增真实浏览器 E2E 文案回归；`cd src && npm run check` 通过：类型检查、架构检查、小程序检查、构建、355 项 Node 测试（279 通过、76 因未配置 PostgreSQL/S3 跳过）及浏览器 E2E 全部通过。首次回归因移动视口下分组标签被 CSS 隐藏而误用 `visible` 断言，已改为精确读取导航 DOM 文案，不改变产品行为。
+> 合并后的 `main@f5d53a7` 已发布为 `/srv/kangmin-cli/releases/admin-nav-labels-f5d53a7`；切换前完成 SQLite 备份并校验 `quick_check=ok`，服务、内部与公网 `/live`、`/admin` 均正常，旧 release 保留可回滚。公网 `/ready=503` 仍是既有未配置生产加密密钥限制。
 
-> ## 🔐 云端试用管理员账号重置（2026-08-18 第104轮 · 基线 `main@f7125d8`，状态未提交）
+> ## 🔐 云端试用管理员账号重置（2026-08-18 第104轮 · 已记录于 `f5d53a7`）
 > 按作者要求为当前腾讯云 Web 试用环境创建可登录管理员：将原本只有开发占位密码的 `context-knowledge-seed` 主管理员账号改为 `kangmin-admin`，保留 `owner` / active 权限；未把密码写入仓库、状态文件或服务器环境文件。
 > 操作前通过 SQLite 在线备份生成 `/srv/kangmin-cli/backups/kangmin-mvp-20260818-103546-before-admin-credentials-reset.sqlite`；更新密码哈希、递增账号 revision、撤销该账号旧会话，并写入 `admin.password_reset` 系统审计事件。回读确认密码状态为 configured、账号为 owner/active、数据库 `quick_check=ok`。
 > 使用公网 `/v1/admin/session` 同源请求验证新账号登录返回 200；当前一次性密码仅通过本次交付消息提供，作者首次登录后应在安全渠道轮换。未重启服务，未修改业务内容或医学规则。
