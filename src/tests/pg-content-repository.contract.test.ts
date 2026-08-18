@@ -383,7 +383,8 @@ if (databaseUrl === undefined) {
     assert.deepEqual(observed, {
       category: { status: "active", kind: "article" },
       coverMedia: { found: true, status: "ready", kind: "image" },
-      media: { found: true, status: "processing", kind: "video" }
+      media: { found: true, status: "processing", kind: "video" },
+      bodyMedia: []
     });
     // validation_failed 整体回滚：行保持 draft。
     assert.equal((await adminRepo.find("article", "c6"))?.status, "draft");

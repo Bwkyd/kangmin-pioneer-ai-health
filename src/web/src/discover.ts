@@ -24,6 +24,8 @@ export interface PublicContent {
   mediaUrl: string | null;
   publishedAt: string;
   updatedAt: string;
+  instructions: string;
+  precautions: string;
   disclaimer: string;
 }
 

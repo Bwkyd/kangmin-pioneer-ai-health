@@ -409,6 +409,8 @@ test("方案关联视频校验：不存在或未发布的视频不能启用", as
           summary: "视频简介",
           body: "视频正文简介。",
           source: "来源",
+          instructions: "操作前确认环境安全，并按视频步骤进行。",
+          precautions: "出现不适立即停止，并咨询专业人员。",
           mediaId: media.id
         }
       })
@@ -472,6 +474,8 @@ test("方案启用走事务路径：启用前视频被下架 → enablePlan 拒�
           summary: "视频简介",
           body: "视频正文简介。",
           source: "来源",
+          instructions: "操作前确认环境安全，并按视频步骤进行。",
+          precautions: "出现不适立即停止，并咨询专业人员。",
           mediaId: media.id
         }
       })

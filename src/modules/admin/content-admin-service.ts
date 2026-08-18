@@ -9,6 +9,7 @@ import type {
   PublishGuardState,
   UpdateGuardedResult
 } from "./content-admin-repository.js";
+import { mediaIdsInContentBody } from "../content-body-references.js";
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");
@@ -418,6 +419,16 @@ export class ContentAdminService {
         missing.push("视频文件类型不符");
       }
     }
+    for (const mediaId of mediaIdsInContentBody(item.body)) {
+      const media = await this.aux.findMedia(mediaId);
+      if (media === null) {
+        missing.push("正文引用的素材不存在");
+      } else if (media.status !== "ready") {
+        missing.push(
+          media.status === "disabled" ? "正文引用的素材已停用" : "正文引用的素材未就绪"
+        );
+      }
+    }
     return missing;
   }
 
@@ -439,6 +450,10 @@ export class ContentAdminService {
     }
     if (item.kind === "video" && item.mediaId === null) {
       missing.push("视频文件");
+    }
+    if (item.kind === "video") {
+      if (item.instructions.trim() === "") missing.push("操作提示");
+      if (item.precautions.trim() === "") missing.push("注意事项");
     }
     return missing;
   }
@@ -479,6 +494,15 @@ export class ContentAdminService {
         );
       } else if (videoFile && media.kind !== "video") {
         missing.push("视频文件类型不符");
+      }
+    }
+    for (const media of state.bodyMedia) {
+      if (!media.found) {
+        missing.push("正文引用的素材不存在");
+      } else if (media.status !== "ready") {
+        missing.push(
+          media.status === "disabled" ? "正文引用的素材已停用" : "正文引用的素材未就绪"
+        );
       }
     }
     return missing;

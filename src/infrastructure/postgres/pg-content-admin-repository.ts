@@ -11,6 +11,7 @@ import type {
   UpdateContentItemResult,
   UpdateGuardedResult
 } from "../../modules/admin/content-admin-repository.js";
+import { mediaIdsInContentBody } from "../../modules/content-body-references.js";
 import { KangminPgDatabase } from "./pg-database.js";
 import { runPgIdempotentCreate } from "./pg-idempotency.js";
 
@@ -358,10 +359,14 @@ export class PgContentAdminRepository implements ContentAdminRepository {
         ? { found: false }
         : { found: true, status: row.status, kind: row.kind };
     };
+    const bodyMedia = (await Promise.all(
+      mediaIdsInContentBody(item.body).map((mediaId) => mediaState(mediaId))
+    )).filter((media): media is PublishMediaState => media !== null);
     return {
       category: categoryRow ?? null,
       coverMedia: await mediaState(item.coverMediaId),
-      media: await mediaState(item.mediaId)
+      media: await mediaState(item.mediaId),
+      bodyMedia
     };
   }
 

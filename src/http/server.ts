@@ -405,6 +405,16 @@ function routeNotFound(response: ServerResponse): void {
  */
 const MEDIA_ID_PATTERN = /^med_[0-9a-f]{12}$/;
 
+function mediaIdFromPath(pathname: string, prefix: string): string | null {
+  let mediaId: string;
+  try {
+    mediaId = decodeURIComponent(pathname.slice(prefix.length));
+  } catch {
+    return null;
+  }
+  return MEDIA_ID_PATTERN.test(mediaId) ? mediaId : null;
+}
+
 /**
  * 公开媒体路由（GET /v1/media/:id，媒体交付链 issue-151）：不套命令
  * 信封，直接发字节流；公开范围门禁（仅 published 内容引用）与素材
@@ -417,13 +427,8 @@ async function mediaAsset(
   application: KangminApplication,
   pathname: string
 ): Promise<void> {
-  let mediaId: string;
-  try {
-    mediaId = decodeURIComponent(pathname.slice("/v1/media/".length));
-  } catch {
-    mediaId = "";
-  }
-  if (!MEDIA_ID_PATTERN.test(mediaId)) {
+  const mediaId = mediaIdFromPath(pathname, "/v1/media/");
+  if (mediaId === null) {
     routeNotFound(response);
     return;
   }
@@ -456,6 +461,43 @@ async function mediaAsset(
         )
       )
     );
+  }
+}
+
+/**
+ * 管理端患者效果预览媒体：只接受已登录管理员会话，不参与患者公开媒体门禁。
+ * 响应不缓存，避免把草稿素材留在共享缓存中。
+ */
+async function adminPreviewMediaAsset(
+  response: ServerResponse,
+  adminApplication: KangminAdminApplication | undefined,
+  pathname: string,
+  adminTokenValue: string | undefined,
+  requestId?: string
+): Promise<void> {
+  const mediaId = mediaIdFromPath(pathname, "/v1/admin/media/");
+  if (mediaId === null || adminApplication === undefined) {
+    routeNotFound(response);
+    return;
+  }
+  try {
+    const media = await adminApplication.getMediaPreview(adminTokenValue, mediaId);
+    if (media === null) {
+      routeNotFound(response);
+      return;
+    }
+    if (response.writableEnded) return;
+    response.statusCode = 200;
+    response.setHeader("content-type", media.contentType);
+    response.setHeader("content-length", media.body.length);
+    response.setHeader("cache-control", "private, no-store");
+    response.setHeader("x-content-type-options", "nosniff");
+    response.setHeader("referrer-policy", "no-referrer");
+    response.setHeader("x-frame-options", "DENY");
+    response.end(media.body);
+  } catch (error) {
+    const result = failure("admin media preview", error, requestId);
+    json(response, httpStatusForCode(result.error.code), result);
   }
 }
 
@@ -830,6 +872,20 @@ export function createKangminHttpServer(
         webRoot,
         filename,
         staticContentType(filename)
+      );
+      return;
+    }
+
+    if (
+      request.method === "GET" &&
+      requestUrl.pathname.startsWith("/v1/admin/media/")
+    ) {
+      await adminPreviewMediaAsset(
+        response,
+        options.adminApplication,
+        requestUrl.pathname,
+        cookie(request, ADMIN_SESSION_COOKIE),
+        requestId
       );
       return;
     }

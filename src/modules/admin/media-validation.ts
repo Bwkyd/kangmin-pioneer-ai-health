@@ -35,6 +35,51 @@ export const MEDIA_MIME: Record<MediaKind, string> = {
   markdown: "text/markdown"
 };
 
+const SERVABLE_CONTENT_TYPES = new Set([
+  "image/jpeg",
+  "image/png",
+  "image/webp",
+  "image/gif",
+  "video/mp4",
+  "video/webm",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/markdown"
+]);
+
+const EXTENSION_CONTENT_TYPES: Record<string, string> = {
+  mp4: "video/mp4",
+  webm: "video/webm",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  md: "text/markdown; charset=utf-8",
+  markdown: "text/markdown; charset=utf-8",
+  txt: "text/plain; charset=utf-8"
+};
+
+/**
+ * 浏览器实际可识别的媒体 Content-Type。上传库存的 image/* 与 video/*
+ * 只是校验白名单，公开/预览响应必须下发具体类型。
+ */
+export function servableMediaContentType(
+  mimeType: string | null,
+  filename: string
+): string {
+  if (mimeType !== null && mimeType.includes("*")) {
+    const extension = filename.split(".").pop()?.toLowerCase() ?? "";
+    return EXTENSION_CONTENT_TYPES[extension] ?? "application/octet-stream";
+  }
+  return mimeType !== null && SERVABLE_CONTENT_TYPES.has(mimeType)
+    ? mimeType
+    : "application/octet-stream";
+}
+
 /** 知识源文件允许的扩展名（与既有 KNOWLEDGE_EXTENSIONS 一致）。 */
 export const KNOWLEDGE_EXTENSIONS = new Set([
   ".md",

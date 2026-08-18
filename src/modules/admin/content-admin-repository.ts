@@ -57,6 +57,7 @@ export interface PublishGuardState {
   category: { status: "active" | "disabled"; kind: string } | null;
   coverMedia: PublishMediaState | null;
   media: PublishMediaState | null;
+  bodyMedia: PublishMediaState[];
 }
 
 export type UpdateGuardedResult =

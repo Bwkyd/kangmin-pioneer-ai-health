@@ -7,6 +7,7 @@
  */
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import { ContentBody } from "./content-body";
 
 import {
   askKnowledge,
@@ -269,7 +270,13 @@ export default function DiscoverView() {
             {selectedContent.kind === "video" && selectedContent.mediaUrl && (
               <video className="discover-detail-video" controls preload="metadata" src={selectedContent.mediaUrl} />
             )}
-            <p className="discover-detail-body">{selectedContent.body ?? selectedContent.summary}</p>
+            <ContentBody body={selectedContent.body ?? selectedContent.summary} />
+            {selectedContent.kind === "video" && (selectedContent.instructions || selectedContent.precautions) && (
+              <section className="discover-safety-note" aria-label="视频操作安全说明">
+                {selectedContent.instructions && <p><strong>操作提示：</strong>{selectedContent.instructions}</p>}
+                {selectedContent.precautions && <p><strong>注意事项：</strong>{selectedContent.precautions}</p>}
+              </section>
+            )}
             <p className="discover-detail-meta">来源：{selectedContent.source} · 更新于 {selectedContent.updatedAt.slice(0, 10)}</p>
             <footer>{selectedContent.disclaimer}</footer>
           </article>

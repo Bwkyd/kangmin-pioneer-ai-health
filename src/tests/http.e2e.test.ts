@@ -606,6 +606,8 @@ test("GET /v1/media/:id：已发布引用发字节流，未发布/不存在/非�
     summary: "视频简介",
     body: "视频正文简介。",
     source: "来源",
+    instructions: "操作前确认环境安全，并按视频步骤进行。",
+    precautions: "出现不适立即停止，并咨询专业人员。",
     mediaId: videoMediaId
   });
   await adminCommand("content video publish", {

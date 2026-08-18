@@ -26,7 +26,8 @@ import {
   assertContentMatchesDeclared,
   assertSizeWithinLimit,
   DEFAULT_MEDIA_MAX_BYTES,
-  resolveMediaType
+  resolveMediaType,
+  servableMediaContentType
 } from "./media-validation.js";
 
 const CATEGORY_KINDS = new Set<CategoryKind>([
@@ -95,6 +96,11 @@ type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
  * storedPath（机器集成不需要，泄露服务器布局）。filename 保留。
  */
 export type ContentMediaView = Omit<ContentMediaRow, "storedPath">;
+
+export interface AdminMediaPreview {
+  body: Buffer;
+  contentType: string;
+}
 
 function toMediaView(media: ContentMediaRow): ContentMediaView {
   const { storedPath: _storedPath, ...view } = media;
@@ -228,6 +234,18 @@ export class ContentAuxService {
     }
     const referencedBy = await this.repository.countMediaReferences(id);
     return { ...toMediaView(media), referencedBy };
+  }
+
+  /** 管理端预览专用：仅返回已完成素材，调用方必须先通过管理员会话。 */
+  async previewMedia(id: string): Promise<AdminMediaPreview | null> {
+    const media = await this.repository.findMedia(id);
+    if (media === null || media.status !== "ready") {
+      return null;
+    }
+    return {
+      body: await this.storage.getObject(media.storedPath),
+      contentType: servableMediaContentType(media.mimeType, media.storedPath)
+    };
   }
 
   async disableMedia(id: string): Promise<ContentMediaView> {
