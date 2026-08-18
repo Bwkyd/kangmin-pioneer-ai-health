@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧹 删除管理后台返回工作台按钮（2026-08-18 第108轮 · 实现提交 `d8390c8`，待合并）
+> 按作者截图反馈，删除管理后台内容页顶部“回到工作台”按钮及其点击回首页行为；保留侧栏工作台导航和其他页面功能，不修改 `legacy/`、服务端、权限、医学规则或患者端。新增真实浏览器 E2E 断言，确保文章页不再出现该按钮。
+> 验证：`cd src && npm run check` 通过，包含类型检查、架构检查、小程序检查、构建、355 项 Node 测试（279 通过、76 项因未配置 PostgreSQL/S3 按约定跳过）和真实浏览器 E2E；`git diff --check` 通过。实现已提交，尚未推送、合并或部署；`hi.md` 仍为作者原件，未修改、未跟踪。
+> 遗留：状态记录待随本轮提交链推送；`src/web/src/admin/styles.css` 中仅剩未引用的旧 `.topbar-home` 样式，不影响运行，暂不为压缩 CSS 引入无关格式变更。
+
 > ## ✅ 管理后台文案自检、文档与记忆收口（2026-08-18 第107轮 · PR #228，合并 `cecd8e6`）
 > 按 `km-review` 从患者可懂性、工程事实、医学安全三视角复核第 106 轮，P0/P1/P2 均未发现；P3 仅保留作者或客户用真实业务数据进行长期运营走查，不阻断本轮技术收尾。确认当前管理端可见旧“报价/交付”话术已清除，患者端、后端、权限、状态机、知识内容和医学规则未被改动。
 > 已落实交付复核 `docs/reviews/009_admin-copy-consistency-review.md`、`state/changelog.md`、腾讯云部署历史 `docs/plan/008_tencent-cloud-production-cutover.md`，并新增 `state/memory/20260818-admin-copy-surface-inventory.md` 及索引；文档门禁、清单、记忆索引完整性和敏感信息扫描通过。结构检查仍只被任务前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题拦截，未修改作者过程材料。

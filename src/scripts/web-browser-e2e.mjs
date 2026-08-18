@@ -701,6 +701,7 @@ try {
 
   await adminPage.getByTestId("admin-nav-article").click();
   await adminPage.getByText("内容运营 / 科普内容", { exact: true }).waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByRole("button", { name: "回到工作台" }).count(), 0, "内容页不应显示返回工作台按钮");
   await adminPage.getByLabel("搜索文章").waitFor({ state: "visible" });
   await adminPage.getByLabel("筛选文章状态").waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增文章" }).click();
