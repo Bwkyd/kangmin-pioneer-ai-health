@@ -684,6 +684,9 @@ try {
   await adminPage.getByTestId("admin-login").click();
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
   await adminPage.getByRole("heading", { name: "今天先处理最重要的交付" }).waitFor({ state: "visible" });
+  const adminNavLabels = await adminPage.locator(".admin-nav-label").allTextContents();
+  assert.ok(adminNavLabels.includes("内容运营"), "管理后台应显示内容运营分组");
+  assert.ok(adminNavLabels.includes("消息与素材"), "管理后台应显示消息与素材分组");
   await adminPage.getByText("校验", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByText("服务端同步", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByText("可用素材", { exact: true }).waitFor({ state: "visible" });
