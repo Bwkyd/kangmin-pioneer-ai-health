@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 管理后台文案自检、文档与记忆收口（2026-08-18 第107轮 · PR #228，合并 `cecd8e6`）
+> 按 `km-review` 从患者可懂性、工程事实、医学安全三视角复核第 106 轮，P0/P1/P2 均未发现；P3 仅保留作者或客户用真实业务数据进行长期运营走查，不阻断本轮技术收尾。确认当前管理端可见旧“报价/交付”话术已清除，患者端、后端、权限、状态机、知识内容和医学规则未被改动。
+> 已落实交付复核 `docs/reviews/009_admin-copy-consistency-review.md`、`state/changelog.md`、腾讯云部署历史 `docs/plan/008_tencent-cloud-production-cutover.md`，并新增 `state/memory/20260818-admin-copy-surface-inventory.md` 及索引；文档门禁、清单、记忆索引完整性和敏感信息扫描通过。结构检查仍只被任务前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题拦截，未修改作者过程材料。
+> PR #228 仅更新文档与记忆，不产生新的运行时部署；线上继续运行 `/srv/kangmin-cli/releases/admin-copy-cleanup-5ffa49d`，服务 active、`NRestarts=0`、`quick_check=ok`，公网 `/live=200`、`/admin=200`，`/ready=503` 仍为既有试用环境加密密钥限制。`hi.md` 仍为作者原件，不修改、不提交。
+
 > ## 🧭 管理后台全量运营文案收口（2026-08-18 第106轮 · PR #226，合并 `5ffa49d`，已部署）
 > 根据作者截图继续排查同类问题，发现“报价/交付”不只残留在侧栏，还出现在工作台眉标、主标题、空状态、内容入口卡片、顶部说明和文章/视频/消息/知识库页面眉标。统一改为运营人员可直接理解的任务语言：内容运营、从内容开始、运营任务，并为各页面补充文案回归；不改路由、权限、服务端命令、状态机或业务数据。
 > `cd src && npm run check` 通过：类型检查、架构检查、小程序检查、构建、355 项 Node 测试（279 通过、76 因未配置 PostgreSQL/S3 跳过）及真实浏览器 E2E 全部通过。源码管理后台可见文案已无“报价/交付”残留；`hi.md` 仍为作者原件，不修改、不提交。
