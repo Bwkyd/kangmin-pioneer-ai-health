@@ -9,4 +9,4 @@ SQLite（`database.ts` MIGRATIONS）与 PostgreSQL（`pg-migrations.ts` PG_MIGRA
 
 **Why:** 2026-08-09 智能体 v4 开发轮只写了 SQLite 0011/0012 迁移，本地 245 测试全绿，PR 合入门禁时 CI 暴露 `column "phase_code" does not exist`，被迫补 PG 0004 迁移 + 修两个 PG 契约用例（insertPlan 未传 audience → NULL 不匹配查询）。
 
-**How to apply:** 改 SQLite 迁移时同步检查 `pg-migrations.ts` 是否有对应列/约束变更；PG 的 CHECK 修改用 DROP/ADD CONSTRAINT（同 0003 先例）；PG 契约测试的 fixture 数据必须带新查询的过滤列（NULL 不匹配 `= ?`）。相关：[[20260809-decision-prioritization]]
+**How to apply:** 改 SQLite 迁移时同步检查 `pg-migrations.ts` 是否有对应列/约束变更；PG 的 CHECK 修改用 DROP/ADD CONSTRAINT（同 0003 先例）；PG 契约测试的 fixture 数据必须带新查询的过滤列（NULL 不匹配 `= ?`）。相关：[[20260818-decision-prioritization]]

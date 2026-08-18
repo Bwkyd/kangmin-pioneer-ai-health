@@ -36,7 +36,7 @@
 | 管理后台与浏览器闭环 | `src/web/src/admin/AdminApp.tsx:184-281`、`src/scripts/web-browser-e2e.mjs:661-773` | 算 | 文章、视频、素材、知识上传/分类/索引/启停/检索测试已在真实浏览器路径跑通 |
 | 试用环境知识现状 | `.42cog/real.md`、`state/board.md`、`docs/research/003_zhenyiwen-customer-needs/decision.md` | 算 | 线上只有迎香、大椎、肺俞、足三里四条非侵入性 enabled 知识；不足以覆盖通用科普 |
 | 本轮客户反馈 | 当前对话所附 8 张微信截图（未入仓、未公开） | 算，待作者决定是否归档 | 客户用“我经常鼻子痒是为什么”复现拒答，并明确期待“千问通用科普 + 自建循证 RAG” |
-| 既有角色记忆 | `state/memory/20260813-agent-lens-patient-qa.md` | 算 | 已经证据复核：产品角色是通用科普 + 问卷引导 + 问卷后追问，不是自由诊断 Agent |
+| 既有角色记忆 | `state/memory/20260818-agent-lens-patient-qa.md` | 算 | 已经证据复核：产品角色是通用科普 + 问卷引导 + 规则判定后解释与追问，不是自由诊断 Agent |
 
 ⚠️ **不自动可信**。同是自家的东西，判决可能相反：
 「这个规约可能过时了，可以参考，但不能完全从它出发」vs「这个我反复测试过、生产跑通了，尽量复用」。
