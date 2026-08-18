@@ -3,6 +3,13 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 报价内管理工作台完成元反思、合并并部署（2026-08-18 第103轮 · PR #222，合并 `4c5ead7`）
+> 使用 sequential-thinking MCP 做部署后收束反思，并按 `km-review` 的患者可懂性、工程事实、医学安全三视角复核。方向与报价边界正确，未发现 P0/P1/P2；没有改动患者端问卷、证型、分期、方案、模型、知识医学规则、权限或服务端状态机。
+> 反思阶段修正并回归了三处缺口：把“已建索引但未启用”计入首页待办总数；让队列入口携带状态筛选、成功状态变更后回到全部、失败时保留原筛选；恢复既有“可用素材”概览统计，避免新工作台破坏旧运营认知。文章、视频、知识库、站内消息既有生命周期和患者端路径继续通过真实浏览器 E2E。
+> 验证：`cd src && npm run check`、`bash scripts/check-tools.sh`、`python3 scripts/check-manifests.py`、`git diff --check` 通过；GitHub PR #222 的 `quality`、`image` 均通过并 squash 合并，`origin/main` 与本地 `main` 已回读至 `4c5ead71ad84e1610f8573ffc597fae83bedb066`。结构检查仍只被本轮前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题拦截。
+> 部署 release `/srv/kangmin-cli/releases/admin-workbench-4c5ead7`，发布包 SHA-256 为 `54d002ce1347638192ed3daafdf126237aa3302d8eab97337dde80b89bc14e68`，服务端 `dist/http/server.js` SHA-256 为 `724193e9bc8f4bea41128d430270414490b23533b278c824eff776b7059ad806`。8788 + 线上 SQLite 副本预检、数据库 `quick_check` 均通过；切换前备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260818-173227-pre-deploy.sqlite`，旧 release 保留回滚。公网 `/live=200`、`/admin=200`，新管理 bundle 为 `assets/admin-Czn7vFlU.js`，应用与 Nginx active、`NRestarts=0`；`/ready=503` 仍仅因试用环境未配置 encryption，不扩大为正式生产就绪或客户验收。
+> PR 合并后远端任务分支已由 GitHub 删除；本地已回到 `main`，收尾时仅保留作者原件 `hi.md` 未跟踪且未修改，不删除、不提交。
+
 > ## ✅ 报价内管理工作台首轮实现完成（2026-08-18 第102轮 · 基线 `main@369670d`，未提交）
 > 作者确认“根据你推荐的来”，按第101轮取舍在现有 Vite/React 管理端完成首轮任务型工作台：首页先给待处理队列和“按报价开始”入口，侧栏分为工作台、报价交付、配套管理；文章、视频和知识库列表增加搜索、状态筛选、状态解释和下一步提示，知识解析失败明确要求更换文件；站内消息明确为应用内通知，不扩展微信订阅通知。保留既有 `/v1/admin/commands`、服务端状态机、权限和医学边界，没有重做技术栈或加入 BI、用户/模型/临床规则后台。
 > 已将作者确认写入 `docs/product/2026-08-18-admin-workbench-decision.md` 与 `docs/research/005_admin-operable-backoffice/decision.md`，并按确认结果更新 `vault/truth/抗敏先锋AI小程序报价表.md` 的文章推送口径。新增浏览器回归覆盖首页队列跳转、文章搜索筛选，以及已有文章/视频/站内消息/知识库全生命周期；独立按 `km-review` 做患者可懂性、工程事实和医学安全复核，P0/P1/P2 均为 0；另补上“已建索引但未启用”进入首页待办，修正一处既有动画资源断言的加载时序抖动，均未改变后端或医学规则。
