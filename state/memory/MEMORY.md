@@ -4,6 +4,7 @@
 
 > 写法：只写规则与做法，不写出处、原话、日期叙事。命名 `YYYYMMDD-slug.md`（最后更新日期制，更新即改名并同步本索引）。索引不超过 20 KB。
 
+- [微信小程序上传分层验收与 CLI 服务端口收尾](20260818-wechat-cli-upload-and-closeout.md) — 区分工程检查、上传接口成功与真机/体验版/审核验收，上传后关闭本机服务端口
 - [git reset 前检查工作区](20260809-git-reset-check.md) — 破坏性 Git 操作前先查未提交改动并确认意图，防误覆盖
 - [清理前合并本地主状态](20260811-reconcile-local-board-before-cleanup.md) — 隔离 worktree 收尾前核对主工作区未提交 board，避免独有记录留在本地
 - [报价范围先于产品补全](20260811-scope-authority-before-planning.md) — 原件未核验不得把代码缺口或产品建议升级为报价范围、正式计划和开发授权

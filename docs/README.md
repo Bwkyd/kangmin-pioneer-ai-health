@@ -25,7 +25,7 @@
 - `research/` 回答“为了决策研究了什么”，不得把调研推断写成当前事实；
 - `experiments/` 回答“为了验证做了什么”，记录有界实验的假设、成本、证据与限制；
 - `product/` 只保存需要客户选择的决策单和模板，普通产品计划放 `plan/`；
-- `changes/` 保存已经采用、需要长期追溯的架构、运维和修复记录；
+- `changes/` 保存已经采用、需要长期追溯的架构、运维和修复记录；`arch/`、`ops/`、`fix/` 各自编号。
 - 报价及客户确认采用资料统一存放在 `vault/truth/`，不维护同内容 raw/加工副本；
   该目录不得提交、公开或复制到产品公共资源。
 
@@ -33,7 +33,7 @@
 
 - `plan/`、`reviews/`、`research/`、`experiments/`、`changes/` **各自在分类内**使用三位流水号，
   格式为 `NNN_kebab-case.md`；每个分类均从 `001` 开始，已使用编号不删除、不复用；
-- `changes/` 下的 `arch/`、`ops/`、`fix/` 共同使用 changes 分类流水号；
+- `changes/` 下的 `arch/`、`ops/`、`fix/` 各自使用三位流水号；
 - 客户决策是例外，按 `YYYY-MM-DD-<topic>-decision.md` 命名，便于按沟通日期检索；
 - 各目录 `README.md` 和 `TEMPLATE_*.md` 不占流水号。
 
@@ -41,11 +41,13 @@
 
 | 分类 | 已用编号 | 下一编号 |
 | --- | --- | --- |
-| [`plan/`](plan/) | 001–008 | 009 |
-| [`reviews/`](reviews/) | 001–004 | 005 |
-| [`research/`](research/) | 001–002（002 已归档） | 003 |
+| [`plan/`](plan/) | 001–010 | 011 |
+| [`reviews/`](reviews/) | 001–007 | 008 |
+| [`research/`](research/) | 001–004（002 已归档） | 005 |
 | [`experiments/`](experiments/) | 001 | 002 |
-| [`changes/`](changes/) | 001–004 | 005 |
+| [`changes/arch/`](changes/arch/) | 001–004 | 005 |
+| [`changes/ops/`](changes/ops/) | 001 | 002 |
+| [故障复盘](changes/README.md#故障复盘) | — | 001 |
 
 ## 文档最低信息
 
