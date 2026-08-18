@@ -8,8 +8,8 @@ import type {
 
 /**
  * 已发布内容引用的媒体行（HTTP 媒体路由公开范围门禁）：
- * 仅当素材被某个 status='published' 的 content_item 以 media_id 或
- * cover_media_id 引用时返回；status 留给服务层做可用性门禁
+ * 仅当素材被某个 status='published' 的 content_item 以 media_id、
+ * cover_media_id 或正文 Markdown 媒体链接引用时返回；status 留给服务层做可用性门禁
  * （disabled/failed/processing 不服务）。
  */
 export interface PublishedMediaRef {

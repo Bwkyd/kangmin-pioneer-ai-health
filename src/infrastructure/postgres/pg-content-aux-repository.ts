@@ -489,8 +489,13 @@ export class PgContentAuxRepository implements ContentAuxRepository {
     // 与 SQLite 的 number 语义一致。
     const published = await this.database.query<{ count: number }>(
       `SELECT COUNT(*)::int AS count FROM content_items
-       WHERE status = 'published' AND (media_id = $1 OR cover_media_id = $2)`,
-      [mediaId, mediaId]
+       WHERE status = 'published'
+         AND (
+           media_id = $1
+           OR cover_media_id = $2
+           OR POSITION('/v1/media/' || $3 IN COALESCE(body, '')) > 0
+         )`,
+      [mediaId, mediaId, mediaId]
     );
     const knowledge = await this.database.query<{ count: number }>(
       `SELECT COUNT(*)::int AS count FROM agent_knowledge_items
@@ -605,7 +610,7 @@ export class PgContentAuxRepository implements ContentAuxRepository {
     );
   }
 
-  /** 事务内引用计数（与事务外读取共用同一 SQL，保持语义一致）。 */
+  /** 事务内引用计数（含正文 Markdown 附件，与事务外读取共用同一 SQL）。 */
   private async countMediaReferencesIn(
     client: PoolClient,
     mediaId: string
@@ -613,8 +618,13 @@ export class PgContentAuxRepository implements ContentAuxRepository {
     const published = await this.database.queryIn<{ count: number }>(
       client,
       `SELECT COUNT(*)::int AS count FROM content_items
-       WHERE status = 'published' AND (media_id = $1 OR cover_media_id = $2)`,
-      [mediaId, mediaId]
+       WHERE status = 'published'
+         AND (
+           media_id = $1
+           OR cover_media_id = $2
+           OR POSITION('/v1/media/' || $3 IN COALESCE(body, '')) > 0
+         )`,
+      [mediaId, mediaId, mediaId]
     );
     const knowledge = await this.database.queryIn<{ count: number }>(
       client,

@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState, type ChangeEvent } from "react";
 import {
   AdminRequestError,
   adminCommand,
@@ -8,6 +8,7 @@ import {
   uploadFile,
   type AdminSession
 } from "./client";
+import { ContentBody } from "../content-body";
 
 type Section = "overview" | "article" | "video" | "message" | "knowledge" | "media";
 type ContentKind = "article" | "video";
@@ -193,8 +194,8 @@ export function AdminApp() {
         <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1><p className="topbar-description">{section === "overview" ? "先处理待办，再让内容安全地到达小程序。" : "按状态完成当前运营任务，所有写操作由服务端确认。"}</p></div></header>
         {notice !== "" && <div className="admin-toast" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice("")}>×</button></div>}
         {section === "overview" && <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} media={media} onNavigate={navigate} />}
-        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
         {section === "message" && <MessageManager items={messages} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
         {section === "knowledge" && <KnowledgeManager items={knowledge} busy={busy} run={run} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
         {section === "media" && <MediaManager items={media} busy={busy} run={run} />}
@@ -293,17 +294,72 @@ function editableContent(item: ContentItem): ReturnType<typeof blank> {
   };
 }
 
-function ContentManager({ kind, items, media, categories, busy, run, initialStatusFilter }: { kind: ContentKind; items: ContentItem[]; media: MediaItem[]; categories: CategoryItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; initialStatusFilter: ContentStatusFilter }) {
+type DraftContent = ReturnType<typeof blank>;
+
+interface ContentPreview extends ContentItem {
+  validation: { ok: boolean; missing: string[] };
+  patientVisible: boolean;
+}
+
+interface DraftRecovery {
+  kind: ContentKind;
+  draft: DraftContent;
+  editingId: string | null;
+  revision: number | null;
+}
+
+const mediaKindLabels: Record<string, string> = {
+  image: "图片",
+  video: "视频",
+  word: "Word",
+  pdf: "PDF",
+  markdown: "Markdown"
+};
+
+function hasDraftContent(draft: DraftContent): boolean {
+  return [
+    draft.title,
+    draft.category,
+    draft.summary,
+    draft.body,
+    draft.source,
+    draft.coverMediaId,
+    draft.mediaId,
+    draft.instructions,
+    draft.precautions,
+    draft.disclaimer
+  ].some((value) => typeof value === "string" && value.trim() !== "");
+}
+
+function ContentManager({
+  kind,
+  items,
+  media,
+  categories,
+  busy,
+  run,
+  adminKey,
+  initialStatusFilter
+}: {
+  kind: ContentKind;
+  items: ContentItem[];
+  media: MediaItem[];
+  categories: CategoryItem[];
+  busy: boolean;
+  run: (action: () => Promise<void>, success: string) => Promise<boolean>;
+  adminKey: string;
+  initialStatusFilter: ContentStatusFilter;
+}) {
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [draft, setDraft] = useState(blank(kind));
   const [showForm, setShowForm] = useState(false);
   const [newCategory, setNewCategory] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ContentStatusFilter>(initialStatusFilter);
-  useEffect(() => {
-    setStatusFilter(initialStatusFilter);
-    setQuery("");
-  }, [initialStatusFilter]);
+  const [previewItem, setPreviewItem] = useState<ContentPreview | null>(null);
+  const [recovery, setRecovery] = useState<DraftRecovery | null>(null);
+  const [recoveryNotice, setRecoveryNotice] = useState("");
+  const storageKey = "kangmin.admin.content-draft." + adminKey + "." + kind;
   const label = kind === "article" ? "文章" : "视频";
   const readyMedia = media.filter((item) => item.status === "ready");
   const availableCategories = categories.filter((item) => item.status === "active" && (item.kind === kind || item.kind === "general"));
@@ -317,37 +373,314 @@ function ContentManager({ kind, items, media, categories, busy, run, initialStat
   }, [items, query, statusFilter]);
   const draftCount = items.filter((item) => item.status === "draft").length;
   const publishedCount = items.filter((item) => item.status === "published").length;
-  function open(item?: ContentItem) { setEditing(item ?? null); setDraft(item === undefined ? blank(kind) : editableContent(item)); setShowForm(true); }
+
+  useEffect(() => {
+    setStatusFilter(initialStatusFilter);
+    setQuery("");
+  }, [initialStatusFilter]);
+
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem(storageKey);
+      if (raw === null) return;
+      const parsed = JSON.parse(raw) as Partial<DraftRecovery>;
+      if (parsed.kind !== kind || parsed.draft === undefined || typeof parsed.draft !== "object") return;
+      setRecovery({
+        kind,
+        draft: { ...blank(kind), ...(parsed.draft as Partial<DraftContent>) },
+        editingId: typeof parsed.editingId === "string" ? parsed.editingId : null,
+        revision: typeof parsed.revision === "number" ? parsed.revision : null
+      });
+    } catch {
+      sessionStorage.removeItem(storageKey);
+    }
+  }, [kind, storageKey]);
+
+  useEffect(() => {
+    if (!showForm) return;
+    try {
+      sessionStorage.setItem(storageKey, JSON.stringify({
+        kind,
+        draft,
+        editingId: editing?.id ?? null,
+        revision: editing?.revision ?? null
+      }));
+    } catch {
+      // 浏览器存储不可用时仍保留当前表单和服务端草稿能力。
+    }
+  }, [draft, editing, kind, showForm, storageKey]);
+
+  useEffect(() => {
+    function warnBeforeLeave(event: BeforeUnloadEvent) {
+      if (!showForm || !hasDraftContent(draft)) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnBeforeLeave);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeave);
+  }, [draft, showForm]);
+
+  function clearStoredDraft() {
+    try {
+      sessionStorage.removeItem(storageKey);
+    } catch {
+      // ignore unavailable browser storage
+    }
+  }
+
+  function restoreRecovery() {
+    if (recovery === null) return;
+    const saved = recovery;
+    const current = saved.editingId === null ? undefined : items.find((item) => item.id === saved.editingId);
+    setEditing(current ?? null);
+    setDraft({ ...blank(kind), ...saved.draft });
+    setShowForm(true);
+    setRecovery(null);
+    setRecoveryNotice(current === undefined && saved.editingId !== null ? "原内容已不存在，已按新草稿恢复正文。" : "");
+  }
+
+  function open(item?: ContentItem) {
+    if (item === undefined && recovery !== null) {
+      restoreRecovery();
+      return;
+    }
+    setRecovery(null);
+    setRecoveryNotice("");
+    setEditing(item ?? null);
+    setDraft(item === undefined ? blank(kind) : editableContent(item));
+    setShowForm(true);
+  }
+
+  function closeForm() {
+    if (hasDraftContent(draft) && !window.confirm("当前表单还有未保存内容，确定放弃吗？")) return;
+    clearStoredDraft();
+    setRecovery(null);
+    setRecoveryNotice("");
+    setShowForm(false);
+    setEditing(null);
+    setDraft(blank(kind));
+  }
+
   async function save(event: FormEvent) {
     event.preventDefault();
     await run(async () => {
       const input = { ...draft, kind: undefined, idempotencyKey: crypto.randomUUID() } as Record<string, unknown>;
-      if (editing === null) await adminCommand(`content ${kind} create`, input);
-      else await adminCommand(`content ${kind} update`, { ...input, id: editing.id, expectedRevision: editing.revision });
-      setShowForm(false); setEditing(null); setDraft(blank(kind));
-    }, `${label}已保存`);
+      if (editing === null) {
+        await adminCommand("content " + kind + " create", input);
+      } else {
+        await adminCommand("content " + kind + " update", { ...input, id: editing.id, expectedRevision: editing.revision });
+      }
+      clearStoredDraft();
+      setRecovery(null);
+      setShowForm(false);
+      setEditing(null);
+      setDraft(blank(kind));
+    }, label + "草稿已保存");
   }
+
   async function createCategory() {
     const name = newCategory.trim();
     if (name === "") return;
-    await run(async () => {
+    const succeeded = await run(async () => {
       await adminCommand("content category create", { name, kind, displayOrder: 0 });
     }, "分类已创建");
-    setNewCategory("");
-    setDraft((current) => ({ ...current, category: name }));
+    if (succeeded) {
+      setNewCategory("");
+      setDraft((current) => ({ ...current, category: name }));
+    }
   }
-  async function preview(item: ContentItem) {
+
+  async function previewContent(item: ContentItem) {
     await run(async () => {
-      const data = await adminCommand<{ validation: { ok: boolean; missing: string[] } }>(`content ${kind} preview`, { id: item.id });
-      if (!data.validation.ok) throw new Error(`暂不能发布：${data.validation.missing.join("、")}`);
-    }, "校验通过，可以发布");
+      const data = await adminCommand<ContentPreview>("content " + kind + " preview", { id: item.id });
+      setPreviewItem(data);
+    }, "患者端预览已打开，请查看发布校验结果");
   }
+
   async function toggle(item: ContentItem) {
     const action = item.status === "published" ? "unpublish" : "publish";
-    const succeeded = await run(() => adminCommand(`content ${kind} ${action}`, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined), action === "publish" ? `${label}已发布，用户端现在可见` : `${label}已下架，用户端已不可见`);
+    const succeeded = await run(
+      () => adminCommand("content " + kind + " " + action, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined),
+      action === "publish" ? label + "已发布，用户端现在可见" : label + "已下架，用户端已不可见"
+    );
     if (succeeded) setStatusFilter("all");
   }
-  return <section className="manager-card"><div className="manager-heading"><div><span className="section-kicker">内容运营 / {kind === "article" ? "科普内容" : "视频内容"}</span><h2>{label}管理</h2><p>按状态找到下一步：编辑、校验、发布或下架；结果以服务端回读为准。</p></div><button className="primary" onClick={() => open()}>新增{label}</button></div><div className="manager-toolbar"><label className="filter-field">搜索{label}<input aria-label={`搜索${label}`} placeholder="按标题、摘要或分类搜索" value={query} onChange={(event) => setQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label={`筛选${label}状态`} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ContentItem["status"])}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{draftCount} 条草稿 · {publishedCount} 条已发布</small></div></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><div className="form-grid"><label>标题<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label><label>分类<select required value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="">请选择</option>{availableCategories.map((item) => <option key={item.id}>{item.name}</option>)}</select></label></div><div className="category-create"><input placeholder="没有合适分类？输入新分类" value={newCategory} onChange={(event) => setNewCategory(event.target.value)}/><button type="button" onClick={() => void createCategory()}>创建分类</button></div><label>摘要<textarea required rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })}/></label><label>{kind === "article" ? "正文" : "视频说明"}<textarea required rows={7} value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })}/></label><div className="form-grid"><label>来源<input required value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })}/></label><label>封面素材<select value={draft.coverMediaId ?? ""} onChange={(event) => setDraft({ ...draft, coverMediaId: event.target.value || null })}><option value="">不设置</option>{readyMedia.filter((item) => item.kind === "image").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label></div>{kind === "video" && <><label>视频文件<select required value={draft.mediaId ?? ""} onChange={(event) => setDraft({ ...draft, mediaId: event.target.value || null })}><option value="">请选择已上传视频</option>{readyMedia.filter((item) => item.kind === "video").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label><div className="form-grid"><label>操作提示<textarea rows={2} value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}/></label><label>注意事项<textarea rows={2} value={draft.precautions} onChange={(event) => setDraft({ ...draft, precautions: event.target.value })}/></label></div><label>免责声明<input value={draft.disclaimer} onChange={(event) => setDraft({ ...draft, disclaimer: event.target.value })}/></label></>}<div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}<ContentTable items={filteredItems} emptyText={query.trim() !== "" || statusFilter !== "all" ? "没有匹配内容" : "还没有内容"} busy={busy} onEdit={open} onPreview={preview} onToggle={toggle}/></section>;
+
+  return (
+    <section className="manager-card">
+      <div className="manager-heading">
+        <div>
+          <span className="section-kicker">内容运营 / {kind === "article" ? "科普内容" : "视频内容"}</span>
+          <h2>{label}管理</h2>
+          <p>先保存不完整草稿，再用患者端预览确认效果；发布前由服务端校验内容、分类和素材。</p>
+        </div>
+        <button className="primary" onClick={() => open()}>新增{label}</button>
+      </div>
+      {recovery !== null && (
+        <div className="draft-recovery" role="status">
+          <span>发现上次离开页面时未保存的{label}内容。</span>
+          <button type="button" onClick={restoreRecovery}>恢复未保存内容</button>
+          <button type="button" onClick={() => { clearStoredDraft(); setRecovery(null); }}>放弃恢复</button>
+        </div>
+      )}
+      {recoveryNotice !== "" && <p className="form-hint recovery-hint">{recoveryNotice}</p>}
+      <div className="manager-toolbar">
+        <label className="filter-field">搜索{label}<input aria-label={"搜索" + label} placeholder="按标题、摘要或分类搜索" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+        <label className="filter-field filter-status">状态筛选<select aria-label={"筛选" + label + "状态"} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ContentStatusFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label>
+        <div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{draftCount} 条草稿 · {publishedCount} 条已发布</small></div>
+      </div>
+      {showForm && (
+        <form className="content-form" onSubmit={(event) => void save(event)}>
+          <div className="form-grid">
+            <label>标题<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+            <label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="">未选择（草稿可暂留空）</option>{availableCategories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
+          </div>
+          <div className="category-create"><input placeholder="没有合适分类？输入新分类" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><button type="button" onClick={() => void createCategory()}>创建分类</button></div>
+          <label>摘要<textarea rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
+          <ContentBodyEditor label={kind === "article" ? "正文" : "视频说明"} value={draft.body} onChange={(body) => setDraft((current) => ({ ...current, body }))} run={run} />
+          <div className="form-grid">
+            <label>来源<input value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })} /></label>
+            <MediaBinding label="封面素材" selectedId={draft.coverMediaId} items={readyMedia.filter((item) => item.kind === "image")} accept="image/*,.jpg,.jpeg,.png,.webp,.gif" mediaKind="image" busy={busy} run={run} onSelect={(id) => setDraft((current) => ({ ...current, coverMediaId: id }))} />
+          </div>
+          {kind === "video" && (
+            <>
+              <MediaBinding label="视频文件" selectedId={draft.mediaId} items={readyMedia.filter((item) => item.kind === "video")} accept="video/*,.mp4,.webm" mediaKind="video" busy={busy} run={run} onSelect={(id) => setDraft((current) => ({ ...current, mediaId: id }))} />
+              <div className="form-grid">
+                <label>操作提示<textarea rows={3} value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })} /><small className="form-hint">发布前必填，患者端会在视频下方看到。</small></label>
+                <label>注意事项<textarea rows={3} value={draft.precautions} onChange={(event) => setDraft({ ...draft, precautions: event.target.value })} /><small className="form-hint">发布前必填，缺失时服务端会阻止发布。</small></label>
+              </div>
+              <label>免责声明<input value={draft.disclaimer} onChange={(event) => setDraft({ ...draft, disclaimer: event.target.value })} /></label>
+            </>
+          )}
+          <div className="form-actions"><button type="button" onClick={closeForm}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div>
+        </form>
+      )}
+      <ContentTable items={filteredItems} emptyText={query.trim() !== "" || statusFilter !== "all" ? "没有匹配内容" : "还没有内容"} busy={busy} onEdit={open} onPreview={previewContent} onToggle={toggle} />
+      {previewItem !== null && <PatientContentPreview item={previewItem} onClose={() => setPreviewItem(null)} />}
+    </section>
+  );
+}
+
+function ContentBodyEditor({
+  label,
+  value,
+  onChange,
+  run
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  run: (action: () => Promise<void>, success: string) => Promise<boolean>;
+}) {
+  const textarea = useRef<HTMLTextAreaElement | null>(null);
+
+  function insert(text: string) {
+    const element = textarea.current;
+    if (element === null) {
+      onChange(value + text);
+      return;
+    }
+    const start = element.selectionStart;
+    const end = element.selectionEnd;
+    onChange(value.slice(0, start) + text + value.slice(end));
+    requestAnimationFrame(() => {
+      element.focus();
+      const cursor = start + text.length;
+      element.setSelectionRange(cursor, cursor);
+    });
+  }
+
+  async function uploadBodyFile(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file === undefined) return;
+    const succeeded = await run(async () => {
+      const media = await uploadFile(file);
+      const safeName = file.name.replaceAll("[", "").replaceAll("]", "");
+      const snippet = media.kind === "image"
+        ? "![" + safeName + "](/v1/media/" + media.id + ")"
+        : "[" + safeName + "](/v1/media/" + media.id + ")";
+      onChange(value.trim() === "" ? snippet : value + "\n\n" + snippet);
+    }, "正文素材已上传并插入");
+    if (!succeeded) return;
+  }
+
+  return (
+    <div className="body-editor">
+      <label>{label}<textarea ref={textarea} aria-label={label} rows={9} value={value} onChange={(event) => onChange(event.target.value)} /></label>
+      <div className="body-toolbar">
+        <button type="button" onClick={() => insert("## 小标题\n\n")}>插入小标题</button>
+        <button type="button" onClick={() => insert("- 重点内容\n")}>插入列表</button>
+        <button type="button" onClick={() => insert("[链接文字](https://example.com)")}>插入链接</button>
+        <label className="body-upload">上传图片/附件<input aria-label="上传正文图片或附件" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.md,.markdown,.txt" onChange={(event) => void uploadBodyFile(event)} /></label>
+      </div>
+      <small className="form-hint">支持标题、列表、链接；上传图片或附件后会自动插入正文。发布前会校验正文引用素材是否仍可用。</small>
+    </div>
+  );
+}
+
+function MediaBinding({
+  label,
+  selectedId,
+  items,
+  accept,
+  mediaKind,
+  busy,
+  run,
+  onSelect
+}: {
+  label: string;
+  selectedId: string | null;
+  items: MediaItem[];
+  accept: string;
+  mediaKind: "image" | "video";
+  busy: boolean;
+  run: (action: () => Promise<void>, success: string) => Promise<boolean>;
+  onSelect: (id: string | null) => void;
+}) {
+  async function upload(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file === undefined) return;
+    await run(async () => {
+      const media = await uploadFile(file, mediaKind);
+      onSelect(media.id);
+    }, label + "已上传并已选中");
+  }
+
+  return (
+    <div className="media-binding">
+      <label>{label}<select aria-label={label} value={selectedId ?? ""} onChange={(event) => onSelect(event.target.value || null)}>
+        <option value="">不设置（草稿可暂留空）</option>
+        {items.map((item) => <option key={item.id} value={item.id}>{item.filename} · {mediaKindLabels[item.kind] ?? item.kind}</option>)}
+      </select></label>
+      <label className="media-upload-choice">直接上传{mediaKind === "image" ? "封面图片" : "视频文件"}<input aria-label={"直接上传" + label} type="file" accept={accept} disabled={busy} onChange={(event) => void upload(event)} /></label>
+      <small className="form-hint">只接受{mediaKind === "image" ? "图片" : "视频"}；文件会上传到素材库并立即绑定到当前{mediaKind === "image" ? "内容封面" : "视频"}。</small>
+    </div>
+  );
+}
+
+function PatientContentPreview({ item, onClose }: { item: ContentPreview; onClose: () => void }) {
+  const mediaPrefix = "/v1/admin/media";
+  return (
+    <div className="preview-backdrop" role="dialog" aria-modal="true" aria-label="患者端预览">
+      <article className="patient-content-preview" data-testid="content-preview">
+        <div className="preview-heading"><div><span className="section-kicker">患者端效果预览</span><h2>{item.title || "未填写标题"}</h2></div><button type="button" aria-label="关闭患者端预览" onClick={onClose}>×</button></div>
+        <div className={"preview-validation " + (item.validation.ok ? "ok" : "failed")} role="status">{item.validation.ok ? "发布前校验已通过；当前只是预览，不会改变发布状态。" : "尚不能发布：" + item.validation.missing.join("、")}</div>
+        <div className="preview-phone">
+          <div className="discover-tags"><i>{item.category || "未分类"}</i></div>
+          {item.coverMediaId && <img className="discover-detail-image" src={mediaPrefix + "/" + item.coverMediaId} alt={item.title + "配图"} />}
+          {item.kind === "video" && item.mediaId && <video className="discover-detail-video" controls preload="metadata" src={mediaPrefix + "/" + item.mediaId} />}
+          <h3>{item.title || "未填写标题"}</h3>
+          {item.summary && <p className="preview-summary">{item.summary}</p>}
+          <ContentBody body={item.body} mediaPathPrefix={mediaPrefix} />
+          {item.kind === "video" && (item.instructions || item.precautions) && <section className="discover-safety-note"><p><strong>操作提示：</strong>{item.instructions || "未填写"}</p><p><strong>注意事项：</strong>{item.precautions || "未填写"}</p></section>}
+          {item.source && <p className="discover-detail-meta">来源：{item.source}</p>}
+          {item.disclaimer && <footer>{item.disclaimer}</footer>}
+        </div>
+      </article>
+    </div>
+  );
 }
 
 function ContentTable({ items, emptyText, busy, onEdit, onPreview, onToggle }: { items: ContentItem[]; emptyText: string; busy: boolean; onEdit: (item: ContentItem) => void; onPreview: (item: ContentItem) => Promise<void>; onToggle: (item: ContentItem) => Promise<void> }) {
@@ -394,10 +727,52 @@ function MessageManager({ items, busy, run, initialStatusFilter }: { items: Mess
   return <section className="manager-card"><div className="manager-heading"><div><span className="section-kicker">消息与素材 / 应用内推送</span><h2>站内消息</h2><p>向登录用户发布应用内消息；支持草稿、编辑、发布和下架，不扩展到微信订阅通知。</p></div><button className="primary" onClick={() => open()}>新建消息</button></div><div className="manager-toolbar"><label className="filter-field">搜索消息<input aria-label="搜索站内消息" placeholder="按标题、摘要或正文搜索" value={query} onChange={(event) => setQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label="筛选站内消息状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | MessageItem["status"])}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{items.filter((item) => item.status === "draft").length} 条草稿 · 发布后登录用户可见</small></div></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><label>标题<input required value={title} onChange={(event) => setTitle(event.target.value)}/></label><label>摘要<input value={summary} onChange={(event) => setSummary(event.target.value)}/></label><label>正文<textarea required rows={7} value={body} onChange={(event) => setBody(event.target.value)}/></label><div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}{filteredItems.length === 0 ? <Empty icon="信" title={items.length === 0 ? "还没有站内消息" : "没有匹配消息"} text={items.length === 0 ? "新建草稿并发布后，登录用户会在消息中心看到。" : "调整搜索词或状态筛选后继续。"}/> : <div className="table-wrap"><table><thead><tr><th>消息</th><th>状态 / 下一步</th><th>发布时间</th><th>操作</th></tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || item.body.slice(0, 48)}</small></td><td><span className={`status ${item.status}`}>{contentStatusLabels[item.status]}</span><small className="next-step">{item.status === "draft" ? "下一步：发布后进入消息中心" : item.status === "published" ? "登录用户当前可见" : "需要时重新发布"}</small></td><td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString("zh-CN") : "—"}</td><td className="row-actions"><button disabled={busy} onClick={() => open(item)}>编辑</button><button disabled={busy} onClick={() => void toggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>}</section>;
 }
 
+const mediaStatusLabels: Record<string, string> = {
+  processing: "上传中",
+  ready: "可用",
+  failed: "上传失败",
+  disabled: "已停用"
+};
+
 function MediaManager({ items, busy, run }: { items: MediaItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean> }) {
   const [file, setFile] = useState<File | null>(null);
-  async function submit(event: FormEvent) { event.preventDefault(); if (file === null) return; await run(async () => { await uploadFile(file); setFile(null); }, "素材已上传并通过完整性校验"); }
-  return <section className="manager-card"><div className="manager-heading"><div><h2>素材库</h2><p>图片、视频和知识源文件统一先上传到素材库。</p></div><form className="upload-form" onSubmit={(event) => void submit(event)}><input aria-label="选择素材" type="file" required onChange={(event) => setFile(event.target.files?.[0] ?? null)}/><button className="primary" disabled={busy || file === null}>上传素材</button></form></div>{items.length === 0 ? <Empty icon="图" title="还没有素材" text="上传后可在文章、视频或知识库中引用。"/> : <div className="media-grid">{items.map((item) => <article key={item.id}><span>{item.kind.slice(0, 1).toUpperCase()}</span><div><strong>{item.filename}</strong><small>{(item.sizeBytes / 1024).toFixed(1)} KB · {item.status}</small>{item.failureReason && <small>{item.failureReason}</small>}</div></article>)}</div>}</section>;
+  async function submit(event: FormEvent) {
+    event.preventDefault();
+    if (file === null) return;
+    await run(async () => {
+      await uploadFile(file);
+      setFile(null);
+    }, "素材已上传并通过完整性校验");
+  }
+  return (
+    <section className="manager-card">
+      <div className="manager-heading">
+        <div>
+          <h2>素材库</h2>
+          <p>按用途上传图片、视频或附件；文章封面只能选择图片，视频内容只能选择视频。</p>
+          <small className="form-hint">支持图片、视频、Word、PDF、Markdown，单文件上限 200MB；失败会保留原因。</small>
+        </div>
+        <form className="upload-form" onSubmit={(event) => void submit(event)}>
+          <input aria-label="选择素材" type="file" accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.doc,.docx,.pdf,.md,.markdown,.txt" required onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
+          <button className="primary" disabled={busy || file === null}>上传素材</button>
+        </form>
+      </div>
+      {items.length === 0 ? <Empty icon="图" title="还没有素材" text="上传后可在文章、视频或知识库中引用。" /> : (
+        <div className="media-grid">
+          {items.map((item) => (
+            <article key={item.id}>
+              <span>{mediaKindLabels[item.kind] ?? item.kind}</span>
+              <div>
+                <strong>{item.filename}</strong>
+                <small>{mediaKindLabels[item.kind] ?? item.kind} · {(item.sizeBytes / 1024).toFixed(1)} KB · {mediaStatusLabels[item.status] ?? item.status}</small>
+                {item.failureReason && <small className="action-note">{item.failureReason}</small>}
+              </div>
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
+  );
 }
 
 function KnowledgeManager({ items, busy, run, initialStatusFilter }: { items: KnowledgeItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; initialStatusFilter: KnowledgeStatusFilter }) {

@@ -93,6 +93,8 @@ interface MediaItem {
   kind: string;
   sizeBytes: number;
   status: string;
+  mimeType?: string | null;
+  failureReason?: string | null;
 }
 
 interface UploadInit {
@@ -102,12 +104,13 @@ interface UploadInit {
   ticket?: { url: string; method: "PUT"; headers: Record<string, string> };
 }
 
-export async function uploadFile(file: File): Promise<MediaItem> {
+export async function uploadFile(file: File, kind?: "image" | "video"): Promise<MediaItem> {
   const sha256 = hex(await crypto.subtle.digest("SHA-256", await file.arrayBuffer()));
   const init = await adminCommand<UploadInit>("content media upload-init", {
     filename: file.name,
     sizeBytes: file.size,
-    sha256
+    sha256,
+    ...(kind === undefined ? {} : { kind })
   });
   if (init.status === "completed" && init.media !== undefined) return init.media;
   if (init.mediaId === undefined || init.ticket === undefined) {

@@ -15,6 +15,9 @@ export interface PublicContent {
   mediaUrl: string | null;
   publishedAt: string;
   updatedAt: string;
+  /** 视频发布前填写的操作提示与注意事项；文章返回空串。 */
+  instructions: string;
+  precautions: string;
   disclaimer: string;
 }
 

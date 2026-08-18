@@ -47,6 +47,8 @@ interface ContentRow {
   media_url: string | null;
   published_at: string;
   updated_at: string;
+  instructions: string | null;
+  precautions: string | null;
 }
 
 interface PlanRow {
@@ -94,6 +96,8 @@ function toPublicContent(row: ContentRow): PublicContent {
     mediaUrl: row.media_url,
     publishedAt: row.published_at,
     updatedAt: row.updated_at,
+    instructions: row.instructions ?? "",
+    precautions: row.precautions ?? "",
     disclaimer: DISCLAIMER
   };
 }
@@ -189,7 +193,8 @@ export class SqliteContentReadRepository implements ContentReadRepository {
       const rows = this.database.connection
         .prepare(`
           SELECT id, kind, title, category, summary, body, source,
-                 cover_url, media_url, published_at, updated_at
+                 cover_url, media_url, published_at, updated_at,
+                 instructions, precautions
           FROM content_items
           WHERE kind = ? AND ${PUBLIC_PREDICATE}
           ORDER BY updated_at DESC, id ASC
@@ -208,7 +213,8 @@ export class SqliteContentReadRepository implements ContentReadRepository {
       const rows = this.database.connection
         .prepare(`
           SELECT id, kind, title, category, summary, body, source,
-                 cover_url, media_url, published_at, updated_at
+                 cover_url, media_url, published_at, updated_at,
+                 instructions, precautions
           FROM content_items
           WHERE kind = ? AND ${PUBLIC_PREDICATE}
           ORDER BY updated_at DESC, id ASC
@@ -227,7 +233,8 @@ export class SqliteContentReadRepository implements ContentReadRepository {
       const row = this.database.connection
         .prepare(`
           SELECT id, kind, title, category, summary, body, source,
-                 cover_url, media_url, published_at, updated_at
+                 cover_url, media_url, published_at, updated_at,
+                 instructions, precautions
           FROM content_items
           WHERE kind = ? AND id = ? AND ${PUBLIC_PREDICATE}
         `)
@@ -245,7 +252,8 @@ export class SqliteContentReadRepository implements ContentReadRepository {
       const rows = this.database.connection
         .prepare(`
           SELECT id, kind, title, category, summary, body, source,
-                 cover_url, media_url, published_at, updated_at
+                 cover_url, media_url, published_at, updated_at,
+                 instructions, precautions
           FROM content_items
           WHERE kind = ? AND ${PUBLIC_PREDICATE}
             AND (title LIKE ? ESCAPE '\\'
@@ -397,7 +405,7 @@ export class SqliteContentReadRepository implements ContentReadRepository {
 
   /**
    * 公开媒体行（HTTP 媒体路由）：仅当素材被某个 status='published' 的
-   * content_item 以 media_id 或 cover_media_id 引用时返回；无引用或
+   * content_item 以 media_id、cover_media_id 或正文 Markdown 媒体链接引用时返回；无引用或
    * 素材不存在一律 null（不泄露存在性）。素材自身可用性（ready）由
    * 服务层判定。媒体公开门禁与方案浏览门禁（planBrowseEnabled）无关，
    * 不受 candidate 短路影响。
@@ -412,7 +420,11 @@ export class SqliteContentReadRepository implements ContentReadRepository {
             AND EXISTS (
               SELECT 1 FROM content_items c
               WHERE c.status = 'published'
-                AND (c.media_id = m.id OR c.cover_media_id = m.id)
+                AND (
+                  c.media_id = m.id
+                  OR c.cover_media_id = m.id
+                  OR instr(COALESCE(c.body, ''), '/v1/media/' || m.id) > 0
+                )
             )
         `)
         .get(mediaId) as unknown as

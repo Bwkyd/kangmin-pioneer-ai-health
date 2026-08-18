@@ -204,6 +204,59 @@ test("文章发布闭环：create→update→publish→患者可见→unpublish 
   }
 });
 
+test("内容可先保存空草稿，后续更新可显式清空字段", async () => {
+  const { app, token } = await fixture();
+  try {
+    const draft = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article create",
+        adminToken: token,
+        input: { idempotencyKey: "blank-draft-1" }
+      })
+    );
+    assert.equal(draft.status, "draft");
+    assert.equal(draft.title, "");
+    assert.equal(draft.category, "");
+
+    const filled = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article update",
+        adminToken: token,
+        input: {
+          id: draft.id,
+          expectedRevision: 1,
+          title: "可编辑草稿",
+          summary: "暂存摘要",
+          body: "暂存正文",
+          source: "暂存来源"
+        }
+      })
+    );
+    assert.equal(filled.revision, 2);
+
+    const cleared = dataOf<AdminArticle>(
+      await app.execute({
+        command: "content article update",
+        adminToken: token,
+        input: {
+          id: draft.id,
+          expectedRevision: 2,
+          title: "",
+          summary: "",
+          body: "",
+          source: ""
+        }
+      })
+    );
+    assert.equal(cleared.title, "");
+    assert.equal(cleared.summary, "");
+    assert.equal(cleared.body, "");
+    assert.equal(cleared.source, "");
+  } finally {
+    app.close();
+  }
+});
+
 test("视频发布需要可用素材；素材引用保护与删除", async () => {
   const { app, databasePath, mediaDirectory, token } = await fixture();
   try {
@@ -261,6 +314,8 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
           summary: "基础护理视频",
           body: "居家鼻腔护理演示。",
           source: "客户已审核来源",
+          instructions: "操作前确认环境安全，并按视频步骤进行。",
+          precautions: "出现不适立即停止，并咨询专业人员。",
           mediaId: media.id
         }
       })

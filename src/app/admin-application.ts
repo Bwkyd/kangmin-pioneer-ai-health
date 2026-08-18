@@ -263,7 +263,7 @@ export class KangminAdminApplication {
           return success(
             command,
             await this.content.create(adminId, {
-              title: requiredString(input, "title"),
+              title: opt(input, "title") ?? "",
               category: opt(input, "category") ?? "",
               summary: opt(input, "summary") ?? "",
               body: opt(input, "body") ?? "",
@@ -333,7 +333,7 @@ export class KangminAdminApplication {
           return success(
             command,
             await this.content.createVideo(adminId, {
-              title: requiredString(input, "title"),
+              title: opt(input, "title") ?? "",
               category: opt(input, "category") ?? "",
               summary: opt(input, "summary") ?? "",
               body: opt(input, "body") ?? "",
@@ -860,6 +860,15 @@ export class KangminAdminApplication {
     }
   }
 
+  /**
+   * 管理端预览媒体字节：先解析 HttpOnly 管理会话，再读取已就绪素材。
+   * 不纳入命令协议，供同源预览图片/视频路由使用。
+   */
+  async getMediaPreview(adminToken: string | undefined, mediaId: string) {
+    await this.sessions.resolveIdentity(adminToken);
+    return this.aux.previewMedia(mediaId);
+  }
+
   close(): void {
     this.closeResources();
   }
@@ -909,17 +918,27 @@ export class KangminAdminApplication {
   }
 
   private contentChanges(input: Record<string, unknown>) {
+    const textChange = (key: string): string | undefined => {
+      if (!Object.hasOwn(input, key)) return undefined;
+      const value = optionalString(input, key);
+      return value === null ? "" : value;
+    };
+    const mediaChange = (key: string): string | null | undefined => {
+      if (!Object.hasOwn(input, key)) return undefined;
+      const value = optionalString(input, key);
+      return value === null ? null : value;
+    };
     return {
-      title: opt(input, "title"),
-      category: opt(input, "category"),
-      summary: opt(input, "summary"),
-      body: opt(input, "body"),
-      source: opt(input, "source"),
-      coverMediaId: opt(input, "coverMediaId"),
-      mediaId: opt(input, "mediaId"),
-      instructions: opt(input, "instructions"),
-      precautions: opt(input, "precautions"),
-      disclaimer: opt(input, "disclaimer"),
+      title: textChange("title"),
+      category: textChange("category"),
+      summary: textChange("summary"),
+      body: textChange("body"),
+      source: textChange("source"),
+      coverMediaId: mediaChange("coverMediaId"),
+      mediaId: mediaChange("mediaId"),
+      instructions: textChange("instructions"),
+      precautions: textChange("precautions"),
+      disclaimer: textChange("disclaimer"),
       methodTags: optionalStringArray(input, "methodTags"),
       displayOrder: optionalIntegerInRange(input, "displayOrder", 0, 1_000_000)
     };

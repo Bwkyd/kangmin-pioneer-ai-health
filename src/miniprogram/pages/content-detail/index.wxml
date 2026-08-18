@@ -9,7 +9,9 @@
       <view class="title">{{item.title}}</view>
       <view class="source">来源：{{item.source}}</view>
       <view class="summary">{{item.summary}}</view>
-      <view wx:if="{{item.body}}" class="body">{{item.body}}</view>
+      <rich-text wx:if="{{bodyNodes.length}}" class="body" nodes="{{bodyNodes}}" />
+      <view wx:if="{{kind === 'video' && item.instructions}}" class="safety-note"><text class="safety-label">操作提示：</text>{{item.instructions}}</view>
+      <view wx:if="{{kind === 'video' && item.precautions}}" class="safety-note"><text class="safety-label">注意事项：</text>{{item.precautions}}</view>
       <view class="disclaimer">{{item.disclaimer}}</view>
     </view>
   </view>

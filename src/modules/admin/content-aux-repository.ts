@@ -156,7 +156,7 @@ export interface ContentAuxRepository {
     id: string,
     guard: (counts: MediaReferenceCounts) => string[]
   ): Promise<GuardedMediaDeleteResult>;
-  /** 被已发布内容 / 已启用知识 / 已启用方案引用的素材不可停用或删除。 */
+  /** 被已发布内容（含正文附件）/ 已启用知识 / 已启用方案引用的素材不可停用或删除。 */
   countMediaReferences(mediaId: string): Promise<MediaReferenceCounts>;
 
   // ---- 远程上传会话（预签名直传） ----

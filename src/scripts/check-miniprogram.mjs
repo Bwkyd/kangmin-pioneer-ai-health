@@ -77,7 +77,7 @@ for (const file of javascriptFiles) {
   new vm.Script(read(file), { filename: file });
 }
 
-const nativeTags = new Set(["button", "image", "input", "picker", "slider", "text", "video", "view"]);
+const nativeTags = new Set(["button", "image", "input", "picker", "rich-text", "slider", "text", "video", "view"]);
 for (const page of app.pages) {
   const source = read(`${page}.wxml`);
   for (const match of source.matchAll(/<\/?([A-Za-z][\w-]*)\b/gu)) {

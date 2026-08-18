@@ -523,12 +523,17 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
     ).run(id);
   }
 
-  /** 事务内引用计数（与事务外读取共用同一 SQL，保持语义一致）。 */
+  /** 事务内引用计数（含正文 Markdown 附件，与事务外读取共用同一 SQL）。 */
   private countMediaReferencesSync(mediaId: string): MediaReferenceCounts {
     const published = this.database.connection.prepare(`
       SELECT COUNT(*) AS count FROM content_items
-      WHERE status = 'published' AND (media_id = ? OR cover_media_id = ?)
-    `).get(mediaId, mediaId) as unknown as { count: number };
+      WHERE status = 'published'
+        AND (
+          media_id = ?
+          OR cover_media_id = ?
+          OR instr(COALESCE(body, ''), '/v1/media/' || ?) > 0
+        )
+    `).get(mediaId, mediaId, mediaId) as unknown as { count: number };
     const knowledge = this.database.connection.prepare(`
       SELECT COUNT(*) AS count FROM agent_knowledge_items
       WHERE status = 'enabled' AND source_media_id = ?

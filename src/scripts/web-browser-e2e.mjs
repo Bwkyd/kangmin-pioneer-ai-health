@@ -705,13 +705,23 @@ try {
   await adminPage.getByLabel("搜索文章").waitFor({ state: "visible" });
   await adminPage.getByLabel("筛选文章状态").waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增文章" }).click();
+  const blankArticleForm = adminPage.locator(".content-form");
+  await blankArticleForm.getByRole("button", { name: "保存草稿" }).click();
+  await expectText(adminPage.getByRole("status"), "文章草稿已保存");
+  await adminPage.locator("tbody tr").first().getByRole("button", { name: "编辑" }).click();
   await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("客户试用");
   await adminPage.getByRole("button", { name: "创建分类" }).click();
   await expectText(adminPage.getByRole("status"), "分类已创建");
   const articleForm = adminPage.locator(".content-form");
   await articleForm.getByLabel("标题").fill("后台发布闭环测试文章");
   await articleForm.getByLabel("摘要").fill("用于确认管理后台发布和下架真实生效");
-  await articleForm.getByLabel("正文").fill("这是由管理后台保存的客户试用内容。");
+  await articleForm.getByLabel("正文", { exact: true }).fill("这是由管理后台保存的客户试用内容。");
+  await articleForm.getByLabel("上传正文图片或附件").setInputFiles({
+    name: "nose-care.png",
+    mimeType: "image/png",
+    buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52])
+  });
+  await expectText(adminPage.getByRole("status"), "正文素材已上传并插入");
   await articleForm.getByLabel("来源").fill("客户确认材料");
   await articleForm.getByRole("button", { name: "保存草稿" }).click();
   const articleRow = adminPage.locator("tbody tr", { hasText: "后台发布闭环测试文章" });
@@ -726,12 +736,18 @@ try {
   assert.equal(await adminPage.getByLabel("筛选文章状态").inputValue(), "draft", "文章待办应自动定位到草稿状态");
   await articleRow.getByRole("button", { name: "编辑" }).click();
   await articleForm.getByLabel("摘要").fill("编辑后用于确认管理后台发布和下架真实生效");
-  await articleForm.getByLabel("正文").fill("这是由管理后台编辑并保存的客户试用内容。");
+  const articleBodyMedia = await articleForm.getByLabel("正文", { exact: true }).inputValue();
+  await articleForm.getByLabel("正文", { exact: true }).fill("这是由管理后台编辑并保存的客户试用内容。\n\n" + articleBodyMedia);
   await articleForm.getByRole("button", { name: "保存草稿" }).click();
-  await expectText(adminPage.getByRole("status"), "文章已保存");
+  await expectText(adminPage.getByRole("status"), "文章草稿已保存");
   await expectText(articleRow, "编辑后用于确认");
   await articleRow.getByRole("button", { name: "校验" }).click();
-  await expectText(adminPage.getByRole("status"), "校验通过");
+  await expectText(adminPage.locator(".admin-toast"), "患者端预览已打开");
+  const articlePreview = adminPage.getByRole("dialog", { name: "患者端预览" });
+  await articlePreview.waitFor({ state: "visible" });
+  await expectText(articlePreview, "这是由管理后台编辑并保存的客户试用内容。");
+  assert.equal(await articlePreview.locator("img").count(), 1, "患者端预览应显示正文图片");
+  await articlePreview.getByRole("button", { name: "关闭患者端预览" }).click();
   await articleRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
 
@@ -764,7 +780,7 @@ try {
   const messageForm = adminPage.locator(".content-form");
   await messageForm.getByLabel("标题").fill("换季鼻健康提醒");
   await messageForm.getByLabel("摘要").fill("后台到患者端站内消息闭环");
-  await messageForm.getByLabel("正文").fill("请按需查看已发布的鼻健康科普内容。");
+  await messageForm.getByLabel("正文", { exact: true }).fill("请按需查看已发布的鼻健康科普内容。");
   await messageForm.getByRole("button", { name: "保存草稿" }).click();
   const messageRow = adminPage.locator("tbody tr", { hasText: "换季鼻健康提醒" });
   await messageRow.waitFor({ state: "visible" });
@@ -817,7 +833,14 @@ try {
   await videoForm.getByLabel("摘要").fill("客户试用版视频发布闭环");
   await videoForm.getByLabel("视频说明").fill("演示日常鼻腔护理步骤，实际操作请遵循专业人员指导。");
   await videoForm.getByLabel("来源").fill("客户确认材料");
-  await videoForm.getByLabel("视频文件").selectOption({ label: "nasal-care.mp4" });
+  await videoForm.getByLabel("直接上传视频文件").setInputFiles({
+    name: "nasal-care.mp4",
+    mimeType: "video/mp4",
+    buffer: Buffer.from([0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0])
+  });
+  await expectText(adminPage.getByRole("status"), "视频文件已上传并已选中");
+  await videoForm.getByLabel("操作提示").fill("操作前确认环境安全，并按视频步骤进行。");
+  await videoForm.getByLabel("注意事项").fill("出现不适立即停止，并咨询专业人员。");
   await videoForm.getByLabel("免责声明").fill("仅供健康科普，不替代门诊诊断或治疗建议。");
   await videoForm.getByRole("button", { name: "保存草稿" }).click();
   const videoRow = adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" });
@@ -826,10 +849,16 @@ try {
   await videoForm.getByLabel("摘要").fill("编辑后的客户试用版视频发布闭环");
   await videoForm.getByLabel("视频说明").fill("这是编辑后的日常鼻腔护理步骤，实际操作请遵循专业人员指导。");
   await videoForm.getByRole("button", { name: "保存草稿" }).click();
-  await expectText(adminPage.getByRole("status"), "视频已保存");
+  await expectText(adminPage.getByRole("status"), "视频草稿已保存");
   await expectText(videoRow, "编辑后的客户试用版");
   await videoRow.getByRole("button", { name: "校验" }).click();
-  await expectText(adminPage.getByRole("status"), "校验通过");
+  await expectText(adminPage.locator(".admin-toast"), "患者端预览已打开");
+  const videoPreview = adminPage.getByRole("dialog", { name: "患者端预览" });
+  await videoPreview.waitFor({ state: "visible" });
+  await expectText(videoPreview, "操作前确认环境安全，并按视频步骤进行。");
+  await expectText(videoPreview, "出现不适立即停止，并咨询专业人员。");
+  assert.equal(await videoPreview.locator("video").count(), 1, "患者端预览应显示视频");
+  await videoPreview.getByRole("button", { name: "关闭患者端预览" }).click();
   await videoRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
   const videoCheckPage = await context.newPage();
@@ -840,6 +869,8 @@ try {
   await publishedVideoCard.waitFor({ state: "visible" });
   await publishedVideoCard.click();
   await expectText(videoCheckPage.getByTestId("discover-detail"), "这是编辑后的日常鼻腔护理步骤");
+  await expectText(videoCheckPage.getByTestId("discover-detail"), "操作前确认环境安全，并按视频步骤进行。");
+  await expectText(videoCheckPage.getByTestId("discover-detail"), "出现不适立即停止，并咨询专业人员。");
   assert.equal(await videoCheckPage.locator(".discover-detail-video").count(), 1);
   await videoCheckPage.close();
   await adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" }).getByRole("button", { name: "下架" }).click();

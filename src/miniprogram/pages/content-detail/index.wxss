@@ -5,5 +5,7 @@
 .title { margin: 16rpx 0 10rpx; color: #172b45; font-family: STSong, "Songti SC", serif; font-size: 34rpx; font-weight: 700; line-height: 1.4; }
 .source { color: #8a9a93; font-size: 17rpx; }
 .summary { margin: 22rpx 0; padding: 18rpx; border-left: 5rpx solid #7fa7d3; border-radius: 0 14rpx 14rpx 0; color: #49647c; background: #eef5fd; font-size: 21rpx; line-height: 1.7; }
-.body { color: #41564e; font-size: 22rpx; line-height: 1.8; white-space: pre-wrap; }
+.body { color: #41564e; font-size: 22rpx; line-height: 1.8; }
+.safety-note { margin-top: 18rpx; padding: 18rpx; border-left: 5rpx solid #d98d4f; border-radius: 0 14rpx 14rpx 0; color: #6f4b2b; background: #fff5e9; font-size: 21rpx; line-height: 1.7; }
+.safety-label { font-weight: 700; }
 .disclaimer { margin-top: 26rpx; padding-top: 18rpx; border-top: 2rpx solid #e5edf5; color: #9aa7a2; font-size: 17rpx; line-height: 1.65; }
