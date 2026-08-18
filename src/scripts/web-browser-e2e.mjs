@@ -683,10 +683,13 @@ try {
   await adminPage.getByTestId("admin-password").fill("browser-owner-password");
   await adminPage.getByTestId("admin-login").click();
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
-  await adminPage.getByRole("heading", { name: "今天先处理最重要的交付" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("heading", { name: "今天先处理最重要的任务" }).waitFor({ state: "visible" });
   const adminNavLabels = await adminPage.locator(".admin-nav-label").allTextContents();
   assert.ok(adminNavLabels.includes("内容运营"), "管理后台应显示内容运营分组");
   assert.ok(adminNavLabels.includes("消息与素材"), "管理后台应显示消息与素材分组");
+  await adminPage.getByRole("heading", { name: "从内容开始" }).waitFor({ state: "visible" });
+  const overviewCopy = await adminPage.locator(".admin-shell").innerText();
+  assert.doesNotMatch(overviewCopy, /报价|交付/u, "工作台不应显示报价或交付内部话术");
   await adminPage.getByText("校验", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByText("服务端同步", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByText("可用素材", { exact: true }).waitFor({ state: "visible" });
@@ -697,6 +700,7 @@ try {
   })), { local: [], session: [] });
 
   await adminPage.getByTestId("admin-nav-article").click();
+  await adminPage.getByText("内容运营 / 科普内容", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByLabel("搜索文章").waitFor({ state: "visible" });
   await adminPage.getByLabel("筛选文章状态").waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增文章" }).click();
@@ -754,6 +758,7 @@ try {
   await patientCheckPage.close();
 
   await adminPage.getByTestId("admin-nav-message").click();
+  await adminPage.getByText("消息与素材 / 应用内推送", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新建消息" }).click();
   const messageForm = adminPage.locator(".content-form");
   await messageForm.getByLabel("标题").fill("换季鼻健康提醒");
@@ -800,6 +805,7 @@ try {
   await adminPage.locator(".media-grid article", { hasText: "nasal-care.mp4" }).waitFor({ state: "visible" });
 
   await adminPage.getByTestId("admin-nav-video").click();
+  await adminPage.getByText("内容运营 / 视频内容", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增视频" }).click();
   await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("成人快速通窍");
   await adminPage.getByRole("button", { name: "创建分类" }).click();
@@ -838,6 +844,7 @@ try {
   await adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" }).getByRole("button", { name: "下架" }).click();
 
   await adminPage.getByTestId("admin-nav-knowledge").click();
+  await adminPage.getByText("内容运营 / 受控知识生效", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByLabel("知识来源").fill("客户试用资料");
   await adminPage.getByLabel("选择知识文件").setInputFiles({
     name: "browser-guide.md",
