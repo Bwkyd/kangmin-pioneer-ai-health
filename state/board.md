@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧠 项目记忆去重与权威边界更新（2026-08-18 第九十八轮 · 实现提交 `2429207`）
+> 按作者授权审查 `state/memory/` 的 19 条主题记忆：更新决策分流、部署目标核验、报价范围、患者科普问答角色和微信 CLI 上传 5 条，旧日期文件按最后更新日期改名；删除已被高层规约完整吸收的 Git reset 与多工具技能正本 2 条，记忆总数从 19 收敛为 17。首轮元反思发现 worktree 主 board 对账、模板完整清单和零材料隐性授权尚未被其他正本等价吸收，已按最后更新日期恢复，并补回 macOS `bsdtar` 的具体打包边界。同步 `MEMORY.md`、双后端迁移内链和 research 004 角色记忆引用；明确 `docs/product/` 只负责决策追溯，范围与医学事实仍须按职责写回 `vault/truth/`，后台知识库不得裁决证型、分期或方案。
+> 修复后再次调用 sequential-thinking 并按 `$km-review` 做元反思：患者可懂性、工程事实和医学安全三视角 P0/P1/P2 均为 0，本轮不触及 `src/`、运行配置、医学 truth 或患者数据。`python3 scripts/check-manifests.py`、记忆索引完整性、旧引用残留检查、暂存 diff 格式检查和敏感信息扫描通过；`python3 scripts/structure-lint.py .` 仍只被任务前已有且本轮无授权修改的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题阻断。记忆整理已提交为 `2429207`；作者原件 `hi.md` 保持未修改、未跟踪，本轮不推送。
+
 > ## 🗂️ 原生小程序上传事实按寿命归位与收尾经验固化（2026-08-18 第九十七轮 · 合并 `e6b890f`，PR #218）
 > 把第九十六轮的上传事实同步到 `docs/plan/010_native-miniprogram-non-agent-shell.md` 与 `.42cog/real.md`，在人类里程碑 `state/changelog.md` 中记录“上传接口成功但不等于体验版/真机/客户验收”，并新增运维记录 `docs/changes/ops/001_native-miniprogram-cli-upload.md`。同时把 CLI 漏传二维码参数、临时副本注入 AppID、上传后关闭端口和三层验收边界沉淀到 `state/memory/20260818-wechat-cli-upload-and-closeout.md`；校正 `docs/README.md`、`docs/changes/README.md` 和 `scripts/structure-lint.py` 的分类编号说明。
 > 本轮只改状态、追溯文档和项目记忆，不改 `src/`、Web 服务、医学 truth 或作者原件。原生小程序上传版本 `0.1.0`、`success: true`、包体 `136523` 字节、CLI 服务端口关闭等事实由第九十六轮的已合并记录承接；真实微信权限、合法域名、真机、体验版可见性和客户验收仍为外部待办。`check-manifests`、结构检查器语法、`check-miniprogram`、`git diff --check` 和敏感信息扫描通过；结构检查仅剩任务前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题。PR #218 的 `quality`、`image` 均通过并已 squash 合并为 `e6b890f`；作者原件 `hi.md` 保持未修改、未跟踪。
