@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 三方同步完成并清理维护分支（2026-08-18 第一百轮 · PR #220，合并 `9b54c52`）
+> PR #220 的 `quality`、`image` 门禁均通过并 squash 合并；GitHub `main`、本地 `main` 与远端回读均为 `9b54c52ececd5f933451fcb91099e1e5ae812f79`。合并后的最终树与原维护分支 `24fe077` 一致，已核对后将 GitHub 自动删除的远端 `agent/memory-maintenance` 和本地同名分支清理；未合入的 Dependabot 分支继续保留。
+> 云端 `140.143.120.176` 仍运行 `/srv/kangmin-cli/releases/miniprogram-admin-7eb9323`，本地 `src/` 自该部署版本以来无差异；应用/Nginx active、`NRestarts=0`、`/live` 200，`/ready` 仍只受试用环境 encryption 未配置影响返回 503，因此不重复部署。CNB 登录有效但没有 `BWKYD/kangmin-pioneer-ai-health` 对应仓库，未向未知目标写入。
+> 当前只保留主工作树；作者原件 `hi.md` 仍未跟踪、未修改。本轮不涉及业务代码、医学 truth、云端数据或部署配置。
+
 > ## 🔍 三方同步核验与分支收尾（2026-08-18 第九十九轮 · 当前基线 `agent/memory-maintenance@8e092d1`）
 > `git fetch origin --prune` 完成。本地 `main@63deaee` 比 `origin/main@1edd514` 超前 `2429207`、`63deaee` 两个提交；两提交均已作为祖先存在于远端 `origin/agent/memory-maintenance@8e092d1`，没有代码丢失。正常 `git push origin main` 被仓库 pre-push 门禁拒绝，未设置 `ALLOW_MAIN_PUSH=1` 绕过，也未创建或合并 PR。
 > 按现行部署目标只读 SSH 核验腾讯云 `140.143.120.176`：`/srv/kangmin-cli/app` 仍指向 `releases/miniprogram-admin-7eb9323`，应用与 Nginx active、`NRestarts=0`；公网 `/live` 为 200，`/ready` 仍因试用环境未配置 encryption 返回 503。`7eb9323..HEAD` 的 `src/` 无差异，因此不重复部署。
