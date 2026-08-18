@@ -42,8 +42,8 @@
 | 分类 | 已用编号 | 下一编号 |
 | --- | --- | --- |
 | [`plan/`](plan/) | 001–010 | 011 |
-| [`reviews/`](reviews/) | 001–007 | 008 |
-| [`research/`](research/) | 001–004（002 已归档） | 005 |
+| [`reviews/`](reviews/) | 001–008 | 009 |
+| [`research/`](research/) | 001–005（002 已归档） | 006 |
 | [`experiments/`](experiments/) | 001 | 002 |
 | [`changes/arch/`](changes/arch/) | 001–004 | 005 |
 | [`changes/ops/`](changes/ops/) | 001 | 002 |

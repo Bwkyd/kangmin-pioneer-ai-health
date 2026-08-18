@@ -24,3 +24,4 @@
 
 - 2026-08-14 · 客户的诊一诊需求是什么，以及下一件最该做的工作是什么 → 取舍卡见 `docs/research/003_zhenyiwen-customer-needs/decision.md`
 - 2026-08-17 · 通用鼻炎科普问答应采用哪种知识边界与检索降级策略 → 客户 20 号返回后拍板，取舍卡见 `docs/research/004_general-rhinitis-qa-boundary/decision.md`
+- 2026-08-18 · 如何把现有管理后台从演示型页面收敛为报价内可运营后台，并先做哪一件事 → 取舍卡见 `docs/research/005_admin-operable-backoffice/decision.md`

@@ -164,8 +164,16 @@ try {
   const composerBox = await page.locator(".composer").boundingBox();
   const composerInputBox = await page.locator(".composer input").boundingBox();
   assert.ok(mascotBox && composerBox && composerInputBox, "问助手输入区应显示动画助手");
+  const mascotImage = mascot.locator("img");
+  await mascotImage.evaluate((image) => {
+    if (image.complete) return;
+    return new Promise((resolve, reject) => {
+      image.addEventListener("load", () => resolve(), { once: true });
+      image.addEventListener("error", () => reject(new Error("assistant mascot image failed to load")), { once: true });
+    });
+  });
   assert.ok(
-    await mascot.locator("img").evaluate((image) => image.complete && image.naturalWidth > 0),
+    await mascotImage.evaluate((image) => image.complete && image.naturalWidth > 0),
     "动画助手资源应成功加载"
   );
   assert.ok(
@@ -675,9 +683,10 @@ try {
   await adminPage.getByTestId("admin-password").fill("browser-owner-password");
   await adminPage.getByTestId("admin-login").click();
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
-  await adminPage.getByRole("heading", { name: "让每一条内容安全地到达小程序" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("heading", { name: "今天先处理最重要的交付" }).waitFor({ state: "visible" });
   await adminPage.getByText("校验", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByText("服务端同步", { exact: true }).waitFor({ state: "visible" });
+  await adminPage.getByText("可用素材", { exact: true }).waitFor({ state: "visible" });
   assert.equal(await adminPage.getByRole("link", { name: /查看用户端/u }).count(), 0, "管理后台不再跳转患者 Web，患者入口统一为小程序");
   assert.deepEqual(await adminPage.evaluate(() => ({
     local: Object.keys(localStorage).filter((key) => /admin|token/iu.test(key)),
@@ -685,6 +694,8 @@ try {
   })), { local: [], session: [] });
 
   await adminPage.getByTestId("admin-nav-article").click();
+  await adminPage.getByLabel("搜索文章").waitFor({ state: "visible" });
+  await adminPage.getByLabel("筛选文章状态").waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增文章" }).click();
   await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("客户试用");
   await adminPage.getByRole("button", { name: "创建分类" }).click();
@@ -697,6 +708,14 @@ try {
   await articleForm.getByRole("button", { name: "保存草稿" }).click();
   const articleRow = adminPage.locator("tbody tr", { hasText: "后台发布闭环测试文章" });
   await articleRow.waitFor({ state: "visible" });
+  await adminPage.getByLabel("搜索文章").fill("后台发布闭环测试文章");
+  assert.equal(await adminPage.locator("tbody tr").count(), 1, "文章搜索应只保留匹配内容");
+  await adminPage.getByLabel("搜索文章").fill("");
+  await adminPage.getByTestId("admin-nav-overview").click();
+  await adminPage.getByRole("button", { name: /文章草稿/u }).waitFor({ state: "visible" });
+  await adminPage.getByRole("button", { name: /处理文章/u }).click();
+  await adminPage.getByTestId("admin-nav-article").waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByLabel("筛选文章状态").inputValue(), "draft", "文章待办应自动定位到草稿状态");
   await articleRow.getByRole("button", { name: "编辑" }).click();
   await articleForm.getByLabel("摘要").fill("编辑后用于确认管理后台发布和下架真实生效");
   await articleForm.getByLabel("正文").fill("这是由管理后台编辑并保存的客户试用内容。");
@@ -852,6 +871,12 @@ try {
   await updatedKnowledgeRow.getByRole("button", { name: "建立索引" }).click();
   await expectText(adminPage.getByRole("status"), "索引已建立");
   await expectText(updatedKnowledgeRow, "已建索引");
+  await adminPage.getByTestId("admin-nav-overview").click();
+  await expectText(adminPage.getByRole("button", { name: /知识索引/u }), "索引已完成，启用后参与检索");
+  assert.equal(await adminPage.locator(".queue-card .queue-count").innerText(), "1", "已建索引任务应计入首页待办总数");
+  await adminPage.getByRole("button", { name: /知识索引/u }).click();
+  await updatedKnowledgeRow.waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByLabel("筛选知识状态").inputValue(), "indexed", "知识待办应自动定位到已建索引状态");
   await updatedKnowledgeRow.getByRole("button", { name: "启用" }).click();
   await expectText(adminPage.getByRole("status"), "知识已启用");
   await expectText(updatedKnowledgeRow, "已启用");
