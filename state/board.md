@@ -3,6 +3,17 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 报价内管理工作台首轮实现完成（2026-08-18 第102轮 · 基线 `main@369670d`，未提交）
+> 作者确认“根据你推荐的来”，按第101轮取舍在现有 Vite/React 管理端完成首轮任务型工作台：首页先给待处理队列和“按报价开始”入口，侧栏分为工作台、报价交付、配套管理；文章、视频和知识库列表增加搜索、状态筛选、状态解释和下一步提示，知识解析失败明确要求更换文件；站内消息明确为应用内通知，不扩展微信订阅通知。保留既有 `/v1/admin/commands`、服务端状态机、权限和医学边界，没有重做技术栈或加入 BI、用户/模型/临床规则后台。
+> 已将作者确认写入 `docs/product/2026-08-18-admin-workbench-decision.md` 与 `docs/research/005_admin-operable-backoffice/decision.md`，并按确认结果更新 `vault/truth/抗敏先锋AI小程序报价表.md` 的文章推送口径。新增浏览器回归覆盖首页队列跳转、文章搜索筛选，以及已有文章/视频/站内消息/知识库全生命周期；独立按 `km-review` 做患者可懂性、工程事实和医学安全复核，P0/P1/P2 均为 0；另补上“已建索引但未启用”进入首页待办，修正一处既有动画资源断言的加载时序抖动，均未改变后端或医学规则。
+> 验证：`cd src && npm run check` 全绿（类型、架构、小程序清单、构建、全量 Node 测试和真实浏览器 E2E）；`python3 scripts/check-manifests.py`、`git diff --check` 通过。`python3 scripts/structure-lint.py .` 仍仅被本轮前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题拦截，未修改作者过程材料；未提交、推送、部署或清理，`hi.md` 保持未跟踪且未修改。
+
+> ## 🔎 报价内可运营管理后台系统分析（2026-08-18 第101轮 · 基线 `main@369670d`）
+> 按作者要求完整阅读本地 `admin-business` 与 `aias-meta-research` 技能，以 `vault/truth/抗敏先锋AI小程序报价表.md:9-24` 为范围基准，对照当前 `src/web/src/admin/AdminApp.tsx`、`src/app/admin-application.ts`、`src/http/server.ts`、计划 009 和现有管理端测试。已生成 `docs/research/005_admin-operable-backoffice/`，并同步研究、计划和文档索引。
+> 分析结论：后台服务端已有文章、视频、站内消息、知识库的主要命令和报价闭环基础；当前“像演示”的核心原因是前端单页 section 切换、首页统计与静态说明、列表缺任务队列/状态解释/搜索筛选/详情路径/失败恢复，而不是缺一套全新的后台技术栈。首选是在现有 Vite/React 与 `/v1/admin/commands` 上改造成任务型运营工作台，首轮只收口报价三条后台链；不引入 BI、复杂用户/模型/临床规则后台或 Next/Neon 重做。
+> 待作者拍板：首轮采用任务型工作台还是仅视觉换肤；报价“推送”是应用内全体站内消息还是微信订阅通知；首轮是否严格限定文章、视频、知识库。推送语义未确认前不修改 `vault/truth/`，本轮没有改 `src/`、没有提交、推送、部署或外部写入。作者原件 `hi.md` 仍未跟踪且未修改。
+> 验证：`bash scripts/check-tools.sh`、`python3 scripts/check-manifests.py`、`git diff --check` 通过；`python3 scripts/structure-lint.py .` 仍被本轮前已存在的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题拦截，未改动该作者过程材料。因未改 `src/`，未重复运行应用窄测。
+
 > ## ✅ 三方同步完成并清理维护分支（2026-08-18 第一百轮 · PR #220，合并 `9b54c52`）
 > PR #220 的 `quality`、`image` 门禁均通过并 squash 合并；GitHub `main`、本地 `main` 与远端回读均为 `9b54c52ececd5f933451fcb91099e1e5ae812f79`。合并后的最终树与原维护分支 `24fe077` 一致，已核对后将 GitHub 自动删除的远端 `agent/memory-maintenance` 和本地同名分支清理；未合入的 Dependabot 分支继续保留。
 > 云端 `140.143.120.176` 仍运行 `/srv/kangmin-cli/releases/miniprogram-admin-7eb9323`，本地 `src/` 自该部署版本以来无差异；应用/Nginx active、`NRestarts=0`、`/live` 200，`/ready` 仍只受试用环境 encryption 未配置影响返回 503，因此不重复部署。CNB 登录有效但没有 `BWKYD/kangmin-pioneer-ai-health` 对应仓库，未向未知目标写入。

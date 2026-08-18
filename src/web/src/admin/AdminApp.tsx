@@ -66,12 +66,22 @@ interface MessageItem {
 interface CategoryItem { id: string; name: string; kind: string; status: string }
 interface KnowledgeHit { knowledgeId: string; name: string; snippet: string }
 
+type ContentStatusFilter = "all" | ContentItem["status"];
+type KnowledgeStatusFilter = "all" | KnowledgeItem["status"];
+type SectionFocus = ContentStatusFilter | KnowledgeStatusFilter;
+
 const knowledgeStatusLabels: Record<KnowledgeItem["status"], string> = {
   processing: "待建索引",
   indexed: "已建索引",
   enabled: "已启用",
   disabled: "已停用",
   index_failed: "索引失败"
+};
+
+const contentStatusLabels: Record<ContentItem["status"], string> = {
+  draft: "草稿",
+  published: "已发布",
+  unpublished: "已下架"
 };
 
 const navigation: Array<{ key: Section; label: string; icon: string }> = [
@@ -82,6 +92,9 @@ const navigation: Array<{ key: Section; label: string; icon: string }> = [
   { key: "knowledge", label: "智能体知识库", icon: "知" },
   { key: "media", label: "素材库", icon: "图" }
 ];
+
+const deliveryNavigation = navigation.filter((item) => item.key === "article" || item.key === "video" || item.key === "knowledge");
+const supportNavigation = navigation.filter((item) => item.key === "message" || item.key === "media");
 
 function messageOf(error: unknown): string {
   if (error instanceof AdminRequestError) {
@@ -95,6 +108,7 @@ export function AdminApp() {
   const [session, setSession] = useState<AdminSession | null>(null);
   const [checking, setChecking] = useState(true);
   const [section, setSection] = useState<Section>("overview");
+  const [sectionFocus, setSectionFocus] = useState<SectionFocus>("all");
   const [articles, setArticles] = useState<ContentItem[]>([]);
   const [videos, setVideos] = useState<ContentItem[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
@@ -103,6 +117,11 @@ export function AdminApp() {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+
+  const navigate = useCallback((nextSection: Section, focus: SectionFocus = "all") => {
+    setSection(nextSection);
+    setSectionFocus(focus);
+  }, []);
 
   const refresh = useCallback(async () => {
     const [articleData, videoData, messageData, mediaData, knowledgeData, categoryData] = await Promise.all([
@@ -133,18 +152,20 @@ export function AdminApp() {
     refresh().catch((error) => setNotice(messageOf(error)));
   }, [refresh, session]);
 
-  async function run(action: () => Promise<void>, success: string) {
+  async function run(action: () => Promise<void>, success: string): Promise<boolean> {
     setBusy(true);
     setNotice("");
     try {
       await action();
       await refresh();
       setNotice(success);
+      return true;
     } catch (error) {
       setNotice(messageOf(error));
       if (error instanceof AdminRequestError && error.code === "authentication_required") {
         setSession(null);
       }
+      return false;
     } finally {
       setBusy(false);
     }
@@ -159,18 +180,23 @@ export function AdminApp() {
       <aside className="admin-sidebar">
         <div className="admin-brand"><span>抗</span><div><strong>抗敏先锋</strong><small>鼻健康内容中心</small></div></div>
         <nav aria-label="管理后台导航">
-          {navigation.map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => setSection(item.key)}><i>{item.icon}</i>{item.label}</button>)}
+          <span className="admin-nav-label">工作台</span>
+          {navigation.filter((item) => item.key === "overview").map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => navigate(item.key)}><i>{item.icon}</i>{item.label}</button>)}
+          <span className="admin-nav-label">报价交付</span>
+          {deliveryNavigation.map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => navigate(item.key)}><i>{item.icon}</i>{item.label}</button>)}
+          <span className="admin-nav-label">配套管理</span>
+          {supportNavigation.map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => navigate(item.key)}><i>{item.icon}</i>{item.label}</button>)}
         </nav>
         <div className="admin-account"><span>{session.username?.slice(0, 1).toUpperCase()}</span><div><strong>{session.username}</strong><small>{session.role === "owner" ? "主管理员" : "内容管理员"}</small></div><button onClick={() => void run(async () => { await logout(); setSession(null); }, "已安全退出")}>退出</button></div>
       </aside>
       <section className="admin-main">
-        <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1></div></header>
+        <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1><p className="topbar-description">{section === "overview" ? "先处理待办，再让内容安全地到达小程序。" : "按状态完成当前交付任务，所有写操作由服务端确认。"}</p></div>{section !== "overview" && <button className="topbar-home" onClick={() => navigate("overview")}>回到工作台</button>}</header>
         {notice !== "" && <div className="admin-toast" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice("")}>×</button></div>}
-        {section === "overview" && <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} media={media} />}
-        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} />}
-        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} />}
-        {section === "message" && <MessageManager items={messages} busy={busy} run={run} />}
-        {section === "knowledge" && <KnowledgeManager items={knowledge} busy={busy} run={run} />}
+        {section === "overview" && <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} media={media} onNavigate={navigate} />}
+        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "message" && <MessageManager items={messages} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "knowledge" && <KnowledgeManager items={knowledge} busy={busy} run={run} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
         {section === "media" && <MediaManager items={media} busy={busy} run={run} />}
       </section>
     </main>
@@ -192,15 +218,53 @@ function Login({ onSuccess }: { onSuccess: (session: AdminSession) => void }) {
   return <main className="admin-login"><section><div className="login-mark">抗</div><small>抗敏先锋 · 鼻健康内容中心</small><h1>管理后台</h1><p>登录后管理客户可见的文章、视频和智能体知识资料。</p><form onSubmit={(event) => void submit(event)}><label>管理员账号<input data-testid="admin-username" autoComplete="username" required value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>密码<input data-testid="admin-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error !== "" && <div className="form-error" role="alert">{error}</div>}<button data-testid="admin-login" disabled={busy}>{busy ? "正在登录…" : "登录"}</button></form><footer>管理操作会记录审计；医疗内容发布前请完成专业审核。</footer></section></main>;
 }
 
-function Overview({ articles, videos, messages, knowledge, media }: { articles: ContentItem[]; videos: ContentItem[]; messages: MessageItem[]; knowledge: KnowledgeItem[]; media: MediaItem[] }) {
+function Overview({ articles, videos, messages, knowledge, media, onNavigate }: { articles: ContentItem[]; videos: ContentItem[]; messages: MessageItem[]; knowledge: KnowledgeItem[]; media: MediaItem[]; onNavigate: (section: Section, focus?: SectionFocus) => void }) {
   const published = [...articles, ...videos].filter((item) => item.status === "published").length;
+  const articleDrafts = articles.filter((item) => item.status === "draft").length;
+  const videoDrafts = videos.filter((item) => item.status === "draft").length;
+  const knowledgeProcessing = knowledge.filter((item) => item.status === "processing").length;
+  const knowledgeIndexed = knowledge.filter((item) => item.status === "indexed").length;
+  const knowledgeFailed = knowledge.filter((item) => item.status === "index_failed").length;
+  const messageDrafts = messages.filter((item) => item.status === "draft").length;
+  const attentionTotal = articleDrafts + videoDrafts + knowledgeProcessing + knowledgeIndexed + knowledgeFailed + messageDrafts;
+  const knowledgeAttentionStates = [
+    knowledgeFailed > 0 ? "index_failed" : "",
+    knowledgeProcessing > 0 ? "processing" : "",
+    knowledgeIndexed > 0 ? "indexed" : ""
+  ].filter(Boolean);
+  const knowledgeFocus: KnowledgeStatusFilter = knowledgeAttentionStates.length === 1 ? knowledgeAttentionStates[0] as KnowledgeStatusFilter : "all";
+  const knowledgeDetail = knowledgeAttentionStates.length > 1
+    ? "有多个待处理状态，请按列表逐项完成"
+    : knowledgeFailed > 0
+      ? "解析失败需更换文件，不能伪装成功"
+      : knowledgeProcessing > 0
+        ? "等待索引完成"
+        : knowledgeIndexed > 0
+          ? "索引已完成，启用后参与检索"
+          : "建立索引后才能启用检索";
+  const tasks: Array<{ section: Section; focus: SectionFocus; icon: string; title: string; detail: string; count: number; action: string; tone: string }> = [
+    { section: "article", focus: "draft", icon: "文", title: "文章草稿", detail: "完成校验后再发布到小程序", count: articleDrafts, action: "处理文章", tone: "blue" },
+    { section: "video", focus: "draft", icon: "播", title: "视频草稿", detail: "确认素材和说明后再上架", count: videoDrafts, action: "处理视频", tone: "blue" },
+    { section: "knowledge", focus: knowledgeFocus, icon: "知", title: "知识索引", detail: knowledgeDetail, count: knowledgeFailed + knowledgeProcessing + knowledgeIndexed, action: "处理知识", tone: knowledgeFailed > 0 ? "red" : "amber" },
+    { section: "message", focus: "draft", icon: "信", title: "站内消息草稿", detail: "发布后登录用户可在消息中心看到", count: messageDrafts, action: "处理消息", tone: "green" }
+  ];
+  const activeTasks = tasks.filter((task) => task.count > 0);
+  const deliveryCards: Array<{ section: Section; icon: string; title: string; detail: string; count: string }> = [
+    { section: "article", icon: "文", title: "文章与推送", detail: "编辑、校验、上架；需要通知时进入站内消息。", count: `${articles.length} 条文章` },
+    { section: "video", icon: "播", title: "视频内容", detail: "先上传素材，再编辑说明、校验和上架。", count: `${videos.length} 条视频` },
+    { section: "knowledge", icon: "知", title: "智能体知识库", detail: "资料只有建立索引并启用后才参与检索。", count: `${knowledge.filter((item) => item.status === "enabled").length} 条已启用` }
+  ];
   return <div className="admin-overview">
     <section className="welcome-card">
-      <div className="welcome-copy"><div className="welcome-eyebrow"><span>●</span> 内容运营 / 小程序同步</div><h2>让每一条内容安全地到达小程序</h2><p>统一管理科普文章、视频、站内消息、素材与智能体知识。发布状态实时同步，关键操作保留审计记录。</p></div>
+      <div className="welcome-copy"><div className="welcome-eyebrow"><span>●</span> 报价交付 / 小程序同步</div><h2>今天先处理最重要的交付</h2><p>从待办开始，完成文章、视频和知识资料的准备、校验与受控生效。每一步都回读服务端状态。</p></div>
       <div className="welcome-flow" aria-label="内容发布链路"><small>发布链路</small><div className="flow-track"><span className="flow-node active">01</span><i></i><span className="flow-node">02</span><i></i><span className="flow-node">03</span></div><div className="flow-labels"><span><strong>准备</strong><small>编辑内容</small></span><span><strong>校验</strong><small>完成校验</small></span><span><strong>发布</strong><small>用户可见</small></span></div></div>
     </section>
-    <section className="stat-grid"><Stat icon="发" label="已发布内容" value={published} tone="green"/><Stat icon="信" label="已发布消息" value={messages.filter((item) => item.status === "published").length} tone="green"/><Stat icon="知" label="启用知识" value={knowledge.filter((item) => item.status === "enabled").length} tone="blue"/><Stat icon="材" label="可用素材" value={media.filter((item) => item.status === "ready").length} tone="blue"/></section>
-    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 服务端同步</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与校验</strong><p>文章、视频和消息在后台完成内容准备；素材和知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>知识资料建立索引并启用后，才会参与智能体检索；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
+    <section className="stat-grid"><Stat icon="待" label="待处理任务" value={attentionTotal} tone={attentionTotal > 0 ? "amber" : "green"}/><Stat icon="发" label="已发布内容" value={published} tone="green"/><Stat icon="信" label="已发布消息" value={messages.filter((item) => item.status === "published").length} tone="green"/><Stat icon="知" label="启用知识" value={knowledge.filter((item) => item.status === "enabled").length} tone="blue"/><Stat icon="材" label="可用素材" value={media.filter((item) => item.status === "ready").length} tone="blue"/></section>
+    <section className="workbench-grid">
+      <article className="queue-card"><div className="card-heading"><div><h2>今天先处理</h2><p>只显示需要操作者继续动作的状态。</p></div><span className={`queue-count ${attentionTotal > 0 ? "attention" : "clear"}`}>{attentionTotal}</span></div>{activeTasks.length === 0 ? <div className="queue-empty"><strong>当前没有待处理任务</strong><span>三条报价链都处于可继续工作的状态。</span></div> : <div className="task-list">{activeTasks.map((task) => <button className="task-row" key={task.section} onClick={() => onNavigate(task.section, task.focus)}><span className={`task-mark ${task.tone}`}>{task.icon}</span><span className="task-copy"><strong>{task.title}<em>{task.count}</em></strong><small>{task.detail}</small></span><span className="task-action">{task.action} →</span></button>)}</div>}</article>
+      <article className="delivery-card"><div className="card-heading"><div><h2>按报价开始</h2><p>只保留本轮交付需要的三条主线。</p></div><span className="sync-badge"><i></i> 服务端同步</span></div><div className="delivery-links">{deliveryCards.map((card) => <button className="delivery-link" key={card.section} onClick={() => onNavigate(card.section)}><span className="task-mark blue">{card.icon}</span><span><strong>{card.title}</strong><small>{card.detail}</small><em>{card.count} · 进入处理 →</em></span></button>)}</div></article>
+    </section>
+    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 边界清晰</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与校验</strong><p>文章、视频和站内消息在后台完成内容准备；素材与知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，站内消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>知识资料建立索引并启用后，才会参与智能体检索；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
   </div>;
 }
 
@@ -229,14 +293,30 @@ function editableContent(item: ContentItem): ReturnType<typeof blank> {
   };
 }
 
-function ContentManager({ kind, items, media, categories, busy, run }: { kind: ContentKind; items: ContentItem[]; media: MediaItem[]; categories: CategoryItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<void> }) {
+function ContentManager({ kind, items, media, categories, busy, run, initialStatusFilter }: { kind: ContentKind; items: ContentItem[]; media: MediaItem[]; categories: CategoryItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; initialStatusFilter: ContentStatusFilter }) {
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [draft, setDraft] = useState(blank(kind));
   const [showForm, setShowForm] = useState(false);
   const [newCategory, setNewCategory] = useState("");
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ContentStatusFilter>(initialStatusFilter);
+  useEffect(() => {
+    setStatusFilter(initialStatusFilter);
+    setQuery("");
+  }, [initialStatusFilter]);
   const label = kind === "article" ? "文章" : "视频";
   const readyMedia = media.filter((item) => item.status === "ready");
   const availableCategories = categories.filter((item) => item.status === "active" && (item.kind === kind || item.kind === "general"));
+  const filteredItems = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    return items.filter((item) => {
+      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesQuery = normalized === "" || [item.title, item.summary, item.category].join(" ").toLocaleLowerCase().includes(normalized);
+      return matchesStatus && matchesQuery;
+    });
+  }, [items, query, statusFilter]);
+  const draftCount = items.filter((item) => item.status === "draft").length;
+  const publishedCount = items.filter((item) => item.status === "published").length;
   function open(item?: ContentItem) { setEditing(item ?? null); setDraft(item === undefined ? blank(kind) : editableContent(item)); setShowForm(true); }
   async function save(event: FormEvent) {
     event.preventDefault();
@@ -264,22 +344,37 @@ function ContentManager({ kind, items, media, categories, busy, run }: { kind: C
   }
   async function toggle(item: ContentItem) {
     const action = item.status === "published" ? "unpublish" : "publish";
-    await run(() => adminCommand(`content ${kind} ${action}`, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined), action === "publish" ? `${label}已发布，用户端现在可见` : `${label}已下架，用户端已不可见`);
+    const succeeded = await run(() => adminCommand(`content ${kind} ${action}`, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined), action === "publish" ? `${label}已发布，用户端现在可见` : `${label}已下架，用户端已不可见`);
+    if (succeeded) setStatusFilter("all");
   }
-  return <section className="manager-card"><div className="manager-heading"><div><h2>{label}管理</h2><p>新增、编辑、校验、发布和下架；没有放置不可用按钮。</p></div><button className="primary" onClick={() => open()}>新增{label}</button></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><div className="form-grid"><label>标题<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label><label>分类<select required value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="">请选择</option>{availableCategories.map((item) => <option key={item.id}>{item.name}</option>)}</select></label></div><div className="category-create"><input placeholder="没有合适分类？输入新分类" value={newCategory} onChange={(event) => setNewCategory(event.target.value)}/><button type="button" onClick={() => void createCategory()}>创建分类</button></div><label>摘要<textarea required rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })}/></label><label>{kind === "article" ? "正文" : "视频说明"}<textarea required rows={7} value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })}/></label><div className="form-grid"><label>来源<input required value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })}/></label><label>封面素材<select value={draft.coverMediaId ?? ""} onChange={(event) => setDraft({ ...draft, coverMediaId: event.target.value || null })}><option value="">不设置</option>{readyMedia.filter((item) => item.kind === "image").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label></div>{kind === "video" && <><label>视频文件<select required value={draft.mediaId ?? ""} onChange={(event) => setDraft({ ...draft, mediaId: event.target.value || null })}><option value="">请选择已上传视频</option>{readyMedia.filter((item) => item.kind === "video").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label><div className="form-grid"><label>操作提示<textarea rows={2} value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}/></label><label>注意事项<textarea rows={2} value={draft.precautions} onChange={(event) => setDraft({ ...draft, precautions: event.target.value })}/></label></div><label>免责声明<input value={draft.disclaimer} onChange={(event) => setDraft({ ...draft, disclaimer: event.target.value })}/></label></>}<div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}<ContentTable items={items} busy={busy} onEdit={open} onPreview={preview} onToggle={toggle}/></section>;
+  return <section className="manager-card"><div className="manager-heading"><div><span className="section-kicker">报价交付 / {kind === "article" ? "科普内容" : "视频内容"}</span><h2>{label}管理</h2><p>按状态找到下一步：编辑、校验、发布或下架；结果以服务端回读为准。</p></div><button className="primary" onClick={() => open()}>新增{label}</button></div><div className="manager-toolbar"><label className="filter-field">搜索{label}<input aria-label={`搜索${label}`} placeholder="按标题、摘要或分类搜索" value={query} onChange={(event) => setQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label={`筛选${label}状态`} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | ContentItem["status"])}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{draftCount} 条草稿 · {publishedCount} 条已发布</small></div></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><div className="form-grid"><label>标题<input required value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })}/></label><label>分类<select required value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="">请选择</option>{availableCategories.map((item) => <option key={item.id}>{item.name}</option>)}</select></label></div><div className="category-create"><input placeholder="没有合适分类？输入新分类" value={newCategory} onChange={(event) => setNewCategory(event.target.value)}/><button type="button" onClick={() => void createCategory()}>创建分类</button></div><label>摘要<textarea required rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })}/></label><label>{kind === "article" ? "正文" : "视频说明"}<textarea required rows={7} value={draft.body} onChange={(event) => setDraft({ ...draft, body: event.target.value })}/></label><div className="form-grid"><label>来源<input required value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })}/></label><label>封面素材<select value={draft.coverMediaId ?? ""} onChange={(event) => setDraft({ ...draft, coverMediaId: event.target.value || null })}><option value="">不设置</option>{readyMedia.filter((item) => item.kind === "image").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label></div>{kind === "video" && <><label>视频文件<select required value={draft.mediaId ?? ""} onChange={(event) => setDraft({ ...draft, mediaId: event.target.value || null })}><option value="">请选择已上传视频</option>{readyMedia.filter((item) => item.kind === "video").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label><div className="form-grid"><label>操作提示<textarea rows={2} value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })}/></label><label>注意事项<textarea rows={2} value={draft.precautions} onChange={(event) => setDraft({ ...draft, precautions: event.target.value })}/></label></div><label>免责声明<input value={draft.disclaimer} onChange={(event) => setDraft({ ...draft, disclaimer: event.target.value })}/></label></>}<div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}<ContentTable items={filteredItems} emptyText={query.trim() !== "" || statusFilter !== "all" ? "没有匹配内容" : "还没有内容"} busy={busy} onEdit={open} onPreview={preview} onToggle={toggle}/></section>;
 }
 
-function ContentTable({ items, busy, onEdit, onPreview, onToggle }: { items: ContentItem[]; busy: boolean; onEdit: (item: ContentItem) => void; onPreview: (item: ContentItem) => Promise<void>; onToggle: (item: ContentItem) => Promise<void> }) {
-  if (items.length === 0) return <Empty icon="稿" title="还没有内容" text="先新增一条草稿，确认展示效果后再发布。"/>;
-  return <div className="table-wrap"><table><thead><tr><th>内容</th><th>分类</th><th>状态</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || "暂无摘要"}</small></td><td>{item.category || "未分类"}</td><td><span className={`status ${item.status}`}>{item.status === "published" ? "已发布" : item.status === "draft" ? "草稿" : "已下架"}</span></td><td>{new Date(item.updatedAt).toLocaleString("zh-CN")}</td><td className="row-actions"><button disabled={busy} onClick={() => onEdit(item)}>编辑</button><button disabled={busy} onClick={() => void onPreview(item)}>校验</button><button disabled={busy} onClick={() => void onToggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>;
+function ContentTable({ items, emptyText, busy, onEdit, onPreview, onToggle }: { items: ContentItem[]; emptyText: string; busy: boolean; onEdit: (item: ContentItem) => void; onPreview: (item: ContentItem) => Promise<void>; onToggle: (item: ContentItem) => Promise<void> }) {
+  if (items.length === 0) return <Empty icon="稿" title={emptyText} text={emptyText === "还没有内容" ? "先新增一条草稿，确认展示效果后再发布。" : "调整搜索词或状态筛选后继续。"}/>;
+  return <div className="table-wrap"><table><thead><tr><th>内容</th><th>分类</th><th>状态 / 下一步</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || "暂无摘要"}</small></td><td>{item.category || "未分类"}</td><td><span className={`status ${item.status}`}>{contentStatusLabels[item.status]}</span><small className="next-step">{item.status === "draft" ? "下一步：校验并发布" : item.status === "published" ? "用户端当前可见" : "需要时重新校验并发布"}</small></td><td>{new Date(item.updatedAt).toLocaleString("zh-CN")}</td><td className="row-actions"><button disabled={busy} onClick={() => onEdit(item)}>编辑</button><button disabled={busy} onClick={() => void onPreview(item)}>校验</button><button disabled={busy} onClick={() => void onToggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>;
 }
 
-function MessageManager({ items, busy, run }: { items: MessageItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<void> }) {
+function MessageManager({ items, busy, run, initialStatusFilter }: { items: MessageItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; initialStatusFilter: ContentStatusFilter }) {
   const [editing, setEditing] = useState<MessageItem | null>(null);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [query, setQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<ContentStatusFilter>(initialStatusFilter);
+  useEffect(() => {
+    setStatusFilter(initialStatusFilter);
+    setQuery("");
+  }, [initialStatusFilter]);
+  const filteredItems = useMemo(() => {
+    const normalized = query.trim().toLocaleLowerCase();
+    return items.filter((item) => {
+      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesQuery = normalized === "" || [item.title, item.summary ?? "", item.body].join(" ").toLocaleLowerCase().includes(normalized);
+      return matchesStatus && matchesQuery;
+    });
+  }, [items, query, statusFilter]);
   function open(item?: MessageItem) {
     setEditing(item ?? null); setTitle(item?.title ?? ""); setSummary(item?.summary ?? ""); setBody(item?.body ?? ""); setShowForm(true);
   }
@@ -293,29 +388,47 @@ function MessageManager({ items, busy, run }: { items: MessageItem[]; busy: bool
   }
   async function toggle(item: MessageItem) {
     const action = item.status === "published" ? "unpublish" : "publish";
-    await run(() => adminCommand(`content message ${action}`, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined), action === "publish" ? "消息已发布，登录用户现在可见" : "消息已下架");
+    const succeeded = await run(() => adminCommand(`content message ${action}`, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined), action === "publish" ? "消息已发布，登录用户现在可见" : "消息已下架");
+    if (succeeded) setStatusFilter("all");
   }
-  return <section className="manager-card"><div className="manager-heading"><div><h2>站内消息</h2><p>向全部登录用户发布应用内公告；支持草稿、编辑、发布和下架。</p></div><button className="primary" onClick={() => open()}>新建消息</button></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><label>标题<input required value={title} onChange={(event) => setTitle(event.target.value)}/></label><label>摘要<input value={summary} onChange={(event) => setSummary(event.target.value)}/></label><label>正文<textarea required rows={7} value={body} onChange={(event) => setBody(event.target.value)}/></label><div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}{items.length === 0 ? <Empty icon="信" title="还没有站内消息" text="新建草稿并发布后，登录用户会在消息中心看到。"/> : <div className="table-wrap"><table><thead><tr><th>消息</th><th>状态</th><th>发布时间</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || item.body.slice(0, 48)}</small></td><td><span className={`status ${item.status}`}>{item.status === "published" ? "已发布" : item.status === "draft" ? "草稿" : "已下架"}</span></td><td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString("zh-CN") : "—"}</td><td className="row-actions"><button disabled={busy} onClick={() => open(item)}>编辑</button><button disabled={busy} onClick={() => void toggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>}</section>;
+  return <section className="manager-card"><div className="manager-heading"><div><span className="section-kicker">报价交付 / 应用内推送</span><h2>站内消息</h2><p>向登录用户发布应用内消息；支持草稿、编辑、发布和下架，不扩展到微信订阅通知。</p></div><button className="primary" onClick={() => open()}>新建消息</button></div><div className="manager-toolbar"><label className="filter-field">搜索消息<input aria-label="搜索站内消息" placeholder="按标题、摘要或正文搜索" value={query} onChange={(event) => setQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label="筛选站内消息状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | MessageItem["status"])}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{items.filter((item) => item.status === "draft").length} 条草稿 · 发布后登录用户可见</small></div></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><label>标题<input required value={title} onChange={(event) => setTitle(event.target.value)}/></label><label>摘要<input value={summary} onChange={(event) => setSummary(event.target.value)}/></label><label>正文<textarea required rows={7} value={body} onChange={(event) => setBody(event.target.value)}/></label><div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}{filteredItems.length === 0 ? <Empty icon="信" title={items.length === 0 ? "还没有站内消息" : "没有匹配消息"} text={items.length === 0 ? "新建草稿并发布后，登录用户会在消息中心看到。" : "调整搜索词或状态筛选后继续。"}/> : <div className="table-wrap"><table><thead><tr><th>消息</th><th>状态 / 下一步</th><th>发布时间</th><th>操作</th></tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || item.body.slice(0, 48)}</small></td><td><span className={`status ${item.status}`}>{contentStatusLabels[item.status]}</span><small className="next-step">{item.status === "draft" ? "下一步：发布后进入消息中心" : item.status === "published" ? "登录用户当前可见" : "需要时重新发布"}</small></td><td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString("zh-CN") : "—"}</td><td className="row-actions"><button disabled={busy} onClick={() => open(item)}>编辑</button><button disabled={busy} onClick={() => void toggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>}</section>;
 }
 
-function MediaManager({ items, busy, run }: { items: MediaItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<void> }) {
+function MediaManager({ items, busy, run }: { items: MediaItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean> }) {
   const [file, setFile] = useState<File | null>(null);
   async function submit(event: FormEvent) { event.preventDefault(); if (file === null) return; await run(async () => { await uploadFile(file); setFile(null); }, "素材已上传并通过完整性校验"); }
   return <section className="manager-card"><div className="manager-heading"><div><h2>素材库</h2><p>图片、视频和知识源文件统一先上传到素材库。</p></div><form className="upload-form" onSubmit={(event) => void submit(event)}><input aria-label="选择素材" type="file" required onChange={(event) => setFile(event.target.files?.[0] ?? null)}/><button className="primary" disabled={busy || file === null}>上传素材</button></form></div>{items.length === 0 ? <Empty icon="图" title="还没有素材" text="上传后可在文章、视频或知识库中引用。"/> : <div className="media-grid">{items.map((item) => <article key={item.id}><span>{item.kind.slice(0, 1).toUpperCase()}</span><div><strong>{item.filename}</strong><small>{(item.sizeBytes / 1024).toFixed(1)} KB · {item.status}</small>{item.failureReason && <small>{item.failureReason}</small>}</div></article>)}</div>}</section>;
 }
 
-function KnowledgeManager({ items, busy, run }: { items: KnowledgeItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<void> }) {
+function KnowledgeManager({ items, busy, run, initialStatusFilter }: { items: KnowledgeItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; initialStatusFilter: KnowledgeStatusFilter }) {
   const [file, setFile] = useState<File | null>(null);
   const [source, setSource] = useState("");
   const [query, setQuery] = useState("");
+  const [listQuery, setListQuery] = useState("");
+  const [statusFilter, setStatusFilter] = useState<KnowledgeStatusFilter>(initialStatusFilter);
+  useEffect(() => {
+    setStatusFilter(initialStatusFilter);
+    setListQuery("");
+  }, [initialStatusFilter]);
   const [hits, setHits] = useState<KnowledgeHit[]>([]);
   const [editing, setEditing] = useState<KnowledgeItem | null>(null);
   const [editName, setEditName] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editSource, setEditSource] = useState("");
   const [editError, setEditError] = useState("");
+  const filteredItems = useMemo(() => {
+    const normalized = listQuery.trim().toLocaleLowerCase();
+    return items.filter((item) => {
+      const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesQuery = normalized === "" || [item.name, item.category ?? "", item.source ?? "", item.parseError ?? ""].join(" ").toLocaleLowerCase().includes(normalized);
+      return matchesStatus && matchesQuery;
+    });
+  }, [items, listQuery, statusFilter]);
   async function add(event: FormEvent) { event.preventDefault(); if (file === null) return; await run(async () => { const media = await uploadFile(file); await adminCommand("agent knowledge add-from-media", { mediaId: media.id, source, description: "后台上传" }); setFile(null); setSource(""); }, "知识资料已上传，请建立索引后启用"); }
-  async function action(item: KnowledgeItem, command: "index" | "enable" | "disable") { await run(() => adminCommand(`agent knowledge ${command}`, { id: item.id, yes: true }).then(() => undefined), command === "index" ? "索引已建立" : command === "enable" ? "知识已启用" : "知识已停用"); }
+  async function action(item: KnowledgeItem, command: "index" | "enable" | "disable") {
+    const succeeded = await run(() => adminCommand(`agent knowledge ${command}`, { id: item.id, yes: true }).then(() => undefined), command === "index" ? "索引已建立" : command === "enable" ? "知识已启用" : "知识已停用");
+    if (succeeded) setStatusFilter("all");
+  }
   function openEdit(item: KnowledgeItem) {
     setEditing(item);
     setEditName(item.name);
@@ -348,7 +461,7 @@ function KnowledgeManager({ items, busy, run }: { items: KnowledgeItem[]; busy: 
   }
   async function remove(item: KnowledgeItem) { if (!window.confirm(`确认删除知识“${item.name}”？源素材会保留在素材库。`)) return; await run(() => adminCommand("agent knowledge delete", { id: item.id, yes: true }).then(() => undefined), "知识资料已删除"); }
   async function search(event: FormEvent) { event.preventDefault(); await run(async () => { const data = await adminCommand<{ items: KnowledgeHit[] }>("agent knowledge search-test", { query }); setHits(data.items); }, "检索测试已完成"); }
-  return <section className="manager-card"><div className="manager-heading knowledge-heading"><div><h2>智能体知识库</h2><p>上传、分类、更新、删除、索引、启停和检索测试；启用内容才会参与智能体检索。</p></div><form className="knowledge-upload" onSubmit={(event) => void add(event)}><input aria-label="知识来源" placeholder="来源说明（可选）" value={source} onChange={(event) => setSource(event.target.value)}/><input aria-label="选择知识文件" type="file" accept=".md,.markdown,.txt,.pdf,.docx" required onChange={(event) => setFile(event.target.files?.[0] ?? null)}/><button className="primary" disabled={busy || file === null}>上传知识</button></form></div>{editing !== null && <form className="content-form knowledge-edit-form" data-testid="knowledge-edit-form" onSubmit={(event) => void saveEdit(event)}><div className="form-grid"><label>知识名称<input required value={editName} onChange={(event) => setEditName(event.target.value)}/></label><label>知识分类（可留空）<input value={editCategory} onChange={(event) => setEditCategory(event.target.value)}/></label></div><label>来源说明（可留空）<input value={editSource} onChange={(event) => setEditSource(event.target.value)}/></label>{editError !== "" && <div className="form-error" role="alert">{editError}</div>}<div className="form-actions"><button type="button" onClick={closeEdit}>取消编辑</button><button className="primary" disabled={busy}>保存修改</button></div></form>}{items.length === 0 ? <Empty icon="知" title="还没有知识资料" text="建议先上传 Markdown 或 TXT，建立索引并启用后再做检索测试。"/> : <div className="table-wrap"><table><thead><tr><th>资料</th><th>分类</th><th>状态</th><th>分块</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.source || "未填写来源"}{item.parseError ? ` · ${item.parseError}` : ""}</small></td><td>{item.category || "未分类"}</td><td><span className={`status ${item.status}`}>{knowledgeStatusLabels[item.status]}</span></td><td>{item.chunkCount}</td><td className="row-actions"><button disabled={busy || editing?.id === item.id} onClick={() => openEdit(item)}>{editing?.id === item.id ? "正在编辑" : "编辑"}</button>{item.status === "processing" && <button disabled={busy} onClick={() => void action(item, "index")}>建立索引</button>}{(item.status === "indexed" || item.status === "disabled") && <button disabled={busy} onClick={() => void action(item, "enable")}>启用</button>}{item.status === "enabled" && <button disabled={busy} onClick={() => void action(item, "disable")}>停用</button>}{item.status !== "enabled" && <button disabled={busy} onClick={() => void remove(item)}>删除</button>}</td></tr>)}</tbody></table></div>}<form className="search-test" onSubmit={(event) => void search(event)}><label>检索测试<input required placeholder="输入客户可能询问的问题" value={query} onChange={(event) => setQuery(event.target.value)}/></label><button disabled={busy}>测试检索</button></form>{hits.length > 0 && <div className="search-results">{hits.map((hit, index) => <article key={`${hit.knowledgeId}-${index}`}><strong>{hit.name}</strong><p>{hit.snippet}</p></article>)}</div>}</section>;
+  return <section className="manager-card"><div className="manager-heading knowledge-heading"><div><span className="section-kicker">报价交付 / 受控知识生效</span><h2>智能体知识库</h2><p>资料只有建立索引并启用后才参与检索；解析失败会如实显示，不能伪装成功。</p></div><form className="knowledge-upload" onSubmit={(event) => void add(event)}><input aria-label="知识来源" placeholder="来源说明（可选）" value={source} onChange={(event) => setSource(event.target.value)}/><input aria-label="选择知识文件" type="file" accept=".md,.markdown,.txt,.pdf,.docx" required onChange={(event) => setFile(event.target.files?.[0] ?? null)}/><button className="primary" disabled={busy || file === null}>上传知识</button></form></div><div className="manager-toolbar"><label className="filter-field">搜索知识<input aria-label="搜索知识资料" placeholder="按名称、分类、来源或错误搜索" value={listQuery} onChange={(event) => setListQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label="筛选知识状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as "all" | KnowledgeItem["status"])}><option value="all">全部状态</option><option value="processing">待建索引</option><option value="indexed">已建索引</option><option value="enabled">已启用</option><option value="disabled">已停用</option><option value="index_failed">索引失败</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{items.filter((item) => item.status === "enabled").length} 条已启用 · {items.filter((item) => item.status === "index_failed").length} 条解析失败</small></div></div>{editing !== null && <form className="content-form knowledge-edit-form" data-testid="knowledge-edit-form" onSubmit={(event) => void saveEdit(event)}><div className="form-grid"><label>知识名称<input required value={editName} onChange={(event) => setEditName(event.target.value)}/></label><label>知识分类（可留空）<input value={editCategory} onChange={(event) => setEditCategory(event.target.value)}/></label></div><label>来源说明（可留空）<input value={editSource} onChange={(event) => setEditSource(event.target.value)}/></label>{editError !== "" && <div className="form-error" role="alert">{editError}</div>}<div className="form-actions"><button type="button" onClick={closeEdit}>取消编辑</button><button className="primary" disabled={busy}>保存修改</button></div></form>}{filteredItems.length === 0 ? <Empty icon="知" title={items.length === 0 ? "还没有知识资料" : "没有匹配知识"} text={items.length === 0 ? "建议先上传 Markdown 或 TXT，建立索引并启用后再做检索测试。" : "调整搜索词或状态筛选后继续。"}/> : <div className="table-wrap"><table><thead><tr><th>资料</th><th>分类</th><th>状态 / 下一步</th><th>分块</th><th>操作</th></tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.source || "未填写来源"}{item.parseError ? ` · ${item.parseError}` : ""}</small></td><td>{item.category || "未分类"}</td><td><span className={`status ${item.status}`}>{knowledgeStatusLabels[item.status]}</span><small className="next-step">{item.status === "processing" ? "下一步：建立索引" : item.status === "indexed" ? "下一步：启用后参与检索" : item.status === "enabled" ? "当前参与检索" : item.status === "disabled" ? "需要时重新启用" : `需更换文件：${item.parseError ?? "解析失败"}`}</small></td><td>{item.chunkCount}</td><td className="row-actions"><button disabled={busy || editing?.id === item.id} onClick={() => openEdit(item)}>{editing?.id === item.id ? "正在编辑" : "编辑"}</button>{item.status === "processing" && <button disabled={busy} onClick={() => void action(item, "index")}>建立索引</button>}{(item.status === "indexed" || item.status === "disabled") && <button disabled={busy} onClick={() => void action(item, "enable")}>启用</button>}{item.status === "enabled" && <button disabled={busy} onClick={() => void action(item, "disable")}>停用</button>}{item.status !== "enabled" && <button disabled={busy} onClick={() => void remove(item)}>删除</button>}</td></tr>)}</tbody></table></div>}<form className="search-test" onSubmit={(event) => void search(event)}><label>检索测试<input required placeholder="输入客户可能询问的问题" value={query} onChange={(event) => setQuery(event.target.value)}/></label><button disabled={busy}>测试检索</button></form>{hits.length > 0 && <div className="search-results">{hits.map((hit, index) => <article key={`${hit.knowledgeId}-${index}`}><strong>{hit.name}</strong><p>{hit.snippet}</p></article>)}</div>}</section>;
 }
 
 function Empty({ icon, title, text }: { icon: string; title: string; text: string }) { return <div className="empty-state"><span>{icon}</span><strong>{title}</strong><p>{text}</p></div>; }
