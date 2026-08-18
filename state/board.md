@@ -3,6 +3,12 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🔍 三方同步核验与分支收尾（2026-08-18 第九十九轮 · 当前基线 `agent/memory-maintenance@8e092d1`）
+> `git fetch origin --prune` 完成。本地 `main@63deaee` 比 `origin/main@1edd514` 超前 `2429207`、`63deaee` 两个提交；两提交均已作为祖先存在于远端 `origin/agent/memory-maintenance@8e092d1`，没有代码丢失。正常 `git push origin main` 被仓库 pre-push 门禁拒绝，未设置 `ALLOW_MAIN_PUSH=1` 绕过，也未创建或合并 PR。
+> 按现行部署目标只读 SSH 核验腾讯云 `140.143.120.176`：`/srv/kangmin-cli/app` 仍指向 `releases/miniprogram-admin-7eb9323`，应用与 Nginx active、`NRestarts=0`；公网 `/live` 为 200，`/ready` 仍因试用环境未配置 encryption 返回 503。`7eb9323..HEAD` 的 `src/` 无差异，因此不重复部署。
+> 官方 CNB CLI 登录有效，但 `BWKYD/kangmin-pioneer-ai-health` 精确查询返回 404，`BWKYD` 下按 `kangmin`/`pioneer` 搜索均为 0，且本地没有 CNB remote；不凭名称猜仓库、不覆盖未知目标。仅有维护分支与未合入的 Dependabot 分支，未发现可安全删除的已合并分支或孤立 worktree；作者原件 `hi.md` 继续保持未跟踪、未修改。
+> 遗留：作者需选择按仓库流程合并 `agent/memory-maintenance` 到 GitHub `main`，或人工设置 `ALLOW_MAIN_PUSH=1` 后推送；如需同步 CNB，先提供准确的 CNB 仓库路径。当前任务未修改业务代码、云端数据或部署配置。
+
 > ## 🧠 项目记忆去重与权威边界更新（2026-08-18 第九十八轮 · 实现 `2429207` · 状态 `63deaee`）
 > 按作者授权审查 `state/memory/` 的 19 条主题记忆：更新决策分流、部署目标核验、报价范围、患者科普问答角色和微信 CLI 上传 5 条，旧日期文件按最后更新日期改名；删除已被高层规约完整吸收的 Git reset 与多工具技能正本 2 条，记忆总数从 19 收敛为 17。首轮元反思发现 worktree 主 board 对账、模板完整清单和零材料隐性授权尚未被其他正本等价吸收，已按最后更新日期恢复，并补回 macOS `bsdtar` 的具体打包边界。同步 `MEMORY.md`、双后端迁移内链和 research 004 角色记忆引用；明确 `docs/product/` 只负责决策追溯，范围与医学事实仍须按职责写回 `vault/truth/`，后台知识库不得裁决证型、分期或方案。
 > 修复后再次调用 sequential-thinking 并按 `$km-review` 做元反思：患者可懂性、工程事实和医学安全三视角 P0/P1/P2 均为 0，本轮不触及 `src/`、运行配置、医学 truth 或患者数据。`python3 scripts/check-manifests.py`、记忆索引完整性、旧引用残留检查、暂存 diff 格式检查和敏感信息扫描通过；`python3 scripts/structure-lint.py .` 仍只被任务前已有且本轮无授权修改的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题阻断。记忆整理已提交为 `2429207`，状态回写为 `63deaee`；作者原件 `hi.md` 保持未修改、未跟踪。作者随后明确授权推送，但仓库工作流禁止 AI 直推 `main`，本轮未设置 `ALLOW_MAIN_PUSH=1` 绕过，已改为推送远端分支 `agent/memory-maintenance`。当前 Codex 主会话已导出 21 条可见消息至 Git 忽略的 `chats/codex/{hi,hi+ai}/2026-08-18-1943334d.md`，不把私人对话纳入提交。
