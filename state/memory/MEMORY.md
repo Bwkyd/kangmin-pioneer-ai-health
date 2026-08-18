@@ -5,21 +5,19 @@
 > 写法：只写规则与做法，不写出处、原话、日期叙事。命名 `YYYYMMDD-slug.md`（最后更新日期制，更新即改名并同步本索引）。索引不超过 20 KB。
 
 - [微信小程序上传分层验收与 CLI 服务端口收尾](20260818-wechat-cli-upload-and-closeout.md) — 区分工程检查、上传接口成功与真机/体验版/审核验收，上传后关闭本机服务端口
-- [git reset 前检查工作区](20260809-git-reset-check.md) — 破坏性 Git 操作前先查未提交改动并确认意图，防误覆盖
-- [清理前合并本地主状态](20260811-reconcile-local-board-before-cleanup.md) — 隔离 worktree 收尾前核对主工作区未提交 board，避免独有记录留在本地
-- [报价范围先于产品补全](20260811-scope-authority-before-planning.md) — 原件未核验不得把代码缺口或产品建议升级为报价范围、正式计划和开发授权
-- [决策前置化与确定性分流](20260809-decision-prioritization.md) — 可自决的自决，专业问题列选择题问作者，先做第一版看反馈再拍板
+- [报价范围先于产品补全](20260818-scope-authority-before-planning.md) — 只有现行报价 truth 能授权范围，代码缺口和产品建议不自动升级
+- [决策前置化与确定性分流](20260818-decision-prioritization.md) — 可确定、可逆且授权内的直接推进，真实分叉前置给作者
+- [部署目标先核实](20260818-deploy-target-verify.md) — 交叉核对主机、服务、代码栈、数据与 release，不凭旧记录推断
+- [智能体调研先定角色：患者科普问答型](20260818-agent-lens-patient-qa.md) — 规则与 truth 负责裁决，知识库只提供检索依据，模型不自主诊断
+- [清理前合并本地主状态](20260818-reconcile-local-board-before-cleanup.md) — 任务 worktree 收尾前额外核对主工作区的独有 board 记录
+- [模板对齐必须核对完整生成清单](20260818-template-alignment-full-inventory.md) — 在隔离目录生成基线，区分真实缺失、项目定制和本地特例
+- [零材料模板不得制造隐性授权](20260818-zero-context-template-authority.md) — 未核实事实明确待核实，初始化不默认扩大人或 AI 的权限
 - [双后端迁移同步纪律](20260809-dual-backend-migrations.md) — SQLite 与 PG 迁移必须同步写，CI 的 PG 契约测试会暴露缺失
-- [部署目标先核实](20260809-deploy-target-verify.md) — 服务器多服务并存先确认目标服务与代码栈，再构建打包
 - [持久化 ID 必须权威回读](20260809-persisted-id-rehydration.md) — 只保存实体 ID 会造成刷新后的前后端状态错位，恢复时必须回读正文与终态
 - [患者可见状态保持单一来源](20260809-patient-visible-state.md) — 过滤、截断或映射后的有效问答状态必须由正文、结构化响应、持久化和恢复共同使用
 - [有序决策树必须保留节点身份](20260809-ordered-tree-node-identity.md) — 同题二次确认是独立节点，不能压成单字段并行规则而丢失路径与终止语义
 - [多来源资料必须按职责编译](20260809-source-role-contract.md) — 页面、规则与方案分别控制展示、跳转和叶后内容，不能互相越权补全
 - [资料移动必须锁定清单与动作语义](20260811-material-relocation-scope.md) — 移动不得扩大为删除、加工或归档其他文件，忽略区操作前后核对清单与哈希
-- [智能体调研先定角色：患者科普问答型](20260813-agent-lens-patient-qa.md) — 借鉴写码型框架只取最小循环结构，标杆是小荷医生，泄露源码不抄不克隆
-- [零材料模板不得制造隐性授权](20260814-zero-context-template-authority.md) — 未核实事实明确待核实，角色模板不默认扩大人或 AI 的权限
-- [模板对齐必须核对完整生成清单](20260814-template-alignment-full-inventory.md) — 从初始化脚本生成基线逐项核对，区分结构定制、真实缺失和项目特例
-- [多工具入口必须指向同一技能正本](20260814-tool-native-discovery-single-source.md) — 按工具官方发现规则接入，同一技能正文只留一份并用新会话核验路径
 - [知识兜底必须复用正式输出校验](20260814-validated-knowledge-fallback.md) — 模型波动时可展示 enabled 知识原文，但必须逐条通过与模型答案相同的医学边界校验
 - [生成式输出先验证再流式展示](20260815-validated-output-streaming.md) — 高风险患者输出先完整校验并落库，再分片展示；断流从权威存储恢复而不自动重写
 - [Web 编辑请求只提交可编辑字段](20260817-web-edit-dto-whitelist.md) — 读模型不得整体展开回写；用字段白名单和创建→编辑→回读浏览器路径防隐藏字段破坏更新

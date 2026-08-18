@@ -20,8 +20,5 @@ AppID 只注入临时上传副本，仓库 `project.config.json` 保持空值，
 开启本机 CLI 服务端口必须有作者明确授权；上传后退出工具、恢复所有相关配置档为关闭/空值，并用 `lsof`
 实测无监听。
 
-结构检查器也必须按 `changes/arch`、`changes/ops`、`changes/fix` 分别编号；若检查器仍把
-`changes/` 根目录递归合并，会把合法的 `arch/001` 与 `ops/001` 错报为冲突。
-
-收尾按顺序执行：回读 board → 更新持久文档、里程碑和记忆 → 通过 PR 门禁 → 合并后核对 main、目标树和远端
-分支 → 再清理任务分支/worktree；作者原件和未授权文件不进提交。
+本记忆只保留可复用的上传与本机端口安全边界；单次上传的版本、包大小、工具缺陷和执行证据记录在
+`docs/changes/ops/001_native-miniprogram-cli-upload.md`，不在记忆中复制。
