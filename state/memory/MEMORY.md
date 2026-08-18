@@ -10,6 +10,7 @@
 - [部署目标先核实](20260818-deploy-target-verify.md) — 交叉核对主机、服务、代码栈、数据与 release，不凭旧记录推断
 - [智能体调研先定角色：患者科普问答型](20260818-agent-lens-patient-qa.md) — 规则与 truth 负责裁决，知识库只提供检索依据，模型不自主诊断
 - [清理前合并本地主状态](20260818-reconcile-local-board-before-cleanup.md) — 任务 worktree 收尾前额外核对主工作区的独有 board 记录
+- [管理后台可见文案全量盘点](20260818-admin-copy-surface-inventory.md) — 后台命名调整覆盖所有可见表面，并用正向与旧术语负向回归锁定
 - [模板对齐必须核对完整生成清单](20260818-template-alignment-full-inventory.md) — 在隔离目录生成基线，区分真实缺失、项目定制和本地特例
 - [零材料模板不得制造隐性授权](20260818-zero-context-template-authority.md) — 未核实事实明确待核实，初始化不默认扩大人或 AI 的权限
 - [双后端迁移同步纪律](20260809-dual-backend-migrations.md) — SQLite 与 PG 迁移必须同步写，CI 的 PG 契约测试会暴露缺失
