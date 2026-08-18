@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧹 小程序上传能力核验与交付收尾（2026-08-18 第九十五轮 · 基线 `main@ec5f2e5`）
+> 核验本机微信开发者工具 36.6.0 与仓库小程序工程：`node scripts/check-miniprogram.mjs` 通过，工程 AppID 仍按安全规则留空；开发者工具 CLI 存在，但 `cli islogin` 明确返回“IDE 服务端口已关闭”，因此本轮没有调用上传命令，也没有把游客编译、静态检查或 Web 部署冒充体验版发布。真实上传的下一步是作者在微信开发者工具“设置 → 安全设置”开启本机服务端口，并确认登录账号具备该 AppID 的开发者权限；AppSecret 不需要也不应进入小程序工程。
+> 本轮没有业务代码变化，线上继续运行 `/srv/kangmin-cli/releases/miniprogram-admin-7eb9323`，无需重复部署；前轮 PR #213/#214、合并提交 `main@ec5f2e5`、公网 `/live` 与 SQLite/备份核验事实保持有效。作者原件 `hi.md` 保持未修改、未跟踪。
+
 > ## 🚀 原生小程序与管理工作台已合并并部署（2026-08-18 第九十四轮 · 合并 `7eb9323`，PR #213）
 > 按报价 truth 完成原生小程序助手、站内消息、正式首页与管理工作台视觉收口；管理 Web 保留为内容运营入口，患者 Web 跳转移除，患者 Web 源码继续作为回归壳，避免在微信小程序真实验收前破坏既有测试与服务入口。管理流程文案经元反思修正为“准备—校验—发布”，没有虚构独立审核状态；未修改问卷、证型、分期、方案、模型、知识或医学 truth。
 > 已调用 sequential-thinking MCP，并按 `km-review` 患者可懂性、工程事实、医学安全三视角复核，P0/P1/P2 均为 0。`cd src && npm run check` 通过：355 项测试中 279 项通过，76 项因本机未配置 PostgreSQL/S3 外部适配器按约定跳过；真实浏览器 E2E、小程序检查、远端 `quality`/`image` 门禁均通过。PR #213 squash 合并为 `main@7eb9323`。
