@@ -151,35 +151,45 @@ def check_navigation_links(root: Path, errors: list[str]) -> None:
 
 
 def check_document_numbers(root: Path, errors: list[str]) -> None:
-    """plan/reviews/research/changes 各自在分类内从 001 连续编号。"""
-    for category in ("plan", "reviews", "research", "changes"):
-        category_root = root / "docs" / category
-        if not category_root.exists():
-            continue
-        documents: dict[int, list[Path]] = {}
-        for document in sorted(category_root.rglob("*.md")):
-            match = NUMBERED_DOCUMENT.fullmatch(document.name)
-            if match is None:
+    """按 docs 分类检查编号；changes 的 arch/ops/fix 各自独立编号。"""
+    categories = {
+        category: (root / "docs" / category,)
+        for category in ("plan", "reviews", "research")
+    }
+    categories["changes"] = tuple(
+        root / "docs" / "changes" / change_type
+        for change_type in ("arch", "ops", "fix")
+    )
+
+    for category, category_roots in categories.items():
+        for category_root in category_roots:
+            if not category_root.exists():
                 continue
-            number = int(match.group(1))
-            documents.setdefault(number, []).append(document.relative_to(root))
+            documents: dict[int, list[Path]] = {}
+            for document in sorted(category_root.rglob("*.md")):
+                match = NUMBERED_DOCUMENT.fullmatch(document.name)
+                if match is None:
+                    continue
+                number = int(match.group(1))
+                documents.setdefault(number, []).append(document.relative_to(root))
 
-        for number, paths in sorted(documents.items()):
-            if len(paths) > 1:
-                joined = "、".join(str(path) for path in paths)
+            label = category_root.relative_to(root)
+            for number, paths in sorted(documents.items()):
+                if len(paths) > 1:
+                    joined = "、".join(str(path) for path in paths)
+                    errors.append(
+                        f"{label} 分类编号重复：{number:03d} -> {joined}"
+                    )
+
+            if not documents:
+                continue
+            expected = set(range(1, max(documents) + 1))
+            missing = sorted(expected - set(documents))
+            if missing:
                 errors.append(
-                    f"docs/{category} 分类编号重复：{number:03d} -> {joined}"
+                    f"{label} 分类编号不连续，缺少："
+                    + "、".join(f"{number:03d}" for number in missing)
                 )
-
-        if not documents:
-            continue
-        expected = set(range(1, max(documents) + 1))
-        missing = sorted(expected - set(documents))
-        if missing:
-            errors.append(
-                f"docs/{category} 分类编号不连续，缺少："
-                + "、".join(f"{number:03d}" for number in missing)
-            )
 
 
 def check_agents_claude_sync(root: Path, errors: list[str]) -> None:

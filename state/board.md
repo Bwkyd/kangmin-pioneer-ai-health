@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🗂️ 原生小程序上传事实按寿命归位与收尾经验固化（2026-08-18 第九十七轮 · 待合并）
+> 把第九十六轮的上传事实同步到 `docs/plan/010_native-miniprogram-non-agent-shell.md` 与 `.42cog/real.md`，在人类里程碑 `state/changelog.md` 中记录“上传接口成功但不等于体验版/真机/客户验收”，并新增运维记录 `docs/changes/ops/001_native-miniprogram-cli-upload.md`。同时把 CLI 漏传二维码参数、临时副本注入 AppID、上传后关闭端口和三层验收边界沉淀到 `state/memory/20260818-wechat-cli-upload-and-closeout.md`；校正 `docs/README.md`、`docs/changes/README.md` 和 `scripts/structure-lint.py` 的分类编号说明。
+> 本轮只改状态、追溯文档和项目记忆，不改 `src/`、Web 服务、医学 truth 或作者原件。原生小程序上传版本 `0.1.0`、`success: true`、包体 `136523` 字节、CLI 服务端口关闭等事实由第九十六轮的已合并记录承接；真实微信权限、合法域名、真机、体验版可见性和客户验收仍为外部待办。验证待本轮文档检查后回写；作者原件 `hi.md` 保持未修改、未跟踪。
+
 > ## ✅ 原生小程序 CLI 上传成功并完成收尾（2026-08-18 第九十六轮 · 合并 `5e85113`，PR #216）
 > 作者允许开启本机微信开发者工具 CLI 服务端口后，重启微信开发者工具 36.6.0，`cli islogin` 返回 `{"login":true}`。使用临时上传副本 `/tmp/kangmin-miniprogram-upload.7C615Y` 注入 AppID `wxec3aeaadcddaf45e`，仓库 `src/miniprogram/project.config.json` 仍保持空 AppID，未写入 AppSecret 或其他凭据。
 > 首次直接调用 `cli upload` 暴露当前 CLI 子命令漏传二维码输出参数的问题；随后通过同一 CLI 服务端点补齐有效二维码路径重试，微信开发者工具 `/v2/upload` 返回 `{"success":true,"info":{"size":{"total":136523,"packages":[{"name":"TOTAL","size":136523}]}}}`，版本 `0.1.0`、描述“抗敏先锋原生小程序首轮验证”。这证明上传接口已接受代码，不扩大为真机验收、体验版可见性、微信审核或正式发布结论。
