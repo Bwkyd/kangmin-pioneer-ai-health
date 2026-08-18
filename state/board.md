@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 原生小程序 CLI 上传成功并完成收尾（2026-08-18 第九十六轮 · 待合并）
+> 作者允许开启本机微信开发者工具 CLI 服务端口后，重启微信开发者工具 36.6.0，`cli islogin` 返回 `{"login":true}`。使用临时上传副本 `/tmp/kangmin-miniprogram-upload.7C615Y` 注入 AppID `wxec3aeaadcddaf45e`，仓库 `src/miniprogram/project.config.json` 仍保持空 AppID，未写入 AppSecret 或其他凭据。
+> 首次直接调用 `cli upload` 暴露当前 CLI 子命令漏传二维码输出参数的问题；随后通过同一 CLI 服务端点补齐有效二维码路径重试，微信开发者工具 `/v2/upload` 返回 `{"success":true,"info":{"size":{"total":136523,"packages":[{"name":"TOTAL","size":136523}]}}}`，版本 `0.1.0`、描述“抗敏先锋原生小程序首轮验证”。这证明上传接口已接受代码，不扩大为真机验收、体验版可见性、微信审核或正式发布结论。
+> `cd src && node scripts/check-miniprogram.mjs`、`git diff --check` 通过；本轮没有业务代码或 Web 服务端变化，线上继续运行 `/srv/kangmin-cli/releases/miniprogram-admin-7eb9323`，无需重复部署。作者原件 `hi.md` 保持未修改、未跟踪。
+
 > ## 🧹 小程序上传能力核验与交付收尾（2026-08-18 第九十五轮 · 基线 `main@ec5f2e5`）
 > 核验本机微信开发者工具 36.6.0 与仓库小程序工程：`node scripts/check-miniprogram.mjs` 通过，工程 AppID 仍按安全规则留空；开发者工具 CLI 存在，但 `cli islogin` 明确返回“IDE 服务端口已关闭”，因此本轮没有调用上传命令，也没有把游客编译、静态检查或 Web 部署冒充体验版发布。真实上传的下一步是作者在微信开发者工具“设置 → 安全设置”开启本机服务端口，并确认登录账号具备该 AppID 的开发者权限；AppSecret 不需要也不应进入小程序工程。
 > 本轮没有业务代码变化，线上继续运行 `/srv/kangmin-cli/releases/miniprogram-admin-7eb9323`，无需重复部署；前轮 PR #213/#214、合并提交 `main@ec5f2e5`、公网 `/live` 与 SQLite/备份核验事实保持有效。作者原件 `hi.md` 保持未修改、未跟踪。
