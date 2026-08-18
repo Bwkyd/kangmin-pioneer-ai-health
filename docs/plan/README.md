@@ -14,7 +14,7 @@
 | 006 | 2026-08-04 | 已落地档案 | [R3 Agent 会话域](006_fix-r3-agent-session.md) |
 | 007 | 2026-08-09 | 已合并交付，客户已收到反馈 | [修正评估页面与有序六步证型决策树](007_fix-ordered-syndrome-decision-tree.md) |
 | 008 | 2026-08-11 | Web 已部署，正式切换待资源 | [腾讯云正式环境切换方案](008_tencent-cloud-production-cutover.md) |
-| 009 | 2026-08-17 | 实现候选完成，未提交/部署 | [Web 试用版非智能体报价闭环](009_non-agent-quotation-web-closure.md) |
+| 009 | 2026-08-17 | 已合并并部署 Web 试用环境；管理工作台 PR #222 已收口 | [Web 试用版非智能体报价闭环](009_non-agent-quotation-web-closure.md) |
 | 010 | 2026-08-17 | 已合并，CLI 上传接口验证通过；待真机/客户验收 | [原生微信小程序非智能体薄壳](010_native-miniprogram-non-agent-shell.md) |
 下一份计划编号从 `011` 开始。
 

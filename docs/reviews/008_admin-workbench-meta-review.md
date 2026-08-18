@@ -1,6 +1,6 @@
-# 008 · 报价内管理工作台元反思与交付前复核
+# 008 · 报价内管理工作台元反思与交付复核
 
-> 状态：已完成；日期：2026-08-18；基线：`main@369670d` 未提交工作区；方法：sequential-thinking MCP + `km-review` 三视角。
+> 状态：已完成；日期：2026-08-18；实现合并：PR #222 / `main@4c5ead7`；方法：sequential-thinking MCP + `km-review` 三视角。
 
 ## 结论
 
@@ -27,6 +27,7 @@
 
 ## 验证与限制
 
-- `npm run typecheck`、`npm run build` 和真实 `node scripts/web-browser-e2e.mjs` 通过。
-- 交付前还需运行完整 `npm run check`、清单/差异检查和 GitHub CI；部署只针对现有 Web 试用环境，保留 SQLite 备份与旧 release 回滚。
-- 本复核不扩大为客户验收、医学批准、正式生产就绪或微信真机验收。
+- `npm run typecheck`、`npm run build`、真实 `node scripts/web-browser-e2e.mjs` 和完整 `cd src && npm run check` 通过；清单、工具、差异检查也通过。结构检查仅被本轮前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题拦截。
+- GitHub PR #222 的 `quality`、`image` 均通过并 squash 合并；部署前 8788 + 线上 SQLite 副本预检通过，切换后应用与 Nginx active、`NRestarts=0`、`quick_check=ok`，公网 `/live` 和 `/admin` 均为 200，新管理 bundle 已回读。
+- 部署只针对现有 Web 试用环境，release 为 `admin-workbench-4c5ead7`，备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260818-173227-pre-deploy.sqlite`，旧 release 保留回滚。
+- `/ready` 仍因试用环境未配置加密密钥返回 503；本复核不扩大为客户验收、医学批准、正式生产就绪或微信真机验收。

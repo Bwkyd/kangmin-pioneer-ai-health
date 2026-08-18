@@ -126,3 +126,11 @@
   并原子切换，旧 release 保留回滚。公网患者页、管理页和新管理 JS 均为 200，管理 JS 与
   本地构建哈希一致；应用/Nginx active、`NRestarts=0`、SQLite `quick_check=ok`。真实浏览器
   E2E 已在本地覆盖知识编辑完整路径；`/ready` 仍只因试用环境既有 encryption 未配置返回 503。
+- 2026-08-18 将报价内管理工作台 PR #222 的合并提交 `4c5ead7` 构建并部署为
+  `/srv/kangmin-cli/releases/admin-workbench-4c5ead7`。发布包 SHA-256 为
+  `54d002ce1347638192ed3daafdf126237aa3302d8eab97337dde80b89bc14e68`；先在 8788 使用线上
+  SQLite 副本预检新管理端、数据库副本与 `quick_check=ok`，切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260818-173227-pre-deploy.sqlite`，旧
+  `miniprogram-admin-7eb9323` 保留回滚。公网 `/live`、`/admin` 和新管理 bundle 均回读通过，
+  应用/Nginx active、`NRestarts=0`；`/ready` 仍只因试用环境既有 encryption 未配置返回 503，
+  不扩大为正式生产就绪或客户验收。
