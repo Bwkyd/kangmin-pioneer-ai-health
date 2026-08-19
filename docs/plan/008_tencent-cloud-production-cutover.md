@@ -142,3 +142,12 @@
   `/srv/kangmin-cli/backups/kangmin-mvp-20260818-192108-before-admin-copy-cleanup.sqlite`，
   预检与切换后 `quick_check=ok`、服务 active、`NRestarts=0`，公网 `/live`、`/admin` 均为
   200，旧 release 保留回滚；PR #227 只补充状态与复核文档，不产生新的运行时部署。
+- 2026-08-19 将 Issue #232 的内容录入闭环 PR #233 squash 合并为 `main@cb2d88b`，构建发布包
+  SHA-256 为 `35d8b1d2211852744fb436d6e09b8fdc6702b0bc15015d6103a96b7cdf94aa28`，部署 release
+  `/srv/kangmin-cli/releases/content-entry-cb2d88b`。先使用线上 SQLite 在线备份副本在 8788
+  预检患者页、管理页、迁移和 `quick_check`，通过后切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260819-080256-before-content-entry-cb2d88b.sqlite`，
+  旧 release 保留回滚。
+- 切换后公网 `/live`、患者首页、`/admin` 均为 200，管理、患者和正文媒体 bundle 的公网哈希
+  与 release 一致；应用 active、`NRestarts=0`、SQLite `quick_check=ok`。`/ready` 仍仅因试用
+  环境未配置加密密钥返回 503，不扩大为正式生产就绪或客户验收。
