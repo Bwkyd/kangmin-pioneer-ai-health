@@ -8,6 +8,11 @@
 > 服务端新增管理会话保护的草稿媒体预览路由，正文 Markdown 媒体引用纳入 SQLite/PostgreSQL 发布门禁、公开媒体门禁和已发布素材停用/删除保护；分类创建失败时保留输入和当前表单状态。新增/更新浏览器 E2E 与草稿清空回归测试，未改变问卷、证型、分期、方案、模型或医学 truth。
 > 验证：`cd src && npm run check`、`python3 scripts/check-manifests.py` 和 `git diff --check` 通过；`npm test` 共 356 项，280 通过、0 失败、76 项因本机未配置 PostgreSQL/S3 按约定跳过。`python3 scripts/structure-lint.py .` 仍只被任务前已有的 `_work/20260814-福建省中医药适宜技术手册-md` 命名问题拦截。按 `km-review` 患者可懂性、工程事实、医学安全三视角复核，未发现新的 P0/P1；未提交、推送、合并、部署或清理分支，`hi.md` 保持作者原件未修改、未跟踪。
 
+> ## 🚀 Issue #232 修复提交、合并、部署与回读（2026-08-19 第112轮 · PR #233，合并 `cb2d88b`）
+> 将第111轮的管理后台内容录入闭环提交为 `eb26f41`，GitHub PR #233 的 `quality`、`image` 两项 CI 均通过后 squash 合并为 `main@cb2d88b`，Issue #232 已自动关闭。合并后重新从 `main` 构建发布包，SHA-256 为 `35d8b1d2211852744fb436d6e09b8fdc6702b0bc15015d6103a96b7cdf94aa28`。
+> 线上先用 `/srv/kangmin-cli/data/kangmin-mvp.sqlite` 的在线备份副本在 8788 预检；患者页、管理页均为 200，迁移后副本与线上库 `PRAGMA quick_check` 均为 `ok`。切换前备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260819-080256-before-content-entry-cb2d88b.sqlite`，随后原子切换到 `/srv/kangmin-cli/releases/content-entry-cb2d88b`，旧 release 保留回滚。
+> 切换后公网 `/live`、患者首页、`/admin` 均为 200，管理、患者和正文媒体 bundle 的公网 SHA-256 均与 release 一致；应用 active、`NRestarts=0`、线上 SQLite `quick_check=ok`。`/ready=503` 仍仅因试用环境未配置加密密钥，不扩大为正式生产就绪或客户验收。部署状态已回写 `docs/plan/008_tencent-cloud-production-cutover.md`；`hi.md` 保持作者原件未修改、未跟踪。
+
 > ## 🐛 对抗性评审提交 GitHub Issue（2026-08-19 第110轮 · 基线 `main@bf8038d`，无代码提交）
 > 将第109轮管理后台内容录入对抗性评审提交为 GitHub [Issue #232](https://github.com/Bwkyd/kangmin-pioneer-ai-health/issues/232)：正文包含 P0=0、8 项 P1、逐项验收标准，以及作者提供的文章新增页截图；回读确认 Issue 处于 open 状态，截图已嵌入 `user-attachments` 链接，并带有 `bug`、`risk-high` 标签。GitHub 连接器返回 403，改用已登录的官方 `gh` CLI 完成创建；本地 `gh-image` 仅用于生成附件链接，不写入仓库。
 > 本轮未修改 `src/`、truth、数据库、部署或 `hi.md`；只更新本状态记录并完成外部 Issue 写入。评审文档、README 索引和状态记录仍未提交，作者原件 `hi.md` 保持未跟踪。
