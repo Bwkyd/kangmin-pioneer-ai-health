@@ -70,6 +70,7 @@ const javascriptFiles = [
   "utils/date.js",
   "utils/page.js",
   "utils/request.js",
+  "utils/learning-catalog.js",
   "custom-tab-bar/index.js",
   ...app.pages.map((page) => `${page}.js`)
 ];
@@ -77,7 +78,7 @@ for (const file of javascriptFiles) {
   new vm.Script(read(file), { filename: file });
 }
 
-const nativeTags = new Set(["button", "image", "input", "picker", "rich-text", "slider", "text", "video", "view"]);
+const nativeTags = new Set(["button", "image", "input", "picker", "rich-text", "slider", "textarea", "text", "video", "view"]);
 for (const page of app.pages) {
   const source = read(`${page}.wxml`);
   for (const match of source.matchAll(/<\/?([A-Za-z][\w-]*)\b/gu)) {
@@ -105,7 +106,7 @@ for (const forbidden of ["AppSecret", "session_key", "openId", "openid"]) {
 }
 
 const assistantSource = read("pages/assistant/index.js");
-for (const requiredCommand of ["agent exec", "agent conversations list", "agent conversations show"]) {
+for (const requiredCommand of ["agent conversations list", "agent conversations show", "streamAgent"]) {
   if (!assistantSource.includes(requiredCommand)) {
     throw new Error(`原生问助手缺少服务端会话命令：${requiredCommand}`);
   }

@@ -6,6 +6,7 @@
     "pages/mine/index",
     "pages/messages/index",
     "pages/symptom-edit/index",
+    "pages/health-profile/index",
     "pages/learn/index",
     "pages/content-detail/index"
   ],

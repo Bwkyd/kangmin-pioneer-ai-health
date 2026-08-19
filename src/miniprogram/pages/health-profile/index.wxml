@@ -1,0 +1,50 @@
+<view class="page profile-page">
+  <view wx:if="{{loading && !consentGranted}}" class="empty-box">正在准备健康档案…</view>
+  <view wx:if="{{error}}" class="error-box">{{error}}</view>
+
+  <view wx:if="{{!loading && !consentGranted && !error}}" class="card consent-card">
+    <view class="section-title">先确认健康数据授权</view>
+    <view class="muted">{{privacyStatement}}</view>
+    <view class="consent-row" bindtap="toggleConsent"><view class="checkbox {{consentAccepted ? 'checked' : ''}}">{{consentAccepted ? '✓' : ''}}</view><text>我已阅读并同意保存本人的健康档案、过敏原和用药记录</text></view>
+    <button class="primary-button" bindtap="grantConsent">同意并继续</button>
+  </view>
+
+  <view wx:if="{{consentGranted && !loading}}">
+    <view class="intro-card"><text class="intro-label">我的健康记录</text><text class="intro-title">健康档案</text><text class="intro-copy">这里记录的是你的自述信息，不能替代医生诊断；不确定的内容可以留空或标记为不详。</text></view>
+
+    <view class="card">
+      <view class="section-title">基础信息</view>
+      <view class="field-label">姓名或称呼</view><input class="field-input" value="{{profile.displayName}}" data-field="displayName" placeholder="例如：小林" bindinput="onProfileInput" />
+      <view class="field-label">出生日期</view><picker mode="date" value="{{profile.birthDate}}" end="{{today}}" bindchange="changeProfileDate"><view class="field-picker">{{profile.birthDate || '暂不填写'}}　›</view></picker>
+      <view class="field-label">性别</view><picker mode="selector" range="{{sexLabels}}" value="{{sexIndex}}" bindchange="changeSex"><view class="field-picker">{{sexLabels[sexIndex]}}　›</view></picker>
+      <view class="field-label">过敏史</view><textarea class="field-textarea" value="{{profile.allergyHistory}}" maxlength="1000" placeholder="如无记录可留空，请勿自行下诊断" data-field="allergyHistory" bindinput="onProfileInput" />
+      <button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveProfile">保存健康档案</button>
+    </view>
+
+    <view class="card">
+      <view class="section-title">过敏原暴露记录</view>
+      <view class="muted">只记录当天接触或自我观察到的因素，不代表医学上的过敏诊断。</view>
+      <view class="field-label">记录日期</view><picker mode="date" value="{{exposureDate}}" end="{{today}}" bindchange="changeExposureDate"><view class="field-picker">{{exposureDate}}　›</view></picker>
+      <view wx:for="{{factorGroups}}" wx:key="name" class="factor-group"><view class="factor-title">{{item.name}}</view><view class="factor-list"><view wx:for="{{item.options}}" wx:key="code" class="factor-chip {{item.selected ? 'selected' : ''}}" data-label="{{item.label}}" bindtap="toggleFactor">{{item.label}}</view></view></view>
+      <textarea wx:if="{{hasOtherExposure}}" class="field-textarea" value="{{exposureOther}}" maxlength="300" placeholder="简要描述其它因素" bindinput="onExposureOtherInput" />
+      <view class="form-actions"><button class="secondary-button" bindtap="resetExposure">清空</button><button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveExposure">{{exposureEditingId ? '保存修改' : '保存记录'}}</button></view>
+      <view wx:if="{{!exposureItems.length}}" class="record-empty">暂无已保存的过敏原记录。</view>
+      <view wx:for="{{exposureItems}}" wx:key="id" class="record-row"><view class="record-copy"><text class="record-title">{{item.displayDate}}</text><text>{{item.factorsText}}</text><text wx:if="{{item.otherDescription}}">补充：{{item.otherDescription}}</text></view><view class="row-actions"><button data-id="{{item.id}}" bindtap="editExposure">编辑</button><button data-id="{{item.id}}" bindtap="deleteExposure">删除</button></view></view>
+    </view>
+
+    <view class="card">
+      <view class="section-title">用药记录</view>
+      <view class="muted">记录实际使用情况；剂量或实际用量不清楚时请明确标记，不要猜填。</view>
+      <view class="field-label">使用日期</view><picker mode="date" value="{{medicationDate}}" end="{{today}}" bindchange="changeMedicationDate"><view class="field-picker">{{medicationDate}}　›</view></picker>
+      <view class="field-label">药物名称</view><input class="field-input" value="{{medicationName}}" placeholder="例如：氯雷他定" data-field="medicationName" bindinput="onMedicationInput" />
+      <view class="field-label">剂量</view><view class="inline-fields"><input class="field-input" value="{{medicationDosage}}" disabled="{{medicationDosageUnknown}}" placeholder="例如：10" data-field="medicationDosage" bindinput="onMedicationInput" /><input class="field-input" value="{{medicationDosageUnit}}" disabled="{{medicationDosageUnknown}}" placeholder="mg、片" data-field="medicationDosageUnit" bindinput="onMedicationInput" /></view>
+      <view class="check-line" data-field="medicationDosageUnknown" bindtap="toggleMedicationUnknown"><view class="checkbox {{medicationDosageUnknown ? 'checked' : ''}}">{{medicationDosageUnknown ? '✓' : ''}}</view><text>剂量不详</text></view>
+      <view class="field-label">实际用量情况</view><textarea class="field-textarea" value="{{medicationActualUse}}" disabled="{{medicationActualUseUnknown}}" placeholder="例如：按医嘱服用一次" data-field="medicationActualUse" bindinput="onMedicationInput" />
+      <view class="check-line" data-field="medicationActualUseUnknown" bindtap="toggleMedicationUnknown"><view class="checkbox {{medicationActualUseUnknown ? 'checked' : ''}}">{{medicationActualUseUnknown ? '✓' : ''}}</view><text>实际用量不详</text></view>
+      <view class="form-actions"><button class="secondary-button" bindtap="resetMedication">清空</button><button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveMedication">{{medicationEditingId ? '保存修改' : '保存记录'}}</button></view>
+      <view wx:if="{{!medicationItems.length}}" class="record-empty">暂无已保存的用药记录。</view>
+      <view wx:for="{{medicationItems}}" wx:key="id" class="record-row"><view class="record-copy"><text class="record-title">{{item.displayDate}} · {{item.medicationName}}</text><text>{{item.dosageText}}</text><text>{{item.actualUseText}}</text></view><view class="row-actions"><button data-id="{{item.id}}" bindtap="editMedication">编辑</button><button data-id="{{item.id}}" bindtap="deleteMedication">删除</button></view></view>
+    </view>
+    <view class="profile-disclaimer">健康档案、过敏原和用药记录仅供本人回顾，不能替代门诊诊断。</view>
+  </view>
+</view>
