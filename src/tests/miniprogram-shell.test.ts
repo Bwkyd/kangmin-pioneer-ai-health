@@ -55,6 +55,8 @@ function loadPage(
     Array,
     String,
     RegExp,
+    setTimeout,
+    clearTimeout,
     console
   }, { filename: relativePath });
   assert.ok(definition !== null, `${relativePath} 未注册 Page`);
@@ -193,6 +195,86 @@ test("微信登录未配置时患者命令安全拒绝且不发出身份请求",
   assert.equal(calls.length, 0);
 });
 
+test("小程序流式请求按 NDJSON 增量输出，并正确还原跨 chunk 的中文 UTF-8", async () => {
+  const calls: Array<Record<string, unknown>> = [];
+  let receiveChunk: ((value: { data: ArrayBuffer }) => void) | null = null;
+  let aborted = false;
+  const task = {
+    onChunkReceived(listener: (value: { data: ArrayBuffer }) => void) { receiveChunk = listener; },
+    abort() { aborted = true; }
+  };
+  const wx = {
+    request(options: any) {
+      calls.push(options);
+      setTimeout(() => {
+        assert.ok(receiveChunk);
+        const encoded = new TextEncoder().encode([
+          '{"type":"start"}\n',
+          '{"type":"delta","content":"你"}\n',
+          '{"type":"delta","content":"好"}\n',
+          '{"type":"done","data":{"message":{"content":"你好"}}}\n'
+        ].join(""));
+        const split = encoded.findIndex((value, index) => index > 20 && value >= 0x80);
+        receiveChunk!({ data: encoded.slice(0, split + 1).buffer });
+        receiveChunk!({ data: encoded.slice(split + 1).buffer });
+        options.success({ statusCode: 200, data: new ArrayBuffer(0) });
+      }, 0);
+      return task;
+    },
+    getStorageSync: () => "stream-token",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => undefined,
+    login: () => { throw new Error("不应重复登录"); }
+  };
+  const exports = loadModule("utils/request.js", { wx, ArrayBuffer, Uint8Array }, {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: true
+  });
+  const createClient = exports.createClient as (api: typeof wx, options: Record<string, unknown>) => {
+    streamAgent(input: Record<string, unknown>, handlers: { onStart: () => void; onDelta: (content: string) => void }): Promise<any>;
+  };
+  const client = createClient(wx, { apiBaseUrl: "https://example.test", requestTimeoutMs: 1000, wechatLoginEnabled: true });
+  const starts: number[] = [];
+  const deltas: string[] = [];
+  const result = await client.streamAgent({ message: "你好" }, {
+    onStart: () => starts.push(1),
+    onDelta: (content) => deltas.push(content)
+  });
+  assert.deepEqual(starts, [1]);
+  assert.deepEqual(deltas, ["你", "好"]);
+  assert.equal(result.message.content, "你好");
+  assert.equal(calls[0]?.enableChunked, true);
+  assert.equal(calls[0]?.enableHttp2, false);
+  assert.equal(calls[0]?.responseType, "arraybuffer");
+  assert.equal((calls[0]?.header as Record<string, string>).Authorization, "Bearer stream-token");
+  assert.equal(aborted, false);
+});
+
+test("小程序流式请求在登录尚未完成时中止也会结束 Promise", async () => {
+  let requestCount = 0;
+  const wx = {
+    request() { requestCount += 1; throw new Error("中止后不应发起业务请求"); },
+    getStorageSync: () => "",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => undefined,
+    login() { /* 保持登录 Promise 挂起，验证 abort 能立即收口。 */ }
+  };
+  const client = (loadModule("utils/request.js", { wx, ArrayBuffer, Uint8Array }, {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: true
+  }) as any).createClient(wx, {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: true
+  });
+  const stream = client.streamAgent({ message: "你好" }, {});
+  stream.abort();
+  await assert.rejects(stream, (reason: any) => reason?.code === "stream_aborted");
+  assert.equal(requestCount, 0);
+});
+
 test("小程序日历工具生成完整 42 格并保留服务端症状投影", () => {
   const dateModule = loadModule("utils/date.js") as {
     buildCalendarCells(month: string, days: unknown[]): Array<Record<string, unknown>>;
@@ -288,17 +370,105 @@ test("小程序消息详情失败时不展示缓存内容，旧请求不能覆�
   assert.equal(page.data.error, "消息已下架");
 });
 
+test("小程序健康档案读取并展示基础信息、过敏原与用药记录", async () => {
+  const calls: string[] = [];
+  const api = {
+    command: async (name: string) => {
+      calls.push(name);
+      if (name === "account consent show") return { items: [{ consentType: "health_data", decision: "granted" }] };
+      if (name === "account privacy") return { policyVersion: "privacy-v1", statement: "健康数据说明" };
+      if (name === "record profile show") return { displayName: "小林", birthDate: "1990-01-02", sex: "female", allergyHistory: "花粉过敏史", revision: 2 };
+      if (name === "record exposure list") return { items: [{ id: "ex-1", localDate: "2026-08-18", factors: ["pollen", "other"], otherDescription: "装修粉尘", notes: "患者自述当天接触", revision: 1 }] };
+      if (name === "record medication list") return { items: [{ id: "med-1", localDate: "2026-08-18", medicationName: "氯雷他定", dosage: "10 mg", actualUse: null, revision: 1 }] };
+      throw new Error(`unexpected command: ${name}`);
+    }
+  };
+  const page = loadPage("pages/health-profile/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { errorMessage: () => "加载失败" }
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+  page.onLoad();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.consentGranted, true);
+  assert.equal(page.data.profile.displayName, "小林");
+  assert.equal(page.data.profileRevision, 2);
+  assert.equal(page.data.exposureItems[0]?.factorsText, "花粉、其它（请简要描述）");
+  assert.equal(page.data.medicationItems[0]?.dosageText, "10 mg");
+  assert.deepEqual(calls, ["account consent show", "account privacy", "record profile show", "record exposure list", "record medication list"]);
+});
+
+test("小程序我的页不把档案和概览读取失败伪装成空数据", async () => {
+  const api = {
+    command: async (name: string) => {
+      if (name === "account privacy") return { policyVersion: "privacy-v1", statement: "健康数据说明" };
+      throw { code: name === "record overview" ? "network_error" : "authentication_required" };
+    }
+  };
+  const page = loadPage("pages/mine/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { selectTab: () => {}, errorMessage: (error: any) => error.code === "network_error" ? "网络暂时不可用" : "请先登录" }
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+  page.onShow();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.overview, null);
+  assert.equal(page.data.overviewError, "网络暂时不可用");
+  assert.equal(page.data.profile, null);
+  assert.equal(page.data.profileError, "请先登录");
+});
+
+test("小程序科普中心支持已发布方案详情和知识库问答入口", async () => {
+  const calls: string[] = [];
+  const api = {
+    command: async (name: string, input: Record<string, unknown>) => {
+      calls.push(name);
+      if (name === "browse plan list") return { items: [{ id: "plan-1", name: "日常护理", publishedRevision: 1 }] };
+      if (name === "browse plan show") return { id: "plan-1", name: "日常护理", summary: "按已审核步骤进行", steps: [{ step: 1, title: "记录症状", description: "按日记录" }], precautions: "不替代诊断", risks: "", contraindications: "", disclaimer: "仅供科普" };
+      if (name === "agent knowledge ask") {
+        assert.equal(input.question, "换季鼻塞怎么办");
+        return { answer: "请先查看已审核资料。", sources: [{ knowledgeId: "k-1", name: "鼻健康手册", source: "团队资料" }], disclaimer: "仅供科普" };
+      }
+      throw new Error(`unexpected command: ${name}`);
+    }
+  };
+  const page = loadPage("pages/learn/index.js", {
+    "../../utils/request": { ...api, mediaUrl: (value: string) => value },
+    "../../utils/page": { errorMessage: () => "加载失败" },
+    "../../utils/content-body": { parseContentBody: () => [] },
+    "../../utils/learning-catalog": loadModule("utils/learning-catalog.js")
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+  page.onLoad({ kind: "plan" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.plans[0]?.name, "日常护理");
+  page.openPlan({ currentTarget: { dataset: { id: "plan-1" } } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.detail.steps[0].title, "记录症状");
+  page.setData({ kind: "qa", qaQuestion: "换季鼻塞怎么办" });
+  page.askKnowledge();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.qaAnswer.answer, "请先查看已审核资料。");
+  assert.deepEqual(calls, ["browse plan list", "browse plan show", "agent knowledge ask"]);
+});
+
 test("小程序问助手复用服务端会话，支持首轮评估、续问和结果收口", async () => {
   const calls: Array<{ name: string; input: Record<string, unknown>; options: Record<string, unknown> }> = [];
   const storage: Record<string, string> = {};
   let turnCount = 0;
   const api = {
     command: async (name: string, input: Record<string, unknown>, options: Record<string, unknown>) => {
-      calls.push({ name, input, options });
+      throw new Error(`unexpected command: ${name}`);
+    },
+    streamAgent: async (input: Record<string, unknown>, handlers: { onStart: () => void; onDelta: (content: string) => void }) => {
+      const options = { auth: true };
+      calls.push({ name: "agent exec", input, options });
       assert.equal(options.auth, true);
-      assert.equal(name, "agent exec");
       turnCount += 1;
+      handlers.onStart();
       if (turnCount === 1) {
+        handlers.onDelta("为了继续评估，请回答下面的问题。");
         return {
           conversationId: "conversation-1",
           state: "active",
@@ -311,6 +481,7 @@ test("小程序问助手复用服务端会话，支持首轮评估、续问和�
           closed: false
         };
       }
+      handlers.onDelta("【缓解期】\n已完成当前评估，请结合页面中的已审核方案。");
       return {
         conversationId: "conversation-1",
         state: "completed",
@@ -411,7 +582,9 @@ test("小程序问助手失败时移除思考态、保留输入并提供安全�
   let attempts = 0;
   const api = {
     command: async (name: string) => {
-      assert.equal(name, "agent exec");
+      throw new Error(`unexpected command: ${name}`);
+    },
+    streamAgent: async () => {
       attempts += 1;
       if (attempts === 1) throw { code: "network_error", message: "网络暂时不可用" };
       return {

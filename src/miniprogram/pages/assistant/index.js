@@ -163,6 +163,14 @@ Page({
     this.hydrate();
   },
 
+  onUnload: function () {
+    if (this._streamTask && typeof this._streamTask.abort === "function") {
+      this._streamTask.abort();
+    }
+    this._streamTask = null;
+    if (this._streamFlushTimer) clearTimeout(this._streamFlushTimer);
+  },
+
   nextRequest: function () {
     this._requestVersion = (this._requestVersion || 0) + 1;
     return this._requestVersion;
@@ -299,6 +307,8 @@ Page({
   },
 
   startNewConversation: function () {
+    if (this._streamTask && typeof this._streamTask.abort === "function") this._streamTask.abort();
+    this._streamTask = null;
     this.nextRequest();
     this.setData({
       hydrated: true,
@@ -388,15 +398,43 @@ Page({
       retryMessage: ""
     });
 
-    api.command("agent exec", input, { auth: true })
+    var streamText = "";
+    var streamMessageId = "thinking-" + requestVersion;
+    function flushStreamText() {
+      self._streamFlushTimer = null;
+      if (!self.isCurrentRequest(requestVersion)) return;
+      self.setData({
+        messages: self.data.messages.map(function (item) {
+          return item.id === streamMessageId ? Object.assign({}, item, { kind: "streaming", text: streamText || "正在等待服务端回答…" }) : item;
+        })
+      });
+    }
+    function appendStreamText(content) {
+      streamText += content;
+      if (!self._streamFlushTimer) self._streamFlushTimer = setTimeout(flushStreamText, 80);
+    }
+    var streamTask = api.streamAgent(input, {
+      onStart: function () {
+        if (!self.isCurrentRequest(requestVersion)) return;
+        self.setData({ messages: self.data.messages.map(function (item) {
+          return item.id === streamMessageId ? Object.assign({}, item, { kind: "streaming", text: "正在生成已校验回答…" }) : item;
+        }) });
+      },
+      onDelta: function (content) { appendStreamText(content); }
+    });
+    self._streamTask = streamTask;
+    streamTask
       .then(function (turn) {
         if (!self.isCurrentRequest(requestVersion)) return;
+        if (self._streamFlushTimer) clearTimeout(self._streamFlushTimer);
+        self._streamFlushTimer = null;
         var followUp = turn.verdict && turn.verdict.outcome === "classified";
         var state = turn.state || "active";
         var messages = self.data.messages
-          .filter(function (item) { return item.kind !== "thinking"; })
+          .filter(function (item) { return item.id !== streamMessageId && item.kind !== "thinking"; })
           .concat(turnMessages(turn));
         if (turn.conversationId) self.storeConversation(turn.conversationId);
+        self._streamTask = null;
         self.setData({
           messages: messages,
           conversationId: turn.conversationId || conversationId || "",
@@ -412,7 +450,10 @@ Page({
       })
       .catch(function (error) {
         if (!self.isCurrentRequest(requestVersion)) return;
-        var messages = self.data.messages.filter(function (item) { return item.kind !== "thinking"; });
+        if (self._streamFlushTimer) clearTimeout(self._streamFlushTimer);
+        self._streamFlushTimer = null;
+        self._streamTask = null;
+        var messages = self.data.messages.filter(function (item) { return item.id !== streamMessageId && item.kind !== "thinking"; });
         if (error && error.code === "protocol_incompatible") {
           self.setData({
             messages: messages,

@@ -16,7 +16,8 @@
 | 008 | 2026-08-11 | Web 已部署，正式切换待资源 | [腾讯云正式环境切换方案](008_tencent-cloud-production-cutover.md) |
 | 009 | 2026-08-17 | 已合并并部署 Web 试用环境；管理工作台 PR #222 已收口 | [Web 试用版非智能体报价闭环](009_non-agent-quotation-web-closure.md) |
 | 010 | 2026-08-17 | 已合并，CLI 上传接口验证通过；待真机/客户验收 | [原生微信小程序非智能体薄壳](010_native-miniprogram-non-agent-shell.md) |
-下一份计划编号从 `011` 开始。
+| 011 | 2026-08-19 | 实施中；冻结 Web 患者端并迁移至小程序 | [Web 患者端迁移至微信小程序](011_web-patient-miniprogram-migration.md) |
+下一份计划编号从 `012` 开始。
 
 新增计划必须写明目标、非目标、范围、依赖、风险、验收方式、当前状态和收尾证据。
 

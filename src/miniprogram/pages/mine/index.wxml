@@ -1,25 +1,26 @@
 <view class="page profile-view">
   <view class="profile-hero">
     <view class="profile-avatar">访</view>
-    <view class="profile-copy"><text>演示账户</text><text class="profile-name">尚未登录</text><text>暂无真实健康记录</text></view>
-    <view class="edit-pill">编辑</view>
+    <view class="profile-copy"><text>我的健康记录</text><text class="profile-name">{{profile && profile.displayName ? profile.displayName : '患者账户'}}</text><text>{{profileError ? '档案暂时无法读取' : profile ? '档案已同步到服务端' : '尚未填写健康档案'}}</text></view>
+    <view class="edit-pill" bindtap="openHealthProfile">{{profile ? '查看' : '填写'}}</view>
   </view>
+  <view wx:if="{{profileError || overviewError}}" class="error-box"><text>{{profileError || overviewError}}</text><text>点击“健康档案”可重试</text></view>
   <view class="profile-summary">
-    <view><text>--</text><text>连续记录/天</text></view>
-    <view><text>--</text><text>本月记录/次</text></view>
-    <view><text>暂无</text><text>最近评估</text></view>
+      <view><text>{{overview ? overview.consecutiveDays : '--'}}</text><text>连续记录/天</text></view>
+      <view><text>{{overview ? overview.monthRecordCount : '--'}}</text><text>本月记录/次</text></view>
+      <view><text>{{overview && overview.lastTnss !== null ? overview.lastTnss : '暂无'}}</text><text>最近症状评分</text></view>
   </view>
 
   <view class="profile-section">
     <text class="section-label">我的健康</text>
-    <view class="profile-item"><view class="item-icon blue">档</view><view><text>健康档案</text><text>基础信息、过敏史与常见诱因</text></view><text>›</text></view>
+    <view class="profile-item" bindtap="openHealthProfile"><view class="item-icon blue">档</view><view><text>健康档案</text><text>基础信息、过敏史、诱因与用药记录</text></view><text>›</text></view>
     <view class="profile-item" bindtap="openCalendar"><view class="item-icon amber">记</view><view><text>症状记录</text><text>查看日历、趋势与 TNSS 评估</text></view><text>›</text></view>
     <view class="profile-item" bindtap="openLearn"><view class="item-icon mint">科</view><view><text>鼻健康科普</text><text>浏览已发布的科普内容</text></view><text>›</text></view>
   </view>
 
   <view class="profile-section">
     <text class="section-label">设置与服务</text>
-    <view class="profile-item" bindtap="openMessages"><view class="item-icon violet">铃</view><view><text>消息中心</text><text>查看站内鼻健康提醒</text></view><view class="message-action"><text wx:if="{{unreadCount > 0}}" class="message-badge">{{unreadCount}}</text><text>›</text></view></view>
+    <view class="profile-item" bindtap="openMessages"><view class="item-icon violet">铃</view><view><text>消息中心</text><text>{{unreadError ? unreadError : '查看站内鼻健康提醒'}}</text></view><view class="message-action"><text wx:if="{{unreadCount > 0}}" class="message-badge">{{unreadCount}}</text><text>›</text></view></view>
     <view class="profile-item"><view class="item-icon gray">盾</view><view><text>隐私与授权</text><text>查看和管理健康数据授权</text></view><text>›</text></view>
     <view class="profile-item"><view class="item-icon gray">关</view><view><text>关于抗敏先锋</text><text>团队介绍、使用说明与意见反馈</text></view><text>›</text></view>
   </view>
