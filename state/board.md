@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ⏸️ 迁移代码已提交，PR 合并等待 CI 环境恢复（2026-08-19 第116轮 · 初始提交 `050ef38`，PR #235）
+> 使用 sequential-thinking 做目标、旧功能回归、工程事实、患者可懂性和医学安全元反思；复核 Web `DiscoverView` 后确认小程序默认“视频优先”与客户已确认的 Web 入口一致，撤回不必要的默认文章临时修补。按 `km-review` 三视角未发现 P0/P1/P2 代码缺陷。迁移代码以 `050ef38` 提交并推送到 `agent/web-patient-miniprogram-migration`，PR #235 已创建。
+> GitHub CI 的 legacy 门禁、依赖安装和 MinIO 均通过，但连续三次都在 `Install Playwright Chromium` 下载步骤运行 15 分钟后取消，未进入 CLI 质量门禁；PR 当前 `mergeStateStatus=BLOCKED`。不以本地测试替代远端门禁，不使用管理员绕过合并；Web 回退、体验版上传和未合并分支继续保留。`hi.md` 仍未跟踪且未修改。
+
 > ## ⏸️ 体验版上传工具边界复核（2026-08-19 第115轮 · 基线 `main@3ca49db`，未提交）
 > 在代码迁移全量检查完成后复核微信开发者工具上传路径：36.6.0 自带 `cli upload` 仍因二维码输出参数转发缺陷返回路径无效；同版本新的 `wechatide` skill 入口要求独立客户端授权，未自动继承现有 CLI 登录态，未触发扫码授权，也未上传体验版。其临时启动的 49606 服务端口已关闭并复核无监听。代码、预览结果、测试统计和安全流式边界见第114轮及 `docs/plan/011_web-patient-miniprogram-migration.md`。
 
