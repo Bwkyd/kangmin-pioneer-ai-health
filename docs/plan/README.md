@@ -26,3 +26,12 @@
 - 2026-08-14 · 客户的诊一诊需求是什么，以及下一件最该做的工作是什么 → 取舍卡见 `docs/research/003_zhenyiwen-customer-needs/decision.md`
 - 2026-08-17 · 通用鼻炎科普问答应采用哪种知识边界与检索降级策略 → 客户 20 号返回后拍板，取舍卡见 `docs/research/004_general-rhinitis-qa-boundary/decision.md`
 - 2026-08-18 · 如何把现有管理后台从演示型页面收敛为报价内可运营后台，并先做哪一件事 → 取舍卡见 `docs/research/005_admin-operable-backoffice/decision.md`
+- 2026-08-21 · 模型会不会乱说，以及后端医学校验是否必要 → 取舍卡见 `docs/research/008_model-safety-boundary/decision.md`
+- 2026-08-21 · 既能广泛回答又不乱说的医疗 Agent 架构 → 取舍卡见 `docs/research/009_answer-first-medical-agent/decision.md`
+- 2026-08-21 · 用评测驱动的上下文工程降低患者 Agent 无依据补全 → 取舍卡见 `docs/research/010_eval-driven-context-engineering/decision.md`
+- 2026-08-22 · 修正版患者智能体实验是否同时加入上下文与模型变量 → 取舍卡见 `docs/research/011_context-model-factorial/decision.md`
+
+## 已拍板实施入口
+
+- 2026-08-22 · 不训练、不切换生产模型，按 #236 → #237 → #238 实施报价内语义 RAG
+  纵向切片 → 决策见 `docs/product/2026-08-22-agent-scope-decision.md`
