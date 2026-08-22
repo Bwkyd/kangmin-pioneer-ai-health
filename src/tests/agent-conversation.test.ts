@@ -105,6 +105,12 @@ class FixedPlanDialogue implements PlanDialoguePort {
 
   async decideFollowUp(input: Parameters<PlanDialoguePort["decideFollowUp"]>[0]) {
     this.decisionCalls += 1;
+    if (input.question.includes("艾灸")) {
+      return {
+        action: "answer" as const,
+        answer: "当前方案未包含艾灸，我不能把它新增为你的操作建议。"
+      };
+    }
     assert.ok(input.question.includes("迎香"));
     return { action: "search" as const, query: "迎香穴 位置" };
   }
@@ -132,6 +138,23 @@ class NullPlanDialogue implements PlanDialoguePort {
 
   async answerFollowUp(): Promise<null> {
     return null;
+  }
+}
+
+class UnsafeHardFactPlanDialogue implements PlanDialoguePort {
+  async generatePlan(): Promise<string> {
+    return "已根据当前规则结果整理方案。";
+  }
+
+  async decideFollowUp() {
+    return {
+      action: "answer" as const,
+      answer: "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。"
+    };
+  }
+
+  async answerFollowUp(): Promise<string> {
+    return "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。";
   }
 }
 
@@ -578,10 +601,10 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
       },
       token
     );
-    assert.ok(refused.message?.content.includes("不在当前方案中"));
-    assert.ok(refused.message?.content.includes("不能新增操作建议"));
+    assert.ok(refused.message?.content.includes("当前方案未包含艾灸"));
+    assert.ok(refused.message?.content.includes("不能把它新增为你的操作建议"));
     assert.equal(planDialogue.followUpCalls, 1, "方案外疗法不得调用模型");
-    assert.equal(planDialogue.decisionCalls, 1, "方案外疗法不得调用模型");
+    assert.equal(planDialogue.decisionCalls, 2, "知识问法可以进入单步模型决策");
 
     const emergency = await exec(
       application,
@@ -593,7 +616,7 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
     );
     assert.match(emergency.message?.content ?? "", /立即联系急救或前往急诊/u);
     assert.ok(!emergency.message?.content.includes("【依据】"));
-    assert.equal(planDialogue.decisionCalls, 1, "急救硬门禁不得依赖模型判断");
+    assert.equal(planDialogue.decisionCalls, 2, "急救硬门禁不得依赖模型判断");
     assert.equal(retrieval.calls.length, 1, "急救硬门禁不得触发知识搜索");
 
     const show = dataOf<{ messages: Array<{ role: string; content: string }> }>(
@@ -725,6 +748,41 @@ test("诊一诊模型波动：即使检索有结果也不把可能答非所问�
     assert.match(followUp.message?.content ?? "", /没有找到足够贴合这个问题的依据/u);
     assert.ok(!followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
     assert.ok(!followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
+  } finally {
+    application.close();
+  }
+});
+
+test("硬事实发布失败：模型候选在持久化前降级，历史记录不含违规正文", async () => {
+  const { application } = await currentFixture({
+    planDialogue: new UnsafeHardFactPlanDialogue(),
+    planKnowledgeRetrieval: new EmptyKnowledgeRetrieval(),
+    planRegistry: new FixedPlanRegistry()
+  });
+  const token =
+    (await application.sessions.createDevelopmentSession("hard-fact-persistence")).token;
+  try {
+    const completed = await completeCurrentAssessment(application, token);
+    const followUp = await exec(application, {
+      message: "我还能怎么做？",
+      conversationId: completed.conversationId
+    }, token);
+    assert.match(followUp.message?.content ?? "", /最近一次自测结果|承接上一条/u);
+    assert.ok(!followUp.message?.content.includes("加量"));
+    assert.ok(!followUp.message?.content.includes("每天3次"));
+    assert.ok(!followUp.message?.content.includes("没有怀孕"));
+
+    const show = dataOf<{ messages: Array<{ role: string; content: string }> }>(
+      await application.execute({
+        command: "agent conversations show",
+        input: { id: completed.conversationId },
+        sessionToken: token
+      })
+    );
+    const stored = show.messages.map((message) => message.content).join("\n");
+    assert.ok(!stored.includes("加量"));
+    assert.ok(!stored.includes("每天3次"));
+    assert.ok(!stored.includes("没有怀孕"));
   } finally {
     application.close();
   }

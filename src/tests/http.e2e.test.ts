@@ -8,6 +8,10 @@ import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
 import { KangminDatabase } from "../infrastructure/database.js";
+import type { CommandResult } from "../kernel/result.js";
+import type { ConversationTurnResult } from "../modules/agent/conversation-contracts.js";
+import type { PlanDialoguePort } from "../modules/agent/model-ports.js";
+import type { ApprovedPlan, PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
 import { seedContent } from "./content-fixture.js";
 import { writeConsentForTest } from "./consent-fixture.js";
 
@@ -301,6 +305,116 @@ test("患者 Agent 流式接口只分片已校验并已持久化的完整结果"
         streamed
       );
     }
+  } finally {
+    await close(server);
+    application.close();
+  }
+});
+
+test("患者 Agent 流式失败路径：违规模型候选不进入分片、done 或历史", async () => {
+  class UnsafeDialogue implements PlanDialoguePort {
+    async generatePlan(): Promise<string> {
+      return "已根据当前规则结果整理方案。";
+    }
+    async decideFollowUp() {
+      return {
+        action: "answer" as const,
+        answer: "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。"
+      };
+    }
+    async answerFollowUp(): Promise<string> {
+      return "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。";
+    }
+  }
+  class Plans implements PlanRegistryPort {
+    async findApprovedPlanBundle(): Promise<{ acute: ApprovedPlan; constitution: ApprovedPlan }> {
+      const acute: ApprovedPlan = {
+        planId: "stream-acute",
+        planRevision: 1,
+        name: "急性期迎香调理方案",
+        method: "指腹擦迎香",
+        steps: JSON.stringify(["指腹轻擦迎香"]),
+        precautions: "皮肤破损时暂停操作。",
+        videoResourceId: null,
+        attributes: {}
+      };
+      return {
+        acute,
+        constitution: { ...acute, planId: "stream-constitution", name: "体质调理方案" }
+      };
+    }
+  }
+  const data = <T>(result: CommandResult): T => {
+    assert.equal(result.ok, true);
+    if (!result.ok) assert.fail("命令执行失败");
+    return result.data as T;
+  };
+
+  const directory = mkdtempSync(join(tmpdir(), "kangmin-agent-stream-hard-fact-"));
+  const application = createApplication(join(directory, "agent.sqlite"), {
+    planDialogue: new UnsafeDialogue(),
+    planRegistry: new Plans()
+  });
+  const token =
+    (await application.sessions.createDevelopmentSession("agent-stream-hard-fact")).token;
+  let turn = data<ConversationTurnResult>(await application.execute({
+    command: "agent exec",
+    input: { message: "开始评估" },
+    sessionToken: token
+  }));
+  for (const message of [
+    "q1=C", "q2=B", "q3=B", "q4=C", "q5=D", "q6=B", "q7=C",
+    "q8=C", "q9=A", "q10=B", "q11=D", "q8=B", "q10=A",
+    "q12=C", "q13=B", "q14=B"
+  ]) {
+    turn = data<ConversationTurnResult>(await application.execute({
+      command: "agent exec",
+      input: { message, conversationId: turn.conversationId },
+      sessionToken: token
+    }));
+  }
+  assert.equal(turn.verdict?.outcome, "classified");
+
+  const server = createKangminHttpServer(application);
+  const origin = await listen(server);
+  try {
+    const response = await fetch(`${origin}/v1/patient/agent/stream`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+        accept: "application/x-ndjson"
+      },
+      body: JSON.stringify({
+        schemaVersion: "1",
+        requestId: "agent-stream-hard-fact",
+        input: { message: "我还能怎么做？", conversationId: turn.conversationId }
+      })
+    });
+    assert.equal(response.status, 200);
+    const events = (await response.text()).trim().split("\n").map((line) => JSON.parse(line) as {
+      type: string;
+      content?: string;
+      data?: { message: { content: string } | null };
+    });
+    const streamed = events.filter((event) => event.type === "delta")
+      .map((event) => event.content ?? "").join("");
+    const final = events.at(-1)?.data?.message?.content ?? "";
+    assert.equal(streamed, final);
+    for (const forbidden of ["加量", "每天3次", "没有怀孕"]) {
+      assert.ok(!streamed.includes(forbidden));
+      assert.ok(!final.includes(forbidden));
+    }
+
+    const detail = data<{ messages: Array<{ content: string }> }>(await application.execute({
+      command: "agent conversations show",
+      input: { id: turn.conversationId },
+      sessionToken: token
+    }));
+    const history = detail.messages.map((message) => message.content).join("\n");
+    assert.ok(!history.includes("加量"));
+    assert.ok(!history.includes("每天3次"));
+    assert.ok(!history.includes("没有怀孕"));
   } finally {
     await close(server);
     application.close();

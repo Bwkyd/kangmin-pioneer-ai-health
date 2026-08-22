@@ -59,7 +59,6 @@ import {
   EXTRACTION_UNAVAILABLE_NOTICE,
   FAIL_CLOSED_INFO_NOTICE,
   FAIL_CLOSED_SAFETY_NOTICE,
-  questionWithinApprovedPlan,
   renderAssessmentGreeting,
   renderEmergencyFollowUp,
   renderFixedFollowUp,
@@ -447,7 +446,8 @@ export class ConversationService {
       try {
         generatedPlan = renderGeneratedPlanOutput(
           await this.planDialogue.generatePlan(verdict),
-          verdict
+          verdict,
+          facts
         );
       } catch {
         generatedPlan = null;
@@ -733,7 +733,6 @@ export class ConversationService {
       );
     }
 
-    const planQuestion = questionWithinApprovedPlan(message, verdict);
     const recentMessages = (await this.readVerifiedMessages(session.id))
       .filter((entry) => entry.role === "user" || entry.role === "assistant")
       .slice(-6)
@@ -756,12 +755,6 @@ export class ConversationService {
       finalOutput = renderEmergencyFollowUp();
     } else if (isSimpleGreeting(message)) {
       finalOutput = renderAssessmentGreeting();
-    } else if (!planQuestion) {
-      finalOutput = renderFixedFollowUp(
-        "follow_up_out_of_plan",
-        "您问到的穴位或疗法不在当前方案中，本工具不能新增操作建议。请咨询专业医生。",
-        verdict
-      );
     } else {
       let decision: Awaited<ReturnType<PlanDialoguePort["decideFollowUp"]>> = null;
       if (this.planDialogue !== null) {
@@ -806,7 +799,7 @@ export class ConversationService {
           }
         }
         finalOutput =
-          renderGeneratedFollowUpOutput(generated, verdict, sources) ??
+          renderGeneratedFollowUpOutput(generated, verdict, sources, facts) ??
           renderFixedFollowUp(
             sources.length > 0 ? "follow_up_degraded" : "follow_up_no_evidence",
             searchAvailable
@@ -817,7 +810,7 @@ export class ConversationService {
       } else {
         const generated = decision?.action === "answer" ? decision.answer : null;
         finalOutput =
-          renderGeneratedFollowUpOutput(generated, verdict, []) ??
+          renderGeneratedFollowUpOutput(generated, verdict, [], facts) ??
           renderContextualPlanFollowUp(verdict, recentMessages.length > 0);
       }
     }
