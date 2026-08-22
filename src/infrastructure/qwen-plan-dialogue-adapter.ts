@@ -7,6 +7,7 @@ import type {
   ClinicalVerdict
 } from "../modules/clinical-rules/contracts.js";
 import type {
+  FollowUpDecision,
   PlanDialoguePort,
   PlanDialogueSource
 } from "../modules/agent/model-ports.js";
@@ -19,7 +20,7 @@ const DEFAULT_MODEL = "qwen3.7-flash";
 const DEFAULT_TIMEOUT_MS = 45_000;
 
 const SYSTEM_PROMPT = `你是过敏性鼻炎患者科普助手。服务端已经用固定规则完成判定并给出允许的方案。
-你只能依据输入中的【规则结果】【允许方案】和【已审核资料】回答：
+你只能依据输入中的【规则结果】【允许方案】和【后台已启用知识】回答：
 1. 不得改变证型、期别、人群或方案，不得新增穴位、疗法、禁忌、次数、时长、力度、剂量或疗效；
 2. 资料未提供的细节必须明确说依据不足，不得使用模型原生医学知识补全；
 3. 患者询问当前方案未包含的疗法时，说明当前方案未包含，并建议咨询专业医生；
@@ -27,6 +28,14 @@ const SYSTEM_PROMPT = `你是过敏性鼻炎患者科普助手。服务端已经
 5. 不要输出【依据】或温馨提示，服务端会在校验后统一追加；
 6. 只能复述输入中出现的穴位和疗法原词；未给定位或手法细节时不要主动追问这些细节；
 7. 只输出 JSON 对象 {"answer":"..."}，answer 不超过 800 个中文字符。`;
+
+const DECISION_SYSTEM_PROMPT = `你是抗敏先锋鼻健康智能体的单步工具决策器。服务端给出的规则结果和方案不可修改。
+只输出一个 JSON 对象：
+- 当前规则结果或方案足以回答，或属于寒暄、系统说明、补充症状、紧急情况、越权、范围外问题时：{"action":"answer","answer":"自然简短回答"}
+- 用户询问的鼻健康原因、概念、定位、日常注意事项或其他可核对知识不在当前上下文时：{"action":"search","query":"改写后的鼻健康检索词"}
+不得用关键词硬路由，不得请求第二次搜索。不得新增穴位、疗法、次数、时长、力度、剂量、禁忌、诊断或疗效承诺。
+用户只补充新症状、没有提出知识问题时，不搜索、不改写旧评估；说明旧结果不会自动改变，并询问是否重新评估。
+胸闷、喘不上气或意识异常时先建议立即急救或急诊，不能用搜索延迟处理。`;
 
 export interface QwenPlanDialogueOptions {
   apiKey?: string | undefined;
@@ -84,11 +93,45 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
   }
 
   async generatePlan(verdict: ClinicalVerdict): Promise<string | null> {
-    return this.chat({
+    return this.chatAnswer(SYSTEM_PROMPT, {
       task: "把规则结果和允许方案转成通俗、可执行的患者说明。不要重复内部字段名。",
       ruleResult: planPayload(verdict),
       approvedSources: []
     });
+  }
+
+  async decideFollowUp(input: {
+    question: string;
+    verdict: ClinicalVerdict;
+    context: Parameters<PlanDialoguePort["decideFollowUp"]>[0]["context"];
+  }): Promise<FollowUpDecision | null> {
+    this.ensureConfigured();
+    const parsed = await this.chatJson(DECISION_SYSTEM_PROMPT, {
+      task: "决定直接回答，或请求一次只读知识搜索。",
+      ...this.followUpPayload(input)
+    });
+    if (parsed === null) return null;
+    if (
+      Object.keys(parsed).every((key) => key === "action" || key === "answer") &&
+      parsed.action === "answer" &&
+      typeof parsed.answer === "string"
+    ) {
+      const answer = parsed.answer.trim();
+      return answer !== "" && answer.length <= 800
+        ? { action: "answer", answer }
+        : null;
+    }
+    if (
+      Object.keys(parsed).every((key) => key === "action" || key === "query") &&
+      parsed.action === "search" &&
+      typeof parsed.query === "string"
+    ) {
+      const query = parsed.query.trim();
+      return query.length >= 2 && query.length <= 200
+        ? { action: "search", query }
+        : null;
+    }
+    return null;
   }
 
   async answerFollowUp(input: {
@@ -97,6 +140,24 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
     sources: readonly PlanDialogueSource[];
     context: Parameters<PlanDialoguePort["answerFollowUp"]>[0]["context"];
   }): Promise<string | null> {
+    return this.chatAnswer(SYSTEM_PROMPT, {
+      task: input.sources.length === 0
+        ? "只读知识搜索没有返回足够依据。自然说明缺少什么，并只追问一个最有帮助的问题；不得凭模型记忆补医学事实。"
+        : "已完成唯一一次只读知识搜索。根据相关资料回答；若资料不相关或不足，自然说明依据不足并只追问一个最有帮助的问题。",
+      ...this.followUpPayload(input),
+      approvedSources: input.sources.map((source, index) => ({
+        index: index + 1,
+        name: source.name,
+        text: source.text
+      }))
+    });
+  }
+
+  private followUpPayload(input: {
+    question: string;
+    verdict: ClinicalVerdict;
+    context: Parameters<PlanDialoguePort["answerFollowUp"]>[0]["context"];
+  }): Record<string, unknown> {
     const questionnaire = input.context.assessment.answers.map((answer) => {
       const question = assessmentQuestion(answer.fieldCode);
       const option = question?.options.find((candidate) => candidate.code === answer.value);
@@ -107,33 +168,40 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
         answer: option?.text ?? answer.value ?? answer.state
       };
     });
-    return this.chat({
-      task: "回答患者对当前方案的追问。资料不足或问题超出当前方案时安全拒绝。",
+    return {
       question: input.question,
       ruleResult: planPayload(input.verdict),
       assessment: {
         completedAt: input.context.assessment.completedAt,
         questionnaire
       },
-      recentConversation: input.context.recentMessages,
-      approvedSources: input.sources.map((source, index) => ({
-        index: index + 1,
-        name: source.name,
-        text: source.text
-      }))
-    });
+      recentConversation: input.context.recentMessages
+    };
   }
 
   private ensureConfigured(): void {
     if (this.apiKey === undefined || this.apiKey.trim() === "") {
       throw new DomainError(
         "provider_unavailable",
-        "通义千问未配置，已降级为已审核固定内容"
+        "通义千问未配置，已降级为当前规则与方案内容"
       );
     }
   }
 
-  private async chat(payload: Record<string, unknown>): Promise<string | null> {
+  private async chatAnswer(
+    systemPrompt: string,
+    payload: Record<string, unknown>
+  ): Promise<string | null> {
+    const record = await this.chatJson(systemPrompt, payload);
+    if (record === null || Object.keys(record).some((key) => key !== "answer")) return null;
+    const answer = typeof record.answer === "string" ? record.answer.trim() : "";
+    return answer !== "" && answer.length <= 800 ? answer : null;
+  }
+
+  private async chatJson(
+    systemPrompt: string,
+    payload: Record<string, unknown>
+  ): Promise<Record<string, unknown> | null> {
     this.ensureConfigured();
     try {
       const response = await this.fetchImpl(`${this.baseUrl}/chat/completions`, {
@@ -151,7 +219,7 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
           max_tokens: 512,
           response_format: { type: "json_object" },
           messages: [
-            { role: "system", content: SYSTEM_PROMPT },
+            { role: "system", content: systemPrompt },
             { role: "user", content: JSON.stringify(payload) }
           ]
         }),
@@ -165,10 +233,7 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
       if (typeof content !== "string") return null;
       const parsed = JSON.parse(content) as unknown;
       if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) return null;
-      const record = parsed as Record<string, unknown>;
-      if (Object.keys(record).some((key) => key !== "answer")) return null;
-      const answer = typeof record.answer === "string" ? record.answer.trim() : "";
-      return answer !== "" && answer.length <= 800 ? answer : null;
+      return parsed as Record<string, unknown>;
     } catch {
       return null;
     }

@@ -284,17 +284,6 @@ function containsUnapprovedAcupoint(text: string, allowed: string): boolean {
   });
 }
 
-/** 只有明确点名当前方案内穴位的追问才检索知识，避免“解释方案”误召回无关切片。 */
-export function shouldRetrieveApprovedKnowledge(
-  question: string,
-  verdict: ClinicalVerdict
-): boolean {
-  const allowed = planText(verdict);
-  return KNOWN_ACUPOINTS.some(
-    (point) => question.includes(point) && allowed.includes(point)
-  );
-}
-
 /** 追问若点名当前方案外的穴位或疗法，模型调用前即确定性拒绝。 */
 export function questionWithinApprovedPlan(
   question: string,
@@ -349,7 +338,7 @@ function evidenceFooter(
   const sourceNames = sources.map((source) => source.name);
   const names = [...new Set([...planNames, ...sourceNames])];
   return [
-    names.length === 0 ? "【依据】当前已审核方案" : `【依据】${names.join("；")}`,
+    names.length === 0 ? "【依据】当前规则结果与方案" : `【依据】${names.join("；")}`,
     DISCLAIMER
   ].join("\n");
 }
@@ -426,27 +415,11 @@ export function renderContextualPlanFollowUp(
   );
 }
 
-/**
- * 模型回答不可用时，允许把单条已启用知识切片原文作为确定性兜底。
- * 原文仍须经过与模型输出相同的方案白名单、数值与疗效校验；任一来源
- * 不合格就跳过，绝不因为“来自知识库”而绕过临床边界。
- */
-export function renderRetrievedEvidenceFollowUp(
-  verdict: ClinicalVerdict,
-  sources: readonly PlanDialogueSource[]
-): ValidatedOutput | null {
-  for (const source of sources) {
-    const validated = validateGeneratedMedicalText(source.text, verdict, [source]);
-    if (validated !== null) {
-      const content = `${validated}\n\n${evidenceFooter(verdict, [source])}`;
-      return output("retrieved_evidence_follow_up", content, null);
-    }
-  }
-  return null;
-}
-
 export function renderFixedFollowUp(
-  templateId: "follow_up_out_of_plan" | "follow_up_no_evidence" | "follow_up_degraded",
+  templateId:
+    | "follow_up_out_of_plan"
+    | "follow_up_no_evidence"
+    | "follow_up_degraded",
   content: string,
   verdict: ClinicalVerdict,
   sources: readonly PlanDialogueSource[] = []
@@ -459,6 +432,15 @@ export function renderAssessmentGreeting(): ValidatedOutput {
   return output(
     "assessment_greeting",
     "您好，我已接续您最近的评估结果。您可以直接问我当前方案是什么意思、如何理解，或有哪些注意事项。",
+    null
+  );
+}
+
+/** 急救提示不引用当前方案，避免患者误以为紧急建议来自调理方案。 */
+export function renderEmergencyFollowUp(): ValidatedOutput {
+  return output(
+    "follow_up_emergency",
+    "您描述的情况可能需要紧急医疗帮助。本工具不继续知识搜索或提供调理建议，请立即联系急救或前往急诊。",
     null
   );
 }

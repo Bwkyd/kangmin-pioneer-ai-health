@@ -8,6 +8,7 @@ import test from "node:test";
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
 import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
 import { DomainError } from "../kernel/errors.js";
+import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
 import type { ClinicalVerdict } from "../modules/clinical-rules/contracts.js";
 import {
   renderValidatedOutput,
@@ -15,7 +16,6 @@ import {
   renderGeneratedFollowUpOutput,
   renderContextualPlanFollowUp,
   renderGeneratedPlanOutput,
-  renderRetrievedEvidenceFollowUp,
   systemNotice,
   validateGeneratedMedicalText,
   validateExplanationFields,
@@ -87,7 +87,7 @@ test("未配置 API key 时抛 provider_unavailable（绝不伪造回答）", as
   );
 });
 
-test("千问方案对话端口：使用指定模型并只接收 answer JSON", async () => {
+test("千问方案对话端口：指定模型、直答与单次搜索决策均使用严格 JSON", async () => {
   let requestedModel: unknown;
   let requestedThinking: unknown;
   let requestedPayload: Record<string, unknown> = {};
@@ -101,14 +101,29 @@ test("千问方案对话端口：使用指定模型并只接收 answer JSON", as
       requestedThinking = body.enable_thinking;
       const messages = body.messages as Array<{ role: string; content: string }>;
       requestedPayload = JSON.parse(messages.at(-1)?.content ?? "{}") as Record<string, unknown>;
-      return new Response(JSON.stringify({
-        choices: [{ message: { content: JSON.stringify({ answer: "通俗方案说明" }) } }]
-      }), { status: 200, headers: { "content-type": "application/json" } });
+      const task = String(requestedPayload.task ?? "");
+      const content = task.includes("决定直接回答")
+        ? JSON.stringify({ action: "search", query: "换季 鼻塞 原因" })
+        : JSON.stringify({ answer: "通俗方案说明" });
+      return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
+        status: 200,
+        headers: { "content-type": "application/json" }
+      });
     }) as typeof fetch
   });
   assert.equal(await adapter.generatePlan(classifiedPlanVerdict()), "通俗方案说明");
   assert.equal(requestedModel, "qwen3.7-flash");
   assert.equal(requestedThinking, false, "患者方案对话必须显式关闭千问推理模式");
+
+  const decision = await adapter.decideFollowUp({
+    question: "为什么换季时更容易鼻塞？",
+    verdict: classifiedPlanVerdict(),
+    context: {
+      assessment: { completedAt: "2026-08-15T00:00:00.000Z", answers: [] },
+      recentMessages: []
+    }
+  });
+  assert.deepEqual(decision, { action: "search", query: "换季 鼻塞 原因" });
 
   await adapter.answerFollowUp({
     question: "我不明白",
@@ -137,6 +152,72 @@ test("千问方案对话端口：使用指定模型并只接收 answer JSON", as
     (error: unknown) =>
       error instanceof DomainError && error.code === "provider_unavailable"
   );
+});
+
+test("千问工具决策：越权字段、空检索词和超长检索词一律拒绝", async () => {
+  const context = {
+    assessment: { completedAt: "2026-08-15T00:00:00.000Z", answers: [] },
+    recentMessages: []
+  };
+  for (const content of [
+    { action: "search", query: "" },
+    { action: "search", query: "鼻".repeat(201) },
+    { action: "search", query: "鼻塞", tool: "other" },
+    { action: "answer", answer: "回答", diagnosis: "肺热" }
+  ]) {
+    const adapter = new QwenPlanDialogueAdapter({
+      apiKey: "test-qwen-key",
+      baseUrl: BASE_URL,
+      fetchImpl: stubModel(JSON.stringify(content))
+    });
+    assert.equal(await adapter.decideFollowUp({
+      question: "为什么鼻塞？",
+      verdict: classifiedPlanVerdict(),
+      context
+    }), null);
+  }
+});
+
+test("DeepSeek 模型名称可配置，并实际进入请求体", async () => {
+  let requestedModel: unknown;
+  const adapter = new DeepSeekModelAdapter({
+    apiKey: "test-key",
+    model: "deepseek-chat-next",
+    baseUrl: BASE_URL,
+    fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+      requestedModel = (JSON.parse(String(init?.body)) as { model?: unknown }).model;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: "[]" } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch
+  });
+  await adapter.extractCandidates({ message: "我口渴", askedQuestions: [], confirmedFacts: [] });
+  assert.equal(requestedModel, "deepseek-chat-next");
+});
+
+test("知识零命中仍交给模型自然说明；模型失败时只问一个澄清问题", async () => {
+  let modelCalls = 0;
+  const generated = new KnowledgeQaService(
+    { async searchEnabled() { return []; } },
+    {
+      async answer(_question, sources) {
+        modelCalls += 1;
+        assert.deepEqual(sources, []);
+        return "当前资料没有覆盖诱因。你最近是换季时加重，还是全年都这样？";
+      }
+    }
+  );
+  assert.match((await generated.ask("为什么换季鼻塞？")).answer, /换季时加重/u);
+  assert.equal(modelCalls, 1);
+
+  const degraded = new KnowledgeQaService(
+    { async searchEnabled() { return []; } },
+    { async answer() { throw new Error("model unavailable"); } }
+  );
+  const result = await degraded.ask("为什么换季鼻塞？");
+  assert.equal(result.sources.length, 0);
+  assert.equal(result.generated, false);
+  assert.equal((result.answer.match(/？/gu) ?? []).length, 1);
 });
 
 test("非法 JSON 响应：丢弃本次候选，不宽松解析", async () => {
@@ -365,29 +446,6 @@ test("自由文本医学校验：方案外穴位疗法和无依据数值拒绝�
     renderGeneratedFollowUpOutput("资料记载可用指腹轻擦迎香1分钟。", verdict, sources)
       ?.content.includes("适宜技术手册·迎香")
   );
-  assert.ok(
-    renderRetrievedEvidenceFollowUp(verdict, sources)
-      ?.content.includes("迎香采用指腹轻擦1分钟。"),
-    "模型失败时可展示再次通过方案边界校验的已启用知识原文"
-  );
-  assert.equal(
-    renderRetrievedEvidenceFollowUp(verdict, [{
-      knowledgeId: "manual-acupuncture",
-      name: "原手册针刺段落",
-      source: "客户资料",
-      text: "迎香略向内上方斜刺或平刺，0.3～0.5寸。"
-    }]),
-    null,
-    "知识原文也不得绕过方案外针刺拦截"
-  );
-  const locationFallback = renderRetrievedEvidenceFollowUp(verdict, [{
-    knowledgeId: "manual-location",
-    name: "《福建省中医药适宜技术手册》·迎香定位摘录",
-    source: "客户授权手册定位摘录",
-    text: "# 迎香定位摘录\n适用边界：本知识切片只提供迎香穴定位；操作方式必须以系统当前已启用方案为准。\n【定位】鼻翼外缘中点旁开约 0.5 寸，鼻唇沟中。"
-  }]);
-  assert.ok(locationFallback?.content.includes("鼻翼外缘中点旁开约 0.5 寸"));
-  assert.ok(locationFallback?.content.includes("《福建省中医药适宜技术手册》·迎香定位摘录"));
   assert.equal(questionWithinApprovedPlan("迎香具体在哪里？", verdict), true);
   assert.equal(questionWithinApprovedPlan("手册里迎香穴定位在哪里？", verdict), true);
   assert.equal(questionWithinApprovedPlan("艾灸上火怎么办？", verdict), false);

@@ -684,7 +684,8 @@ export function createApplicationWithOps(
   }
   const encryption = options.encryption ?? resolveEncryption(environment);
   const modelAdapter = new DeepSeekModelAdapter({
-    apiKey: environment.KANGMIN_DEEPSEEK_API_KEY
+    apiKey: environment.KANGMIN_DEEPSEEK_API_KEY,
+    model: environment.KANGMIN_DEEPSEEK_MODEL
   });
   const extraction: ModelExtractionPort = options.extraction ?? modelAdapter;
   const explanation: ModelExplanationPort = options.explanation ?? modelAdapter;

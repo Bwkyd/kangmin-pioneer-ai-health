@@ -96,10 +96,17 @@ class NullExplanation {
 }
 
 class FixedPlanDialogue implements PlanDialoguePort {
+  decisionCalls = 0;
   followUpCalls = 0;
 
   async generatePlan(): Promise<string> {
     return "已根据规则结果整理为通俗说明，请只选择当前方案列出的操作，并先阅读注意事项。";
+  }
+
+  async decideFollowUp(input: Parameters<PlanDialoguePort["decideFollowUp"]>[0]) {
+    this.decisionCalls += 1;
+    assert.ok(input.question.includes("迎香"));
+    return { action: "search" as const, query: "迎香穴 位置" };
   }
 
   async answerFollowUp(input: {
@@ -119,6 +126,10 @@ class NullPlanDialogue implements PlanDialoguePort {
     return null;
   }
 
+  async decideFollowUp(): Promise<{ action: "search"; query: string }> {
+    return { action: "search", query: "迎香穴 位置" };
+  }
+
   async answerFollowUp(): Promise<null> {
     return null;
   }
@@ -129,6 +140,18 @@ class CapturingPlanDialogue implements PlanDialoguePort {
 
   async generatePlan(): Promise<string> {
     return "已根据当前评估整理方案，请继续询问不清楚的内容。";
+  }
+
+  async decideFollowUp(input: Parameters<PlanDialoguePort["decideFollowUp"]>[0]) {
+    this.followUps.push({
+      question: input.question,
+      context: input.context,
+      sourceCount: 0
+    });
+    return {
+      action: "answer" as const,
+      answer: "我换一种简单说法：请只使用当前评估结果中已经列出的方案。"
+    };
   }
 
   async answerFollowUp(input: Parameters<PlanDialoguePort["answerFollowUp"]>[0]): Promise<string> {
@@ -142,13 +165,19 @@ class CapturingPlanDialogue implements PlanDialoguePort {
 }
 
 class EmptyKnowledgeRetrieval implements KnowledgeRetrievalPort {
-  async searchEnabled(): Promise<KnowledgeSource[]> {
+  calls: Array<{ query: string; limit: number }> = [];
+
+  async searchEnabled(query: string, limit: number): Promise<KnowledgeSource[]> {
+    this.calls.push({ query, limit });
     return [];
   }
 }
 
 class FixedKnowledgeRetrieval implements KnowledgeRetrievalPort {
-  async searchEnabled(): Promise<KnowledgeSource[]> {
+  calls: Array<{ query: string; limit: number }> = [];
+
+  async searchEnabled(query: string, limit: number): Promise<KnowledgeSource[]> {
+    this.calls.push({ query, limit });
     return [{
       knowledgeId: "manual-yingxiang",
       name: "过敏性鼻炎适宜技术手册·迎香穴",
@@ -509,9 +538,10 @@ test("生产 E2E：页面 Q1-Q14、六步二次确认与分期完整闭环", asy
 
 test("诊一诊小闭环：规则后动态生成、完成会话继续追问、方案外疗法确定性拒绝", async () => {
   const planDialogue = new FixedPlanDialogue();
+  const retrieval = new FixedKnowledgeRetrieval();
   const { application } = await currentFixture({
     planDialogue,
-    planKnowledgeRetrieval: new FixedKnowledgeRetrieval(),
+    planKnowledgeRetrieval: retrieval,
     planRegistry: new FixedPlanRegistry()
   });
   const token =
@@ -536,7 +566,9 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
     assert.equal(followUp.verdict?.outcome, "classified");
     assert.ok(followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
     assert.ok(followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
+    assert.equal(planDialogue.decisionCalls, 1);
     assert.equal(planDialogue.followUpCalls, 1);
+    assert.deepEqual(retrieval.calls, [{ query: "迎香穴 位置", limit: 3 }]);
 
     const refused = await exec(
       application,
@@ -549,6 +581,20 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
     assert.ok(refused.message?.content.includes("不在当前方案中"));
     assert.ok(refused.message?.content.includes("不能新增操作建议"));
     assert.equal(planDialogue.followUpCalls, 1, "方案外疗法不得调用模型");
+    assert.equal(planDialogue.decisionCalls, 1, "方案外疗法不得调用模型");
+
+    const emergency = await exec(
+      application,
+      {
+        message: "我现在胸闷憋气，喘不上气",
+        conversationId: completed.conversationId
+      },
+      token
+    );
+    assert.match(emergency.message?.content ?? "", /立即联系急救或前往急诊/u);
+    assert.ok(!emergency.message?.content.includes("【依据】"));
+    assert.equal(planDialogue.decisionCalls, 1, "急救硬门禁不得依赖模型判断");
+    assert.equal(retrieval.calls.length, 1, "急救硬门禁不得触发知识搜索");
 
     const show = dataOf<{ messages: Array<{ role: string; content: string }> }>(
       await application.execute({
@@ -566,9 +612,10 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
 
 test("患者级评估上下文：新聊天继承完整问卷，多轮承接不重复问卷，重新评估不提前覆盖", async () => {
   const planDialogue = new CapturingPlanDialogue();
+  const retrieval = new EmptyKnowledgeRetrieval();
   const { application, databasePath } = await currentFixture({
     planDialogue,
-    planKnowledgeRetrieval: new EmptyKnowledgeRetrieval(),
+    planKnowledgeRetrieval: retrieval,
     planRegistry: new FixedPlanRegistry()
   });
   const token =
@@ -644,12 +691,20 @@ test("患者级评估上下文：新聊天继承完整问卷，多轮承接不�
     }, token);
     assert.equal(oldChatFollowUp.verdict?.outcome, "classified");
     assert.match(oldChatFollowUp.message?.content ?? "", /换一种简单说法/u);
+
+    const symptomAddition = await exec(application, {
+      message: "我今天又流鼻涕了",
+      conversationId: inherited.conversationId
+    }, token);
+    assert.equal(symptomAddition.verdict?.syndromeCode, inherited.verdict?.syndromeCode);
+    assert.equal(symptomAddition.verdict?.phaseCode, inherited.verdict?.phaseCode);
+    assert.deepEqual(retrieval.calls, [], "直接解释与补充症状都不得触发知识搜索");
   } finally {
     application.close();
   }
 });
 
-test("诊一诊模型波动：只回退到再次通过方案边界校验的已启用知识原文", async () => {
+test("诊一诊模型波动：即使检索有结果也不把可能答非所问的原文直接展示", async () => {
   const { application } = await currentFixture({
     planDialogue: new NullPlanDialogue(),
     planKnowledgeRetrieval: new FixedKnowledgeRetrieval(),
@@ -667,9 +722,9 @@ test("诊一诊模型波动：只回退到再次通过方案边界校验的已�
       },
       token
     );
-    assert.ok(followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
-    assert.ok(followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
-    assert.ok(!followUp.message?.content.includes("当前暂时无法生成可靠回答"));
+    assert.match(followUp.message?.content ?? "", /没有找到足够贴合这个问题的依据/u);
+    assert.ok(!followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
+    assert.ok(!followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
   } finally {
     application.close();
   }

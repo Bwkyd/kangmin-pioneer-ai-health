@@ -60,13 +60,12 @@ import {
   FAIL_CLOSED_INFO_NOTICE,
   FAIL_CLOSED_SAFETY_NOTICE,
   questionWithinApprovedPlan,
-  shouldRetrieveApprovedKnowledge,
   renderAssessmentGreeting,
+  renderEmergencyFollowUp,
   renderFixedFollowUp,
   renderGeneratedFollowUpOutput,
   renderContextualPlanFollowUp,
   renderGeneratedPlanOutput,
-  renderRetrievedEvidenceFollowUp,
   renderValidatedOutput,
   systemNotice
 } from "./output-validation.js";
@@ -119,6 +118,11 @@ function planRefs(verdict: ClinicalVerdict): Array<{ id: string; revision: numbe
 /** 仅匹配不携带其他问题的纯寒暄，避免误截获“你好，方案是什么意思”。 */
 function isSimpleGreeting(message: string): boolean {
   return /^(?:你好|您好|嗨|哈喽|hello|hi)[！!。,.，？?\s]*$/iu.test(message);
+}
+
+/** 完成评估后的自由追问也必须保留急救硬门禁，不能依赖模型成功返回。 */
+function isEmergencyFollowUp(message: string): boolean {
+  return /呼吸困难|喘不上气|胸闷憋气|口唇发紫|意识不清|意识异常|昏迷/u.test(message);
 }
 
 export class ConversationService {
@@ -739,29 +743,18 @@ export class ConversationService {
           ? entry.content.replace(/\n\n【依据】[\s\S]*$/u, "")
           : entry.content
       }));
-    const retrieveKnowledge = shouldRetrieveApprovedKnowledge(message, verdict);
-    let sources: PlanDialogueSource[] = [];
-    if (
-      planQuestion &&
-      retrieveKnowledge &&
-      this.knowledgeRetrieval !== null
-    ) {
-      try {
-        sources = (await this.knowledgeRetrieval.searchEnabled(message, 3)).map(
-          (source) => ({
-            knowledgeId: source.knowledgeId,
-            name: source.name,
-            source: source.source,
-            text: source.text
-          })
-        );
-      } catch {
-        sources = [];
-      }
-    }
+    const dialogueContext = {
+      assessment: {
+        completedAt: inherited?.completedAt ?? session.closedAt ?? timestamp,
+        answers: facts
+      },
+      recentMessages
+    };
 
     let finalOutput: ReturnType<typeof renderFixedFollowUp>;
-    if (isSimpleGreeting(message)) {
+    if (isEmergencyFollowUp(message)) {
+      finalOutput = renderEmergencyFollowUp();
+    } else if (isSimpleGreeting(message)) {
       finalOutput = renderAssessmentGreeting();
     } else if (!planQuestion) {
       finalOutput = renderFixedFollowUp(
@@ -770,39 +763,63 @@ export class ConversationService {
         verdict
       );
     } else {
-      let generated: string | null = null;
+      let decision: Awaited<ReturnType<PlanDialoguePort["decideFollowUp"]>> = null;
       if (this.planDialogue !== null) {
         try {
-          generated = await this.planDialogue.answerFollowUp({
+          decision = await this.planDialogue.decideFollowUp({
             question: message,
             verdict,
-            sources,
-            context: {
-              assessment: {
-                completedAt: inherited?.completedAt ?? session.closedAt ?? timestamp,
-                answers: facts
-              },
-              recentMessages
-            }
+            context: dialogueContext
           });
         } catch {
-          generated = null;
+          decision = null;
         }
       }
-      finalOutput =
-        renderGeneratedFollowUpOutput(generated, verdict, sources) ??
-        (sources.length > 0 ? renderRetrievedEvidenceFollowUp(verdict, sources) : null) ??
-        (!retrieveKnowledge
-          ? renderContextualPlanFollowUp(verdict, recentMessages.length > 0)
-          : null) ??
-        renderFixedFollowUp(
-          sources.length > 0 ? "follow_up_degraded" : "follow_up_no_evidence",
-          sources.length > 0
-            ? "当前暂时无法生成可靠回答。您可以查看下方依据，或稍后重试；本工具不会补充未经审核的医学细节。"
-            : "当前评估和已审核方案不足以支持这个操作细节，我不能凭空补充。您可以换一种问法或咨询专业医生。",
-          verdict,
-          sources
-        );
+      if (decision?.action === "search") {
+        let sources: PlanDialogueSource[] = [];
+        let searchAvailable = this.knowledgeRetrieval !== null;
+        if (this.knowledgeRetrieval !== null) {
+          try {
+            sources = (await this.knowledgeRetrieval.searchEnabled(decision.query, 3)).map(
+              (source) => ({
+                knowledgeId: source.knowledgeId,
+                name: source.name,
+                source: source.source,
+                text: source.text
+              })
+            );
+          } catch {
+            searchAvailable = false;
+          }
+        }
+        let generated: string | null = null;
+        if (searchAvailable && this.planDialogue !== null) {
+          try {
+            generated = await this.planDialogue.answerFollowUp({
+              question: message,
+              verdict,
+              sources,
+              context: dialogueContext
+            });
+          } catch {
+            generated = null;
+          }
+        }
+        finalOutput =
+          renderGeneratedFollowUpOutput(generated, verdict, sources) ??
+          renderFixedFollowUp(
+            sources.length > 0 ? "follow_up_degraded" : "follow_up_no_evidence",
+            searchAvailable
+              ? "我查了当前启用的资料，但还没有找到足够贴合这个问题的依据。你可以补充最想了解的是原因、日常注意事项，还是当前方案里的具体内容？"
+              : "当前知识搜索暂时不可用。你可以先说明最想了解的是当前方案、症状变化，还是一般鼻健康知识，我会在现有依据范围内继续帮你。",
+            verdict
+          );
+      } else {
+        const generated = decision?.action === "answer" ? decision.answer : null;
+        finalOutput =
+          renderGeneratedFollowUpOutput(generated, verdict, []) ??
+          renderContextualPlanFollowUp(verdict, recentMessages.length > 0);
+      }
     }
 
     const decisions = await this.repository.listDecisions(session.id);

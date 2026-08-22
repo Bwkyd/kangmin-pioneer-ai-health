@@ -19,12 +19,11 @@ export class KnowledgeQaService {
       throw new DomainError("validation_failed", "知识问题长度需为 2 到 500 个字符");
     }
     const hits = await this.retrieval.searchEnabled(normalized, 3);
-    if (hits.length === 0) {
-      return { answer: "当前已启用知识中没有找到足够依据，请换一种问法或咨询专业医生。", sources: [], generated: false, disclaimer: DISCLAIMER };
-    }
     let generated: string | null = null;
     try { generated = await this.model.answer(normalized, hits); } catch { generated = null; }
-    const answer = generated?.trim() || hits.map((hit) => hit.text.trim().slice(0, 260)).join("\n\n");
+    const answer = generated?.trim() || (hits.length === 0
+      ? "当前可用资料还不够回答这个问题。你可以补充：最想了解的是原因、日常注意事项，还是当前方案中的某个细节？"
+      : hits.map((hit) => hit.text.trim().slice(0, 260)).join("\n\n"));
     const sources = [...new Map(hits.map((hit) => [hit.knowledgeId, { knowledgeId: hit.knowledgeId, name: hit.name, source: hit.source }])).values()];
     return { answer, sources, generated: generated !== null && generated.trim() !== "", disclaimer: DISCLAIMER };
   }
