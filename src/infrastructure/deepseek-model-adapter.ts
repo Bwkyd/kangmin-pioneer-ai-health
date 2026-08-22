@@ -39,6 +39,7 @@ const EXPLANATION_KEYS = new Set([
 
 export interface DeepSeekModelOptions {
   apiKey?: string | undefined;
+  model?: string | undefined;
   baseUrl?: string | undefined;
   timeoutMs?: number | undefined;
   /** 可注入 fetch（测试用）；缺省使用全局 fetch。 */
@@ -58,7 +59,7 @@ outcome、severityCode、syndromeCode、matchedRuleIds、message。
 值必须与给定规则结果完全一致，不得新增穴位、疗程、力度、剂量、禁忌或疗效，
 不得输出其他键或自由文本。输出必须是 JSON 对象。`;
 
-const KNOWLEDGE_SYSTEM_PROMPT = `你是鼻健康知识问答助手。只能依据用户消息中提供的“已审核资料”回答，不能补充外部知识，不能诊断、开药或承诺疗效。资料不足时明确说资料不足。输出 JSON 对象且只能包含 answer 字段，answer 不超过 500 个中文字符。`;
+const KNOWLEDGE_SYSTEM_PROMPT = `你是鼻健康知识问答助手。只能依据用户消息中提供的“后台已启用知识”回答，不能补充外部知识，不能诊断、开药或承诺疗效。资料不足时自然说明缺少什么，并只追问一个最有帮助的问题。输出 JSON 对象且只能包含 answer 字段，answer 不超过 500 个中文字符。`;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -68,12 +69,14 @@ export class DeepSeekModelAdapter
   implements ModelExtractionPort, ModelExplanationPort, KnowledgeAnswerPort
 {
   private readonly apiKey: string | undefined;
+  private readonly model: string;
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
 
   constructor(options: DeepSeekModelOptions = {}) {
     this.apiKey = options.apiKey;
+    this.model = options.model?.trim() || "deepseek-chat";
     this.baseUrl = options.baseUrl ?? DEFAULT_BASE_URL;
     this.timeoutMs = options.timeoutMs ?? DEFAULT_TIMEOUT_MS;
     this.fetchImpl = options.fetchImpl ?? fetch;
@@ -159,7 +162,7 @@ export class DeepSeekModelAdapter
     this.ensureConfigured();
     const content = await this.chat(KNOWLEDGE_SYSTEM_PROMPT, JSON.stringify({
       question,
-      approvedSources: sources.map((source, index) => ({ index: index + 1, name: source.name, text: source.text }))
+      enabledSources: sources.map((source, index) => ({ index: index + 1, name: source.name, text: source.text }))
     }));
     if (content === null) return null;
     const parsed = this.parseJson(content);
@@ -226,7 +229,7 @@ export class DeepSeekModelAdapter
           "content-type": "application/json"
         },
         body: JSON.stringify({
-          model: "deepseek-chat",
+          model: this.model,
           temperature: 0,
           response_format: { type: "json_object" },
           messages: [

@@ -292,6 +292,7 @@ kangmin-admin CLI ─────────┤                         ↓
 | `KANGMIN_SESSION_TOKEN` | 患者令牌 |
 | `KANGMIN_ADMIN_TOKEN` | 管理员令牌，与患者令牌隔离 |
 | `KANGMIN_DEEPSEEK_API_KEY` | 自由对话模型密钥；缺失时按代码定义降级 |
+| `KANGMIN_DEEPSEEK_MODEL` | DeepSeek 兼容接口模型名；默认 `deepseek-chat` |
 | `KANGMIN_QWEN_API_KEY` | 规则结果转译与方案后追问密钥；缺失时回退固定模板 |
 | `KANGMIN_QWEN_MODEL` | 千问模型名；默认 `qwen3.7-flash` |
 | `KANGMIN_ALLOW_DEV_SESSION` | 开发会话/开发降级开关；staging/production 禁止 |

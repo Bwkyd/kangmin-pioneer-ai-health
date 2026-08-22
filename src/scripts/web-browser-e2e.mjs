@@ -98,6 +98,17 @@ const browserPlanDialogue = {
   async generatePlan() {
     return "已根据规则结果整理为通俗说明，完整已审核方案如下。";
   },
+  async decideFollowUp({ question, context }) {
+    if (question.includes("迎香")) {
+      return { action: "search", query: "迎香穴 位置" };
+    }
+    assert.ok(context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
+    browserFollowUps.push({ question, sources: [], context });
+    return {
+      action: "answer",
+      answer: "我换一种简单说法：这是沿用你刚完成的评估，不需要重新填写问卷。"
+    };
+  },
   async answerFollowUp({ question, sources, context }) {
     browserFollowUps.push({ question, sources, context });
     if (sources.some((source) => source.name === "过敏性鼻炎适宜技术手册·迎香穴")) {
