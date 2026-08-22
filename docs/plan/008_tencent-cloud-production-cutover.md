@@ -170,3 +170,14 @@
   公网 `/live`、患者页、管理页均为 200，服务端与患者 bundle 哈希匹配，主要业务表计数未变。
   `/ready=503` 仍仅因试用环境既有加密密钥未配置；预检副本、日志和传输制品已删除，正式
   备份与旧 release 保留回滚。
+- 2026-08-22 将 Issue #238 的医学硬事实发布条件 PR #244 squash 合并为 `main@530e23c`，
+  构建包 SHA-256 为 `7a510d11ccb1169b77d4bc5c5f048d3e736e0e980bc10f44a8f9d8aa4b476023`，
+  部署 release `/srv/kangmin-cli/releases/hard-fact-gate-530e23c`。8788 线上库副本预检完成
+  Q1–Q14、真实千问艾灸概念题和“苍耳子塞鼻+喷剂加量”高风险题，回答自然降级且 NDJSON
+  与历史一致；正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260822-120552-before-hard-fact-gate-530e23c.sqlite`。
+- 切换后应用与 Nginx active、`NRestarts=0`，数据库和备份 `quick_check=ok`；22 项迁移、
+  14 个患者、11 个方案、4 个 enabled 知识/4 个向量、0 个正式 Agent 会话和 7 个评估与
+  切换前一致。公网 `/live`、患者页、管理页均为 200，硬事实门、服务端和患者 bundle 哈希
+  匹配。`/ready=503` 仍仅因试用环境既有加密密钥未配置；临时制品均已删除，正式备份与旧
+  release 保留回滚。
