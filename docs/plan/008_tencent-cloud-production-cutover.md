@@ -161,3 +161,12 @@
   应用 active、`NRestarts=0`、SQLite `quick_check=ok`，真实语义检索返回 Top-3 并含分类和
   相似度。`/ready=503` 仍仅因试用环境既有加密密钥未配置；预检数据库副本和临时制品已删除，
   正式备份与旧 release 保留回滚。
+- 2026-08-22 将 Issue #237 的自然问答单步工具循环 PR #242 squash 合并为 `main@dd76967`，
+  构建包 SHA-256 为 `b1d45385cd67bf8ef372de8cd0c146d015992e91c63a043f4a688584911e0a8e`，
+  部署 release `/srv/kangmin-cli/releases/natural-agent-dd76967`。8788 线上库副本预检完成完整
+  Q1–Q14 与真实“迎香位置”工具搜索，回答含定位和来源且无针刺建议；正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260822-110624-before-natural-agent-dd76967.sqlite`。
+- 切换后服务 active、`NRestarts=0`、数据库 `quick_check=ok`，22 项迁移和 4 个向量不变；
+  公网 `/live`、患者页、管理页均为 200，服务端与患者 bundle 哈希匹配，主要业务表计数未变。
+  `/ready=503` 仍仅因试用环境既有加密密钥未配置；预检副本、日志和传输制品已删除，正式
+  备份与旧 release 保留回滚。
