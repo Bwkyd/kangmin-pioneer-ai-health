@@ -101,6 +101,11 @@ export interface ChunkInput {
   text: string;
 }
 
+export interface KnowledgeChunkEmbeddingInput {
+  chunkIndex: number;
+  embedding: Uint8Array;
+}
+
 export type UpdatePlanResult =
   | { kind: "updated"; plan: AgentPlan }
   | { kind: "not_found" }
@@ -207,16 +212,18 @@ export interface AgentAdminRepository {
       media: { id: string; status: string } | null
     ) => string[]
   ): Promise<KnowledgeGuardedUpdateResult>;
-  searchChunks(query: string, onlyEnabled: boolean): Promise<
-    Array<{
-      knowledgeId: string;
-      name: string;
-      source: string | null;
-      chunkIndex: number;
-      chunkText: string;
-    }>
-  >;
-
+  listKnowledgeChunks(id: string): Promise<ChunkInput[]>;
+  /**
+   * 单条知识的全部向量原子替换：先删旧版本，再写入同一模型的新版本；
+   * 任一向量失败必须整体回滚，不能留下部分索引。
+   */
+  replaceKnowledgeEmbeddings(
+    id: string,
+    model: string,
+    dimensions: number,
+    embeddings: readonly KnowledgeChunkEmbeddingInput[],
+    updatedAt: string
+  ): Promise<"updated" | "not_found">;
   // ---- 素材登记（共享表，知识源文件与 content 素材同源） ----
   registerMedia(input: {
     id: string;

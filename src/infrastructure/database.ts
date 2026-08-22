@@ -1301,6 +1301,27 @@ const MIGRATIONS: Migration[] = [
         );
       }
     }
+  },
+  {
+    version: "0020_knowledge_semantic_embeddings",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS agent_knowledge_embeddings (
+          knowledge_id TEXT NOT NULL,
+          chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+          model_name TEXT NOT NULL,
+          dimensions INTEGER NOT NULL CHECK(dimensions > 0),
+          embedding BLOB NOT NULL,
+          updated_at TEXT NOT NULL,
+          PRIMARY KEY(knowledge_id, chunk_index),
+          FOREIGN KEY(knowledge_id, chunk_index)
+            REFERENCES agent_knowledge_chunks(knowledge_id, chunk_index)
+            ON DELETE CASCADE
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS agent_knowledge_embeddings_model
+          ON agent_knowledge_embeddings(model_name, dimensions);
+      `);
+    }
   }
 ];
 

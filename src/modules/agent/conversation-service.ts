@@ -54,7 +54,7 @@ import type {
   PlanDialoguePort,
   PlanDialogueSource
 } from "./model-ports.js";
-import type { KnowledgeRetrievalPort } from "./knowledge-qa.js";
+import type { KnowledgeRetrievalPort } from "./knowledge-ports.js";
 import {
   EXTRACTION_UNAVAILABLE_NOTICE,
   FAIL_CLOSED_INFO_NOTICE,

@@ -318,8 +318,10 @@ test(
     assert.equal(found.status, "enabled");
     assert.equal(found.chunkCount, 2);
     assert.equal(found.sizeBytes, 2048);
-    const hits = await agentAdmin().searchChunks("温肺散寒", false);
-    assert.ok(hits.some((hit) => hit.knowledgeId === knowledge.id));
+    assert.deepEqual(await agentAdmin().listKnowledgeChunks(knowledge.id), [
+      { index: 0, text: "过敏性鼻炎 肺气虚寒 第一条分块" },
+      { index: 1, text: "第二条分块：温肺散寒" }
+    ]);
   }
 );
 
@@ -524,37 +526,43 @@ test(
 );
 
 test(
-  "知识：searchChunks 按 LIKE 命中，onlyEnabled 过滤，按 updated_at DESC + chunk_index ASC 排序",
+  "知识：切块顺序稳定，向量索引按知识原子替换",
   { skip: SKIP },
   async () => {
-    const token = uid("token");
-    const enabled = makeKnowledge(uid("kn"), {
-      status: "enabled",
-      updatedAt: "2026-01-01T00:00:00.000Z"
-    }, [
-      { index: 0, text: `${token} 第零块` },
-      { index: 1, text: `${token} 第一块` }
+    const knowledge = makeKnowledge(uid("kn"), {}, [
+      { index: 0, text: "第零块" },
+      { index: 1, text: "第一块" }
     ]);
-    const disabled = makeKnowledge(uid("kn"), {
-      status: "disabled",
-      updatedAt: "2026-01-02T00:00:00.000Z"
-    }, [{ index: 0, text: `${token} 停用知识块` }]);
-    await agentAdmin().createKnowledge(enabled);
-    await agentAdmin().createKnowledge(disabled);
+    await agentAdmin().createKnowledge(knowledge);
+    assert.deepEqual(await agentAdmin().listKnowledgeChunks(knowledge.id), [
+      { index: 0, text: "第零块" },
+      { index: 1, text: "第一块" }
+    ]);
 
-    const all = (await agentAdmin().searchChunks(token, false)).filter((hit) =>
-      hit.chunkText.includes(token)
+    assert.equal(
+      await agentAdmin().replaceKnowledgeEmbeddings(
+        knowledge.id,
+        "test-embedding-v1",
+        2,
+        [
+          { chunkIndex: 0, embedding: new Uint8Array([0, 0, 128, 63, 0, 0, 0, 0]) },
+          { chunkIndex: 1, embedding: new Uint8Array([0, 0, 0, 0, 0, 0, 128, 63]) }
+        ],
+        "2026-01-03T00:00:00.000Z"
+      ),
+      "updated"
     );
-    // 排序：updated_at 新的（disabled）在前；同知识内 chunk_index 升序。
-    assert.deepEqual(
-      all.map((hit) => `${hit.knowledgeId}#${hit.chunkIndex}`),
-      [`${disabled.id}#0`, `${enabled.id}#0`, `${enabled.id}#1`]
+    const { rows } = await database().query<{ model_name: string; dimensions: number }>(
+      `SELECT model_name, dimensions
+       FROM agent_knowledge_embeddings
+       WHERE knowledge_id = $1
+       ORDER BY chunk_index`,
+      [knowledge.id]
     );
-    const onlyEnabled = await agentAdmin().searchChunks(token, true);
-    assert.ok(onlyEnabled.every((hit) => hit.knowledgeId === enabled.id));
-    assert.equal(onlyEnabled.length, 2);
-    assert.equal(onlyEnabled[0]?.name, enabled.name);
-    assert.equal(onlyEnabled[0]?.source, enabled.source);
+    assert.deepEqual(rows, [
+      { model_name: "test-embedding-v1", dimensions: 2 },
+      { model_name: "test-embedding-v1", dimensions: 2 }
+    ]);
   }
 );
 

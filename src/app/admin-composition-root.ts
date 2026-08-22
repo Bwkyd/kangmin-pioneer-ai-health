@@ -31,6 +31,11 @@ import { SqliteContentAuxRepository } from "../infrastructure/sqlite-content-aux
 import { SqliteAuditRepository } from "../infrastructure/sqlite-audit-repository.js";
 import { SqliteUserAdminRepository } from "../infrastructure/sqlite-user-admin-repository.js";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
+import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
+import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
+import { PgKnowledgeRetrieval } from "../infrastructure/postgres/pg-knowledge-retrieval.js";
+import type { KnowledgeEmbeddingPort } from "../modules/agent/knowledge-ports.js";
+import type { KnowledgeRetrievalPort } from "../modules/agent/knowledge-ports.js";
 
 /**
  * 管理端生产存储 fail-closed（与患者端 assertProductionStorage 同策略）：
@@ -292,13 +297,17 @@ export interface AdminApplicationWithOps {
   objectStorage: ObjectStoragePort;
 }
 
+export interface AdminApplicationOptions {
+  mediaDirectory?: string;
+  databaseUrl?: string | undefined;
+  objectStorage?: ObjectStoragePort | undefined;
+  knowledgeEmbedding?: KnowledgeEmbeddingPort | undefined;
+  knowledgeRetrieval?: KnowledgeRetrievalPort | undefined;
+}
+
 export function createAdminApplication(
   path: string,
-  options: {
-    mediaDirectory?: string;
-    databaseUrl?: string | undefined;
-    objectStorage?: ObjectStoragePort | undefined;
-  } = {}
+  options: AdminApplicationOptions = {}
 ): KangminAdminApplication {
   return createAdminApplicationWithOps(path, options).application;
 }
@@ -309,11 +318,7 @@ export function createAdminApplication(
  */
 export function createAdminApplicationWithOps(
   path: string,
-  options: {
-    mediaDirectory?: string;
-    databaseUrl?: string | undefined;
-    objectStorage?: ObjectStoragePort | undefined;
-  } = {}
+  options: AdminApplicationOptions = {}
 ): AdminApplicationWithOps {
   // 生产存储 fail-closed：staging/production 缺 PG / 缺对象存储桶 /
   // 出现开发会话开关一律 config_missing（local/integration 不校验）。
@@ -324,6 +329,13 @@ export function createAdminApplicationWithOps(
   const encryption = resolveEncryption(process.env);
   const mediaDirectory = options.mediaDirectory ?? defaultMediaDirectory(path);
   const objectStorage = resolveObjectStorage(options, mediaDirectory);
+  const knowledgeEmbedding =
+    options.knowledgeEmbedding ??
+    new DashscopeEmbeddingAdapter({
+      apiKey: process.env.KANGMIN_QWEN_API_KEY,
+      model: process.env.KANGMIN_EMBEDDING_MODEL,
+      baseUrl: process.env.KANGMIN_EMBEDDING_BASE_URL
+    });
   const readinessProbes: AdminReadinessProbes = {
     objectStorage: objectStorageReadinessProbe(objectStorage, mediaDirectory)
   };
@@ -331,6 +343,8 @@ export function createAdminApplicationWithOps(
   const databaseUrl = resolveDatabaseUrl(options);
   if (databaseUrl !== undefined) {
     const database = new KangminPgDatabase(databaseUrl);
+    const knowledgeRetrieval =
+      options.knowledgeRetrieval ?? new PgKnowledgeRetrieval(database, knowledgeEmbedding);
     return {
       application: new KangminAdminApplication(
         new PgAdminSessionRepository(database),
@@ -345,7 +359,8 @@ export function createAdminApplicationWithOps(
         () => {
           void database.close();
         },
-        () => pgDoctorChecks(database, objectStorage, mediaDirectory)
+        () => pgDoctorChecks(database, objectStorage, mediaDirectory),
+        { embeddings: knowledgeEmbedding, retrieval: knowledgeRetrieval }
       ),
       readinessProbes,
       objectStorage
@@ -360,6 +375,8 @@ export function createAdminApplicationWithOps(
   const agentRepository = new SqliteAgentAdminRepository(database, encryption);
   const userRepository = new SqliteUserAdminRepository(database);
   const auditRepository = new SqliteAuditRepository(database);
+  const knowledgeRetrieval =
+    options.knowledgeRetrieval ?? new SqliteKnowledgeRetrieval(database, knowledgeEmbedding);
   return {
     application: new KangminAdminApplication(
       sessionRepository,
@@ -374,7 +391,8 @@ export function createAdminApplicationWithOps(
       () => {
         database.close();
       },
-      () => doctorChecks(database, objectStorage, mediaDirectory)
+      () => doctorChecks(database, objectStorage, mediaDirectory),
+      { embeddings: knowledgeEmbedding, retrieval: knowledgeRetrieval }
     ),
     readinessProbes,
     objectStorage

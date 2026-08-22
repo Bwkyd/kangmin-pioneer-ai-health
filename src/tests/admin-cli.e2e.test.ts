@@ -4,7 +4,9 @@ import assert from "node:assert/strict";
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 import {
+  spawn,
   spawnSync,
+  type ChildProcessWithoutNullStreams,
   type SpawnSyncReturns
 } from "node:child_process";
 import { existsSync, mkdtempSync } from "node:fs";
@@ -16,6 +18,47 @@ import test from "node:test";
 const here = dirname(fileURLToPath(import.meta.url));
 const adminCli = join(here, "../cli/kangmin-admin.js");
 const patientCli = join(here, "../cli/kangmin.js");
+let embeddingServer: ChildProcessWithoutNullStreams | undefined;
+let embeddingBaseUrl = "";
+
+test.before(async () => {
+  const script = `
+    const { createServer } = require("node:http");
+    const server = createServer((request, response) => {
+      let body = "";
+      request.setEncoding("utf8");
+      request.on("data", (chunk) => { body += chunk; });
+      request.on("end", () => {
+        const input = JSON.parse(body).input;
+        response.setHeader("content-type", "application/json");
+        response.end(JSON.stringify({
+          data: input.map((_text, index) => ({ index, embedding: [1, 0] }))
+        }));
+      });
+    });
+    server.listen(0, "127.0.0.1", () => {
+      process.stdout.write(String(server.address().port) + "\\n");
+    });
+  `;
+  embeddingServer = spawn(process.execPath, ["-e", script]);
+  const port = await new Promise<string>((resolve, reject) => {
+    let output = "";
+    embeddingServer!.stdout.on("data", (chunk) => {
+      output += String(chunk);
+      const line = output.match(/^(\d+)\n/u)?.[1];
+      if (line !== undefined) resolve(line);
+    });
+    embeddingServer!.once("error", reject);
+    embeddingServer!.once("exit", (code) => {
+      if (embeddingBaseUrl === "") reject(new Error(`向量测试服务提前退出: ${code}`));
+    });
+  });
+  embeddingBaseUrl = `http://127.0.0.1:${port}`;
+});
+
+test.after(() => {
+  embeddingServer?.kill("SIGTERM");
+});
 
 function run(
   args: string[],
@@ -49,7 +92,11 @@ async function fixture(): Promise<{
   return {
     directory,
     databasePath,
-    environment: { KANGMIN_DB_PATH: databasePath }
+    environment: {
+      KANGMIN_DB_PATH: databasePath,
+      KANGMIN_QWEN_API_KEY: "admin-cli-e2e-key",
+      KANGMIN_EMBEDDING_BASE_URL: embeddingBaseUrl
+    }
   };
 }
 

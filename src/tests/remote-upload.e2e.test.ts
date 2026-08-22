@@ -28,6 +28,7 @@ import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
@@ -62,9 +63,11 @@ async function startServer(): Promise<RunningServer> {
       .token;
   bootstrap.close();
 
-  const patient = createApplication(databasePath);
+  const embeddings = new TestKnowledgeEmbedding();
+  const patient = createApplication(databasePath, { knowledgeEmbedding: embeddings });
   const admin = createAdminApplication(databasePath, {
     mediaDirectory: join(directory, "media"),
+    knowledgeEmbedding: embeddings,
     objectStorage: new S3ObjectStorage({
       bucket: BUCKET,
       endpoint: ENDPOINT,

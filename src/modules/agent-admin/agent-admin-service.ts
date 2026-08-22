@@ -10,6 +10,11 @@ import { basename, extname } from "node:path";
 
 import { DomainError } from "../../kernel/errors.js";
 import {
+  embedKnowledgeTexts,
+  type KnowledgeEmbeddingPort
+} from "../agent/knowledge-ports.js";
+import type { KnowledgeRetrievalPort } from "../agent/knowledge-ports.js";
+import {
   assertKnowledgeExtension,
   assertSizeWithinLimit,
   DEFAULT_KNOWLEDGE_MAX_BYTES,
@@ -129,7 +134,9 @@ export class AgentAdminService {
     private readonly repository: AgentAdminRepository,
     private readonly syndromes: SyndromeRegistryPort,
     private readonly storage: ObjectStoragePort,
-    private readonly audit: AuditPort
+    private readonly audit: AuditPort,
+    private readonly embeddings?: KnowledgeEmbeddingPort,
+    private readonly retrieval?: KnowledgeRetrievalPort
   ) {}
 
   // ==== 状态 ====
@@ -423,19 +430,43 @@ export class AgentAdminService {
 
   async indexKnowledge(id: string): Promise<KnowledgeItem> {
     const item = await this.getKnowledge(id);
-    if (item.status !== "processing") {
-      if (item.status === "index_failed") {
-        throw new DomainError(
-          "validation_failed",
-          `知识解析失败，不能建立索引：${item.parseError ?? "未知原因"}`
-        );
-      }
-      throw new DomainError("validation_failed", "知识已建立索引，无需重复索引");
+    if (item.status === "index_failed") {
+      throw new DomainError(
+        "validation_failed",
+        `知识解析失败，不能建立索引：${item.parseError ?? "未知原因"}`
+      );
     }
     if (item.chunkCount === 0) {
       throw new DomainError("validation_failed", "知识没有可索引的正文分块");
     }
-    await this.repository.setKnowledgeStatus(id, "indexed", now());
+    if (this.embeddings === undefined) {
+      throw new DomainError("provider_unavailable", "知识语义检索尚未配置向量服务");
+    }
+    const chunks = await this.repository.listKnowledgeChunks(id);
+    if (chunks.length !== item.chunkCount) {
+      throw new DomainError("storage_unavailable", "知识正文分块数量不一致");
+    }
+    const encoded = await embedKnowledgeTexts(
+      this.embeddings,
+      chunks.map((chunk) => chunk.text)
+    );
+    const indexedAt = now();
+    const result = await this.repository.replaceKnowledgeEmbeddings(
+      id,
+      encoded.modelName,
+      encoded.dimensions,
+      chunks.map((chunk, index) => ({
+        chunkIndex: chunk.index,
+        embedding: encoded.vectors[index]!
+      })),
+      indexedAt
+    );
+    if (result === "not_found") {
+      throw new DomainError("resource_not_found", "知识不存在");
+    }
+    if (item.status === "processing") {
+      await this.repository.setKnowledgeStatus(id, "indexed", indexedAt);
+    }
     return this.getKnowledge(id);
   }
 
@@ -523,13 +554,18 @@ export class AgentAdminService {
 
   /** 检索测试只命中已启用知识（未启用知识不能被 Agent 检索）。 */
   async searchKnowledge(query: string): Promise<KnowledgeHit[]> {
-    const rows = await this.repository.searchChunks(query, true);
+    if (this.retrieval === undefined) {
+      throw new DomainError("capability_unavailable", "知识语义检索尚未配置");
+    }
+    const rows = await this.retrieval.searchEnabled(query, 3);
     return rows.map((row) => ({
       knowledgeId: row.knowledgeId,
       name: row.name,
       chunkIndex: row.chunkIndex,
-      snippet: snippetOf(row.chunkText, query),
+      snippet: snippetOf(row.text, query),
       source: row.source,
+      category: row.category,
+      score: row.score,
       enabled: true
     }));
   }

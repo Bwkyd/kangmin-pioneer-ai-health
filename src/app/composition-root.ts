@@ -73,6 +73,7 @@ import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
 import { WechatCodeLogin } from "../infrastructure/wechat-code-login.js";
 import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
 import { PgKnowledgeRetrieval } from "../infrastructure/postgres/pg-knowledge-retrieval.js";
+import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
 import type {
   ObjectHead,
   ObjectStoragePort,
@@ -104,10 +105,11 @@ import type { RulePackage } from "../modules/clinical-rules/domain.js";
 import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
 import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
 import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
-import {
-  KnowledgeQaService,
-  type KnowledgeRetrievalPort
-} from "../modules/agent/knowledge-qa.js";
+import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
+import type {
+  KnowledgeEmbeddingPort,
+  KnowledgeRetrievalPort
+} from "../modules/agent/knowledge-ports.js";
 
 /** HTTP 入口使用的微信登录适配器工厂，保持基础设施依赖只出现在组合根。 */
 export function createWechatLogin(appId: string, appSecret: string): WechatLoginPort {
@@ -127,8 +129,10 @@ export interface ApplicationOptions {
   explanation?: ModelExplanationPort | undefined;
   /** 规则结果动态转译与方案后追问端口；默认通义千问。 */
   planDialogue?: PlanDialoguePort | undefined;
-  /** 方案后追问的已审核知识检索端口（测试用）。 */
+  /** 方案后追问的已启用知识检索端口（测试用）。 */
   planKnowledgeRetrieval?: KnowledgeRetrievalPort | undefined;
+  /** 知识语义向量端口（测试用）；默认使用 DashScope。 */
+  knowledgeEmbedding?: KnowledgeEmbeddingPort | undefined;
   /** 方案注册表端口；未提供时读取数据库中已启用的统一方案表。 */
   planRegistry?: PlanRegistryPort | undefined;
   /** 临床规则包注入点（测试用）；默认加载 approved 包 clinical-rules-v3。 */
@@ -690,6 +694,13 @@ export function createApplicationWithOps(
       apiKey: environment.KANGMIN_QWEN_API_KEY,
       model: environment.KANGMIN_QWEN_MODEL
     });
+  const knowledgeEmbedding =
+    options.knowledgeEmbedding ??
+    new DashscopeEmbeddingAdapter({
+      apiKey: environment.KANGMIN_QWEN_API_KEY,
+      model: environment.KANGMIN_EMBEDDING_MODEL,
+      baseUrl: environment.KANGMIN_EMBEDDING_BASE_URL
+    });
   // 对象存储（媒体交付链 issue-151）：与管理端同一解析规则，本地后端
   // 默认指向管理端素材目录（KANGMIN_ADMIN_MEDIA_DIR 或 <db目录>/admin-media），
   // HTTP 媒体路由经 browse 服务读取已发布内容引用的字节。
@@ -725,7 +736,7 @@ export function createApplicationWithOps(
     const accountRepository = new PgAccountRepository(database);
     const conversationRepository = new PgConversationRepository(database);
     const knowledgeRetrieval =
-      options.planKnowledgeRetrieval ?? new PgKnowledgeRetrieval(database);
+      options.planKnowledgeRetrieval ?? new PgKnowledgeRetrieval(database, knowledgeEmbedding);
     // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
     const consentGate = new ConsentGateAdapter(accountRepository);
     const conversations = new ConversationService(
@@ -781,7 +792,7 @@ export function createApplicationWithOps(
   const accountRepository = new SqliteAccountRepository(database);
   const conversationRepository = new SqliteConversationRepository(database);
   const knowledgeRetrieval =
-    options.planKnowledgeRetrieval ?? new SqliteKnowledgeRetrieval(database);
+    options.planKnowledgeRetrieval ?? new SqliteKnowledgeRetrieval(database, knowledgeEmbedding);
   // consent 门禁（issue-155）：record 写入前置 + 绑定保存共用。
   const consentGate = new ConsentGateAdapter(accountRepository);
   const conversations = new ConversationService(

@@ -2,6 +2,7 @@ import type { PoolClient } from "pg";
 
 import { decryptStoredField, encryptStoredField } from "../encrypted-fields.js";
 import type { EncryptionPort } from "../../kernel/encryption.js";
+import { DomainError } from "../../kernel/errors.js";
 import type {
   AgentAdminRepository,
   ChunkInput,
@@ -526,38 +527,58 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     });
   }
 
-  async searchChunks(query: string, onlyEnabled: boolean): Promise<
-    Array<{
-      knowledgeId: string;
-      name: string;
-      source: string | null;
-      chunkIndex: number;
-      chunkText: string;
-    }>
-  > {
-    const statusFilter = onlyEnabled ? "AND items.status = 'enabled'" : "";
+  async listKnowledgeChunks(id: string): Promise<ChunkInput[]> {
     const { rows } = await this.database.query<{
-      knowledge_id: string;
-      name: string;
-      source: string | null;
       chunk_index: number;
       chunk_text: string;
-    }>(
-      `SELECT items.id AS knowledge_id, items.name, items.source,
-             chunks.chunk_index, chunks.chunk_text
-      FROM agent_knowledge_chunks AS chunks
-      JOIN agent_knowledge_items AS items ON items.id = chunks.knowledge_id
-      WHERE chunks.chunk_text LIKE '%' || $1 || '%' ${statusFilter}
-      ORDER BY items.updated_at DESC, chunks.chunk_index ASC`,
-      [query]
-    );
-    return rows.map((row) => ({
-      knowledgeId: row.knowledge_id,
-      name: row.name,
-      source: row.source,
-      chunkIndex: row.chunk_index,
-      chunkText: row.chunk_text
-    }));
+    }>(`
+      SELECT chunk_index, chunk_text
+      FROM agent_knowledge_chunks
+      WHERE knowledge_id = $1
+      ORDER BY chunk_index ASC
+    `, [id]);
+    return rows.map((row) => ({ index: row.chunk_index, text: row.chunk_text }));
+  }
+
+  async replaceKnowledgeEmbeddings(
+    id: string,
+    model: string,
+    dimensions: number,
+    embeddings: ReadonlyArray<{ chunkIndex: number; embedding: Uint8Array }>,
+    updatedAt: string
+  ): Promise<"updated" | "not_found"> {
+    return this.database.transaction(async (client) => {
+      const item = await this.database.queryIn<{ chunk_count: number }>(
+        client,
+        "SELECT chunk_count FROM agent_knowledge_items WHERE id = $1 FOR UPDATE",
+        [id]
+      );
+      const chunkCount = item.rows[0]?.chunk_count;
+      if (chunkCount === undefined) return "not_found" as const;
+      if (embeddings.length !== chunkCount) {
+        throw new DomainError("storage_unavailable", "知识向量与正文分块数量不一致");
+      }
+      await this.database.queryIn(
+        client,
+        "DELETE FROM agent_knowledge_embeddings WHERE knowledge_id = $1",
+        [id]
+      );
+      for (const entry of embeddings) {
+        await this.database.queryIn(
+          client,
+          `INSERT INTO agent_knowledge_embeddings(
+             knowledge_id, chunk_index, model_name, dimensions, embedding, updated_at
+           ) VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, entry.chunkIndex, model, dimensions, Buffer.from(entry.embedding), updatedAt]
+        );
+      }
+      await this.database.queryIn(
+        client,
+        "UPDATE agent_knowledge_items SET updated_at = $1 WHERE id = $2",
+        [updatedAt, id]
+      );
+      return "updated" as const;
+    });
   }
 
   // ---- 素材登记 ----

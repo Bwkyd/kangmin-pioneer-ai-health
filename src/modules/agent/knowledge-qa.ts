@@ -1,20 +1,5 @@
 import { DomainError } from "../../kernel/errors.js";
-
-export interface KnowledgeSource {
-  knowledgeId: string;
-  name: string;
-  source: string | null;
-  chunkIndex: number;
-  text: string;
-}
-
-export interface KnowledgeRetrievalPort {
-  searchEnabled(query: string, limit: number): Promise<KnowledgeSource[]>;
-}
-
-export interface KnowledgeAnswerPort {
-  answer(question: string, sources: readonly KnowledgeSource[]): Promise<string | null>;
-}
+import type { KnowledgeAnswerPort, KnowledgeRetrievalPort } from "./knowledge-ports.js";
 
 export interface KnowledgeAnswerResult {
   answer: string;
@@ -23,7 +8,7 @@ export interface KnowledgeAnswerResult {
   disclaimer: string;
 }
 
-const DISCLAIMER = "回答仅依据已审核知识资料作健康科普，不代替门诊诊断和专业医疗建议。";
+const DISCLAIMER = "回答仅依据后台已启用的知识资料作健康科普，不代替门诊诊断和专业医疗建议。";
 
 export class KnowledgeQaService {
   constructor(private readonly retrieval: KnowledgeRetrievalPort, private readonly model: KnowledgeAnswerPort) {}
@@ -35,7 +20,7 @@ export class KnowledgeQaService {
     }
     const hits = await this.retrieval.searchEnabled(normalized, 3);
     if (hits.length === 0) {
-      return { answer: "当前已审核知识库中没有找到足够依据，请换一种问法或咨询专业医生。", sources: [], generated: false, disclaimer: DISCLAIMER };
+      return { answer: "当前已启用知识中没有找到足够依据，请换一种问法或咨询专业医生。", sources: [], generated: false, disclaimer: DISCLAIMER };
     }
     let generated: string | null = null;
     try { generated = await this.model.answer(normalized, hits); } catch { generated = null; }

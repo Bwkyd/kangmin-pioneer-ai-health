@@ -24,7 +24,7 @@ import type {
   ModelExtractionInput,
   ModelExtractionPort
 } from "../modules/agent/model-ports.js";
-import type { KnowledgeAnswerPort, KnowledgeSource } from "../modules/agent/knowledge-qa.js";
+import type { KnowledgeAnswerPort, KnowledgeSource } from "../modules/agent/knowledge-ports.js";
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
 const DEFAULT_TIMEOUT_MS = 10_000;
