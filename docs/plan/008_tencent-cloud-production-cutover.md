@@ -181,3 +181,14 @@
   切换前一致。公网 `/live`、患者页、管理页均为 200，硬事实门、服务端和患者 bundle 哈希
   匹配。`/ready=503` 仍仅因试用环境既有加密密钥未配置；临时制品均已删除，正式备份与旧
   release 保留回滚。
+- 2026-08-22 将 Issue #246 的福建手册受控知识 PR #247 squash 合并为 `main@d3d55c6`，
+  以无 macOS 扩展属性的制品 SHA-256
+  `69384830af64c86be49387c5dfa4a5957db17a0abea4ab2ee4b55f3e93d51181` 部署 release
+  `/srv/kangmin-cli/releases/manual-knowledge-d3d55c6`。8788 线上库副本完成 17 项导入、132 个
+  新切块、17/17 检索、5/5 高风险拒答和三条低风险问答；正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260822-151925-before-manual-d3d55c6.sqlite`。
+- 切换后 21 份知识均 enabled，136 个切块/向量；22 项迁移、14 个患者、11 个方案、19 个
+  会话和 7 个评估保持不变。应用与 Nginx active、`NRestarts=0`，数据库与备份
+  `quick_check=ok`；公网 `/live`、患者页、管理页均为 200，关键后端与前端 bundle 哈希和
+  本地合并构建一致。`/ready=503` 仍仅因试用环境既有加密密钥未配置，正式备份和旧 release
+  保留回滚。
