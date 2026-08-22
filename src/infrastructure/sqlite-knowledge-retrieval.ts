@@ -1,8 +1,10 @@
 import { DomainError } from "../kernel/errors.js";
 import {
   encodeNormalizedEmbedding,
+  hybridKnowledgeScore,
   normalizedEmbeddingDimensions,
   normalizedEmbeddingScore,
+  selectKnowledgeHits,
   type KnowledgeEmbeddingPort
 } from "../modules/agent/knowledge-ports.js";
 import type { KnowledgeRetrievalPort, KnowledgeSource } from "../modules/agent/knowledge-ports.js";
@@ -62,15 +64,13 @@ export class SqliteKnowledgeRetrieval implements KnowledgeRetrievalPort {
         source: row.source,
         chunkIndex: row.chunk_index,
         text: row.chunk_text,
-        score: normalizedEmbeddingScore(queryBytes, row.embedding)
+        score: hybridKnowledgeScore(
+          normalizedEmbeddingScore(queryBytes, row.embedding),
+          query,
+          row.chunk_text
+        )
       };
     });
-    return scored
-      .sort((left, right) =>
-        right.score - left.score ||
-        left.knowledgeId.localeCompare(right.knowledgeId) ||
-        left.chunkIndex - right.chunkIndex
-      )
-      .slice(0, Math.max(0, limit));
+    return selectKnowledgeHits(scored, limit);
   }
 }

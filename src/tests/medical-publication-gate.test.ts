@@ -123,6 +123,21 @@ test("医学硬事实发布条件：5条普通表达不因措辞白名单被压�
   }
 });
 
+test("来源原文可解释专业方法概念，但不能借概念句携带操作参数", () => {
+  const definition = "热敏灸是采用艾热针对热敏腧穴施灸的一种专业中医适宜技术。";
+  const conceptSource = [{
+    knowledgeId: "knowledge-concept",
+    name: "专业概念",
+    source: "测试资料",
+    text: `${definition}热敏灸进针深度为2寸。`
+  }];
+  assert.equal(validateMedicalHardFacts(definition, { sources: conceptSource }), definition);
+  assert.equal(
+    validateMedicalHardFacts("热敏灸是采用艾热施灸，每次操作20分钟。", { sources: conceptSource }),
+    null
+  );
+});
+
 test("医学硬事实发布条件：10类未获依据硬事实全部拒绝", () => {
   const blocked = [
     "您肯定就是过敏性鼻炎。",

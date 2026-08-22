@@ -45,11 +45,9 @@ import type {
   PlanStatus
 } from "./domain.js";
 import type { SyndromeRegistryPort } from "./agent-admin-ports.js";
+import { chunkKnowledgeText } from "./knowledge-markdown.js";
 
 type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
-
-/** 骨架分块：每块约 1200 字符，按段落切分。 */
-const CHUNK_TARGET_LENGTH = 1200;
 
 const MODEL_DEFAULTS = {
   provider: "openai-compatible",
@@ -75,27 +73,6 @@ function newId(prefix: string): string {
 
 function now(): string {
   return new Date().toISOString();
-}
-
-/** 骨架分块：段落切分后合并到目标长度，空文本返回空数组。 */
-function chunkText(text: string): ChunkInput[] {
-  const paragraphs = text
-    .split(/\n\s*\n/u)
-    .map((paragraph) => paragraph.trim())
-    .filter((paragraph) => paragraph !== "");
-  const chunks: ChunkInput[] = [];
-  let buffer = "";
-  for (const paragraph of paragraphs) {
-    if (buffer !== "" && buffer.length + paragraph.length > CHUNK_TARGET_LENGTH) {
-      chunks.push({ index: chunks.length, text: buffer });
-      buffer = "";
-    }
-    buffer = buffer === "" ? paragraph : `${buffer}\n${paragraph}`;
-  }
-  if (buffer !== "") {
-    chunks.push({ index: chunks.length, text: buffer });
-  }
-  return chunks;
 }
 
 /** 检索命中片段：命中位置前后各取上下文（骨架实现）。 */
@@ -212,6 +189,7 @@ export class AgentAdminService {
 
     // 解析仍从本地文件读取（服务端直写路径）。
     const buffer = readFileSync(filePath);
+    const filename = basename(filePath);
     // 确定性幂等键：文件内容指纹。同文件重试 → 同键 → 重放返回原知识。
     const sha256 = createHash("sha256").update(buffer).digest("hex");
     const mimeType = extension === ".pdf"
@@ -220,11 +198,10 @@ export class AgentAdminService {
         ? "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         : "text/markdown";
 
-    const parsed = this.parseSource(extension, buffer);
+    const parsed = this.parseSource(extension, buffer, filename);
     const timestamp = now();
     const id = newId("kno");
     const sourceMediaId = newId("med");
-    const filename = basename(filePath);
     const key = `${id}/${filename}`;
     // 本地实现原子落盘（临时文件 + 改名），失败不留半成品，无需清理。
     await this.storage.putObject({ key, body: buffer, contentType: mimeType });
@@ -348,7 +325,7 @@ export class AgentAdminService {
     // 历史无指纹行兜底按内容现算。
     const sha256 =
       media.sha256 ?? createHash("sha256").update(buffer).digest("hex");
-    const parsed = this.parseSource(extension, buffer);
+    const parsed = this.parseSource(extension, buffer, media.filename);
     const timestamp = now();
     const row: KnowledgeRow = {
       id: newId("kno"),
@@ -1009,7 +986,8 @@ export class AgentAdminService {
 
   private parseSource(
     extension: string,
-    buffer: Buffer
+    buffer: Buffer,
+    documentLabel: string
   ): { kind: "parsed"; chunks: ChunkInput[] } | { kind: "failed"; error: string } {
     if (extension === ".pdf" || extension === ".docx" || extension === ".doc") {
       return {
@@ -1021,7 +999,7 @@ export class AgentAdminService {
     if (text.trim() === "") {
       return { kind: "failed", error: "知识文件正文为空" };
     }
-    return { kind: "parsed", chunks: chunkText(text) };
+    return { kind: "parsed", chunks: chunkKnowledgeText(text, documentLabel) };
   }
 
   private async requireSyndrome(syndrome: string): Promise<void> {

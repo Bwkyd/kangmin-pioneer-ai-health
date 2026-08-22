@@ -8,8 +8,34 @@ import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { DomainError } from "../kernel/errors.js";
 import {
   encodeNormalizedEmbedding,
+  selectKnowledgeHits,
+  type KnowledgeSource,
   type KnowledgeEmbeddingPort
 } from "../modules/agent/knowledge-ports.js";
+
+test("Top-K 优先保留来源多样性，语料不足时仍回填同源切块", () => {
+  const source = (knowledgeId: string, chunkIndex: number, score: number): KnowledgeSource => ({
+    knowledgeId,
+    name: knowledgeId,
+    category: null,
+    source: null,
+    chunkIndex,
+    text: `${knowledgeId}-${chunkIndex}`,
+    score
+  });
+  const many = [
+    source("a", 0, 1), source("a", 1, 0.9), source("a", 2, 0.8),
+    source("b", 0, 0.7)
+  ];
+  assert.deepEqual(
+    selectKnowledgeHits(many, 3).map((item) => `${item.knowledgeId}-${item.chunkIndex}`),
+    ["a-0", "a-1", "b-0"]
+  );
+  assert.deepEqual(
+    selectKnowledgeHits(many.slice(0, 3), 3).map((item) => item.chunkIndex),
+    [0, 1, 2]
+  );
+});
 
 class ControlledEmbedding implements KnowledgeEmbeddingPort {
   constructor(readonly modelName = "controlled-semantic-v1") {}
@@ -193,6 +219,49 @@ test("向量替换中途失败时回滚，旧索引仍可检索", async () => {
       .searchEnabled("鼻痒", 1);
     assert.equal(hits[0]?.knowledgeId, "kno-atomic");
     assert.ok((hits[0]?.score ?? 0) > 0.99);
+  } finally {
+    database.close();
+  }
+});
+
+test("小权重字面重合能找回精确医学术语，不以字面匹配替代语义向量", async () => {
+  const database = new KangminDatabase(":memory:");
+  const embeddings: KnowledgeEmbeddingPort = {
+    modelName: "hybrid-test-v1",
+    async embed(): Promise<number[][]> { return [[1, 0]]; }
+  };
+  try {
+    addKnowledge(database, {
+      id: "kno-semantic",
+      name: "相邻治疗章节",
+      category: "测试",
+      source: "测试来源",
+      status: "enabled",
+      text: "治疗方案包括多种中医适宜技术。"
+    });
+    addKnowledge(database, {
+      id: "kno-exact",
+      name: "西医药物章节",
+      category: "测试",
+      source: "测试来源",
+      status: "enabled",
+      text: "鼻用糖皮质激素属于一线药物治疗。"
+    });
+    const repository = new SqliteAgentAdminRepository(database, new PlaintextEncryption());
+    await repository.replaceKnowledgeEmbeddings(
+      "kno-semantic", embeddings.modelName, 2,
+      [{ chunkIndex: 0, embedding: encodeNormalizedEmbedding([1, 0]) }],
+      "2026-08-22T01:00:00.000Z"
+    );
+    await repository.replaceKnowledgeEmbeddings(
+      "kno-exact", embeddings.modelName, 2,
+      [{ chunkIndex: 0, embedding: encodeNormalizedEmbedding([0.995, 0.1]) }],
+      "2026-08-22T01:00:00.000Z"
+    );
+    const hits = await new SqliteKnowledgeRetrieval(database, embeddings)
+      .searchEnabled("鼻用糖皮质激素属于什么治疗", 2);
+    assert.equal(hits[0]?.knowledgeId, "kno-exact");
+    assert.ok((hits[0]?.score ?? 0) < 1.2);
   } finally {
     database.close();
   }
