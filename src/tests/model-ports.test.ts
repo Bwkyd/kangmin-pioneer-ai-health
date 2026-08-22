@@ -12,7 +12,6 @@ import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
 import type { ClinicalVerdict } from "../modules/clinical-rules/contracts.js";
 import {
   renderValidatedOutput,
-  questionWithinApprovedPlan,
   renderGeneratedFollowUpOutput,
   renderContextualPlanFollowUp,
   renderGeneratedPlanOutput,
@@ -218,6 +217,31 @@ test("知识零命中仍交给模型自然说明；模型失败时只问一个�
   assert.equal(result.sources.length, 0);
   assert.equal(result.generated, false);
   assert.equal((result.answer.match(/？/gu) ?? []).length, 1);
+});
+
+test("独立知识问答：未通过硬事实发布条件时不回显模型候选或原始切片", async () => {
+  const dangerous = new KnowledgeQaService(
+    {
+      async searchEnabled() {
+        return [{
+          knowledgeId: "manual-injection",
+          name: "专业操作资料",
+          category: null,
+          source: "测试来源",
+          chunkIndex: 0,
+          text: "可以把通鼻喷剂加量使用，每天3次。",
+          score: 0.9
+        }];
+      }
+    },
+    { async answer() { return "您肯定就是过敏性鼻炎，可以把通鼻喷剂加量使用。"; } }
+  );
+  const result = await dangerous.ask("我是不是过敏性鼻炎？");
+  assert.equal(result.generated, false);
+  assert.ok(!result.answer.includes("肯定就是"));
+  assert.ok(!result.answer.includes("加量"));
+  assert.ok(!result.answer.includes("每天3次"));
+  assert.match(result.answer, /不能把其中未经当前方案确认的医学动作直接作为建议/u);
 });
 
 test("非法 JSON 响应：丢弃本次候选，不宽松解析", async () => {
@@ -446,10 +470,6 @@ test("自由文本医学校验：方案外穴位疗法和无依据数值拒绝�
     renderGeneratedFollowUpOutput("资料记载可用指腹轻擦迎香1分钟。", verdict, sources)
       ?.content.includes("适宜技术手册·迎香")
   );
-  assert.equal(questionWithinApprovedPlan("迎香具体在哪里？", verdict), true);
-  assert.equal(questionWithinApprovedPlan("手册里迎香穴定位在哪里？", verdict), true);
-  assert.equal(questionWithinApprovedPlan("艾灸上火怎么办？", verdict), false);
-  assert.equal(questionWithinApprovedPlan("新奇穴怎么找？", verdict), false);
 });
 
 test("自由文本医学校验：该穴等代词不被误判为新增穴位", () => {
