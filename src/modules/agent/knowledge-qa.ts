@@ -1,6 +1,9 @@
 import { DomainError } from "../../kernel/errors.js";
 import type { KnowledgeAnswerPort, KnowledgeRetrievalPort } from "./knowledge-ports.js";
-import { validateMedicalHardFacts } from "./medical-publication-gate.js";
+import {
+  requestsProfessionalOperationGuidance,
+  validateMedicalHardFacts
+} from "./medical-publication-gate.js";
 
 export interface KnowledgeAnswerResult {
   answer: string;
@@ -11,6 +14,23 @@ export interface KnowledgeAnswerResult {
 
 const DISCLAIMER = "回答仅依据后台已启用的知识资料作健康科普，不代替门诊诊断和专业医疗建议。";
 
+function extractPatientExcerpt(text: string, question: string): string {
+  const body = text
+    .split("\n")
+    .filter((line) => !/^(?:资料章节|知识主题)：/u.test(line.trim()))
+    .join("\n")
+    .trim();
+  const parts = body.match(/[^。！？；\n]+[。！？；]?/gu) ?? [];
+  let excerpt = "";
+  for (const part of parts) {
+    if (excerpt !== "" && excerpt.length + part.length > 420) break;
+    excerpt += part;
+    if (/(?:是什么|什么意思|何谓|概念)/u.test(question)) break;
+    if (excerpt.length >= 180) break;
+  }
+  return excerpt.trim();
+}
+
 export class KnowledgeQaService {
   constructor(private readonly retrieval: KnowledgeRetrievalPort, private readonly model: KnowledgeAnswerPort) {}
 
@@ -20,6 +40,19 @@ export class KnowledgeQaService {
       throw new DomainError("validation_failed", "知识问题长度需为 2 到 500 个字符");
     }
     const hits = await this.retrieval.searchEnabled(normalized, 3);
+    if (requestsProfessionalOperationGuidance(normalized)) {
+      const sources = [...new Map(hits.map((hit) => [hit.knowledgeId, {
+        knowledgeId: hit.knowledgeId,
+        name: hit.name,
+        source: hit.source
+      }])).values()];
+      return {
+        answer: "这涉及需要由专业人员结合当前情况确认的操作参数，我不能只依据知识资料给出个体化做法。请咨询医生；也可以继续问它的原理、用途或常见风险。",
+        sources,
+        generated: false,
+        disclaimer: DISCLAIMER
+      };
+    }
     let generated: string | null = null;
     try { generated = await this.model.answer(normalized, hits); } catch { generated = null; }
     const validated = validateMedicalHardFacts(generated, {
@@ -31,7 +64,7 @@ export class KnowledgeQaService {
       }))
     });
     const fallback = hits.map((hit) => validateMedicalHardFacts(
-      hit.text.trim().slice(0, 260),
+      extractPatientExcerpt(hit.text, normalized),
       {
         sources: [{
           knowledgeId: hit.knowledgeId,

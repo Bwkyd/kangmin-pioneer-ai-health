@@ -244,6 +244,42 @@ test("独立知识问答：未通过硬事实发布条件时不回显模型候�
   assert.match(result.answer, /不能把其中未经当前方案确认的医学动作直接作为建议/u);
 });
 
+test("独立知识问答只拦明确专业自操作请求，概念问法继续交给同一模型", async () => {
+  let modelCalls = 0;
+  const service = new KnowledgeQaService(
+    {
+      async searchEnabled() {
+        return [{
+          knowledgeId: "manual-moxibustion",
+          name: "灸法资料",
+          category: null,
+          source: "测试来源",
+          chunkIndex: 0,
+          text: "热敏灸是一种专业中医适宜技术。",
+          score: 0.9
+        }];
+      }
+    },
+    { async answer() { modelCalls += 1; return "热敏灸是一种专业中医适宜技术。"; } }
+  );
+  const concept = await service.ask("热敏灸是什么？");
+  assert.equal(concept.generated, true);
+  assert.equal(modelCalls, 1);
+
+  for (const question of [
+    "热敏灸离皮肤多远、每次做多久？",
+    "蝶腭神经节刺激术具体从哪里进针、多深？",
+    "六岁孩子鼻炎推拿要多大力度、做多少次？",
+    "按摩迎香穴要按几分钟？",
+    "怀孕了可以自己按合谷治疗鼻炎吗？"
+  ]) {
+    const guarded = await service.ask(question);
+    assert.equal(guarded.generated, false);
+    assert.match(guarded.answer, /不能只依据知识资料给出个体化做法/u);
+  }
+  assert.equal(modelCalls, 1);
+});
+
 test("非法 JSON 响应：丢弃本次候选，不宽松解析", async () => {
   const adapter = adapterWith(stubModel("这不是 JSON"));
   const candidates = await adapter.extractCandidates({

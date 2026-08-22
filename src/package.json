@@ -19,6 +19,7 @@
     "dev:session": "npm run build --silent && node dist/dev/create-session.js",
     "dev:admin-session": "npm run build --silent && node dist/dev/create-admin-session.js",
     "start:http": "npm run build --silent && node dist/http/server.js",
+    "prepare:manual-knowledge": "npm run build --silent && node dist/scripts/prepare-manual-knowledge.js",
     "sbom": "node scripts/write-sbom.mjs"
   },
   "devDependencies": {

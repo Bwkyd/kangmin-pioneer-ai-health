@@ -30,6 +30,71 @@ export interface EncodedKnowledgeEmbeddings {
   vectors: Buffer[];
 }
 
+const KNOWLEDGE_LEXICAL_WEIGHT = 0.15;
+const MAX_PRIMARY_CHUNKS_PER_KNOWLEDGE = 2;
+
+function bigrams(value: string): Set<string> {
+  const normalized = value.replace(/[\s\p{P}\p{S}]/gu, "").toLowerCase();
+  const values = new Set<string>();
+  for (let index = 0; index < normalized.length - 1; index += 1) {
+    values.add(normalized.slice(index, index + 2));
+  }
+  return values;
+}
+
+/**
+ * 语义分数叠加小权重二元字重合率，用于找回精确术语。它只排序已启用
+ * 知识，不判断资料可信度、用途或医学授权。
+ */
+export function hybridKnowledgeScore(
+  semanticScore: number,
+  query: string,
+  text: string
+): number {
+  const queryTerms = bigrams(query);
+  if (queryTerms.size === 0) return semanticScore;
+  const textTerms = bigrams(text);
+  let matched = 0;
+  for (const term of queryTerms) {
+    if (textTerms.has(term)) matched += 1;
+  }
+  return (
+    semanticScore + KNOWLEDGE_LEXICAL_WEIGHT * matched / queryTerms.size
+  ) / (1 + KNOWLEDGE_LEXICAL_WEIGHT);
+}
+
+/**
+ * 先按混合分数排序，再优先让单份资料最多占两个位置；语料不足时回填
+ * 被延后的同源切块，保证 limit 语义不变。这样避免长文垄断 Top-K。
+ */
+export function selectKnowledgeHits(
+  sources: readonly KnowledgeSource[],
+  limit: number
+): KnowledgeSource[] {
+  const boundedLimit = Math.max(0, limit);
+  const sorted = [...sources].sort((left, right) =>
+    right.score - left.score ||
+    left.knowledgeId.localeCompare(right.knowledgeId) ||
+    left.chunkIndex - right.chunkIndex
+  );
+  const selected: KnowledgeSource[] = [];
+  const deferred: KnowledgeSource[] = [];
+  const counts = new Map<string, number>();
+  for (const source of sorted) {
+    const count = counts.get(source.knowledgeId) ?? 0;
+    if (count < MAX_PRIMARY_CHUNKS_PER_KNOWLEDGE && selected.length < boundedLimit) {
+      selected.push(source);
+      counts.set(source.knowledgeId, count + 1);
+    } else {
+      deferred.push(source);
+    }
+  }
+  if (selected.length < boundedLimit) {
+    selected.push(...deferred.slice(0, boundedLimit - selected.length));
+  }
+  return selected;
+}
+
 /** 统一索引与回填的批次校验，避免两条路径产生不同向量语义。 */
 export async function embedKnowledgeTexts(
   port: KnowledgeEmbeddingPort,

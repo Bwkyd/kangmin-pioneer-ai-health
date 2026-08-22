@@ -60,7 +60,7 @@ const CONTRAINDICATION_CLAIM = /(?:(?:孕妇|孕期|怀孕|儿童|未满\s*12\s*
 const DRUG_ACTION = /(?:药|喷剂|滴剂|激素|抗组胺|减充血剂|抗生素)[^。！？；\n]{0,18}(?:服用|口服|使用|喷|滴|注射|加量|减量|停用|停药|换药)|(?:服用|口服|使用|喷|滴|注射|加量|减量|停用|停药|换药)[^。！？；\n]{0,18}(?:药|喷剂|滴剂|激素|抗组胺|减充血剂|抗生素)/u;
 const MEDICATION_CHANGE_ACTION = /(?:加量|减量|增加剂量|减少剂量|剂量减半|停药|换药|自行停用|自行换用)/u;
 const INVASIVE_OR_INGESTION_ACTION = /(?:进针|扎入|刺入|埋针|皮内针|塞进|塞入|放入鼻腔|滴入鼻腔|涂入鼻腔|涂在鼻腔|抹入鼻腔|抹在鼻腔|往鼻(?:子|腔)(?:里|内)[^。！？；\n]{0,8}(?:塞|放|滴|涂|抹)|经(?:面部|口腔|鼻腔)[^。！？；\n]{0,12}进入|吞服|煎服)/u;
-const HIGH_RISK_PROCEDURE_ACTION = /(?:针刺|针灸|毫针|皮内针|直刺|斜刺|平刺|透刺|注射|放血|刺络|艾灸|施灸|灸法|拔罐|贴敷)/u;
+const HIGH_RISK_PROCEDURE_ACTION = /(?:针刺|针灸|毫针|皮内针|直刺|斜刺|平刺|透刺|注射|放血|刺络|[\p{Script=Han}]{0,6}灸|拔罐|贴敷)/u;
 const HIGH_RISK_PROCEDURE_IMPERATIVE = /(?:灸|针刺?|扎|刺|贴敷?|拔罐|放血|刺络)(?:在|于)?[\p{Script=Han}]{1,12}(?:穴|迎香|鼻|面|皮肤)/u;
 const OPERATION_PARAMETER = /(?:力度|强度|深度|角度|方向|酸胀|麻胀|温热|发红|疼痛|轻柔|用力|留针|疗程)/u;
 const OPERATION_VALUE = /(?:酸胀|麻胀|温热|发红|疼痛|轻柔|用力|留针|疗程)/gu;
@@ -69,6 +69,22 @@ const SAFE_REFUSAL = /(?:不能提供|无法确认|依据不足|不建议自行|
 const DIAGNOSIS_ASSERTION = /(?:您|你)(?:目前|现在)?[^。！？；\n]{0,12}(?:肯定|一定|可能)?(?:就是|属于|患有|得了|诊断为|确诊为|考虑为|提示为|符合|证型为|是(?=肺经|肺气|脾气|肾阳|寒热|过敏性鼻炎|鼻窦炎|哮喘|感冒))/u;
 const DIAGNOSIS_NEGATION = /(?:不能确定|无法判断|不能说明|不代表|不等于|并不意味着)[^。！？；\n]{0,18}(?:您|你)/u;
 const PERSONAL_STATE_ASSERTION = /(?:您|你|目前|当前)[^。！？；\n]{0,16}(?:处于|属于|判定为|结果为|是)/u;
+const PROFESSIONAL_OPERATION_TOPIC = /(?:针刺|针灸|毫针|皮内针|进针|注射|放血|刺络|[\p{Script=Han}]{0,6}灸|拔罐|刮痧|推拿|按摩|按揉|穴位按压|穴位贴敷|塞鼻|鼻腔[^。！？；\n]{0,8}(?:塞|滴|涂|抹)|药物配制)/u;
+const OPERATION_GUIDANCE_REQUEST = /(?:怎么|如何|具体|多深|多大力度|多用力|多少次|几次|几分钟|几小时|几天|几周|多久|多长时间|离[^。！？；\n]{0,8}多远|距离|角度|方向|深度|剂量|用量|配制|操作步骤|进针路径)/u;
+const SPECIAL_POPULATION_ACTION_REQUEST = /(?:孕妇|孕期|怀孕|儿童|孩子|未满\s*12\s*周岁)[^。！？；\n]{0,24}(?:可以|能否|能不能|怎么|如何|要不要|适合)[^。！？；\n]{0,18}(?:按|揉|灸|针|刺|贴|拔罐|刮痧|推拿|塞|滴|涂|抹|服药|用药)|(?:可以|能否|能不能|怎么|如何|要不要|适合)[^。！？；\n]{0,18}(?:按|揉|灸|针|刺|贴|拔罐|刮痧|推拿|塞|滴|涂|抹|服药|用药)[^。！？；\n]{0,24}(?:孕妇|孕期|怀孕|儿童|孩子)/u;
+const SOURCE_BACKED_CONCEPT = /^[^。！？；\n]{1,36}(?:是指|指的是|是|属于|称为)[^。！？；\n]+/u;
+const CONCEPT_OPERATION_DETAIL = /(?:\d+(?:\.\d+)?\s*(?:次|分钟|小时|天|周|厘米|毫米|cm|mm|寸|壮|毫升|ml|克|毫克|mg)|进针|刺入|扎入|剂量|用量|力度|强度|深度|角度|方向|疗程|留针)/iu;
+
+/**
+ * 独立知识问答中的专业自操作请求。只识别明确索要做法/参数或特殊人群
+ * 个体动作；“艾灸是什么”“某穴在哪里”等概念问题不在此处预拒绝。
+ */
+export function requestsProfessionalOperationGuidance(question: string): boolean {
+  return (
+    PROFESSIONAL_OPERATION_TOPIC.test(question) &&
+    OPERATION_GUIDANCE_REQUEST.test(question)
+  ) || SPECIAL_POPULATION_ACTION_REQUEST.test(question);
+}
 
 function compact(value: string): string {
   return value
@@ -178,6 +194,17 @@ function evidenceSupportsSentence(sentence: string, segments: readonly string[])
     .replace(/^(?:资料|来源|方案|规则)(?:显示|说明|记载|认为)[，,:：]?/u, "");
   const normalized = segments.map(compact);
   return claim !== "" && normalized.some((segment) => segment.includes(claim));
+}
+
+function isSourceBackedConcept(
+  sentence: string,
+  sources: readonly PlanDialogueSource[]
+): boolean {
+  return SOURCE_BACKED_CONCEPT.test(sentence) &&
+    !CONCEPT_OPERATION_DETAIL.test(sentence) &&
+    !KNOWN_ACUPOINTS.some((point) => sentence.includes(point)) &&
+    !/(?:取穴|主穴|配穴)/u.test(sentence) &&
+    evidenceSupportsSentence(sentence, sources.map((source) => source.text));
 }
 
 function currentRuleClaimAllowed(sentence: string, verdict: ClinicalVerdict | undefined): boolean {
@@ -325,8 +352,9 @@ export function validateMedicalHardFacts(
       }
       if (context.verdict === undefined) {
         if (
-          HIGH_RISK_PROCEDURE_ACTION.test(sentence) ||
-          HIGH_RISK_PROCEDURE_IMPERATIVE.test(sentence)
+          (HIGH_RISK_PROCEDURE_ACTION.test(sentence) ||
+            HIGH_RISK_PROCEDURE_IMPERATIVE.test(sentence)) &&
+          !isSourceBackedConcept(sentence, context.sources ?? [])
         ) return null;
       } else {
         if (containsUnsupportedAcupoint(sentence, approvedPlan)) return null;
