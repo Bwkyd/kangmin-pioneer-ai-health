@@ -151,3 +151,13 @@
 - 切换后公网 `/live`、患者首页、`/admin` 均为 200，管理、患者和正文媒体 bundle 的公网哈希
   与 release 一致；应用 active、`NRestarts=0`、SQLite `quick_check=ok`。`/ready` 仍仅因试用
   环境未配置加密密钥返回 503，不扩大为正式生产就绪或客户验收。
+- 2026-08-22 将 Issue #236 的语义知识检索 PR #240 squash 合并为 `main@af5d74a`，构建包
+  SHA-256 为 `7e56e4675b7cdd35f7f80c95cc8637362b9fd332253917074ed7d342f7b5d416`，部署 release
+  `/srv/kangmin-cli/releases/semantic-retrieval-af5d74a`。先在线备份生产 SQLite 副本，在 8788
+  完成 22 项迁移、4 项知识/4 个切块真实向量回填、患者页、管理页和语义 Top-3 预检；再停服
+  备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260822-101823-before-semantic-af5d74a.sqlite`
+  并原子切换。切换后公网 `/live`、患者页、`/admin` 均为 200，患者 bundle SHA-256 为
+  `1b67e91a39e149a5211d73a023c147a734efc53ede5ea1b8f626d00b2a8fb4ae` 且与 release 一致；
+  应用 active、`NRestarts=0`、SQLite `quick_check=ok`，真实语义检索返回 Top-3 并含分类和
+  相似度。`/ready=503` 仍仅因试用环境既有加密密钥未配置；预检数据库副本和临时制品已删除，
+  正式备份与旧 release 保留回滚。

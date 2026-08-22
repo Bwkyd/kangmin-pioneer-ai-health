@@ -3,9 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
-> ## 🚀 #236 语义知识检索完成实现与交付复核（2026-08-22 第136轮 · 基线 `codex/issue-236-semantic-retrieval@0f9651a`）
+> ## ✅ #236 语义知识检索已合并、部署并清理（2026-08-22 第136轮 · `main@af5d74a`）
 > 按最新 `main@d1f7922`、GitHub Issue、生产 release 与数据库重新确认真实状态后，将 4 个实体作为同一任务处理：向量配置、知识切块与双数据库索引、全部 enabled 知识检索生命周期、测试/评测/部署验证。未增加用途分类；`category` 只作为运营元数据返回。新增 DashScope `text-embedding-v4` 适配、SQLite BLOB/PostgreSQL BYTEA 精确余弦、事务重建、显式旧数据回填和失败关闭；证型、分期、方案及参数规则链保持不变。
-> 有界实验以 142 个真实脱敏切块回放，10/10 Hit@3，应用内 1000 次搜索均值约 0.281 ms；深度思考发现并修复管理检索结果丢失分类/相似度和非法 URL 异常两项 P2。首轮 PR CI 又检出同类环境变式：只在 MinIO 配置下运行的远程上传 E2E 未注入向量替身，已修复为独立确定性边界。`km-review` 三视角复核后 P0/P1/P2 为 0，P3 仅保留 #237 需以真实问法定标低相关阈值。窄测 24/24、`cd src && npm run check`、真实浏览器 E2E、`git diff --check` 与 staged gitleaks 均通过；本地 PostgreSQL/S3 外部资源缺失项仍如实跳过，远端 CI 负责带真实 PostgreSQL/MinIO 复验。待实现 PR CI、合并、生产备份/迁移/回填/切换及部署后冒烟完成后关闭本轮。
+> 有界实验以 142 个真实脱敏切块回放，10/10 Hit@3，应用内 1000 次搜索均值约 0.281 ms；深度思考发现并修复管理检索结果丢失分类/相似度和非法 URL 异常两项 P2。首轮 PR CI 又检出同类环境变式：只在 MinIO 配置下运行的远程上传 E2E 未注入向量替身，已修复为独立确定性边界。`km-review` 三视角复核后 P0/P1/P2 为 0，P3 仅保留 #237 需以真实问法定标低相关阈值。窄测 24/24、`cd src && npm run check`、真实浏览器 E2E、`git diff --check` 与 staged gitleaks 均通过；第二轮 CI 在真实 PostgreSQL/MinIO 下 quality 与 image 全绿。PR #240 squash 合并为 `main@af5d74a`，Issue #236 自动关闭。
+> 合并构建以 SHA-256 `7e56e4675b7cdd35f7f80c95cc8637362b9fd332253917074ed7d342f7b5d416` 部署为 `/srv/kangmin-cli/releases/semantic-retrieval-af5d74a`。8788 副本先完成 4 项知识/4 个切块真实回填、22 项迁移、语义检索和页面冒烟；正式切换前备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260822-101823-before-semantic-af5d74a.sqlite`。切换后服务 active、`NRestarts=0`、`quick_check=ok`，公网 `/live`、患者页、管理页均 200，患者 bundle 哈希一致，真实语义 Top-3 含分类与相似度；患者、方案、会话等既有数据计数未变。`/ready=503` 仍仅是试用环境既有加密密钥未配置。含真实数据的预检副本和本地/远端临时制品已删除，正式备份与旧 release 保留回滚。
 
 > ## ✅ 智能体调研与任务拆分完成收尾自检，可以结束会话（2026-08-22 第135轮 · 基线 `main@2c50d3b`，未提交）
 > 使用 `km-review` 按患者、工程和医学安全三个视角复核报价 truth、范围决策、调研 012、实验索引、状态与 GitHub #236–#238。患者视角未发现新增受众模式或诊断承诺；医学视角确认规则引擎仍是证型/分期/方案唯一裁决。后续对话已纠正本轮的用途分类误解：所有后台已启用知识进入同一检索集，不再区分“患者问答/专业参考”；#238 覆盖未知状态、硬事实、持久化和流式出站边界。

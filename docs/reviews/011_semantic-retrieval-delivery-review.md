@@ -33,3 +33,7 @@ P0、P1、P2 均为 0，可以进入 CI 和受控部署。元反思与首轮 CI 
 - `cd src && npm run check`：类型、架构、小程序、构建、全量 Node 测试和真实浏览器 E2E 通过。
 - 浏览器完整覆盖患者与管理链路，知识路径覆盖上传、更新、索引、检索、停用和删除。
 - `git diff --check` 与 staged gitleaks 通过。
+
+## 合并与部署回读
+
+PR #240 的第二轮 quality/image CI 全绿后 squash 合并为 `main@af5d74a`，Issue #236 已自动关闭。合并构建部署为 `/srv/kangmin-cli/releases/semantic-retrieval-af5d74a`；SQLite 副本先完成真实向量回填、8788 页面和语义检索预检，随后以迁移前备份保护正式切换。切换后 22 项迁移、4 个切块向量、数据库完整性、服务状态、公网页面、静态包哈希与真实语义 Top-3 均回读通过。`/ready=503` 仍只对应试用环境既有的加密密钥未配置，不扩大为正式生产就绪或客户验收。
