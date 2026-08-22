@@ -24,7 +24,7 @@ import type {
 import type {
   KnowledgeRetrievalPort,
   KnowledgeSource
-} from "../modules/agent/knowledge-qa.js";
+} from "../modules/agent/knowledge-ports.js";
 import type {
   ApprovedPlan,
   ClinicalVerdict,
@@ -48,6 +48,7 @@ import {
 } from "../infrastructure/aes-gcm-encryption.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteConversationRepository } from "../infrastructure/sqlite-conversation-repository.js";
+import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 const KEY_V1 = Buffer.alloc(32, 1).toString("base64");
 
@@ -151,9 +152,11 @@ class FixedKnowledgeRetrieval implements KnowledgeRetrievalPort {
     return [{
       knowledgeId: "manual-yingxiang",
       name: "过敏性鼻炎适宜技术手册·迎香穴",
+      category: null,
       source: "客户授权测试资料",
       chunkIndex: 1,
-      text: "迎香位于鼻翼外缘附近。当前方案采用指腹擦迎香。"
+      text: "迎香位于鼻翼外缘附近。当前方案采用指腹擦迎香。",
+      score: 0.92
     }];
   }
 }
@@ -678,7 +681,11 @@ test("诊一诊真实 SQLite E2E：后台启用方案与知识后，患者完成
   const mediaDirectory = join(directory, "admin-media");
   mkdirSync(mediaDirectory, { recursive: true });
 
-  const admin = createAdminApplication(databasePath, { mediaDirectory });
+  const knowledgeEmbedding = new TestKnowledgeEmbedding();
+  const admin = createAdminApplication(databasePath, {
+    mediaDirectory,
+    knowledgeEmbedding
+  });
   const adminSession = await admin.sessions.createDevelopmentSession("plan-dialogue-owner");
   const adminToken = adminSession.token;
   try {
@@ -758,7 +765,8 @@ test("诊一诊真实 SQLite E2E：后台启用方案与知识后，患者完成
   const patient = createApplication(databasePath, {
     extraction: new FixedExtraction([]),
     explanation: new NullExplanation(),
-    planDialogue
+    planDialogue,
+    knowledgeEmbedding
   });
   const patientToken =
     (await patient.sessions.createDevelopmentSession("plan-dialogue-patient")).token;

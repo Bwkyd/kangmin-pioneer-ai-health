@@ -28,6 +28,8 @@ export interface KnowledgeHit {
   chunkIndex: number;
   snippet: string;
   source: string | null;
+  category: string | null;
+  score: number;
   enabled: true;
 }
 

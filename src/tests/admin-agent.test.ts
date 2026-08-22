@@ -20,6 +20,7 @@ import type { CommandResult } from "../kernel/result.js";
 import { AgentAdminService } from "../modules/agent-admin/agent-admin-service.js";
 import type { AgentAdminRepository } from "../modules/agent-admin/agent-admin-ports.js";
 import type { KnowledgeItem, AgentPlan, ModelConfigView } from "../modules/agent-admin/contracts.js";
+import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 function dataOf<T>(result: CommandResult): T {
   if (!result.ok) {
@@ -61,7 +62,10 @@ async function fixture(): Promise<{
   const databasePath = join(directory, "agent.sqlite");
   const mediaDirectory = join(directory, "admin-media");
   mkdirSync(mediaDirectory, { recursive: true });
-  const app = createAdminApplication(databasePath, { mediaDirectory });
+  const app = createAdminApplication(databasePath, {
+    mediaDirectory,
+    knowledgeEmbedding: new TestKnowledgeEmbedding()
+  });
   const session = await app.sessions.createDevelopmentSession("owner-agent");
   // 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories。
   const category = await app.execute({
@@ -123,7 +127,9 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
     assert.equal(enabled.status, "enabled");
 
     // 患者知识问答只检索 enabled 分块；模型未配置时确定性降级为带来源摘录。
-    const patient = createApplication(databasePath);
+    const patient = createApplication(databasePath, {
+      knowledgeEmbedding: new TestKnowledgeEmbedding()
+    });
     try {
       dataOf(await patient.execute({ command: "account register", input: { username: "knowledge-patient", password: "knowledge-pass-123" } }));
       const login = dataOf<{ token: string }>(await patient.execute({ command: "account login", input: { username: "knowledge-patient", password: "knowledge-pass-123" } }));
@@ -135,7 +141,12 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
       patient.close();
     }
 
-    const hits = dataOf<{ items: Array<{ knowledgeId: string; snippet: string }> }>(
+    const hits = dataOf<{ items: Array<{
+      knowledgeId: string;
+      snippet: string;
+      category: string | null;
+      score: number;
+    }> }>(
       await app.execute({
         command: "agent knowledge search-test",
         adminToken: token,
@@ -145,6 +156,8 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
     assert.equal(hits.items.length, 1);
     assert.equal(hits.items[0]?.knowledgeId, added.id);
     assert.match(hits.items[0]?.snippet ?? "", /鼻塞/u);
+    assert.equal(hits.items[0]?.category, null);
+    assert.equal(typeof hits.items[0]?.score, "number");
 
     const disabled = dataOf<KnowledgeItem>(
       await app.execute({

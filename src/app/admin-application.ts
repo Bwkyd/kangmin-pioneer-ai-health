@@ -13,6 +13,8 @@ import {
 } from "../kernel/validation.js";
 import type { AuditPort } from "../modules/system/audit-ports.js";
 import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
+import type { KnowledgeEmbeddingPort } from "../modules/agent/knowledge-ports.js";
+import type { KnowledgeRetrievalPort } from "../modules/agent/knowledge-ports.js";
 import { AdminAuthService } from "../modules/admin/admin-auth-service.js";
 import type { AdminAccountRepository } from "../modules/admin/admin-account-repository.js";
 import type { ContentAuxRepository } from "../modules/admin/content-aux-repository.js";
@@ -148,7 +150,11 @@ export class KangminAdminApplication {
     private readonly doctorProvider: DoctorCheckProvider = async () => ({
       checks: [],
       healthy: true
-    })
+    }),
+    semantic?: {
+      embeddings: KnowledgeEmbeddingPort;
+      retrieval: KnowledgeRetrievalPort;
+    }
   ) {
     this.sessions = new AdminSessionService(sessionRepository);
     this.auth = new AdminAuthService(accountRepository, sessionRepository, audit);
@@ -158,7 +164,9 @@ export class KangminAdminApplication {
       agentRepository,
       syndromeRegistry,
       objectStorage,
-      audit
+      audit,
+      semantic?.embeddings,
+      semantic?.retrieval
     );
     this.users = new UserAdminService(userRepository, audit);
   }

@@ -626,5 +626,24 @@ export const PG_MIGRATIONS: PgMigration[] = [
         ON agent_assessments(patient_id) WHERE status = 'current'`,
       `ALTER TABLE agent_conversations ADD COLUMN assessment_id TEXT`
     ]
+  },
+  {
+    version: "0009_knowledge_semantic_embeddings",
+    statements: [
+      `CREATE TABLE agent_knowledge_embeddings (
+        knowledge_id TEXT NOT NULL,
+        chunk_index INTEGER NOT NULL CHECK(chunk_index >= 0),
+        model_name TEXT NOT NULL,
+        dimensions INTEGER NOT NULL CHECK(dimensions > 0),
+        embedding BYTEA NOT NULL,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY(knowledge_id, chunk_index),
+        FOREIGN KEY(knowledge_id, chunk_index)
+          REFERENCES agent_knowledge_chunks(knowledge_id, chunk_index)
+          ON DELETE CASCADE
+      )`,
+      `CREATE INDEX agent_knowledge_embeddings_model
+        ON agent_knowledge_embeddings(model_name, dimensions)`
+    ]
   }
 ];

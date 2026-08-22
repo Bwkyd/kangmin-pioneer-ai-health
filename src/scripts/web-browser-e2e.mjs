@@ -88,6 +88,12 @@ const databasePath = join(directory, "records.sqlite");
 const mediaDirectory = join(directory, "admin-media");
 mkdirSync(mediaDirectory, { recursive: true });
 const browserFollowUps = [];
+const browserKnowledgeEmbedding = {
+  modelName: "browser-e2e-embedding-v1",
+  async embed(texts) {
+    return texts.map(() => [1, 0]);
+  }
+};
 const browserPlanDialogue = {
   async generatePlan() {
     return "已根据规则结果整理为通俗说明，完整已审核方案如下。";
@@ -101,8 +107,14 @@ const browserPlanDialogue = {
     return "我换一种简单说法：这是沿用你刚完成的评估，不需要重新填写问卷。";
   }
 };
-let application = createApplication(databasePath, { planDialogue: browserPlanDialogue });
-let adminOps = createAdminApplicationWithOps(databasePath, { mediaDirectory });
+let application = createApplication(databasePath, {
+  planDialogue: browserPlanDialogue,
+  knowledgeEmbedding: browserKnowledgeEmbedding
+});
+let adminOps = createAdminApplicationWithOps(databasePath, {
+  mediaDirectory,
+  knowledgeEmbedding: browserKnowledgeEmbedding
+});
 const ownerCreated = await adminOps.application.execute({
   command: "auth admins add",
   input: {
@@ -336,8 +348,14 @@ try {
   await close(server);
   application.close();
   adminOps.application.close();
-  application = createApplication(databasePath, { planDialogue: browserPlanDialogue });
-  adminOps = createAdminApplicationWithOps(databasePath, { mediaDirectory });
+  application = createApplication(databasePath, {
+    planDialogue: browserPlanDialogue,
+    knowledgeEmbedding: browserKnowledgeEmbedding
+  });
+  adminOps = createAdminApplicationWithOps(databasePath, {
+    mediaDirectory,
+    knowledgeEmbedding: browserKnowledgeEmbedding
+  });
   server = createKangminHttpServer(application, {
     appEnvironment: "integration",
     allowDevelopmentSession: true,
