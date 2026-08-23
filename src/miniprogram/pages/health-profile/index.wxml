@@ -21,7 +21,7 @@
       <button class="primary-button" loading="{{saving}}" disabled="{{saving}}" bindtap="saveProfile">保存健康档案</button>
     </view>
 
-    <view class="card">
+    <view id="exposure-record" class="card">
       <view class="section-title">过敏原暴露记录</view>
       <view class="muted">只记录当天接触或自我观察到的因素，不代表医学上的过敏诊断。</view>
       <view class="field-label">记录日期</view><picker mode="date" value="{{exposureDate}}" end="{{today}}" bindchange="changeExposureDate"><view class="field-picker">{{exposureDate}}　›</view></picker>
