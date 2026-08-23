@@ -16,6 +16,8 @@
 | 010 | 2026-08-21 | [用评测驱动的上下文工程降低患者 Agent 无依据补全](010_eval-driven-context-engineering/) |
 | 011 | 2026-08-22 | [修正版患者智能体实验的上下文与模型变量取舍](011_context-model-factorial/) |
 | 012 | 2026-08-22 | [模型更换、开源借鉴与报价内实现取舍](012_model-open-source-experiment/) |
+| 013 | 2026-08-22 | [医疗 RAG 命中失败、模型越界与答案发布门的近期业界实践](013_medical-rag-answer-release/) |
+| 014 | 2026-08-23 | [患者智能体医学输出如何拦截：规则、分类小模型还是大模型护栏](014_medical-safety-guardrail-selection/) |
 
 编号 `002` 已于 2026-08-13 按作者指示归档（`_archive/20260813-superseded-docs/`），
-编号保留不复用；下一份调研编号从 `013` 开始。
+编号保留不复用；下一份调研编号从 `015` 开始。

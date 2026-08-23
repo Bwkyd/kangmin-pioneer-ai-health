@@ -4,6 +4,10 @@ import {
   requestsProfessionalOperationGuidance,
   validateMedicalHardFacts
 } from "./medical-publication-gate.js";
+import {
+  EMERGENCY_KNOWLEDGE_ANSWER,
+  isEmergencyMessage
+} from "./emergency-routing.js";
 
 export interface KnowledgeAnswerResult {
   answer: string;
@@ -12,7 +16,7 @@ export interface KnowledgeAnswerResult {
   disclaimer: string;
 }
 
-const DISCLAIMER = "回答仅依据后台已启用的知识资料作健康科普，不代替门诊诊断和专业医疗建议。";
+const DISCLAIMER = "回答优先参考后台已启用资料，并用于一般健康科普，不代替门诊诊断和专业医疗建议。";
 
 function extractPatientExcerpt(text: string, question: string): string {
   const body = text
@@ -39,6 +43,14 @@ export class KnowledgeQaService {
     if (normalized.length < 2 || normalized.length > 500) {
       throw new DomainError("validation_failed", "知识问题长度需为 2 到 500 个字符");
     }
+    if (isEmergencyMessage(normalized)) {
+      return {
+        answer: EMERGENCY_KNOWLEDGE_ANSWER,
+        sources: [],
+        generated: false,
+        disclaimer: DISCLAIMER
+      };
+    }
     const hits = await this.retrieval.searchEnabled(normalized, 3);
     if (requestsProfessionalOperationGuidance(normalized)) {
       const sources = [...new Map(hits.map((hit) => [hit.knowledgeId, {
@@ -56,6 +68,7 @@ export class KnowledgeQaService {
     let generated: string | null = null;
     try { generated = await this.model.answer(normalized, hits); } catch { generated = null; }
     const validated = validateMedicalHardFacts(generated, {
+      allowGeneralKnowledge: true,
       sources: hits.map((hit) => ({
         knowledgeId: hit.knowledgeId,
         name: hit.name,

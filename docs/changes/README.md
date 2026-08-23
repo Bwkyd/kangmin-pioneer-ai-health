@@ -12,8 +12,9 @@
 | [002](arch/002_server-driven-dynamic-followup.md) | 2026-07-23 | 服务端规则驱动动态补问 |
 | [003](arch/003_admin-content-governance.md) | 2026-07-24 | 单管理员内容治理后台 |
 | [004](arch/004_agent-v4-trial.md) | 2026-08-09 | 智能体设计 v4：对话式评估全链路真实化（客户 Web 试用交付） |
+| [005](arch/005_general-knowledge-answering-with-qwen.md) | 2026-08-23 | 知识问答使用千问并恢复一般科普回答 |
 
-下一份架构决策编号从 `005` 开始。
+下一份架构决策编号从 `006` 开始。
 
 ## 生产操作
 

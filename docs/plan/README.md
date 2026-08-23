@@ -17,7 +17,8 @@
 | 009 | 2026-08-17 | 已合并并部署 Web 试用环境；管理工作台 PR #222 已收口 | [Web 试用版非智能体报价闭环](009_non-agent-quotation-web-closure.md) |
 | 010 | 2026-08-17 | 已合并，CLI 上传接口验证通过；待真机/客户验收 | [原生微信小程序非智能体薄壳](010_native-miniprogram-non-agent-shell.md) |
 | 011 | 2026-08-19 | 实施中；冻结 Web 患者端并迁移至小程序 | [Web 患者端迁移至微信小程序](011_web-patient-miniprogram-migration.md) |
-下一份计划编号从 `012` 开始。
+| 012 | 2026-08-22 | 实验 016 已停止；下一变量为概念证据与操作证据隔离 | [患者智能体评测体系设计](012_patient-agent-evaluation-system.md) |
+下一份计划编号从 `013` 开始。
 
 新增计划必须写明目标、非目标、范围、依赖、风险、验收方式、当前状态和收尾证据。
 
@@ -30,6 +31,8 @@
 - 2026-08-21 · 既能广泛回答又不乱说的医疗 Agent 架构 → 取舍卡见 `docs/research/009_answer-first-medical-agent/decision.md`
 - 2026-08-21 · 用评测驱动的上下文工程降低患者 Agent 无依据补全 → 取舍卡见 `docs/research/010_eval-driven-context-engineering/decision.md`
 - 2026-08-22 · 修正版患者智能体实验是否同时加入上下文与模型变量 → 取舍卡见 `docs/research/011_context-model-factorial/decision.md`
+- 2026-08-22 · 医疗 RAG 命中失败、模型越界与答案发布门的近期业界实践 → 取舍卡见 `docs/research/013_medical-rag-answer-release/decision.md`
+- 2026-08-23 · 患者智能体医学输出如何拦截：规则、分类小模型还是大模型护栏 → 取舍卡见 `docs/research/014_medical-safety-guardrail-selection/decision.md`
 
 ## 已拍板实施入口
 

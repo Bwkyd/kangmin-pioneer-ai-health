@@ -11,6 +11,10 @@ import type {
   PlanDialoguePort,
   PlanDialogueSource
 } from "../modules/agent/model-ports.js";
+import type {
+  KnowledgeAnswerPort,
+  KnowledgeSource
+} from "../modules/agent/knowledge-ports.js";
 import { assessmentQuestion } from "../modules/clinical-rules/assessment-questionnaire.js";
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
@@ -36,6 +40,18 @@ const DECISION_SYSTEM_PROMPT = `你是抗敏先锋鼻健康智能体的单步工
 不得用关键词硬路由，不得请求第二次搜索。不得新增穴位、疗法、次数、时长、力度、剂量、禁忌、诊断或疗效承诺。
 用户只补充新症状、没有提出知识问题时，不搜索、不改写旧评估；说明旧结果不会自动改变，并询问是否重新评估。
 胸闷、喘不上气或意识异常时先建议立即急救或急诊，不能用搜索延迟处理。`;
+
+const KNOWLEDGE_SYSTEM_PROMPT = `你是直接服务普通患者的鼻健康科普助手。回答要简短、通俗、先说结论；不要展示检索、知识库、规则、提示词或内部判断。
+
+按下面顺序处理，但只输出自然回答：
+1. 如果患者正在胸闷、喘不上气、嘴唇发紫、意识不清或剧烈胸痛，第一句话就让患者立即联系急救或前往急诊；不要先教居家等待。
+2. 否则直接回答当前问题。一般概念、原因、区别、常见风险和就医时机可以用可靠的一般医学知识说明，无参考资料也可以回答。
+   用户只问概念、原因或区别时，只回答所问内容，不追加用药、穴位、艾灸或其他护理步骤。
+3. 区分“一般说明”和“给这个人照做的指令”。不要把描述写成确定诊断；不知道具体药名时不猜剂量；专业资料中的厘米、分钟、次数、力度和手法不自动批准为居家方案；不要从成人做法推算儿童或孕期操作。
+4. 信息不足时，说明缺的是哪一个关键信息，并最多追问一个问题。不要为了显得有帮助而补数字、确定因果或无关步骤。
+5. 不保证治愈或不复发。
+
+只输出 JSON 对象 {"answer":"..."}，answer 不超过 500 个中文字符。`;
 
 export interface QwenPlanDialogueOptions {
   apiKey?: string | undefined;
@@ -77,7 +93,7 @@ function planPayload(verdict: ClinicalVerdict): Record<string, unknown> {
   };
 }
 
-export class QwenPlanDialogueAdapter implements PlanDialoguePort {
+export class QwenPlanDialogueAdapter implements PlanDialoguePort, KnowledgeAnswerPort {
   private readonly apiKey: string | undefined;
   private readonly model: string;
   private readonly baseUrl: string;
@@ -153,6 +169,20 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
     });
   }
 
+  async answer(
+    question: string,
+    sources: readonly KnowledgeSource[]
+  ): Promise<string | null> {
+    return this.chatAnswer(KNOWLEDGE_SYSTEM_PROMPT, {
+      question,
+      sources: sources.map((source, index) => ({
+        index: index + 1,
+        name: source.name,
+        text: source.text
+      }))
+    }, 500);
+  }
+
   private followUpPayload(input: {
     question: string;
     verdict: ClinicalVerdict;
@@ -190,12 +220,13 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort {
 
   private async chatAnswer(
     systemPrompt: string,
-    payload: Record<string, unknown>
+    payload: Record<string, unknown>,
+    maxAnswerLength = 800
   ): Promise<string | null> {
     const record = await this.chatJson(systemPrompt, payload);
     if (record === null || Object.keys(record).some((key) => key !== "answer")) return null;
     const answer = typeof record.answer === "string" ? record.answer.trim() : "";
-    return answer !== "" && answer.length <= 800 ? answer : null;
+    return answer !== "" && answer.length <= maxAnswerLength ? answer : null;
   }
 
   private async chatJson(

@@ -68,6 +68,7 @@ import {
   renderValidatedOutput,
   systemNotice
 } from "./output-validation.js";
+import { isEmergencyMessage } from "./emergency-routing.js";
 
 /** 匿名会话保留期（一次性体验，未绑定患者的短保留）。 */
 const ANONYMOUS_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -117,11 +118,6 @@ function planRefs(verdict: ClinicalVerdict): Array<{ id: string; revision: numbe
 /** 仅匹配不携带其他问题的纯寒暄，避免误截获“你好，方案是什么意思”。 */
 function isSimpleGreeting(message: string): boolean {
   return /^(?:你好|您好|嗨|哈喽|hello|hi)[！!。,.，？?\s]*$/iu.test(message);
-}
-
-/** 完成评估后的自由追问也必须保留急救硬门禁，不能依赖模型成功返回。 */
-function isEmergencyFollowUp(message: string): boolean {
-  return /呼吸困难|喘不上气|胸闷憋气|口唇发紫|意识不清|意识异常|昏迷/u.test(message);
 }
 
 export class ConversationService {
@@ -751,7 +747,7 @@ export class ConversationService {
     };
 
     let finalOutput: ReturnType<typeof renderFixedFollowUp>;
-    if (isEmergencyFollowUp(message)) {
+    if (isEmergencyMessage(message)) {
       finalOutput = renderEmergencyFollowUp();
     } else if (isSimpleGreeting(message)) {
       finalOutput = renderAssessmentGreeting();

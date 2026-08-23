@@ -123,6 +123,29 @@ test("医学硬事实发布条件：5条普通表达不因措辞白名单被压�
   }
 });
 
+test("独立知识问答允许一般病理解释，但不放行个人因果或孕期禁忌", () => {
+  for (const general of [
+    "过敏性鼻炎鼻塞是因为鼻黏膜发生炎症和肿胀。",
+    "组胺等炎症介质会导致打喷嚏、流鼻涕和鼻塞。",
+    "冷空气刺激可能引起打喷嚏，但不等于过敏性鼻炎。"
+  ]) {
+    assert.equal(
+      validateMedicalHardFacts(general, { allowGeneralKnowledge: true }),
+      general
+    );
+  }
+  for (const answer of [
+    "你的鼻塞就是因为过敏性鼻炎。",
+    "孕期按合谷会导致流产。"
+  ]) {
+    assert.equal(
+      validateMedicalHardFacts(answer, { allowGeneralKnowledge: true }),
+      null,
+      answer
+    );
+  }
+});
+
 test("来源原文可解释专业方法概念，但不能借概念句携带操作参数", () => {
   const definition = "热敏灸是采用艾热针对热敏腧穴施灸的一种专业中医适宜技术。";
   const conceptSource = [{

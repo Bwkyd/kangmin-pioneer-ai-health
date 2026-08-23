@@ -107,6 +107,7 @@ import type { EnvironmentProviderPort } from "../modules/environment/environment
 import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
 import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
 import type {
+  KnowledgeAnswerPort,
   KnowledgeEmbeddingPort,
   KnowledgeRetrievalPort
 } from "../modules/agent/knowledge-ports.js";
@@ -131,6 +132,8 @@ export interface ApplicationOptions {
   planDialogue?: PlanDialoguePort | undefined;
   /** 方案后追问的已启用知识检索端口（测试用）。 */
   planKnowledgeRetrieval?: KnowledgeRetrievalPort | undefined;
+  /** 独立知识问答模型端口（评测观察/测试用）；缺省使用千问。 */
+  knowledgeAnswer?: KnowledgeAnswerPort | undefined;
   /** 知识语义向量端口（测试用）；默认使用 DashScope。 */
   knowledgeEmbedding?: KnowledgeEmbeddingPort | undefined;
   /** 方案注册表端口；未提供时读取数据库中已启用的统一方案表。 */
@@ -552,8 +555,8 @@ function staticDoctorChecks(environment: NodeJS.ProcessEnv): DoctorCheck[] {
           name: "model",
           status: "ok",
           message: [
-            environment.KANGMIN_DEEPSEEK_API_KEY ? "DeepSeek 提取/知识问答" : null,
-            environment.KANGMIN_QWEN_API_KEY ? "通义千问方案转译/追问" : null
+            environment.KANGMIN_DEEPSEEK_API_KEY ? "DeepSeek 问卷候选提取" : null,
+            environment.KANGMIN_QWEN_API_KEY ? "通义千问知识问答/方案转译/追问" : null
           ].filter((value): value is string => value !== null).join("；")
         }
       : {
@@ -689,12 +692,12 @@ export function createApplicationWithOps(
   });
   const extraction: ModelExtractionPort = options.extraction ?? modelAdapter;
   const explanation: ModelExplanationPort = options.explanation ?? modelAdapter;
-  const planDialogue: PlanDialoguePort =
-    options.planDialogue ??
-    new QwenPlanDialogueAdapter({
-      apiKey: environment.KANGMIN_QWEN_API_KEY,
-      model: environment.KANGMIN_QWEN_MODEL
-    });
+  const qwenDialogue = new QwenPlanDialogueAdapter({
+    apiKey: environment.KANGMIN_QWEN_API_KEY,
+    model: environment.KANGMIN_QWEN_MODEL
+  });
+  const planDialogue: PlanDialoguePort = options.planDialogue ?? qwenDialogue;
+  const knowledgeAnswer = options.knowledgeAnswer ?? qwenDialogue;
   const knowledgeEmbedding =
     options.knowledgeEmbedding ??
     new DashscopeEmbeddingAdapter({
@@ -771,7 +774,7 @@ export function createApplicationWithOps(
         },
         () => runPgPatientDoctor(database, environment),
         objectStorage,
-        new KnowledgeQaService(knowledgeRetrieval, modelAdapter)
+        new KnowledgeQaService(knowledgeRetrieval, knowledgeAnswer)
       ),
       readinessProbes
     };
@@ -829,7 +832,7 @@ export function createApplicationWithOps(
       },
       () => Promise.resolve(runPatientDoctor(databasePath, environment)),
       objectStorage,
-      new KnowledgeQaService(knowledgeRetrieval, modelAdapter)
+      new KnowledgeQaService(knowledgeRetrieval, knowledgeAnswer)
     ),
     readinessProbes
   };

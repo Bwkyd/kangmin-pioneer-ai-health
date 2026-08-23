@@ -177,6 +177,33 @@ test("千问工具决策：越权字段、空检索词和超长检索词一律�
   }
 });
 
+test("千问知识问答：无检索命中仍自然回答，并显式关闭思考", async () => {
+  let requestBody: Record<string, unknown> = {};
+  const adapter = new QwenPlanDialogueAdapter({
+    apiKey: "test-qwen-key",
+    model: "qwen3.7-flash",
+    baseUrl: BASE_URL,
+    fetchImpl: (async (_url: unknown, init?: RequestInit) => {
+      requestBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
+      return new Response(JSON.stringify({
+        choices: [{ message: { content: JSON.stringify({ answer: "IgE 是参与过敏反应的一类抗体。" }) } }]
+      }), { status: 200, headers: { "content-type": "application/json" } });
+    }) as typeof fetch
+  });
+
+  assert.equal(
+    await adapter.answer("IgE 是什么？", []),
+    "IgE 是参与过敏反应的一类抗体。"
+  );
+  assert.equal(requestBody.enable_thinking, false);
+  const messages = requestBody.messages as Array<{ role: string; content: string }>;
+  assert.match(messages[0]?.content ?? "", /无参考资料也可以回答/u);
+  assert.deepEqual(JSON.parse(messages[1]?.content ?? "{}"), {
+    question: "IgE 是什么？",
+    sources: []
+  });
+});
+
 test("DeepSeek 模型名称可配置，并实际进入请求体", async () => {
   let requestedModel: unknown;
   const adapter = new DeepSeekModelAdapter({
@@ -219,6 +246,33 @@ test("知识零命中仍交给模型自然说明；模型失败时只问一个�
   assert.equal((result.answer.match(/？/gu) ?? []).length, 1);
 });
 
+test("独立知识问答：明确急症在检索和模型之前固定分流", async () => {
+  let retrievalCalls = 0;
+  let modelCalls = 0;
+  const service = new KnowledgeQaService(
+    { async searchEnabled() { retrievalCalls += 1; return []; } },
+    { async answer() { modelCalls += 1; return "先在家观察。"; } }
+  );
+  const result = await service.ask("我胸闷、喘不上气，嘴唇发紫，还能等吗？");
+  assert.match(result.answer, /立即联系急救|前往急诊/u);
+  assert.match(result.answer, /不要继续等待/u);
+  assert.equal(result.generated, false);
+  assert.equal(retrievalCalls, 0);
+  assert.equal(modelCalls, 0);
+});
+
+test("独立知识问答：只问胸闷概念不误判为正在急症", async () => {
+  let modelCalls = 0;
+  const service = new KnowledgeQaService(
+    { async searchEnabled() { return []; } },
+    { async answer() { modelCalls += 1; return "胸闷有多种可能原因，需要结合当时表现判断。"; } }
+  );
+  const result = await service.ask("过敏性鼻炎会让人胸闷吗？");
+  assert.equal(modelCalls, 1);
+  assert.equal(result.generated, true);
+  assert.ok(!result.answer.includes("立即联系急救"));
+});
+
 test("独立知识问答：未通过硬事实发布条件时不回显模型候选或原始切片", async () => {
   const dangerous = new KnowledgeQaService(
     {
@@ -242,6 +296,21 @@ test("独立知识问答：未通过硬事实发布条件时不回显模型候�
   assert.ok(!result.answer.includes("加量"));
   assert.ok(!result.answer.includes("每天3次"));
   assert.match(result.answer, /不能把其中未经当前方案确认的医学动作直接作为建议/u);
+});
+
+test("独立知识问答：同段含无依据动作时保持整段原子降级", async () => {
+  const service = new KnowledgeQaService(
+    { async searchEnabled() { return []; } },
+    {
+      async answer() {
+        return "鼻黏膜发生炎症和肿胀时会出现鼻塞。你可以把通鼻喷剂加量到每天3次。";
+      }
+    }
+  );
+  const result = await service.ask("过敏性鼻炎为什么会鼻塞？");
+  assert.equal(result.generated, false);
+  assert.ok(!result.answer.includes("加量"));
+  assert.ok(!result.answer.includes("每天3次"));
 });
 
 test("独立知识问答只拦明确专业自操作请求，概念问法继续交给同一模型", async () => {

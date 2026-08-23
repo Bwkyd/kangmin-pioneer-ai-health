@@ -18,8 +18,16 @@
 | 012 | 2026-08-22 | 三视角交付复核 | [#237 自然问答单步工具循环交付复核](012_natural-agent-tool-loop-review.md) |
 | 013 | 2026-08-22 | 三视角交付复核 | [#238 医学硬事实发布条件交付复核](013_medical-hard-fact-publication-gate-review.md) |
 | 014 | 2026-08-22 | 三视角交付复核 | [福建手册知识导入交付复核](014_manual-knowledge-import-review.md) |
+| 015 | 2026-08-22 | 三视角设计复核 | [患者智能体评测体系设计复核](015_patient-agent-evaluation-design-review.md) |
+| 016 | 2026-08-22 | 三视角实验复核 | [回答局部修复实验复核](016_answer-repair-experiment-review.md) |
+| 017 | 2026-08-22 | 三视角实验设计复核 | [风险分层与思考模式实验设计复核](017_risk-tiered-thinking-experiment-design-review.md) |
+| 018 | 2026-08-22 | 三视角实验结果复核 | [风险分层与思考模式实验结果复核](018_risk-tiered-thinking-experiment-review.md) |
+| 019 | 2026-08-23 | 三视角实验结果复核 | [系统提示与最小危险内容拦截实验复核](019_system-prompt-minimal-safety-gate-review.md) |
+| 020 | 2026-08-23 | 三视角调研复核 | [医学输出拦截选型复核](020_medical-safety-guardrail-selection-review.md) |
+| 021 | 2026-08-23 | 三视角实验结果复核 | [系统提示词平衡对照实验复核](021_system-prompt-balanced-comparison-review.md) |
+| 022 | 2026-08-23 | 三视角实现复核 | [一般知识回答实现复核](022_general-knowledge-answer-implementation-review.md) |
 
-下一份评审编号从 `015` 开始。
+下一份评审编号从 `023` 开始。
 
 阅读顺序为 002 → 001 → 003。003 保留原始输出，因此其中旧工作区的绝对路径和
 当时行号不做重写；需要当前证据时回到现有代码重新定位。
