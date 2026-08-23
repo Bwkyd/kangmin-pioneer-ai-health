@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 小程序首页任务完成结束前审计（2026-08-24 第181轮 · 基线 `main@f46ba4e`）
+> 对话结束前重新从 GitHub 取回真实状态：PR #257、#258、#259 均已合并，`main` 与 `origin/main` 同为 `f46ba4e`；任务本地与远端分支为零，只有一个根 worktree。唯一开放 PR #205 及 Dependabot 分支属于既有依赖更新，未误删；CNB 仍无可见的 `kangmin` 或 `pioneer` 仓库，作者原件 `hi.md` 仍未跟踪、未修改。
+> sequential-thinking 七步收尾审计确认实验 021、ops/002 与第180轮已分别承载实验、上传和最终交付事实，无需复制新文档；新增长期记忆“跨端同构按当前基准逐页有界验证”，只保留逐页停止线、分层证据与拒绝旧版分叉的通用方法，不写本轮版本、SHA 或测试数字。`km-review` 按患者、工程、医学安全三视角复核本轮收口，P0/P1/P2 为 0；首页样本不外推为全站、开发版不外推为发布或客户验收，既有外部门禁继续保留。
+
 > ## ✅ 小程序同构首页交付链已收口（2026-08-24 第180轮 · `main@22a0c09`）
 > PR #258 的 `quality`（3 分 07 秒）与 `image`（35 秒）均成功后 squash 合并为 `22a0c09`，部署记录现已进入 `main`。PR #257、#258 均为已合并状态；实现分支和部署记录分支的本地分支均已删除，GitHub 远端引用经 `fetch --prune` 核验已清除。当前唯一开放 PR #205 及其 Dependabot 分支属于既有依赖更新，与本任务无关，未误删。
 > 本轮开发版 `0.1.1` 上传、生产稳定性复核和临时副本清理事实均已归档；服务端没有本轮产物变化，线上继续运行 `/srv/kangmin-cli/releases/plan-video-complete-a43cc72`。仓库仍只配置 GitHub `origin`；CNB CLI 虽登录有效，但没有可见的 `kangmin` 或 `pioneer` 仓库，因此不存在可清理的 CNB 任务分支。作者原件 `hi.md` 继续保持未跟踪、未修改。
