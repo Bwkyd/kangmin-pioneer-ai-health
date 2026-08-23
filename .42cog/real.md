@@ -2,7 +2,7 @@
 
 <meta>
   <document-id>km-real</document-id>
-  <version>1.1.12</version>
+  <version>1.1.13</version>
   <project>kangmin · 抗敏先锋 AI 鼻健康管理系统</project>
   <type>Reality Constraints</type>
   <created>2026-08-13</created>
@@ -60,7 +60,7 @@
   服务器 `140.143.120.176`；患者级评估上下文、连续追问、关闭千问推理、寒暄快速响应和
   输入区动画助手、非智能体报价功能闭环、知识库内嵌编辑以及原生小程序/管理工作台收口均已
   提交并部署 Web 试用环境，当前 release 为
-  `general-knowledge-def63aa`，公网入口为
+  `unified-answer-3d794b7`，公网入口为
   `https://140.143.120.176`。
   托管 PostgreSQL、COS、正式微信身份链路和其他
   正式云资源由客户支付尾款后购买并部署，当前不为此提前扩建。

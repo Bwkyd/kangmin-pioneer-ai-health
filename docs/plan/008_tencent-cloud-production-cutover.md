@@ -203,3 +203,13 @@
   两端 bundle 哈希与本地合并构建一致；`/ready=503` 仍仅因试用环境既有加密密钥未配置。
   一次普通“打喷嚏原因”候选因混入未放行内容而整段降级，已如实保留为后续模型波动评测项；
   旧 release 与正式备份保留回滚。
+- 2026-08-23 将统一患者回答 PR #251 squash 合并为 `main@3d794b7`，以制品 SHA-256
+  `38ce028c1f6807704cc915901a41243f45f05f2112bbb9c20ffd07f5218ca692` 部署 release
+  `/srv/kangmin-cli/releases/unified-answer-3d794b7`。首次 8788 启动因新 release 的依赖软链目标
+  不存在而安全失败，线上未切换；修正为现有只读依赖目录后，线上库副本完成完整 Q1–Q14、
+  截图原题真实千问回答和未知喷剂药量前置分流。正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260823-124705-before-unified-3d794b7.sqlite`。
+- 切换后应用与 Nginx active、`NRestarts=0`，正式库和备份 `quick_check=ok`；22 项迁移、21 份
+  enabled 知识、136 个切块/向量、15 位试用患者、11 个 enabled 方案、29 个对话和 9 份评估
+  保持不变。公网首页、管理页、`/live` 均为 200，两端 bundle 哈希与合并构建一致；`/ready=503`
+  仍仅因试用环境既有加密密钥未配置。预检数据库和传输制品已清理，旧 release 与正式备份保留。
