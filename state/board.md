@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 统一患者回答交付完成最终收尾（2026-08-23 第156轮 · `main@a08a9a6`）
+> 结束对话前重新核验而非沿用缓存：本地 `main` 与 `origin/main` 同为 `a08a9a6`，仅保留作者原件 `hi.md` 未跟踪；唯一 worktree 为项目根目录，本地仅有 `main`，GitHub 任务分支已清理。CNB CLI 登录有效，但账号下没有可见的 kangmin 仓库，本项目也没有 CNB remote，故不存在可删除的 CNB 分支。公网当前仍运行 `/srv/kangmin-cli/releases/unified-answer-3d794b7`，应用与 Nginx active、`NRestarts=0`，首页、后台与 `/live` 均为 200。
+> 回读实验 020、评审 023、changelog、部署计划与 `.42cog/real.md`，PR #251/#252 的开发、CI、合并、部署和回滚事实均已落档，无需新增里程碑文档。发现长期记忆“知识原文兜底”已被现行统一回答设计淘汰，更新为“检索候选只是上下文，不是患者侧引用”：Top-k 不等于模型实际采用或临床授权，无贴合资料允许一般医学知识回答，患者侧不冒充来源；急症、个体药量、专业操作参数及确定性规则边界不变。`km-review` 三视角自检和 sequential-thinking 七步元反思均未发现 P0/P1/P2；历史来源链已用废止指向保留，最终合并清理后保存对话快照并结束本轮。
+
 > ## ✅ 统一患者回答已合并、部署并清理交付分支（2026-08-23 第155轮 · `main@3d794b7`）
 > PR #251 的 `quality`（3分02秒）和 `image`（37秒）均通过后 squash 合并为 `main@3d794b7`；GitHub 没有开放 Issue，故无 Issue 可关闭。合并构建制品 SHA-256 为 `38ce028c1f6807704cc915901a41243f45f05f2112bbb9c20ffd07f5218ca692`，部署为 `/srv/kangmin-cli/releases/unified-answer-3d794b7`。首次 8788 启动因误指向不存在的共享依赖目录而安全失败，线上 8787 未切换；修正为复用现有只读依赖目录后重新预检通过，没有掩盖失败。
 > 8788 使用线上 SQLite 在线备份副本完成完整 Q1–Q14，得到寒热错杂/缓解期；截图原题“给我科普一下过敏性鼻炎的发病机制”在 2023 ms 内正常回答，包含免疫、过敏原、IgE 与组胺，不含“没有找到”、知识库/检索、依据尾巴或评估方案误植。未知通鼻喷剂药量在 234 ms 内模型前固定分流。正式切换前备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260823-124705-before-unified-3d794b7.sqlite`，备份与正式库 `quick_check=ok`。
