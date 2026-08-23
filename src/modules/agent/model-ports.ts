@@ -83,10 +83,6 @@ export interface PlanDialogueContext {
   }>;
 }
 
-export type FollowUpDecision =
-  | { action: "answer"; answer: string }
-  | { action: "search"; query: string };
-
 /**
  * 规则判定后的患者对话端口。
  *
@@ -95,13 +91,7 @@ export type FollowUpDecision =
  */
 export interface PlanDialoguePort {
   generatePlan(verdict: ClinicalVerdict): Promise<string | null>;
-  /** 首次且唯一的工具决策：直接回答，或请求一次受限只读知识搜索。 */
-  decideFollowUp(input: {
-    question: string;
-    verdict: ClinicalVerdict;
-    context: PlanDialogueContext;
-  }): Promise<FollowUpDecision | null>;
-  /** 仅在 decideFollowUp 请求 search 后调用；不得再次请求工具。 */
+  /** 服务端固定完成一次只读搜索后，使用同一患者回答提示词生成回答。 */
   answerFollowUp(input: {
     question: string;
     verdict: ClinicalVerdict;

@@ -96,23 +96,10 @@ class NullExplanation {
 }
 
 class FixedPlanDialogue implements PlanDialoguePort {
-  decisionCalls = 0;
   followUpCalls = 0;
 
   async generatePlan(): Promise<string> {
     return "已根据规则结果整理为通俗说明，请只选择当前方案列出的操作，并先阅读注意事项。";
-  }
-
-  async decideFollowUp(input: Parameters<PlanDialoguePort["decideFollowUp"]>[0]) {
-    this.decisionCalls += 1;
-    if (input.question.includes("艾灸")) {
-      return {
-        action: "answer" as const,
-        answer: "当前方案未包含艾灸，我不能把它新增为你的操作建议。"
-      };
-    }
-    assert.ok(input.question.includes("迎香"));
-    return { action: "search" as const, query: "迎香穴 位置" };
   }
 
   async answerFollowUp(input: {
@@ -132,28 +119,20 @@ class NullPlanDialogue implements PlanDialoguePort {
     return null;
   }
 
-  async decideFollowUp(): Promise<{ action: "search"; query: string }> {
-    return { action: "search", query: "迎香穴 位置" };
-  }
-
   async answerFollowUp(): Promise<null> {
     return null;
   }
 }
 
 class UnsafeHardFactPlanDialogue implements PlanDialoguePort {
+  followUpCalls = 0;
+
   async generatePlan(): Promise<string> {
     return "已根据当前规则结果整理方案。";
   }
 
-  async decideFollowUp() {
-    return {
-      action: "answer" as const,
-      answer: "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。"
-    };
-  }
-
   async answerFollowUp(): Promise<string> {
+    this.followUpCalls += 1;
     return "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。";
   }
 }
@@ -163,18 +142,6 @@ class CapturingPlanDialogue implements PlanDialoguePort {
 
   async generatePlan(): Promise<string> {
     return "已根据当前评估整理方案，请继续询问不清楚的内容。";
-  }
-
-  async decideFollowUp(input: Parameters<PlanDialoguePort["decideFollowUp"]>[0]) {
-    this.followUps.push({
-      question: input.question,
-      context: input.context,
-      sourceCount: 0
-    });
-    return {
-      action: "answer" as const,
-      answer: "我换一种简单说法：请只使用当前评估结果中已经列出的方案。"
-    };
   }
 
   async answerFollowUp(input: Parameters<PlanDialoguePort["answerFollowUp"]>[0]): Promise<string> {
@@ -588,10 +555,9 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
     assert.equal(followUp.state, "completed");
     assert.equal(followUp.verdict?.outcome, "classified");
     assert.ok(followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
-    assert.ok(followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
-    assert.equal(planDialogue.decisionCalls, 1);
+    assert.ok(!followUp.message?.content.includes("【依据】"));
     assert.equal(planDialogue.followUpCalls, 1);
-    assert.deepEqual(retrieval.calls, [{ query: "迎香穴 位置", limit: 3 }]);
+    assert.deepEqual(retrieval.calls, [{ query: "迎香穴具体位置在哪里？", limit: 3 }]);
 
     const refused = await exec(
       application,
@@ -601,10 +567,9 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
       },
       token
     );
-    assert.ok(refused.message?.content.includes("当前方案未包含艾灸"));
-    assert.ok(refused.message?.content.includes("不能把它新增为你的操作建议"));
-    assert.equal(planDialogue.followUpCalls, 1, "方案外疗法不得调用模型");
-    assert.equal(planDialogue.decisionCalls, 2, "知识问法可以进入单步模型决策");
+    assert.match(refused.message?.content ?? "", /专业操作参数|咨询医生、药师/u);
+    assert.equal(planDialogue.followUpCalls, 1, "专业操作参数不得调用模型");
+    assert.equal(retrieval.calls.length, 1, "专业操作参数不得触发知识搜索");
 
     const emergency = await exec(
       application,
@@ -616,7 +581,6 @@ test("诊一诊小闭环：规则后动态生成、完成会话继续追问、�
     );
     assert.match(emergency.message?.content ?? "", /立即联系急救或前往急诊/u);
     assert.ok(!emergency.message?.content.includes("【依据】"));
-    assert.equal(planDialogue.decisionCalls, 2, "急救硬门禁不得依赖模型判断");
     assert.equal(retrieval.calls.length, 1, "急救硬门禁不得触发知识搜索");
 
     const show = dataOf<{ messages: Array<{ role: string; content: string }> }>(
@@ -721,13 +685,18 @@ test("患者级评估上下文：新聊天继承完整问卷，多轮承接不�
     }, token);
     assert.equal(symptomAddition.verdict?.syndromeCode, inherited.verdict?.syndromeCode);
     assert.equal(symptomAddition.verdict?.phaseCode, inherited.verdict?.phaseCode);
-    assert.deepEqual(retrieval.calls, [], "直接解释与补充症状都不得触发知识搜索");
+    assert.deepEqual(retrieval.calls, [
+      { query: "我不明白", limit: 3 },
+      { query: "能再说简单一点吗？", limit: 3 },
+      { query: "刚才那段还能继续解释吗？", limit: 3 },
+      { query: "我今天又流鼻涕了", limit: 3 }
+    ], "普通追问统一只检索一次");
   } finally {
     application.close();
   }
 });
 
-test("诊一诊模型波动：即使检索有结果也不把可能答非所问的原文直接展示", async () => {
+test("诊一诊模型波动：模型不可用时不回显检索切片", async () => {
   const { application } = await currentFixture({
     planDialogue: new NullPlanDialogue(),
     planKnowledgeRetrieval: new FixedKnowledgeRetrieval(),
@@ -745,7 +714,7 @@ test("诊一诊模型波动：即使检索有结果也不把可能答非所问�
       },
       token
     );
-    assert.match(followUp.message?.content ?? "", /没有找到足够贴合这个问题的依据/u);
+    assert.match(followUp.message?.content ?? "", /暂时没能生成回答/u);
     assert.ok(!followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
     assert.ok(!followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
   } finally {
@@ -753,10 +722,12 @@ test("诊一诊模型波动：即使检索有结果也不把可能答非所问�
   }
 });
 
-test("硬事实发布失败：模型候选在持久化前降级，历史记录不含违规正文", async () => {
+test("明确药量请求在模型前分流，危险候选不生成也不进入历史", async () => {
+  const planDialogue = new UnsafeHardFactPlanDialogue();
+  const retrieval = new EmptyKnowledgeRetrieval();
   const { application } = await currentFixture({
-    planDialogue: new UnsafeHardFactPlanDialogue(),
-    planKnowledgeRetrieval: new EmptyKnowledgeRetrieval(),
+    planDialogue,
+    planKnowledgeRetrieval: retrieval,
     planRegistry: new FixedPlanRegistry()
   });
   const token =
@@ -764,10 +735,12 @@ test("硬事实发布失败：模型候选在持久化前降级，历史记录�
   try {
     const completed = await completeCurrentAssessment(application, token);
     const followUp = await exec(application, {
-      message: "我还能怎么做？",
+      message: "我有一瓶不知道名字的通鼻喷剂，一天喷几次？",
       conversationId: completed.conversationId
     }, token);
-    assert.match(followUp.message?.content ?? "", /最近一次自测结果|承接上一条/u);
+    assert.match(followUp.message?.content ?? "", /药品说明书|咨询医生、药师/u);
+    assert.equal(planDialogue.followUpCalls, 0);
+    assert.deepEqual(retrieval.calls, []);
     assert.ok(!followUp.message?.content.includes("加量"));
     assert.ok(!followUp.message?.content.includes("每天3次"));
     assert.ok(!followUp.message?.content.includes("没有怀孕"));
@@ -898,7 +871,7 @@ test("诊一诊真实 SQLite E2E：后台启用方案与知识后，患者完成
       patientToken
     );
     assert.ok(followUp.message?.content.includes("迎香位于鼻翼外缘附近"));
-    assert.ok(followUp.message?.content.includes("过敏性鼻炎适宜技术手册·迎香穴"));
+    assert.ok(!followUp.message?.content.includes("【依据】"));
     assert.equal(planDialogue.followUpCalls, 1);
 
     const database = new KangminDatabase(databasePath);

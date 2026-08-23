@@ -75,6 +75,8 @@ const PERSONAL_STATE_ASSERTION = /(?:您|你|目前|当前)[^。！？；\n]{0,1
 const PROFESSIONAL_OPERATION_TOPIC = /(?:针刺|针灸|毫针|皮内针|进针|注射|放血|刺络|[\p{Script=Han}]{0,6}灸|拔罐|刮痧|推拿|按摩|按揉|穴位按压|穴位贴敷|塞鼻|鼻腔[^。！？；\n]{0,8}(?:塞|滴|涂|抹)|药物配制)/u;
 const OPERATION_GUIDANCE_REQUEST = /(?:怎么|如何|具体|多深|多大力度|多用力|多少次|几次|几分钟|几小时|几天|几周|多久|多长时间|离[^。！？；\n]{0,8}多远|距离|角度|方向|深度|剂量|用量|配制|操作步骤|进针路径)/u;
 const SPECIAL_POPULATION_ACTION_REQUEST = /(?:孕妇|孕期|怀孕|儿童|孩子|未满\s*12\s*周岁)[^。！？；\n]{0,24}(?:可以|能否|能不能|怎么|如何|要不要|适合)[^。！？；\n]{0,18}(?:按|揉|灸|针|刺|贴|拔罐|刮痧|推拿|塞|滴|涂|抹|服药|用药)|(?:可以|能否|能不能|怎么|如何|要不要|适合)[^。！？；\n]{0,18}(?:按|揉|灸|针|刺|贴|拔罐|刮痧|推拿|塞|滴|涂|抹|服药|用药)[^。！？；\n]{0,24}(?:孕妇|孕期|怀孕|儿童|孩子)/u;
+const MEDICATION_TOPIC = /(?:药|喷剂|滴剂|激素|抗组胺|减充血剂|抗生素)/u;
+const MEDICATION_DOSAGE_REQUEST = /(?:剂量|用量|加量|减量|停药|换药|一天|每日|每天|每次|几次|多少次|几喷|几滴|几片|多久|几天|几周|疗程)/u;
 const SOURCE_BACKED_CONCEPT = /^[^。！？；\n]{1,36}(?:是指|指的是|是|属于|称为)[^。！？；\n]+/u;
 const CONCEPT_OPERATION_DETAIL = /(?:\d+(?:\.\d+)?\s*(?:次|分钟|小时|天|周|厘米|毫米|cm|mm|寸|壮|毫升|ml|克|毫克|mg)|进针|刺入|扎入|剂量|用量|力度|强度|深度|角度|方向|疗程|留针)/iu;
 
@@ -87,6 +89,11 @@ export function requestsProfessionalOperationGuidance(question: string): boolean
     PROFESSIONAL_OPERATION_TOPIC.test(question) &&
     OPERATION_GUIDANCE_REQUEST.test(question)
   ) || SPECIAL_POPULATION_ACTION_REQUEST.test(question);
+}
+
+/** 明确索要个体药物剂量/频次时在模型前分流；一般药物概念仍正常回答。 */
+export function requestsMedicationDosageGuidance(question: string): boolean {
+  return MEDICATION_TOPIC.test(question) && MEDICATION_DOSAGE_REQUEST.test(question);
 }
 
 function compact(value: string): string {

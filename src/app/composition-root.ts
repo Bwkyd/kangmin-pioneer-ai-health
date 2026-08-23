@@ -9,8 +9,8 @@
  * - 其余任何环境（含默认）→ 启动失败 config_missing，绝不在缺少
  *   密钥时明文启动。
  *
- * 问卷候选提取与知识问答沿用 DeepSeek；规则结果动态转译与方案后追问
- * 使用通义千问。任一提供方未配置或失败均 fail-closed 到确定性问答或固定模板。
+ * 问卷候选提取沿用 DeepSeek；规则结果动态转译、方案后追问与知识问答
+ * 使用通义千问。任一提供方未配置或失败均降级到确定性问答或固定提示。
  *
  * 环境 Provider 门禁（fail-closed，与加密降级同一谓词）：测试替身仅在
  * KANGMIN_APP_ENV 为 local/integration，或显式 KANGMIN_ALLOW_DEV_SESSION=1

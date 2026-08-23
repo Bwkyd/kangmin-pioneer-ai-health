@@ -98,20 +98,15 @@ const browserPlanDialogue = {
   async generatePlan() {
     return "已根据规则结果整理为通俗说明，完整已审核方案如下。";
   },
-  async decideFollowUp({ question, context }) {
-    if (question.includes("迎香")) {
-      return { action: "search", query: "迎香穴 位置" };
-    }
-    assert.ok(context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
-    browserFollowUps.push({ question, sources: [], context });
-    return {
-      action: "answer",
-      answer: "我换一种简单说法：这是沿用你刚完成的评估，不需要重新填写问卷。"
-    };
-  },
   async answerFollowUp({ question, sources, context }) {
     browserFollowUps.push({ question, sources, context });
-    if (sources.some((source) => source.name === "过敏性鼻炎适宜技术手册·迎香穴")) {
+    if (question.includes("发病机制")) {
+      return "过敏性鼻炎是鼻黏膜对过敏原产生过强免疫反应。接触花粉、尘螨等后，组胺等物质释放，引起打喷嚏、流清涕、鼻痒和鼻塞。";
+    }
+    if (
+      question.includes("迎香") &&
+      sources.some((source) => source.name === "过敏性鼻炎适宜技术手册·迎香穴")
+    ) {
       return "迎香位于鼻翼外缘附近；当前只采用方案列出的指腹擦迎香。";
     }
     assert.ok(context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
@@ -667,7 +662,7 @@ try {
   await page.getByTestId("streaming-response").waitFor({ state: "visible" });
   await page.locator(".typing").waitFor({ state: "detached" });
   await expectText(page.locator(".chat"), "迎香位于鼻翼外缘附近");
-  await expectText(page.locator(".chat"), "过敏性鼻炎适宜技术手册·迎香穴");
+  assert.ok(!((await page.locator(".ai-bubble").last().textContent()) ?? "").includes("【依据】"));
   const streamLengths = await page.evaluate(() => {
     globalThis.__kangminStreamObserver?.disconnect();
     return globalThis.__kangminStreamLengths ?? [];
@@ -704,6 +699,16 @@ try {
   ));
   assert.ok(contextual.context.assessment.answers.some((answer) => answer.fieldCode === "q1"));
   assert.ok(contextual.context.assessment.answers.some((answer) => answer.fieldCode === "q14"));
+
+  // 截图复现题：即使后台资料不贴合，也应正常科普，且不泄露检索或自动牵扯评估方案。
+  await chatInput.fill("给我科普一下过敏性鼻炎的发病机制");
+  await page.locator(".send-button").click();
+  await page.locator(".typing").waitFor({ state: "detached" });
+  await expectText(page.locator(".chat"), "鼻黏膜对过敏原产生过强免疫反应");
+  const chatText = (await page.locator(".ai-bubble").last().textContent()) ?? "";
+  for (const forbidden of ["没有找到", "知识库", "检索", "【依据】"]) {
+    assert.ok(!chatText.includes(forbidden), `患者对话不应显示内部措辞：${forbidden}`);
+  }
 
   // ---- 管理 Web：真实账号、HttpOnly 会话、文章发布闭环、知识上传 ----
   const adminPage = await context.newPage();

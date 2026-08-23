@@ -252,7 +252,7 @@ export default function DiscoverView() {
 
       {status === "ready" && tab === "qa" && (
         <section className="knowledge-qa">
-          <h2>问鼻健康知识库</h2><p>优先参考后台已启用资料；没有贴合资料时，也可以回答一般鼻健康问题。</p>
+          <h2>问鼻健康</h2><p>直接输入你想了解的鼻健康问题。</p>
           <form onSubmit={(event) => void submitKnowledge(event)}><textarea required minLength={2} maxLength={500} rows={3} value={qaQuestion} onChange={(event) => setQaQuestion(event.target.value)} placeholder="例如：换季鼻塞时日常护理要注意什么？"/><button disabled={qaBusy}>{qaBusy ? "正在检索…" : "提交问题"}</button></form>
           {qaAnswer && <article><div>{qaAnswer.answer}</div>{qaAnswer.sources.length > 0 && <ul>{qaAnswer.sources.map((source) => <li key={source.knowledgeId}>来源：{source.name}{source.source ? `（${source.source}）` : ""}</li>)}</ul>}<footer>{qaAnswer.disclaimer}</footer></article>}
         </section>
