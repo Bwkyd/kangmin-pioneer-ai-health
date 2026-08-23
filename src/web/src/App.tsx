@@ -23,11 +23,14 @@ import DiscoverView from "./DiscoverView";
 import MessagesView from "./MessagesView";
 import { PublicContentModal } from "./PublicContentModal";
 import {
-  listPublicContent,
+  listAllPublicContent,
   showPublicContent,
   type PublicContent
 } from "./discover";
-import { matchPlanVideo } from "./plan-video-matching";
+import {
+  matchPlanVideo,
+  planVideoMethodSlots
+} from "../../modules/browse/plan-video-matching";
 import {
   AllergenExposure,
   AllergenExposureDraft,
@@ -166,13 +169,15 @@ function resultBody(
   openingVideoId: string | null
 ): ReactNode[] {
   const lines = text.replaceAll("\r\n", "\n").split("\n");
+  const methodsByLine = new Map(
+    planVideoMethodSlots(text).map((slot) => [slot.lineIndex, slot.method])
+  );
   const nodes: ReactNode[] = [];
-  let currentMethod = "";
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index] ?? "";
-    const methodMatch = line.match(/^\d+\.\s*(.+)$/u);
-    if (methodMatch?.[1]) currentMethod = methodMatch[1];
-    if (line === "【操作视频】") {
+    const normalizedLine = line.trim();
+    if (normalizedLine === "【操作视频】") {
+      const currentMethod = methodsByLine.get(index) ?? "";
       const video = matchPlanVideo(currentMethod, videos);
       if (video !== null) {
         nodes.push(
@@ -189,7 +194,7 @@ function resultBody(
             {openingVideoId === video.id ? "正在打开…" : "观看操作视频"}
           </button>
         );
-        if (VIDEO_STATUS_LINES.has(lines[index + 1] ?? "")) index += 1;
+        if (VIDEO_STATUS_LINES.has((lines[index + 1] ?? "").trim())) index += 1;
         continue;
       }
     }
@@ -420,7 +425,7 @@ export default function App() {
   useEffect(() => {
     if (previewConsentStatus !== "ready" || tab !== "chat" || !hasPlanResult) return;
     let cancelled = false;
-    listPublicContent("video")
+    listAllPublicContent("video")
       .then((items) => { if (!cancelled) setPlanVideos(items); })
       .catch(() => { if (!cancelled) setPlanVideos([]); });
     return () => { cancelled = true; };
@@ -1280,6 +1285,7 @@ export default function App() {
     try {
       setSelectedPlanVideo(await showPublicContent("video", video.id));
     } catch (error) {
+      setPlanVideos((items) => items.filter((item) => item.id !== video.id));
       setPlanVideoError(error instanceof Error ? error.message : "操作视频暂时无法打开，请稍后重试");
     } finally {
       setOpeningPlanVideoId(null);

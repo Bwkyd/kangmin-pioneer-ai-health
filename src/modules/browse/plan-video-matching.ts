@@ -1,4 +1,13 @@
-import type { PublicContent } from "./discover";
+export interface PlanVideoCandidate {
+  kind: string;
+  title: string;
+  category: string;
+}
+
+export interface PlanVideoMethodSlot {
+  lineIndex: number;
+  method: string;
+}
 
 interface MatchRule {
   method: string[];
@@ -31,8 +40,31 @@ function normalized(value: string): string {
   return value.replace(/[\s·—–、，,：:()（）+]/gu, "").toLocaleLowerCase("zh-CN");
 }
 
+/**
+ * 从固定方案模板识别每个【操作视频】所属的方法。兼容历史 CRLF、全角序号
+ * 以及无步骤时的“方法：”回退，避免已有正文因轻微格式差异再次识别失败。
+ */
+export function planVideoMethodSlots(text: string): PlanVideoMethodSlot[] {
+  const lines = text.replaceAll("\r\n", "\n").split("\n");
+  const slots: PlanVideoMethodSlot[] = [];
+  let currentMethod = "";
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = (lines[index] ?? "").trim();
+    const numbered = line.match(/^\d+[.．、]\s*(.+)$/u);
+    if (numbered?.[1]) currentMethod = numbered[1].trim();
+    if (line === "方法：") currentMethod = (lines[index + 1] ?? "").trim();
+    if (line === "【操作视频】" && currentMethod !== "") {
+      slots.push({ lineIndex: index, method: currentMethod });
+    }
+  }
+  return slots;
+}
+
 /** 按 truth 中的方法名匹配同一人群下已经发布的视频，不跨成人/儿童混用。 */
-export function matchPlanVideo(method: string, videos: PublicContent[]): PublicContent | null {
+export function matchPlanVideo<T extends PlanVideoCandidate>(
+  method: string,
+  videos: readonly T[]
+): T | null {
   const normalizedMethod = normalized(method);
   const audience = /(?:小儿|儿童)/u.test(method) ? "儿童" : "成人";
   const rule = MATCH_RULES.find((candidate) =>

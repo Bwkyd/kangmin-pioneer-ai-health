@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 最终方案视频关联边界与真实回归已补齐（2026-08-23 第174轮 · 基线 `codex/content-import-video@a145240`，待提交）
+> 修复后按作者要求再次调用 sequential-thinking 做六步元反思，定位并消除“患者端只读取前 50 条已发布视频，目标视频落到后续页时再次显示未上传”这一同类 P2 缺陷：学一学列表仍保持首屏分页，只有最终方案按页读取全部已发布视频；以 ID 去重，并在短页、空页或服务端异常重复页时确定终止，不设置会在第 501 条重新漏配的静默总量上限。方案方法解析抽到共享纯模块，兼容 CRLF、空白、半角/全角/顿号序号和“方法：”回退；详情打开前被下架时立即移除失效按钮并恢复原“视频暂未上传”提示，重新发布、刷新历史评估后按钮恢复。
+> 新增 18 种 truth 方法逐项匹配单测，并覆盖成人/儿童隔离、肺俞按揉与点揉不灸近似标题、非视频与未知方法拒绝。真实 Chrome E2E 通过管理应用创建并发布 50 条更新更晚的填充视频，把迎香目标稳定推到第二页，再验证历史方案按钮、与学一学共用详情弹层、可播放视频、下架竞态、按钮失效、重新发布恢复及原学一学弹窗回归；不是仅看截图或状态码。完整 `npm run check` 全绿：409 项测试中 333 通过、76 项因未配置 PostgreSQL/S3 按约定跳过、0 失败，真实浏览器 E2E PASS；`check-manifests` 与 `git diff --check` 通过。`structure-lint` 仍只报告作者既有两个 `_work/` 目录命名，不属于本轮且未擅自改名。
+> `km-review` 患者、工程、医学三视角复核 P0/P1/P2 为 0：患者只看到当前可用入口和明确失败提示；工程覆盖跨页、下架与旧功能；医学上未改变问卷、证型、方案正文或操作参数。保留 P3：当前关联依赖受控标题与成人/儿童分类约定，未来内容治理可升级为显式方法标识；不阻塞当前 18/18 已验证目标。`hi.md` 继续作为作者原件保持未跟踪。
+
 > ## ✅ 最终方案操作视频入口已提交并部署（2026-08-23 第173轮 · `codex/content-import-video@9dff319`）
 > 将第172轮实现提交为 `9dff319` 并推送任务分支 `codex/content-import-video`；`hi.md` 继续作为作者原件保持未跟踪。提交前 `npm run check` 再次全绿（406 项：330 通过、76 项因未配置 PostgreSQL/S3 按约定跳过、0 失败，真实浏览器 E2E PASS），staged gitleaks、`git diff --check` 通过。
 > 发布包 SHA-256 为 `59957f3412451e51a4f6a60d9f774c240ce1149e974ead5eb2f0786370dfae06`，部署为 `/srv/kangmin-cli/releases/plan-video-9dff319`。8788 使用线上数据库副本完成 22 项迁移、患者 bundle、11 条启用方案、26 条已发布视频和日志预检；正式切换前在线备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260823-220123-before-plan-video-9dff319.sqlite`，旧 `content-import-video-e6a1559b` release 保留回滚。

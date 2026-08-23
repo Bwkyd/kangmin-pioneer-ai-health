@@ -147,7 +147,11 @@ let server = createKangminHttpServer(application, {
   rateLimits: browserE2eRateLimits
 });
 let origin = await listen(server);
-const browser = await chromium.launch({ headless: true });
+const browserExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
+const browser = await chromium.launch({
+  headless: true,
+  ...(browserExecutablePath ? { executablePath: browserExecutablePath } : {}),
+});
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 }
 });
@@ -945,6 +949,50 @@ try {
   await videoRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
 
+  // 造 50 条更新更晚的真实已发布视频，把迎香目标视频稳定推到第二页。
+  // 最终方案必须遍历全部已发布视频，不能在内容增长后重现“后台有、方案里没有”。
+  const listedVideos = dataOf(await adminOps.application.execute({
+    command: "content video list",
+    adminToken: planAdminToken,
+    input: {}
+  }), "浏览器 E2E 应列出视频");
+  const targetVideo = listedVideos.items.find(
+    (item) => item.title === "抗敏要穴之迎香穴（指腹擦迎香）"
+  );
+  assert.ok(targetVideo?.mediaId, "分页目标视频应已绑定素材");
+  for (let index = 0; index < 50; index += 1) {
+    const title = `分页填充视频${String(index + 1).padStart(2, "0")}`;
+    const createdFiller = dataOf(await adminOps.application.execute({
+      command: "content video create",
+      adminToken: planAdminToken,
+      input: {
+        title,
+        category: targetVideo.category,
+        idempotencyKey: `browser-video-page-filler-${index}`
+      }
+    }), "浏览器 E2E 应创建分页填充视频");
+    const updatedFiller = dataOf(await adminOps.application.execute({
+      command: "content video update",
+      adminToken: planAdminToken,
+      input: {
+        id: createdFiller.id,
+        expectedRevision: createdFiller.revision,
+        summary: "仅用于验证已发布视频超过一页时仍能关联方案。",
+        body: "分页边界自动化测试视频。",
+        source: "自动化测试",
+        instructions: "仅用于自动化测试。",
+        precautions: "不作为真实操作说明。",
+        disclaimer: "仅供自动化测试，不替代专业医疗建议。",
+        mediaId: targetVideo.mediaId
+      }
+    }), "浏览器 E2E 应完善分页填充视频");
+    dataOf(await adminOps.application.execute({
+      command: "content video publish",
+      adminToken: planAdminToken,
+      input: { id: updatedFiller.id, expectedRevision: updatedFiller.revision, yes: true }
+    }), "浏览器 E2E 应发布分页填充视频");
+  }
+
   // 已保存的最终方案无需重做评估：重新读取已发布视频后，方法下出现按钮，
   // 点击复用学一学的同一详情弹层并直接播放对应操作视频。
   await page.bringToFront();
@@ -962,6 +1010,36 @@ try {
   await expectText(planVideoDetail, "抗敏要穴之迎香穴（指腹擦迎香）");
   assert.equal(await planVideoDetail.locator("video").count(), 1, "最终方案视频按钮应打开可播放详情弹层");
   await planVideoDetail.getByRole("button", { name: "关闭内容详情" }).click();
+
+  // 详情打开前视频被下架：服务端拒绝后，旧按钮应立即失效并恢复原安全提示，
+  // 不能继续展示一个看似可用但永远打不开的入口。
+  await adminPage.bringToFront();
+  await videoRow.getByRole("button", { name: "下架" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端已不可见");
+  await page.bringToFront();
+  await page.getByTestId("plan-video-button").first().click();
+  await page.getByRole("alert").waitFor({ state: "visible" });
+  await page.getByTestId("plan-video-button").waitFor({ state: "detached" });
+  await expectText(sixStepResult, "视频暂未上传");
+
+  // 重新发布并清掉分页填充数据后，刷新历史评估即可恢复按钮；无需重做问卷。
+  await adminPage.bringToFront();
+  await videoRow.getByRole("button", { name: "发布" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端现在可见");
+  const browserDatabase = new KangminDatabase(databasePath);
+  try {
+    browserDatabase.connection.prepare(`
+      UPDATE content_items
+      SET status = 'unpublished', patient_visible = 0
+      WHERE title LIKE '分页填充视频%'
+    `).run();
+  } finally {
+    browserDatabase.close();
+  }
+  await page.bringToFront();
+  await page.reload();
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  await page.getByTestId("plan-video-button").first().waitFor({ state: "visible" });
 
   const videoCheckPage = await context.newPage();
   await videoCheckPage.goto(origin);
