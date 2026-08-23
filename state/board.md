@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 内容导入与最终方案视频已合并部署（2026-08-23 第175轮 · `main@a43cc72`）
+> PR #254 的 `quality`（3 分 14 秒）和 `image`（37 秒）均通过后 squash 合并；合并树与本地完整门禁验证树一致。部署合并构建为 `/srv/kangmin-cli/releases/plan-video-complete-a43cc72`，发布包 SHA-256 为 `d54fb392e4f901e1f18a86d3fd2e2c86a2db7b591deb13a039f56634f3cf66d2`。8788 使用线上 SQLite 在线备份副本完成 22 项迁移、11 条启用方案、26 条已发布视频、页面、患者 bundle 和日志预检；正式切换前备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260823-222747-before-plan-video-complete-a43cc72.sqlite`，旧 `plan-video-9dff319` release 保留回滚。
+> 切换后应用与 Nginx active、`NRestarts=0`、正式库 `quick_check=ok`，公网首页、后台和 `/live` 均为 200；患者 bundle SHA-256 与本地合并构建一致，公开 MP4 返回 200、`video/mp4` 和完整 3,575,858 字节。`/ready=503` 仍只因试用环境既有加密密钥未配置；预检数据库、进程、日志、传输包及本机不完整 Playwright 缓存均已清理。GitHub 实现分支已随 PR 合并删除；部署事实记录将经独立文档 PR 合并后再清理记录分支。`hi.md` 未修改、未提交。
+
 > ## ✅ 最终方案视频关联边界与真实回归已补齐（2026-08-23 第174轮 · 基线 `codex/content-import-video@a145240`，待提交）
 > 修复后按作者要求再次调用 sequential-thinking 做六步元反思，定位并消除“患者端只读取前 50 条已发布视频，目标视频落到后续页时再次显示未上传”这一同类 P2 缺陷：学一学列表仍保持首屏分页，只有最终方案按页读取全部已发布视频；以 ID 去重，并在短页、空页或服务端异常重复页时确定终止，不设置会在第 501 条重新漏配的静默总量上限。方案方法解析抽到共享纯模块，兼容 CRLF、空白、半角/全角/顿号序号和“方法：”回退；详情打开前被下架时立即移除失效按钮并恢复原“视频暂未上传”提示，重新发布、刷新历史评估后按钮恢复。
 > 新增 18 种 truth 方法逐项匹配单测，并覆盖成人/儿童隔离、肺俞按揉与点揉不灸近似标题、非视频与未知方法拒绝。真实 Chrome E2E 通过管理应用创建并发布 50 条更新更晚的填充视频，把迎香目标稳定推到第二页，再验证历史方案按钮、与学一学共用详情弹层、可播放视频、下架竞态、按钮失效、重新发布恢复及原学一学弹窗回归；不是仅看截图或状态码。完整 `npm run check` 全绿：409 项测试中 333 通过、76 项因未配置 PostgreSQL/S3 按约定跳过、0 失败，真实浏览器 E2E PASS；`check-manifests` 与 `git diff --check` 通过。`structure-lint` 仍只报告作者既有两个 `_work/` 目录命名，不属于本轮且未擅自改名。
