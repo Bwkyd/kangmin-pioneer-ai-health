@@ -20,6 +20,9 @@
     "dev:admin-session": "npm run build --silent && node dist/dev/create-admin-session.js",
     "start:http": "npm run build --silent && node dist/http/server.js",
     "prepare:manual-knowledge": "npm run build --silent && node dist/scripts/prepare-manual-knowledge.js",
+    "eval:validate": "npm run build --silent && node dist/scripts/validate-agent-evals.js",
+    "eval:grade": "npm run build --silent && node dist/scripts/grade-agent-eval-results.js",
+    "eval:baseline": "npm run build --silent && node dist/scripts/run-agent-eval-baseline.js",
     "sbom": "node scripts/write-sbom.mjs"
   },
   "devDependencies": {

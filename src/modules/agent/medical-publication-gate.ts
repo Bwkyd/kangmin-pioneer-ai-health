@@ -20,6 +20,8 @@ export interface MedicalPublicationContext {
   facts?: readonly ConfirmedFact[] | undefined;
   /** 代码渲染的确定性结果正文，例如现行 acute/remission 固定模板。 */
   approvedText?: string | undefined;
+  /** 独立知识问答可发布非个体化的一般概念与病理解释。 */
+  allowGeneralKnowledge?: boolean | undefined;
 }
 
 const KNOWN_ACUPOINTS = [
@@ -65,6 +67,7 @@ const HIGH_RISK_PROCEDURE_IMPERATIVE = /(?:灸|针刺?|扎|刺|贴敷?|拔罐|�
 const OPERATION_PARAMETER = /(?:力度|强度|深度|角度|方向|酸胀|麻胀|温热|发红|疼痛|轻柔|用力|留针|疗程)/u;
 const OPERATION_VALUE = /(?:酸胀|麻胀|温热|发红|疼痛|轻柔|用力|留针|疗程)/gu;
 const PRESCRIPTIVE_ACTION = /(?:可以|可用|建议|推荐|应当|应该|需要|请按|采用|改用|增加|配合|每日|每天|每周|每次|进行|操作|服用|口服|喷|滴|注射|加量|减量|停药)/u;
+const PERSONALIZED_OR_ACTIONABLE_CLAIM = /(?:您|你|孩子|儿童|孕妇|孕期|怀孕|建议|推荐|应当|应该|请|可以|可用|需要|每日|每天|每周|每次|服用|口服|使用|加量|减量|停药|换药)/u;
 const SAFE_REFUSAL = /(?:不能提供|无法确认|依据不足|不建议自行|不要自行|请勿自行|不得自行|不采用|不用|不灸|不针刺|应咨询|请咨询|及时就医|立即就医|前往急诊|联系急救|(?:当前|现有)方案(?:中)?(?:未|不)(?:包含|提供|允许))/u;
 const DIAGNOSIS_ASSERTION = /(?:您|你)(?:目前|现在)?[^。！？；\n]{0,12}(?:肯定|一定|可能)?(?:就是|属于|患有|得了|诊断为|确诊为|考虑为|提示为|符合|证型为|是(?=肺经|肺气|脾气|肾阳|寒热|过敏性鼻炎|鼻窦炎|哮喘|感冒))/u;
 const DIAGNOSIS_NEGATION = /(?:不能确定|无法判断|不能说明|不代表|不等于|并不意味着)[^。！？；\n]{0,18}(?:您|你)/u;
@@ -306,7 +309,13 @@ export function validateMedicalHardFacts(
     }
     CONTRAINDICATION_CLAIM.lastIndex = 0;
 
-    if (CAUSAL_CLAIM.test(sentence) && !evidenceSupportsSentence(sentence, segments)) return null;
+    const generalKnowledgeCausality = context.allowGeneralKnowledge === true &&
+      !PERSONALIZED_OR_ACTIONABLE_CLAIM.test(sentence);
+    if (
+      CAUSAL_CLAIM.test(sentence) &&
+      !generalKnowledgeCausality &&
+      !evidenceSupportsSentence(sentence, segments)
+    ) return null;
     CAUSAL_CLAIM.lastIndex = 0;
 
     if (DRUG_ACTION.test(sentence) && !safeRefusal && !evidenceSupportsSentence(sentence, segments)) {
