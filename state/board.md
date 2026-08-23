@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 最终方案操作视频入口已提交并部署（2026-08-23 第173轮 · `codex/content-import-video@9dff319`）
+> 将第172轮实现提交为 `9dff319` 并推送任务分支 `codex/content-import-video`；`hi.md` 继续作为作者原件保持未跟踪。提交前 `npm run check` 再次全绿（406 项：330 通过、76 项因未配置 PostgreSQL/S3 按约定跳过、0 失败，真实浏览器 E2E PASS），staged gitleaks、`git diff --check` 通过。
+> 发布包 SHA-256 为 `59957f3412451e51a4f6a60d9f774c240ce1149e974ead5eb2f0786370dfae06`，部署为 `/srv/kangmin-cli/releases/plan-video-9dff319`。8788 使用线上数据库副本完成 22 项迁移、患者 bundle、11 条启用方案、26 条已发布视频和日志预检；正式切换前在线备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260823-220123-before-plan-video-9dff319.sqlite`，旧 `content-import-video-e6a1559b` release 保留回滚。
+> 切换后应用与 Nginx active、`NRestarts=0`，正式库 `quick_check=ok`，方案和视频数量保持不变；公网首页、管理页、`/live` 均为 200，患者 bundle SHA-256 与本地构建一致，公开 MP4 返回 200、`video/mp4` 和完整 3,575,858 字节。`/ready=503` 仍只因试用环境既有加密密钥未配置；未发现本轮新增阻塞。
+
 > ## ✅ 最终方案已补操作视频按钮与共用详情弹层（2026-08-23 第172轮 · 基线 `codex/content-import-video@40ef16b`，待提交）
 > 客户截图所说“这里的视频没有”指向诊一诊完成后的最终方案，而非学一学视频目录：每个方案方法下应直接出现“观看操作视频”按钮，点击后留在问助手页面，并打开与学一学完全相同的视频详情弹层。现将学一学内容详情抽为共用组件；最终方案只读取患者侧已发布视频，按 truth 中方法名称和成人/儿童分类匹配，命中时用按钮替换“视频暂未上传”，未命中则保留原安全提示，不跨人群猜配、不改规则结果、方案正文或医学参数。历史已完成评估无需重做，页面重新读取已发布视频后同样出现按钮。
 > 生产现行 11 个方案涉及的 18 种方法已用线上实际标题逐项匹配，18/18 通过；肺俞普通按揉与“点揉、不灸”使用更具体规则区分。真实浏览器回归覆盖恢复旧评估、后来发布视频、按钮出现、点击、同一详情弹层与可播放 `<video>`，E2E PASS；`npm run check` 全绿（406 项：330 通过、76 项因未配置 PostgreSQL/S3 按约定跳过、0 失败），`check-manifests` 与 `git diff --check` 通过。`km-review` 三视角复核未发现 P0/P1/P2：患者不见内部 ID，工程失败保持原提示，医学上只连接已发布 truth 同名视频且不产生新建议。本轮尚未提交、推送或部署。

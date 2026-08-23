@@ -242,3 +242,14 @@
   首页、`/admin`、`/live` 均为 200；`/ready=503` 仍仅因试用环境未配置加密密钥。预检进程、
   临时数据库、传输包、短期管理凭据和一次失败上传产生的孤儿素材均已清理；旧 release、正式
   数据库备份和 Nginx 配置备份保留回滚。
+
+- 2026-08-23 将最终方案操作视频入口提交 `9dff319` 部署为
+  `/srv/kangmin-cli/releases/plan-video-9dff319`，发布包 SHA-256 为
+  `59957f3412451e51a4f6a60d9f774c240ce1149e974ead5eb2f0786370dfae06`。8788 使用线上 SQLite
+  在线备份副本完成 22 项迁移、患者 bundle、11 条启用方案、26 条已发布视频和日志预检；
+  正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260823-220123-before-plan-video-9dff319.sqlite`。
+- 切换后应用与 Nginx active、`NRestarts=0`、正式库 `quick_check=ok`，方案和视频数量保持不变；
+  公网首页、`/admin`、`/live` 均为 200，患者 bundle 哈希与本地构建一致，公开 MP4 返回 200、
+  `video/mp4` 和完整 3,575,858 字节。`/ready=503` 仍只因试用环境既有加密密钥未配置；旧
+  `content-import-video-e6a1559b` release 与正式备份保留回滚。
