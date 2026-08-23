@@ -253,3 +253,16 @@
   公网首页、`/admin`、`/live` 均为 200，患者 bundle 哈希与本地构建一致，公开 MP4 返回 200、
   `video/mp4` 和完整 3,575,858 字节。`/ready=503` 仍只因试用环境既有加密密钥未配置；旧
   `content-import-video-e6a1559b` release 与正式备份保留回滚。
+
+- 2026-08-23 PR #254 的 `quality`（3 分 14 秒）和 `image`（37 秒）通过后 squash 合并为
+  `main@a43cc72`，将跨页、下架竞态与旧弹层回归均已验证的合并构建部署为
+  `/srv/kangmin-cli/releases/plan-video-complete-a43cc72`。发布包 SHA-256 为
+  `d54fb392e4f901e1f18a86d3fd2e2c86a2db7b591deb13a039f56634f3cf66d2`；8788 使用线上 SQLite
+  在线备份副本完成 22 项迁移、11 条启用方案、26 条已发布视频、页面、患者 bundle 和日志预检。
+- 正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260823-222747-before-plan-video-complete-a43cc72.sqlite`。
+  切换后应用与 Nginx active、`NRestarts=0`、正式库 `quick_check=ok`；公网首页、`/admin`、
+  `/live` 均为 200，患者 bundle SHA-256 `7b19ac64c5f40e09edb6b8e1ff53dafda46b1c1f59d4f7d89c9c3a0536dc9e87`
+  与本地合并构建一致，公开 MP4 返回 200、`video/mp4` 和完整 3,575,858 字节。`/ready=503`
+  仍只因试用环境既有加密密钥未配置；预检数据库、进程、日志和传输制品均已清理，旧 release
+  与正式备份保留回滚。
