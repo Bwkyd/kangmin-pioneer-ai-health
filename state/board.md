@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 最终交付状态与可复用记忆已收口（2026-08-23 第176轮 · 基线 `main@27eadc1`）
+> 结束对话前重新核验：PR #254、#255 均已合并，内容实现分支和部署记录分支的本地、GitHub 远端引用均已删除；本地只有 `main` 与唯一根 worktree，`main` 和 `origin/main` 同为 `27eadc1`。唯一开放 PR #205 及其 Dependabot 分支属于既有依赖更新，与本任务无关，未误删。CNB CLI 登录有效，但没有可见的 kangmin 仓库，本项目也没有 CNB remote，因此不存在可清理的 CNB 任务分支。
+> 回读 `.42cog/real.md`、部署计划和本状态板，当前 release、合并提交、制品哈希、切换前备份、线上验证和既有 `/ready=503` 限制均已落档。深度思考八步收尾审计发现第175轮仍保留“部署记录将经 PR 合并”的历史过程句；本轮以最新状态明确其已完成，不改写历史轮次。新增长期记忆“内容关联必须全量可达并在消费时复核”：患者关联查找不能只读首屏或设置静默总量上限，应按稳定 ID 去重终止、点击时复核发布状态，并用正反例防近似标题跨人群误配；未来显式方法标识仍是改进方向，不冒充本轮已实现。
+> `km-review` 三视角收尾自检未发现 P0/P1/P2：没有新增患者文案或医学规则，工程事实与 Git/生产状态一致，记忆不包含一次性哈希、数量或客户私密资料。线上 release 继续为 `plan-video-complete-a43cc72`，应用与 Nginx active、`NRestarts=0`、SQLite `quick_check=ok`，公网首页、后台和 `/live` 均为 200。作者原件 `hi.md` 继续保持未跟踪、未修改；对话快照在全部状态合并和分支清理后单独保存到已忽略的 `chats/`。
+
 > ## ✅ 内容导入与最终方案视频已合并部署（2026-08-23 第175轮 · `main@a43cc72`）
 > PR #254 的 `quality`（3 分 14 秒）和 `image`（37 秒）均通过后 squash 合并；合并树与本地完整门禁验证树一致。部署合并构建为 `/srv/kangmin-cli/releases/plan-video-complete-a43cc72`，发布包 SHA-256 为 `d54fb392e4f901e1f18a86d3fd2e2c86a2db7b591deb13a039f56634f3cf66d2`。8788 使用线上 SQLite 在线备份副本完成 22 项迁移、11 条启用方案、26 条已发布视频、页面、患者 bundle 和日志预检；正式切换前备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260823-222747-before-plan-video-complete-a43cc72.sqlite`，旧 `plan-video-9dff319` release 保留回滚。
 > 切换后应用与 Nginx active、`NRestarts=0`、正式库 `quick_check=ok`，公网首页、后台和 `/live` 均为 200；患者 bundle SHA-256 与本地合并构建一致，公开 MP4 返回 200、`video/mp4` 和完整 3,575,858 字节。`/ready=503` 仍只因试用环境既有加密密钥未配置；预检数据库、进程、日志、传输包及本机不完整 Playwright 缓存均已清理。GitHub 实现分支已随 PR 合并删除；部署事实记录将经独立文档 PR 合并后再清理记录分支。`hi.md` 未修改、未提交。
