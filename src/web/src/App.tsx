@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useRef, useState } from "react";
+import { FormEvent, type ReactNode, useEffect, useRef, useState } from "react";
 
 import {
   getCurrentAgentAssessment,
@@ -21,6 +21,16 @@ import {
 } from "../../modules/clinical-rules/assessment-questionnaire";
 import DiscoverView from "./DiscoverView";
 import MessagesView from "./MessagesView";
+import { PublicContentModal } from "./PublicContentModal";
+import {
+  listAllPublicContent,
+  showPublicContent,
+  type PublicContent
+} from "./discover";
+import {
+  matchPlanVideo,
+  planVideoMethodSlots
+} from "../../modules/browse/plan-video-matching";
 import {
   AllergenExposure,
   AllergenExposureDraft,
@@ -147,8 +157,64 @@ function conversationDate(value: string): string {
   }).format(date);
 }
 
-/** final 轮结果卡：message.content 纯文本保留换行，不解析 markdown。 */
-function ResultCard({ message }: { message: Extract<Message, { kind: "result" }> }) {
+const VIDEO_STATUS_LINES = new Set([
+  "视频暂未上传（医学审核后补充）。",
+  "操作视频已提供（见视频资源）。"
+]);
+
+function resultBody(
+  text: string,
+  videos: PublicContent[],
+  onOpenVideo: (video: PublicContent) => void,
+  openingVideoId: string | null
+): ReactNode[] {
+  const lines = text.replaceAll("\r\n", "\n").split("\n");
+  const methodsByLine = new Map(
+    planVideoMethodSlots(text).map((slot) => [slot.lineIndex, slot.method])
+  );
+  const nodes: ReactNode[] = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index] ?? "";
+    const normalizedLine = line.trim();
+    if (normalizedLine === "【操作视频】") {
+      const currentMethod = methodsByLine.get(index) ?? "";
+      const video = matchPlanVideo(currentMethod, videos);
+      if (video !== null) {
+        nodes.push(
+          <button
+            className="plan-video-button"
+            data-testid="plan-video-button"
+            key={`video-${index}-${video.id}`}
+            type="button"
+            aria-label={`观看${currentMethod}操作视频`}
+            disabled={openingVideoId === video.id}
+            onClick={() => onOpenVideo(video)}
+          >
+            <span aria-hidden="true">▶</span>
+            {openingVideoId === video.id ? "正在打开…" : "观看操作视频"}
+          </button>
+        );
+        if (VIDEO_STATUS_LINES.has((lines[index + 1] ?? "").trim())) index += 1;
+        continue;
+      }
+    }
+    nodes.push(<span key={`line-${index}`}>{line}{index < lines.length - 1 && <br />}</span>);
+  }
+  return nodes;
+}
+
+/** final 轮结果卡：正文保持原顺序，只把已匹配的操作视频替换为可点击按钮。 */
+function ResultCard({
+  message,
+  videos,
+  onOpenVideo,
+  openingVideoId
+}: {
+  message: Extract<Message, { kind: "result" }>;
+  videos: PublicContent[];
+  onOpenVideo: (video: PublicContent) => void;
+  openingVideoId: string | null;
+}) {
   const phase = message.text.includes("【急性发作期】") ? "急性发作期" : "缓解期";
   return (
     <article className="result-card final-result" aria-label="评估结果">
@@ -156,7 +222,7 @@ function ResultCard({ message }: { message: Extract<Message, { kind: "result" }>
         <div><small>评估已完成</small><h2>{phase}</h2></div>
         <span>评估结果</span>
       </div>
-      <div className="result-body">{message.text}</div>
+      <div className="result-body">{resultBody(message.text, videos, onOpenVideo, openingVideoId)}</div>
       <div className="result-foot"><span>方案来源</span> 已审核的体质调理方案</div>
       <div className="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</div>
     </article>
@@ -279,6 +345,10 @@ export default function App() {
   const [historyStatus, setHistoryStatus] = useState<"idle" | "loading" | "ready" | "error">("idle");
   const [historyError, setHistoryError] = useState("");
   const [historyReload, setHistoryReload] = useState(0);
+  const [planVideos, setPlanVideos] = useState<PublicContent[]>([]);
+  const [selectedPlanVideo, setSelectedPlanVideo] = useState<PublicContent | null>(null);
+  const [openingPlanVideoId, setOpeningPlanVideoId] = useState<string | null>(null);
+  const [planVideoError, setPlanVideoError] = useState("");
   const [scores, setScores] = useState<Array<number | null>>([...emptySymptomScores]);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [entryOpen, setEntryOpen] = useState(false);
@@ -350,6 +420,16 @@ export default function App() {
     conversationState === null ||
     conversationState === "active" ||
     (conversationState === "completed" && followUpEnabled);
+  const hasPlanResult = messages.some((message) => message.kind === "result");
+
+  useEffect(() => {
+    if (previewConsentStatus !== "ready" || tab !== "chat" || !hasPlanResult) return;
+    let cancelled = false;
+    listAllPublicContent("video")
+      .then((items) => { if (!cancelled) setPlanVideos(items); })
+      .catch(() => { if (!cancelled) setPlanVideos([]); });
+    return () => { cancelled = true; };
+  }, [previewConsentStatus, tab, hasPlanResult]);
 
   useEffect(() => {
     if (previewConsentStatus !== "ready") return;
@@ -1199,6 +1279,19 @@ export default function App() {
   // 学一学内容页（legacy /discover 已迁入薄壳）：已发布科普文章/视频/方案。
   const openDiscover = () => navigateTo("articles");
 
+  const openPlanVideo = async (video: PublicContent) => {
+    setOpeningPlanVideoId(video.id);
+    setPlanVideoError("");
+    try {
+      setSelectedPlanVideo(await showPublicContent("video", video.id));
+    } catch (error) {
+      setPlanVideos((items) => items.filter((item) => item.id !== video.id));
+      setPlanVideoError(error instanceof Error ? error.message : "操作视频暂时无法打开，请稍后重试");
+    } finally {
+      setOpeningPlanVideoId(null);
+    }
+  };
+
   const goBack = () => {
     setEntryOpen(false);
     if (tab === "healthProfile") { profileRequest.next(); setProfileStatus("idle"); setProfileNotice(""); setProfileLoadError(false); setTab("profile"); }
@@ -1444,7 +1537,15 @@ export default function App() {
                       return <div className="chat-notice" data-testid="chat-notice" role="status" key={message.id}>{message.text}</div>;
                     }
                     if (message.kind === "result") {
-                      return <ResultCard message={message} key={message.id} />;
+                      return (
+                        <ResultCard
+                          message={message}
+                          videos={planVideos}
+                          onOpenVideo={(video) => void openPlanVideo(video)}
+                          openingVideoId={openingPlanVideoId}
+                          key={message.id}
+                        />
+                      );
                     }
                     const isStreaming =
                       typeof message.id === "string" &&
@@ -1508,6 +1609,7 @@ export default function App() {
                   )}
                   <div ref={chatEnd} />
                 </div>
+                {planVideoError && <div className="record-notice error" role="alert">{planVideoError}</div>}
                 {chatError && (
                   <div className="record-notice error" role="alert">
                     <strong>发送失败</strong>
@@ -1857,6 +1959,9 @@ export default function App() {
                 </div>
               </div>
             </div>
+          )}
+          {selectedPlanVideo && (
+            <PublicContentModal content={selectedPlanVideo} onClose={() => setSelectedPlanVideo(null)} />
           )}
         </div>
       </section>

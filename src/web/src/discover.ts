@@ -45,17 +45,43 @@ export interface CarePlanDetail extends CarePlanSummary {
   disclaimer: string | null;
 }
 
-/** 列表一次读取的条数上限（薄壳不做无限滚动，先取第一页）。 */
+/** 列表一次读取的条数上限。 */
 const LIST_LIMIT = 50;
+
+async function listPublicContentPage(
+  kind: PublicContentKind,
+  offset: number
+): Promise<PublicContent[]> {
+  const { items } = await command<{ items: PublicContent[] }>(
+    `browse ${kind} list`,
+    { limit: LIST_LIMIT, offset }
+  );
+  return items;
+}
 
 export async function listPublicContent(
   kind: PublicContentKind
 ): Promise<PublicContent[]> {
-  const { items } = await command<{ items: PublicContent[] }>(
-    `browse ${kind} list`,
-    { limit: LIST_LIMIT, offset: 0 }
-  );
-  return items;
+  return listPublicContentPage(kind, 0);
+}
+
+/**
+ * 最终方案需要在全部已发布视频中找对应方法，不能因为内容超过首 50 条
+ * 再次出现“后台有视频、方案里没有”。按页读取并以 id 去重；短页、空页、
+ * 无新增项时停止。服务端数据有限，重复页也会由“无新增项”确定性终止，
+ * 不设置会在第 501 条重新制造漏配的静默总量上限。
+ */
+export async function listAllPublicContent(
+  kind: PublicContentKind
+): Promise<PublicContent[]> {
+  const found = new Map<string, PublicContent>();
+  for (let offset = 0; ; offset += LIST_LIMIT) {
+    const items = await listPublicContentPage(kind, offset);
+    const sizeBefore = found.size;
+    items.forEach((item) => found.set(item.id, item));
+    if (items.length < LIST_LIMIT || found.size === sizeBefore) break;
+  }
+  return [...found.values()];
 }
 
 export async function showPublicContent(

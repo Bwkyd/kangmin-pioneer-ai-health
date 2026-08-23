@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 import { chromium } from "playwright";
+import JSZip from "jszip";
 
 import { createApplication } from "../dist/app/composition-root.js";
 import { createAdminApplicationWithOps } from "../dist/app/admin-composition-root.js";
@@ -60,6 +61,14 @@ async function expectText(locator, text) {
 function dataOf(result, message) {
   assert.equal(result.ok, true, message ?? "命令应成功");
   return result.data;
+}
+
+async function articleDocx(paragraphs) {
+  const zip = new JSZip();
+  zip.file("[Content_Types].xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/><Default Extension="xml" ContentType="application/xml"/><Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/></Types>`);
+  zip.file("_rels/.rels", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>`);
+  zip.file("word/document.xml", `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>${paragraphs.map((text) => `<w:p><w:r><w:t>${text}</w:t></w:r></w:p>`).join("")}</w:body></w:document>`);
+  return zip.generateAsync({ type: "nodebuffer" });
 }
 
 /** 中央新增按钮必须完整收纳在底栏内，避免跨页面遮挡正文。 */
@@ -138,7 +147,11 @@ let server = createKangminHttpServer(application, {
   rateLimits: browserE2eRateLimits
 });
 let origin = await listen(server);
-const browser = await chromium.launch({ headless: true });
+const browserExecutablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?.trim();
+const browser = await chromium.launch({
+  headless: true,
+  ...(browserExecutablePath ? { executablePath: browserExecutablePath } : {}),
+});
 const context = await browser.newContext({
   viewport: { width: 390, height: 844 }
 });
@@ -633,6 +646,10 @@ try {
   }
   const sixStepResult = page.locator(".result-card", { hasText: "寒热错杂" });
   await sixStepResult.waitFor({ state: "visible" });
+  const completedPlanConversationId = await page.evaluate(() =>
+    sessionStorage.getItem("kangmin.agent.conversationId")
+  );
+  assert.ok(completedPlanConversationId, "完整评估应保存可恢复的会话 ID");
   await page.locator(".conversation-ended").waitFor({ state: "visible" });
   const completedMascotBox = await page.getByTestId("assistant-mascot").boundingBox();
   const completedNoticeBox = await page.locator(".conversation-ended").boundingBox();
@@ -740,10 +757,37 @@ try {
   await adminPage.getByLabel("筛选文章状态").waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增文章" }).click();
   const blankArticleForm = adminPage.locator(".content-form");
+  await adminPage.getByRole("dialog", { name: "新增文章" }).waitFor({ state: "visible" });
+  const articleBackdropBox = await adminPage.getByTestId("content-editor-backdrop").boundingBox();
+  const articleViewport = await adminPage.evaluate(() => ({ width: window.innerWidth, height: window.innerHeight, bodyOverflow: document.body.style.overflow }));
+  assert.ok(articleBackdropBox && articleBackdropBox.x <= 1 && articleBackdropBox.y <= 1 && articleBackdropBox.width >= articleViewport.width - 1 && articleBackdropBox.height >= articleViewport.height - 1, "文章编辑层应隔离并覆盖列表工作区");
+  assert.equal(articleViewport.bodyOverflow, "hidden", "文章编辑层打开时背景页面不应滚动");
+  await blankArticleForm.getByTestId("content-form-actions").waitFor({ state: "visible" });
+  const articleActionsBox = await blankArticleForm.getByTestId("content-form-actions").boundingBox();
+  assert.ok(articleActionsBox && articleActionsBox.y + articleActionsBox.height <= articleViewport.height + 1, "文章操作栏应固定在当前视口底部");
+  await blankArticleForm.getByRole("button", { name: "保存并预览" }).waitFor({ state: "visible" });
+  await blankArticleForm.getByRole("button", { name: "保存并预览" }).click();
+  await expectText(adminPage.getByRole("status"), "请先填写标题和正文");
+  await adminPage.getByRole("dialog", { name: "新增文章" }).waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByRole("dialog", { name: "患者端预览" }).count(), 0, "全空文章不应保存或打开无内容预览");
+  await blankArticleForm.getByLabel("选择文章文档").setInputFiles({
+    name: "客户科普文章.docx",
+    mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    buffer: await articleDocx(["客户上传文章标题", "这是从 Word 自动提取的正文。", "导入后仍需人工校对。"])
+  });
+  await expectText(adminPage.getByRole("status"), "文档和图片已导入");
+  await expectText(blankArticleForm.locator(".article-import"), "已导入：客户科普文章.docx");
+  await blankArticleForm.getByText("重新选择", { exact: true }).waitFor({ state: "visible" });
+  assert.equal(await blankArticleForm.getByLabel("标题").inputValue(), "客户上传文章标题");
+  assert.match(await blankArticleForm.getByLabel("正文", { exact: true }).inputValue(), /从 Word 自动提取的正文/u);
+  await blankArticleForm.getByText("更多设置（来源、封面）", { exact: true }).click();
+  assert.equal(await blankArticleForm.getByLabel("来源").inputValue(), "客户科普文章.docx");
   await blankArticleForm.getByRole("button", { name: "保存草稿" }).click();
   await expectText(adminPage.getByRole("status"), "文章草稿已保存");
+  assert.equal(await adminPage.evaluate(() => document.body.style.overflow), "", "文章编辑层关闭后应恢复背景滚动");
   await adminPage.locator("tbody tr").first().getByRole("button", { name: "编辑" }).click();
-  await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("客户试用");
+  await adminPage.getByText("新建分类", { exact: true }).click();
+  await adminPage.getByPlaceholder("输入分类名称").fill("客户试用");
   await adminPage.getByRole("button", { name: "创建分类" }).click();
   await expectText(adminPage.getByRole("status"), "分类已创建");
   const articleForm = adminPage.locator(".content-form");
@@ -756,8 +800,13 @@ try {
     buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52])
   });
   await expectText(adminPage.getByRole("status"), "正文素材已上传并插入");
+  await articleForm.getByText("更多设置（来源、封面）", { exact: true }).click();
   await articleForm.getByLabel("来源").fill("客户确认材料");
-  await articleForm.getByRole("button", { name: "保存草稿" }).click();
+  await articleForm.getByRole("button", { name: "保存并预览" }).click();
+  await expectText(adminPage.locator(".admin-toast"), "患者端预览已打开");
+  const savedArticlePreview = adminPage.getByRole("dialog", { name: "患者端预览" });
+  await savedArticlePreview.waitFor({ state: "visible" });
+  await savedArticlePreview.getByRole("button", { name: "关闭患者端预览" }).click();
   const articleRow = adminPage.locator("tbody tr", { hasText: "后台发布闭环测试文章" });
   await articleRow.waitFor({ state: "visible" });
   await adminPage.getByLabel("搜索文章").fill("后台发布闭环测试文章");
@@ -858,21 +907,25 @@ try {
   await adminPage.getByTestId("admin-nav-video").click();
   await adminPage.getByText("内容运营 / 视频内容", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增视频" }).click();
-  await adminPage.getByPlaceholder("没有合适分类？输入新分类").fill("成人快速通窍");
-  await adminPage.getByRole("button", { name: "创建分类" }).click();
   const videoForm = adminPage.locator(".content-form");
+  await videoForm.getByText("上传视频文件", { exact: true }).waitFor({ state: "visible" });
+  await adminPage.getByText("新建分类", { exact: true }).click();
+  await adminPage.getByPlaceholder("输入分类名称").fill("成人快速通窍");
+  await adminPage.getByRole("button", { name: "创建分类" }).click();
   await expectText(adminPage.getByRole("status"), "分类已创建");
-  assert.equal(await videoForm.getByLabel("分类").inputValue(), "成人快速通窍");
+  assert.equal(await videoForm.locator("select").first().inputValue(), "成人快速通窍");
   await videoForm.getByLabel("标题").fill("抗敏要穴之迎香穴（指腹擦迎香）");
   await videoForm.getByLabel("摘要").fill("客户试用版视频发布闭环");
   await videoForm.getByLabel("视频说明").fill("演示日常鼻腔护理步骤，实际操作请遵循专业人员指导。");
-  await videoForm.getByLabel("来源").fill("客户确认材料");
-  await videoForm.getByLabel("直接上传视频文件").setInputFiles({
+  await videoForm.getByLabel("选择视频文件").setInputFiles({
     name: "nasal-care.mp4",
     mimeType: "video/mp4",
     buffer: Buffer.from([0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0])
   });
-  await expectText(adminPage.getByRole("status"), "视频文件已上传并已选中");
+  await expectText(adminPage.getByRole("status"), "视频文件已上传并选中");
+  await expectText(videoForm.locator(".article-import"), "已选择：nasal-care.mp4");
+  await videoForm.getByText("更多设置（来源、封面、素材库）", { exact: true }).click();
+  await videoForm.getByLabel("来源").fill("客户确认材料");
   await videoForm.getByLabel("操作提示").fill("操作前确认环境安全，并按视频步骤进行。");
   await videoForm.getByLabel("注意事项").fill("出现不适立即停止，并咨询专业人员。");
   await videoForm.getByLabel("免责声明").fill("仅供健康科普，不替代门诊诊断或治疗建议。");
@@ -895,6 +948,99 @@ try {
   await videoPreview.getByRole("button", { name: "关闭患者端预览" }).click();
   await videoRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
+
+  // 造 50 条更新更晚的真实已发布视频，把迎香目标视频稳定推到第二页。
+  // 最终方案必须遍历全部已发布视频，不能在内容增长后重现“后台有、方案里没有”。
+  const listedVideos = dataOf(await adminOps.application.execute({
+    command: "content video list",
+    adminToken: planAdminToken,
+    input: {}
+  }), "浏览器 E2E 应列出视频");
+  const targetVideo = listedVideos.items.find(
+    (item) => item.title === "抗敏要穴之迎香穴（指腹擦迎香）"
+  );
+  assert.ok(targetVideo?.mediaId, "分页目标视频应已绑定素材");
+  for (let index = 0; index < 50; index += 1) {
+    const title = `分页填充视频${String(index + 1).padStart(2, "0")}`;
+    const createdFiller = dataOf(await adminOps.application.execute({
+      command: "content video create",
+      adminToken: planAdminToken,
+      input: {
+        title,
+        category: targetVideo.category,
+        idempotencyKey: `browser-video-page-filler-${index}`
+      }
+    }), "浏览器 E2E 应创建分页填充视频");
+    const updatedFiller = dataOf(await adminOps.application.execute({
+      command: "content video update",
+      adminToken: planAdminToken,
+      input: {
+        id: createdFiller.id,
+        expectedRevision: createdFiller.revision,
+        summary: "仅用于验证已发布视频超过一页时仍能关联方案。",
+        body: "分页边界自动化测试视频。",
+        source: "自动化测试",
+        instructions: "仅用于自动化测试。",
+        precautions: "不作为真实操作说明。",
+        disclaimer: "仅供自动化测试，不替代专业医疗建议。",
+        mediaId: targetVideo.mediaId
+      }
+    }), "浏览器 E2E 应完善分页填充视频");
+    dataOf(await adminOps.application.execute({
+      command: "content video publish",
+      adminToken: planAdminToken,
+      input: { id: updatedFiller.id, expectedRevision: updatedFiller.revision, yes: true }
+    }), "浏览器 E2E 应发布分页填充视频");
+  }
+
+  // 已保存的最终方案无需重做评估：重新读取已发布视频后，方法下出现按钮，
+  // 点击复用学一学的同一详情弹层并直接播放对应操作视频。
+  await page.bringToFront();
+  await page.evaluate((conversationId) => {
+    sessionStorage.setItem("kangmin.agent.conversationId", conversationId);
+  }, completedPlanConversationId);
+  await page.reload();
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  const planVideoButton = page.getByTestId("plan-video-button").first();
+  await planVideoButton.waitFor({ state: "visible" });
+  await expectText(planVideoButton, "观看操作视频");
+  await planVideoButton.click();
+  const planVideoDetail = page.getByTestId("discover-detail");
+  await planVideoDetail.waitFor({ state: "visible" });
+  await expectText(planVideoDetail, "抗敏要穴之迎香穴（指腹擦迎香）");
+  assert.equal(await planVideoDetail.locator("video").count(), 1, "最终方案视频按钮应打开可播放详情弹层");
+  await planVideoDetail.getByRole("button", { name: "关闭内容详情" }).click();
+
+  // 详情打开前视频被下架：服务端拒绝后，旧按钮应立即失效并恢复原安全提示，
+  // 不能继续展示一个看似可用但永远打不开的入口。
+  await adminPage.bringToFront();
+  await videoRow.getByRole("button", { name: "下架" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端已不可见");
+  await page.bringToFront();
+  await page.getByTestId("plan-video-button").first().click();
+  await page.getByRole("alert").waitFor({ state: "visible" });
+  await page.getByTestId("plan-video-button").waitFor({ state: "detached" });
+  await expectText(sixStepResult, "视频暂未上传");
+
+  // 重新发布并清掉分页填充数据后，刷新历史评估即可恢复按钮；无需重做问卷。
+  await adminPage.bringToFront();
+  await videoRow.getByRole("button", { name: "发布" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端现在可见");
+  const browserDatabase = new KangminDatabase(databasePath);
+  try {
+    browserDatabase.connection.prepare(`
+      UPDATE content_items
+      SET status = 'unpublished', patient_visible = 0
+      WHERE title LIKE '分页填充视频%'
+    `).run();
+  } finally {
+    browserDatabase.close();
+  }
+  await page.bringToFront();
+  await page.reload();
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  await page.getByTestId("plan-video-button").first().waitFor({ state: "visible" });
+
   const videoCheckPage = await context.newPage();
   await videoCheckPage.goto(origin);
   await videoCheckPage.locator(".bottom-nav button", { hasText: "首页" }).click();
