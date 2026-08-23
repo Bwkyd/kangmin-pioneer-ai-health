@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 小程序同构首页交付链已收口（2026-08-24 第180轮 · `main@22a0c09`）
+> PR #258 的 `quality`（3 分 07 秒）与 `image`（35 秒）均成功后 squash 合并为 `22a0c09`，部署记录现已进入 `main`。PR #257、#258 均为已合并状态；实现分支和部署记录分支的本地分支均已删除，GitHub 远端引用经 `fetch --prune` 核验已清除。当前唯一开放 PR #205 及其 Dependabot 分支属于既有依赖更新，与本任务无关，未误删。
+> 本轮开发版 `0.1.1` 上传、生产稳定性复核和临时副本清理事实均已归档；服务端没有本轮产物变化，线上继续运行 `/srv/kangmin-cli/releases/plan-video-complete-a43cc72`。仓库仍只配置 GitHub `origin`；CNB CLI 虽登录有效，但没有可见的 `kangmin` 或 `pioneer` 仓库，因此不存在可清理的 CNB 任务分支。作者原件 `hi.md` 继续保持未跟踪、未修改。
+
 > ## 🚀 小程序同构首页已合并并上传开发版（2026-08-24 第179轮 · `main@f373375`）
 > PR #257 的 `quality`（3 分 08 秒）与 `image`（41 秒）均成功后 squash 合并；本地和 GitHub 实现分支已删除，合并树包含实验 021、首页同构实现与 412 项回归。随后从合并后的 `src/miniprogram` 创建隔离副本，只在副本注入已确认 AppID；微信开发者工具 RC 2.02.2608031 登录有效，CLI 将版本 `0.1.1`（描述“患者 Web 同构首页”）上传成功，包体 180,689 字节。上传只证明微信接口接受开发版，不等于真机、体验成员、审核、正式发布或客户验收。
 > 本轮没有 Web 服务端产物变化，因此未重复构建服务器 release。腾讯云继续运行 `/srv/kangmin-cli/releases/plan-video-complete-a43cc72`，应用与 Nginx active、`NRestarts=0`、SQLite `quick_check=ok`；当前 18 位患者、11 条启用方案、26 条已发布视频、21 条启用知识和 45 段对话，公网首页、后台、`/live` 均为 200。`/ready=503` 仍只因既有 encryption 未配置。
