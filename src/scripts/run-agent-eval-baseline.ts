@@ -72,18 +72,6 @@ class RecordingPlanDialogue implements PlanDialoguePort {
     return this.delegate.generatePlan(input);
   }
 
-  async decideFollowUp(input: Parameters<PlanDialoguePort["decideFollowUp"]>[0]) {
-    try {
-      const decision = await this.delegate.decideFollowUp(input);
-      this.providerOutcome = decision === null ? "failed" : "ok";
-      if (decision !== null) this.modelOutputs.push(JSON.stringify(decision));
-      return decision;
-    } catch (error) {
-      this.providerOutcome = "failed";
-      throw error;
-    }
-  }
-
   async answerFollowUp(input: Parameters<PlanDialoguePort["answerFollowUp"]>[0]) {
     try {
       const answer = await this.delegate.answerFollowUp(input);

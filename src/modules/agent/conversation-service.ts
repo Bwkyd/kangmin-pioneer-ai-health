@@ -59,16 +59,19 @@ import {
   EXTRACTION_UNAVAILABLE_NOTICE,
   FAIL_CLOSED_INFO_NOTICE,
   FAIL_CLOSED_SAFETY_NOTICE,
+  type ValidatedOutput,
   renderAssessmentGreeting,
   renderEmergencyFollowUp,
-  renderFixedFollowUp,
-  renderGeneratedFollowUpOutput,
-  renderContextualPlanFollowUp,
   renderGeneratedPlanOutput,
+  renderNaturalPatientAnswer,
   renderValidatedOutput,
   systemNotice
 } from "./output-validation.js";
 import { isEmergencyMessage } from "./emergency-routing.js";
+import {
+  requestsMedicationDosageGuidance,
+  requestsProfessionalOperationGuidance
+} from "./medical-publication-gate.js";
 
 /** 匿名会话保留期（一次性体验，未绑定患者的短保留）。 */
 const ANONYMOUS_RETENTION_MS = 24 * 60 * 60 * 1000;
@@ -746,69 +749,50 @@ export class ConversationService {
       recentMessages
     };
 
-    let finalOutput: ReturnType<typeof renderFixedFollowUp>;
+    let finalOutput: ValidatedOutput;
     if (isEmergencyMessage(message)) {
       finalOutput = renderEmergencyFollowUp();
     } else if (isSimpleGreeting(message)) {
       finalOutput = renderAssessmentGreeting();
+    } else if (
+      requestsProfessionalOperationGuidance(message) ||
+      requestsMedicationDosageGuidance(message)
+    ) {
+      finalOutput = renderNaturalPatientAnswer(
+        "这涉及需要结合具体情况确认的药物或专业操作参数。请查看药品说明书或咨询医生、药师；你也可以继续问相关原理、用途或常见风险。"
+      );
     } else {
-      let decision: Awaited<ReturnType<PlanDialoguePort["decideFollowUp"]>> = null;
+      let sources: PlanDialogueSource[] = [];
+      if (this.knowledgeRetrieval !== null) {
+        try {
+          sources = (await this.knowledgeRetrieval.searchEnabled(message, 3)).map(
+            (source) => ({
+              knowledgeId: source.knowledgeId,
+              name: source.name,
+              source: source.source,
+              text: source.text
+            })
+          );
+        } catch {
+          sources = [];
+        }
+      }
+      let generated: string | null = null;
       if (this.planDialogue !== null) {
         try {
-          decision = await this.planDialogue.decideFollowUp({
+          generated = await this.planDialogue.answerFollowUp({
             question: message,
             verdict,
+            sources,
             context: dialogueContext
           });
         } catch {
-          decision = null;
+          generated = null;
         }
       }
-      if (decision?.action === "search") {
-        let sources: PlanDialogueSource[] = [];
-        let searchAvailable = this.knowledgeRetrieval !== null;
-        if (this.knowledgeRetrieval !== null) {
-          try {
-            sources = (await this.knowledgeRetrieval.searchEnabled(decision.query, 3)).map(
-              (source) => ({
-                knowledgeId: source.knowledgeId,
-                name: source.name,
-                source: source.source,
-                text: source.text
-              })
-            );
-          } catch {
-            searchAvailable = false;
-          }
-        }
-        let generated: string | null = null;
-        if (searchAvailable && this.planDialogue !== null) {
-          try {
-            generated = await this.planDialogue.answerFollowUp({
-              question: message,
-              verdict,
-              sources,
-              context: dialogueContext
-            });
-          } catch {
-            generated = null;
-          }
-        }
-        finalOutput =
-          renderGeneratedFollowUpOutput(generated, verdict, sources, facts) ??
-          renderFixedFollowUp(
-            sources.length > 0 ? "follow_up_degraded" : "follow_up_no_evidence",
-            searchAvailable
-              ? "我查了当前启用的资料，但还没有找到足够贴合这个问题的依据。你可以补充最想了解的是原因、日常注意事项，还是当前方案里的具体内容？"
-              : "当前知识搜索暂时不可用。你可以先说明最想了解的是当前方案、症状变化，还是一般鼻健康知识，我会在现有依据范围内继续帮你。",
-            verdict
-          );
-      } else {
-        const generated = decision?.action === "answer" ? decision.answer : null;
-        finalOutput =
-          renderGeneratedFollowUpOutput(generated, verdict, [], facts) ??
-          renderContextualPlanFollowUp(verdict, recentMessages.length > 0);
-      }
+      finalOutput = generated === null
+        ? renderNaturalPatientAnswer("现在暂时没能生成回答，请稍后再试。")
+        : renderNaturalPatientAnswer(generated);
     }
 
     const decisions = await this.repository.listDecisions(session.id);

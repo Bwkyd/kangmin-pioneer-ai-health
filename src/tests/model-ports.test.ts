@@ -86,7 +86,7 @@ test("未配置 API key 时抛 provider_unavailable（绝不伪造回答）", as
   );
 });
 
-test("千问方案对话端口：指定模型、直答与单次搜索决策均使用严格 JSON", async () => {
+test("千问方案与统一患者回答：指定模型、关闭思考并使用严格 JSON", async () => {
   let requestedModel: unknown;
   let requestedThinking: unknown;
   let requestedPayload: Record<string, unknown> = {};
@@ -100,10 +100,7 @@ test("千问方案对话端口：指定模型、直答与单次搜索决策均�
       requestedThinking = body.enable_thinking;
       const messages = body.messages as Array<{ role: string; content: string }>;
       requestedPayload = JSON.parse(messages.at(-1)?.content ?? "{}") as Record<string, unknown>;
-      const task = String(requestedPayload.task ?? "");
-      const content = task.includes("决定直接回答")
-        ? JSON.stringify({ action: "search", query: "换季 鼻塞 原因" })
-        : JSON.stringify({ answer: "通俗方案说明" });
+      const content = JSON.stringify({ answer: "通俗方案说明" });
       return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
         status: 200,
         headers: { "content-type": "application/json" }
@@ -114,20 +111,15 @@ test("千问方案对话端口：指定模型、直答与单次搜索决策均�
   assert.equal(requestedModel, "qwen3.7-flash");
   assert.equal(requestedThinking, false, "患者方案对话必须显式关闭千问推理模式");
 
-  const decision = await adapter.decideFollowUp({
-    question: "为什么换季时更容易鼻塞？",
-    verdict: classifiedPlanVerdict(),
-    context: {
-      assessment: { completedAt: "2026-08-15T00:00:00.000Z", answers: [] },
-      recentMessages: []
-    }
-  });
-  assert.deepEqual(decision, { action: "search", query: "换季 鼻塞 原因" });
-
   await adapter.answerFollowUp({
     question: "我不明白",
     verdict: classifiedPlanVerdict(),
-    sources: [],
+    sources: [{
+      knowledgeId: "knowledge-1",
+      name: "鼻健康资料",
+      source: null,
+      text: "换季时鼻黏膜可能受到温度变化刺激。"
+    }],
     context: {
       assessment: {
         completedAt: "2026-08-15T00:00:00.000Z",
@@ -144,6 +136,11 @@ test("千问方案对话端口：指定模型、直答与单次搜索决策均�
   assert.deepEqual(requestedPayload.recentConversation, [
     { role: "assistant", content: "这是当前评估方案。" }
   ]);
+  assert.deepEqual(requestedPayload.sources, [{
+    index: 1,
+    name: "鼻健康资料",
+    text: "换季时鼻黏膜可能受到温度变化刺激。"
+  }]);
 
   const unavailable = new QwenPlanDialogueAdapter({ baseUrl: BASE_URL });
   await assert.rejects(
@@ -151,30 +148,6 @@ test("千问方案对话端口：指定模型、直答与单次搜索决策均�
     (error: unknown) =>
       error instanceof DomainError && error.code === "provider_unavailable"
   );
-});
-
-test("千问工具决策：越权字段、空检索词和超长检索词一律拒绝", async () => {
-  const context = {
-    assessment: { completedAt: "2026-08-15T00:00:00.000Z", answers: [] },
-    recentMessages: []
-  };
-  for (const content of [
-    { action: "search", query: "" },
-    { action: "search", query: "鼻".repeat(201) },
-    { action: "search", query: "鼻塞", tool: "other" },
-    { action: "answer", answer: "回答", diagnosis: "肺热" }
-  ]) {
-    const adapter = new QwenPlanDialogueAdapter({
-      apiKey: "test-qwen-key",
-      baseUrl: BASE_URL,
-      fetchImpl: stubModel(JSON.stringify(content))
-    });
-    assert.equal(await adapter.decideFollowUp({
-      question: "为什么鼻塞？",
-      verdict: classifiedPlanVerdict(),
-      context
-    }), null);
-  }
 });
 
 test("千问知识问答：无检索命中仍自然回答，并显式关闭思考", async () => {
@@ -197,7 +170,7 @@ test("千问知识问答：无检索命中仍自然回答，并显式关闭思�
   );
   assert.equal(requestBody.enable_thinking, false);
   const messages = requestBody.messages as Array<{ role: string; content: string }>;
-  assert.match(messages[0]?.content ?? "", /无参考资料也可以回答/u);
+  assert.match(messages[0]?.content ?? "", /没有资料或资料不相关，可以使用可靠的一般医学知识正常回答/u);
   assert.deepEqual(JSON.parse(messages[1]?.content ?? "{}"), {
     question: "IgE 是什么？",
     sources: []
@@ -221,7 +194,7 @@ test("DeepSeek 模型名称可配置，并实际进入请求体", async () => {
   assert.equal(requestedModel, "deepseek-chat-next");
 });
 
-test("知识零命中仍交给模型自然说明；模型失败时只问一个澄清问题", async () => {
+test("知识零命中仍交给模型自然说明；模型失败时返回简短故障提示", async () => {
   let modelCalls = 0;
   const generated = new KnowledgeQaService(
     { async searchEnabled() { return []; } },
@@ -243,7 +216,25 @@ test("知识零命中仍交给模型自然说明；模型失败时只问一个�
   const result = await degraded.ask("为什么换季鼻塞？");
   assert.equal(result.sources.length, 0);
   assert.equal(result.generated, false);
-  assert.equal((result.answer.match(/？/gu) ?? []).length, 1);
+  assert.match(result.answer, /暂时没能生成回答/u);
+});
+
+test("知识检索暂时失败也按空候选继续回答", async () => {
+  let modelCalls = 0;
+  const service = new KnowledgeQaService(
+    { async searchEnabled() { throw new Error("embedding unavailable"); } },
+    {
+      async answer(_question, sources) {
+        modelCalls += 1;
+        assert.deepEqual(sources, []);
+        return "换季时温度和过敏原变化都可能让鼻部症状更明显。";
+      }
+    }
+  );
+  const result = await service.ask("为什么换季鼻塞？");
+  assert.equal(modelCalls, 1);
+  assert.equal(result.generated, true);
+  assert.match(result.answer, /换季/u);
 });
 
 test("独立知识问答：明确急症在检索和模型之前固定分流", async () => {
@@ -273,8 +264,8 @@ test("独立知识问答：只问胸闷概念不误判为正在急症", async ()
   assert.ok(!result.answer.includes("立即联系急救"));
 });
 
-test("独立知识问答：未通过硬事实发布条件时不回显模型候选或原始切片", async () => {
-  const dangerous = new KnowledgeQaService(
+test("独立知识问答：普通医学回答不再经过关键词式输出改写", async () => {
+  const service = new KnowledgeQaService(
     {
       async searchEnabled() {
         return [{
@@ -288,29 +279,26 @@ test("独立知识问答：未通过硬事实发布条件时不回显模型候�
         }];
       }
     },
-    { async answer() { return "您肯定就是过敏性鼻炎，可以把通鼻喷剂加量使用。"; } }
-  );
-  const result = await dangerous.ask("我是不是过敏性鼻炎？");
-  assert.equal(result.generated, false);
-  assert.ok(!result.answer.includes("肯定就是"));
-  assert.ok(!result.answer.includes("加量"));
-  assert.ok(!result.answer.includes("每天3次"));
-  assert.match(result.answer, /不能把其中未经当前方案确认的医学动作直接作为建议/u);
-});
-
-test("独立知识问答：同段含无依据动作时保持整段原子降级", async () => {
-  const service = new KnowledgeQaService(
-    { async searchEnabled() { return []; } },
-    {
-      async answer() {
-        return "鼻黏膜发生炎症和肿胀时会出现鼻塞。你可以把通鼻喷剂加量到每天3次。";
-      }
-    }
+    { async answer() { return "鼻黏膜发生炎症和肿胀时，鼻腔通道会变窄，所以会感觉鼻塞。"; } }
   );
   const result = await service.ask("过敏性鼻炎为什么会鼻塞？");
+  assert.equal(result.generated, true);
+  assert.equal(result.answer, "鼻黏膜发生炎症和肿胀时，鼻腔通道会变窄，所以会感觉鼻塞。");
+  assert.equal(result.sources.length, 0, "患者侧不展示无法确认是否采用的候选来源");
+});
+
+test("独立知识问答：明确未知药品用量在检索和模型前固定分流", async () => {
+  let retrievalCalls = 0;
+  let modelCalls = 0;
+  const service = new KnowledgeQaService(
+    { async searchEnabled() { retrievalCalls += 1; return []; } },
+    { async answer() { modelCalls += 1; return "每天3次。"; } }
+  );
+  const result = await service.ask("我有一瓶不知道名字的通鼻喷剂，一天喷几次？");
   assert.equal(result.generated, false);
-  assert.ok(!result.answer.includes("加量"));
-  assert.ok(!result.answer.includes("每天3次"));
+  assert.match(result.answer, /药品说明书|咨询医生、药师/u);
+  assert.equal(retrievalCalls, 0);
+  assert.equal(modelCalls, 0);
 });
 
 test("独立知识问答只拦明确专业自操作请求，概念问法继续交给同一模型", async () => {
@@ -344,7 +332,7 @@ test("独立知识问答只拦明确专业自操作请求，概念问法继续�
   ]) {
     const guarded = await service.ask(question);
     assert.equal(guarded.generated, false);
-    assert.match(guarded.answer, /不能只依据知识资料给出个体化做法/u);
+    assert.match(guarded.answer, /专业操作参数|咨询医生、药师/u);
   }
   assert.equal(modelCalls, 1);
 });

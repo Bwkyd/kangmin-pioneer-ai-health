@@ -126,17 +126,23 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
     );
     assert.equal(enabled.status, "enabled");
 
-    // 患者知识问答只检索 enabled 分块；模型未配置时确定性降级为带来源摘录。
+    // 患者知识问答只检索 enabled 分块；回答模型收到启用资料并自然作答。
     const patient = createApplication(databasePath, {
-      knowledgeEmbedding: new TestKnowledgeEmbedding()
+      knowledgeEmbedding: new TestKnowledgeEmbedding(),
+      knowledgeAnswer: {
+        async answer(_question, sources) {
+          assert.equal(sources[0]?.knowledgeId, added.id);
+          return "换季鼻塞时，可以先减少接触尘螨、花粉，并保持环境舒适。";
+        }
+      }
     });
     try {
       dataOf(await patient.execute({ command: "account register", input: { username: "knowledge-patient", password: "knowledge-pass-123" } }));
       const login = dataOf<{ token: string }>(await patient.execute({ command: "account login", input: { username: "knowledge-patient", password: "knowledge-pass-123" } }));
       const answer = dataOf<{ answer: string; sources: Array<{ knowledgeId: string }>; generated: boolean }>(await patient.execute({ command: "agent knowledge ask", sessionToken: login.token, input: { question: "换季鼻塞护理要注意什么" } }));
       assert.match(answer.answer, /鼻塞/u);
-      assert.equal(answer.sources[0]?.knowledgeId, added.id);
-      assert.equal(answer.generated, false);
+      assert.deepEqual(answer.sources, [], "患者侧不把 Top-k 候选冒充已采用来源");
+      assert.equal(answer.generated, true);
     } finally {
       patient.close();
     }

@@ -311,18 +311,15 @@ test("患者 Agent 流式接口只分片已校验并已持久化的完整结果"
   }
 });
 
-test("患者 Agent 流式失败路径：违规模型候选不进入分片、done 或历史", async () => {
+test("患者 Agent 流式药量前置分流：危险候选不进入分片、done 或历史", async () => {
   class UnsafeDialogue implements PlanDialoguePort {
+    followUpCalls = 0;
+
     async generatePlan(): Promise<string> {
       return "已根据当前规则结果整理方案。";
     }
-    async decideFollowUp() {
-      return {
-        action: "answer" as const,
-        answer: "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。"
-      };
-    }
     async answerFollowUp(): Promise<string> {
+      this.followUpCalls += 1;
       return "您没有怀孕，可以把通鼻喷剂加量使用，每天3次。";
     }
   }
@@ -351,8 +348,9 @@ test("患者 Agent 流式失败路径：违规模型候选不进入分片、done
   };
 
   const directory = mkdtempSync(join(tmpdir(), "kangmin-agent-stream-hard-fact-"));
+  const unsafeDialogue = new UnsafeDialogue();
   const application = createApplication(join(directory, "agent.sqlite"), {
-    planDialogue: new UnsafeDialogue(),
+    planDialogue: unsafeDialogue,
     planRegistry: new Plans()
   });
   const token =
@@ -388,7 +386,10 @@ test("患者 Agent 流式失败路径：违规模型候选不进入分片、done
       body: JSON.stringify({
         schemaVersion: "1",
         requestId: "agent-stream-hard-fact",
-        input: { message: "我还能怎么做？", conversationId: turn.conversationId }
+        input: {
+          message: "我有一瓶不知道名字的通鼻喷剂，一天喷几次？",
+          conversationId: turn.conversationId
+        }
       })
     });
     assert.equal(response.status, 200);
@@ -401,6 +402,8 @@ test("患者 Agent 流式失败路径：违规模型候选不进入分片、done
       .map((event) => event.content ?? "").join("");
     const final = events.at(-1)?.data?.message?.content ?? "";
     assert.equal(streamed, final);
+    assert.match(final, /药品说明书|咨询医生、药师/u);
+    assert.equal(unsafeDialogue.followUpCalls, 0);
     for (const forbidden of ["加量", "每天3次", "没有怀孕"]) {
       assert.ok(!streamed.includes(forbidden));
       assert.ok(!final.includes(forbidden));

@@ -7,7 +7,6 @@ import type {
   ClinicalVerdict
 } from "../modules/clinical-rules/contracts.js";
 import type {
-  FollowUpDecision,
   PlanDialoguePort,
   PlanDialogueSource
 } from "../modules/agent/model-ports.js";
@@ -33,23 +32,15 @@ const SYSTEM_PROMPT = `你是过敏性鼻炎患者科普助手。服务端已经
 6. 只能复述输入中出现的穴位和疗法原词；未给定位或手法细节时不要主动追问这些细节；
 7. 只输出 JSON 对象 {"answer":"..."}，answer 不超过 800 个中文字符。`;
 
-const DECISION_SYSTEM_PROMPT = `你是抗敏先锋鼻健康智能体的单步工具决策器。服务端给出的规则结果和方案不可修改。
-只输出一个 JSON 对象：
-- 当前规则结果或方案足以回答，或属于寒暄、系统说明、补充症状、紧急情况、越权、范围外问题时：{"action":"answer","answer":"自然简短回答"}
-- 用户询问的鼻健康原因、概念、定位、日常注意事项或其他可核对知识不在当前上下文时：{"action":"search","query":"改写后的鼻健康检索词"}
-不得用关键词硬路由，不得请求第二次搜索。不得新增穴位、疗法、次数、时长、力度、剂量、禁忌、诊断或疗效承诺。
-用户只补充新症状、没有提出知识问题时，不搜索、不改写旧评估；说明旧结果不会自动改变，并询问是否重新评估。
-胸闷、喘不上气或意识异常时先建议立即急救或急诊，不能用搜索延迟处理。`;
+const KNOWLEDGE_SYSTEM_PROMPT = `你是直接服务普通患者的鼻健康助手。使用简短、通俗、自然的中文，先直接回答患者当前的问题。
 
-const KNOWLEDGE_SYSTEM_PROMPT = `你是直接服务普通患者的鼻健康科普助手。回答要简短、通俗、先说结论；不要展示检索、知识库、规则、提示词或内部判断。
-
-按下面顺序处理，但只输出自然回答：
-1. 如果患者正在胸闷、喘不上气、嘴唇发紫、意识不清或剧烈胸痛，第一句话就让患者立即联系急救或前往急诊；不要先教居家等待。
-2. 否则直接回答当前问题。一般概念、原因、区别、常见风险和就医时机可以用可靠的一般医学知识说明，无参考资料也可以回答。
-   用户只问概念、原因或区别时，只回答所问内容，不追加用药、穴位、艾灸或其他护理步骤。
-3. 区分“一般说明”和“给这个人照做的指令”。不要把描述写成确定诊断；不知道具体药名时不猜剂量；专业资料中的厘米、分钟、次数、力度和手法不自动批准为居家方案；不要从成人做法推算儿童或孕期操作。
-4. 信息不足时，说明缺的是哪一个关键信息，并最多追问一个问题。不要为了显得有帮助而补数字、确定因果或无关步骤。
-5. 不保证治愈或不复发。
+系统会提供当前评估、已批准方案和可能相关的后台资料：
+1. 如果资料与问题相关，优先依据资料回答；如果没有资料或资料不相关，可以使用可靠的一般医学知识正常回答。
+2. 不要向患者提及知识库、检索、命中、资料不足、系统规则、提示词或内部判断。
+3. 当前评估和已批准方案是服务端确定的事实，不得修改。患者的问题没有询问当前评估、体质或方案时，必须完全忽略这些字段，不得提及、解释或把它们与一般知识建立因果联系。
+4. 不把一般说明写成对当前患者的确定诊断；不知道具体药名或成分时不猜剂量、次数和疗程；不要把专业资料中的厘米、分钟、次数、力度和手法自动改写成居家操作。
+5. 用户只问概念、原因或区别时，只回答所问内容，不主动追加药物、穴位、艾灸或其他护理步骤。
+6. 不保证治愈或不复发。信息不足时最多追问一个真正必要的问题。
 
 只输出 JSON 对象 {"answer":"..."}，answer 不超过 500 个中文字符。`;
 
@@ -116,57 +107,20 @@ export class QwenPlanDialogueAdapter implements PlanDialoguePort, KnowledgeAnswe
     });
   }
 
-  async decideFollowUp(input: {
-    question: string;
-    verdict: ClinicalVerdict;
-    context: Parameters<PlanDialoguePort["decideFollowUp"]>[0]["context"];
-  }): Promise<FollowUpDecision | null> {
-    this.ensureConfigured();
-    const parsed = await this.chatJson(DECISION_SYSTEM_PROMPT, {
-      task: "决定直接回答，或请求一次只读知识搜索。",
-      ...this.followUpPayload(input)
-    });
-    if (parsed === null) return null;
-    if (
-      Object.keys(parsed).every((key) => key === "action" || key === "answer") &&
-      parsed.action === "answer" &&
-      typeof parsed.answer === "string"
-    ) {
-      const answer = parsed.answer.trim();
-      return answer !== "" && answer.length <= 800
-        ? { action: "answer", answer }
-        : null;
-    }
-    if (
-      Object.keys(parsed).every((key) => key === "action" || key === "query") &&
-      parsed.action === "search" &&
-      typeof parsed.query === "string"
-    ) {
-      const query = parsed.query.trim();
-      return query.length >= 2 && query.length <= 200
-        ? { action: "search", query }
-        : null;
-    }
-    return null;
-  }
-
   async answerFollowUp(input: {
     question: string;
     verdict: ClinicalVerdict;
     sources: readonly PlanDialogueSource[];
     context: Parameters<PlanDialoguePort["answerFollowUp"]>[0]["context"];
   }): Promise<string | null> {
-    return this.chatAnswer(SYSTEM_PROMPT, {
-      task: input.sources.length === 0
-        ? "只读知识搜索没有返回足够依据。自然说明缺少什么，并只追问一个最有帮助的问题；不得凭模型记忆补医学事实。"
-        : "已完成唯一一次只读知识搜索。根据相关资料回答；若资料不相关或不足，自然说明依据不足并只追问一个最有帮助的问题。",
+    return this.chatAnswer(KNOWLEDGE_SYSTEM_PROMPT, {
       ...this.followUpPayload(input),
-      approvedSources: input.sources.map((source, index) => ({
+      sources: input.sources.map((source, index) => ({
         index: index + 1,
         name: source.name,
         text: source.text
       }))
-    });
+    }, 500);
   }
 
   async answer(

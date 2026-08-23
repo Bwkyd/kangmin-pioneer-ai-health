@@ -8,8 +8,8 @@
  * - assistant 消息只能绑定已完成的 decision，content_hash 必须等于
  *   已校验输出；失败时只允许代码生成的固定 system_notice。
  *
- * 本模块是方案对话患者可见正文的统一渲染路径：固定模板直接渲染；
- * 模型自由文本先通过独立的医学硬事实发布条件，再追加依据与提示。
+ * 本模块保留方案生成的严格校验与固定模板。普通患者问答由统一提示词生成，
+ * 服务端完成少数模型前分流后直接用 renderNaturalPatientAnswer 渲染，不再逐句关键词裁决。
  */
 
 import { createHash } from "node:crypto";
@@ -244,6 +244,14 @@ export function renderGeneratedFollowUpOutput(
   if (validated === null) return null;
   const content = `${validated}\n\n${evidenceFooter(verdict, sources)}`;
   return output("generated_follow_up", content, null);
+}
+
+/**
+ * 统一普通患者问答：系统提示词负责回答方式，服务端只验证适配器的
+ * JSON/长度契约后原样发布；不追加与当前问题无关的方案依据。
+ */
+export function renderNaturalPatientAnswer(content: string): ValidatedOutput {
+  return output("natural_patient_answer", content, null);
 }
 
 /**
