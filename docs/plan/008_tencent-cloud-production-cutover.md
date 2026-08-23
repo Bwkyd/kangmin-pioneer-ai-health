@@ -192,3 +192,14 @@
   `quick_check=ok`；公网 `/live`、患者页、管理页均为 200，关键后端与前端 bundle 哈希和
   本地合并构建一致。`/ready=503` 仍仅因试用环境既有加密密钥未配置，正式备份和旧 release
   保留回滚。
+- 2026-08-23 将一般知识回答与评测基线 PR #249 squash 合并为 `main@def63aa`，以制品
+  SHA-256 `6de6709c6de239f07a5159f72307ef434b682864ac54d5e6e19c6815d6b2b0ee` 部署 release
+  `/srv/kangmin-cli/releases/general-knowledge-def63aa`。8788 使用线上 SQLite 在线备份副本完成
+  真实千问 `IgE` 回答和急症零模型分流；正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260823-111958-before-general-def63aa.sqlite`。
+- 切换后应用与 Nginx active、`NRestarts=0`、部署后错误日志 0，正式库与备份
+  `quick_check=ok`；22 项迁移、21 份 enabled 知识、136 个切块/向量、15 位试用患者、11 个
+  方案、28 个对话和 9 份评估与切换前一致。公网首页、管理页、`/live` 均为 200，服务端和
+  两端 bundle 哈希与本地合并构建一致；`/ready=503` 仍仅因试用环境既有加密密钥未配置。
+  一次普通“打喷嚏原因”候选因混入未放行内容而整段降级，已如实保留为后续模型波动评测项；
+  旧 release 与正式备份保留回滚。
