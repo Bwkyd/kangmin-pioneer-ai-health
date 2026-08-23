@@ -1,80 +1,68 @@
 <view class="page home-view">
-  <view class="home-identity">
-    <view class="identity-main">
-      <view class="identity-mark">抗</view>
-      <view class="identity-copy">
-        <text class="brand-name">抗敏先锋</text>
-        <text class="brand-subtitle">鼻健康管理</text>
-      </view>
-    </view>
-    <text class="identity-badge">今日健康</text>
+  <view class="brand-banner" aria-label="抗敏先锋">
+    <image src="/assets/brand-banner.jpg" mode="widthFix" />
   </view>
 
-  <view class="home-intro">
-    <text class="intro-eyebrow">鼻健康 · 记录与陪伴</text>
-    <text class="intro-title">今天，也照顾好自己</text>
-    <text class="intro-copy">从一次记录开始，慢慢了解身体的变化。</text>
-  </view>
-
-  <view class="primary-entry" bindtap="openAssistant">
-    <view class="entry-head">
-      <view class="entry-icon">问</view>
-      <text class="entry-label">固定规则优先 · 安全评估</text>
+  <view class="home-modules" aria-label="鼻健康服务">
+    <view class="service-module diagnose-module" bindtap="openAssistant">
+      <view class="module-icon">诊</view>
+      <text class="module-kicker">安全评估与方案建议</text>
+      <text class="module-title">诊一诊</text>
+      <text class="module-copy">先做服务端规则和操作安全筛查，再匹配已审核康复方案。</text>
+      <text class="module-link">开始安全评估 <text>→</text></text>
+      <text class="module-watermark">诊</text>
     </view>
-    <text class="entry-title">问助手</text>
-    <text class="entry-copy">逐步回答几个问题，获得清晰的情况说明与下一步建议。</text>
-    <view class="entry-foot"><text>开始评估</text><text class="entry-arrow">→</text></view>
-    <text class="entry-watermark">问</text>
-  </view>
-
-  <view class="quick-heading">今天要做什么</view>
-  <view class="quick-grid">
-    <view class="quick-card" bindtap="openAssessment">
-      <view class="quick-icon blue-icon">记</view>
-      <text class="quick-label">每日记录</text>
-      <text class="quick-title">记录症状</text>
-      <text class="quick-link">填写量表　→</text>
-    </view>
-    <view class="quick-card" bindtap="openCalendar">
-      <view class="quick-icon gold-icon">日</view>
-      <text class="quick-label">变化可追踪</text>
-      <text class="quick-title">健康日历</text>
-      <text class="quick-link">查看趋势　→</text>
-    </view>
-    <view class="quick-card" bindtap="openLearn">
-      <view class="quick-icon teal-icon">知</view>
-      <text class="quick-label">已审核内容</text>
-      <text class="quick-title">科普内容</text>
-      <text class="quick-link">文章与视频　→</text>
-    </view>
-    <view class="quick-card" bindtap="openMessages">
-      <view class="quick-icon ink-icon">信</view>
-      <text class="quick-label">服务提醒</text>
-      <text class="quick-title">消息中心</text>
-      <text class="quick-link">查看消息　→</text>
+    <view class="service-module learn-module" aria-label="学一学：打开鼻健康科普" bindtap="openLearn">
+      <view class="module-icon">学</view>
+      <text class="module-kicker">已发布科普内容</text>
+      <text class="module-title">学一学</text>
+      <text class="module-copy">了解鼻健康知识，掌握日常防护方法。</text>
+      <text class="module-link">去学习 <text>→</text></text>
+      <text class="module-watermark">学</text>
     </view>
   </view>
 
-  <view class="health-card" bindtap="openCalendar">
-    <view class="health-head">
-      <view><text class="health-eyebrow">我的健康记录</text><text class="health-title">{{overview ? '记录已同步' : '从今天开始记录'}}</text></view>
-      <text class="health-action">{{overview ? '查看日历　›' : '去记录　›'}}</text>
+  <view class="basis-card" aria-label="方案依据与使用说明">
+    <view class="basis-icon">据</view>
+    <view class="basis-copy">
+      <text class="basis-title">抗敏先锋鼻健康服务</text>
+      <text>方案来自已审核内容，基于福建中医药大学抗敏先锋团队体质调理方案开发。</text>
+      <text class="basis-note">结果仅供参考，最终方案请以门诊诊断为准。</text>
     </view>
-    <view wx:if="{{overview}}" class="health-stats">
-      <view><text class="health-number">{{overview.consecutiveDays}}</text><text>连续记录 / 天</text></view>
-      <view><text class="health-number">{{overview.monthRecordCount}}</text><text>本月记录 / 次</text></view>
-      <view><text class="health-number">{{overview.lastTnss === null ? '--' : overview.lastTnss}}</text><text>最近症状评分</text></view>
-    </view>
-    <view wx:else class="health-empty"><text>完成首次症状记录后，这里会显示连续天数和月度变化。</text></view>
   </view>
-  <view wx:if="{{overviewError}}" class="inline-notice">{{overviewError}}</view>
 
-  <view class="section-heading"><view><text class="section-eyebrow">精选内容</text><text class="heading-title">今天读点什么</text></view><text class="heading-link" bindtap="openLearn">全部　›</text></view>
-  <view wx:if="{{featured}}" class="featured-card" bindtap="openFeatured">
-    <image wx:if="{{featured.coverUrl}}" class="featured-cover" src="{{featured.coverUrl}}" mode="aspectFill" />
-    <view wx:else class="featured-art"><text>{{featured.kind === 'video' ? '播' : '知'}}</text></view>
-    <view class="featured-copy"><text class="featured-type">{{featured.kind === 'video' ? '操作视频' : '科普文章'}}</text><text class="featured-title">{{featured.title}}</text><text class="featured-summary">{{featured.summary || '打开查看已发布的鼻健康内容'}}</text></view>
+  <view class="today-grid">
+    <view class="today-card" aria-label="今日待完成：打开过敏原记录" bindtap="openAllergenRecord">
+      <view class="feature-icon">↘</view>
+      <text class="today-kicker">今日待完成 · 患者自述</text>
+      <text class="today-title">过敏原记录</text>
+      <text class="today-link">记录今天</text>
+    </view>
+    <view class="today-card" aria-label="打开科普文章与视频" bindtap="openLearn">
+      <view class="feature-icon book-icon">知</view>
+      <text class="today-kicker">鼻健康科普</text>
+      <text class="today-title">科普文章与视频</text>
+      <text class="today-link">去看看</text>
+    </view>
   </view>
-  <view wx:else class="featured-empty" bindtap="openLearn"><text class="featured-empty-title">科普内容正在准备中</text><text>进入内容中心查看已发布文章和视频　›</text></view>
-  <view wx:if="{{contentError}}" class="inline-notice">{{contentError}}</view>
+
+  <view class="mini-trend" aria-label="打开健康记录日历" bindtap="openCalendar">
+    <view class="trend-copy">
+      <text>{{hasOverviewData ? '真实健康记录' : '趋势展示占位'}}</text>
+      <text class="trend-title">{{hasOverviewData ? '连续记录 ' + overview.consecutiveDays + ' 天 · 本月 ' + overview.monthRecordCount + ' 次' : '暂无真实健康记录'}}</text>
+      <text class="trend-link">{{hasOverviewData ? '查看记录 ›' : '查看演示 ›'}}</text>
+    </view>
+    <view class="sparkline" aria-hidden="true">
+      <view style="height: 84%"></view><view style="height: 73%"></view><view style="height: 64%"></view><view style="height: 55%"></view><view class="active" style="height: 42%"></view>
+    </view>
+  </view>
+
+  <view class="section-heading">
+    <view><text>为你推荐</text><text class="heading-title">今天读点什么</text></view>
+    <text class="heading-link" bindtap="openLearn">全部 ›</text>
+  </view>
+  <view class="article-feature" aria-label="打开鼻健康科普推荐" bindtap="openLearn">
+    <view class="article-art"><view class="art-circle"></view><view class="art-leaf"></view><text>学</text></view>
+    <view class="article-copy"><text>鼻健康科普</text><text class="article-title">学一学</text><text class="article-meta">科普文章 · 操作视频 · 调理方案</text></view>
+  </view>
 </view>

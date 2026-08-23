@@ -32,7 +32,7 @@ function loadModule(
 
 interface PageDefinition {
   data: Record<string, any>;
-  setData?: (changes: Record<string, any>) => void;
+  setData?: (changes: Record<string, any>, callback?: () => void) => void;
   [key: string]: any;
 }
 
@@ -397,6 +397,121 @@ test("小程序健康档案读取并展示基础信息、过敏原与用药记�
   assert.equal(page.data.exposureItems[0]?.factorsText, "花粉、其它（请简要描述）");
   assert.equal(page.data.medicationItems[0]?.dosageText, "10 mg");
   assert.deepEqual(calls, ["account consent show", "account privacy", "record profile show", "record exposure list", "record medication list"]);
+});
+
+test("小程序首页复用 Web 患者首页的信息结构、文案、比例和品牌资产", () => {
+  const webHome = readFileSync(resolve("web/src/App.tsx"), "utf8");
+  const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");
+  const miniHome = readFileSync(resolve("miniprogram/pages/home/index.wxml"), "utf8");
+  const miniStyles = readFileSync(resolve("miniprogram/pages/home/index.wxss"), "utf8");
+  const sharedCopy = [
+    "安全评估与方案建议",
+    "诊一诊",
+    "先做服务端规则和操作安全筛查，再匹配已审核康复方案。",
+    "已发布科普内容",
+    "学一学",
+    "方案来自已审核内容，基于福建中医药大学抗敏先锋团队体质调理方案开发。",
+    "今日待完成 · 患者自述",
+    "过敏原记录",
+    "科普文章与视频",
+    "趋势展示占位",
+    "暂无真实健康记录",
+    "为你推荐",
+    "今天读点什么",
+    "科普文章 · 操作视频 · 调理方案"
+  ];
+  for (const copy of sharedCopy) {
+    assert.ok(webHome.includes(copy), `Web 首页缺少基准文案：${copy}`);
+    assert.ok(miniHome.includes(copy), `小程序首页未复用 Web 文案：${copy}`);
+  }
+  for (const divergentCopy of ["今天，也照顾好自己", "今日健康", "消息中心"]) {
+    assert.equal(miniHome.includes(divergentCopy), false, `小程序首页仍残留独立改版文案：${divergentCopy}`);
+  }
+  assert.deepEqual(
+    readFileSync(resolve("web/public/brand-banner.jpg")),
+    readFileSync(resolve("miniprogram/assets/brand-banner.jpg"))
+  );
+  const proportionalStyles = [
+    ["min-height: 190px", "min-height: 380rpx"],
+    ["min-height: 126px", "min-height: 252rpx"],
+    ["grid-template-columns: 1fr 110px", "grid-template-columns: 1fr 220rpx"],
+    ["min-height: 105px", "min-height: 210rpx"]
+  ] as const;
+  for (const [webValue, miniValue] of proportionalStyles) {
+    assert.ok(webStyles.includes(webValue), `Web 当前比例基准已变化：${webValue}`);
+    assert.ok(miniStyles.includes(miniValue), `小程序未按 2rpx 映射当前 Web 比例：${miniValue}`);
+  }
+  for (const sharedColor of ["#daeadd", "#f5e8d7", "#8eb8a4", "#3d7c65", "#b8d6c9"]) {
+    assert.ok(webStyles.includes(sharedColor), `Web 当前配色基准已变化：${sharedColor}`);
+    assert.ok(miniStyles.includes(sharedColor), `小程序未复用当前 Web 配色：${sharedColor}`);
+  }
+  for (const staleColor of ["#dbe9f8", "#7fa7d3", "#285f9f", "#b7cee8"]) {
+    assert.equal(miniStyles.includes(staleColor), false, `小程序仍残留旧首页配色：${staleColor}`);
+  }
+});
+
+test("小程序首页只读取记录概览，并保持与 Web 一致的四条入口", async () => {
+  const calls: string[] = [];
+  const navigations: string[] = [];
+  const api = {
+    command: async (name: string) => {
+      calls.push(name);
+      return { recentSymptomDate: "2026-08-23", monthRecordCount: 3, consecutiveDays: 2 };
+    }
+  };
+  const page = loadPage("pages/home/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { selectTab: () => undefined, errorMessage: () => "加载失败" }
+  }, {
+    navigateTo: ({ url }: { url: string }) => navigations.push(url),
+    switchTab: ({ url }: { url: string }) => navigations.push(url)
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+  page.onShow();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(calls, ["record overview"]);
+  assert.equal(page.data.hasOverviewData, true);
+  page.openAllergenRecord();
+  page.openLearn();
+  page.openAssistant();
+  page.openCalendar();
+  assert.deepEqual(navigations, [
+    "/pages/health-profile/index?focus=exposure",
+    "/pages/learn/index",
+    "/pages/assistant/index",
+    "/pages/calendar/index"
+  ]);
+});
+
+test("小程序首页过敏原入口在授权并加载后定位到当天记录表单", async () => {
+  const scrollCalls: Array<Record<string, unknown>> = [];
+  const api = {
+    command: async (name: string) => {
+      if (name === "account consent show") return { items: [{ consentType: "health_data", decision: "granted" }] };
+      if (name === "account privacy") return { policyVersion: "privacy-v1", statement: "健康数据说明" };
+      if (name === "record profile show") return { revision: 0 };
+      if (name === "record exposure list" || name === "record medication list") return { items: [] };
+      throw new Error(`unexpected command: ${name}`);
+    }
+  };
+  const page = loadPage("pages/health-profile/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { errorMessage: () => "加载失败" }
+  }, {
+    setNavigationBarTitle: () => undefined,
+    pageScrollTo: (options: Record<string, unknown>) => scrollCalls.push(options)
+  });
+  page.setData = (changes, callback) => {
+    page.data = { ...page.data, ...changes };
+    if (typeof callback === "function") callback();
+  };
+  page.onLoad({ focus: "exposure" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(scrollCalls.length, 1);
+  assert.equal(scrollCalls[0]?.selector, "#exposure-record");
+  assert.equal(scrollCalls[0]?.duration, 300);
+  assert.match(readFileSync(resolve("miniprogram/pages/health-profile/index.wxml"), "utf8"), /id="exposure-record"[\s\S]*过敏原暴露记录/u);
 });
 
 test("小程序我的页不把档案和概览读取失败伪装成空数据", async () => {

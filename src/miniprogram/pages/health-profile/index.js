@@ -106,7 +106,16 @@ Page({
     medicationEditingRevision: 0
   },
 
-  onLoad: function () { this.loadConsent(); },
+  onLoad: function (options) {
+    this._focusExposure = Boolean(options && options.focus === "exposure");
+    this.loadConsent();
+  },
+
+  scrollToExposure: function () {
+    if (!this._focusExposure || typeof wx.pageScrollTo !== "function") return;
+    this._focusExposure = false;
+    wx.pageScrollTo({ selector: "#exposure-record", duration: 300 });
+  },
 
   loadConsent: function () {
     var self = this;
@@ -122,7 +131,7 @@ Page({
         policyVersion: results[1].policyVersion || "",
         privacyStatement: results[1].statement || "",
         loading: false
-      });
+      }, function () { self.scrollToExposure(); });
       if (granted) self.loadData();
     }).catch(function (error) {
       self.setData({ loading: false, error: pageUtils.errorMessage(error) });
