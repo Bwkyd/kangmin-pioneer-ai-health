@@ -642,6 +642,10 @@ try {
   }
   const sixStepResult = page.locator(".result-card", { hasText: "寒热错杂" });
   await sixStepResult.waitFor({ state: "visible" });
+  const completedPlanConversationId = await page.evaluate(() =>
+    sessionStorage.getItem("kangmin.agent.conversationId")
+  );
+  assert.ok(completedPlanConversationId, "完整评估应保存可恢复的会话 ID");
   await page.locator(".conversation-ended").waitFor({ state: "visible" });
   const completedMascotBox = await page.getByTestId("assistant-mascot").boundingBox();
   const completedNoticeBox = await page.locator(".conversation-ended").boundingBox();
@@ -940,6 +944,25 @@ try {
   await videoPreview.getByRole("button", { name: "关闭患者端预览" }).click();
   await videoRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
+
+  // 已保存的最终方案无需重做评估：重新读取已发布视频后，方法下出现按钮，
+  // 点击复用学一学的同一详情弹层并直接播放对应操作视频。
+  await page.bringToFront();
+  await page.evaluate((conversationId) => {
+    sessionStorage.setItem("kangmin.agent.conversationId", conversationId);
+  }, completedPlanConversationId);
+  await page.reload();
+  await page.locator(".bottom-nav button", { hasText: "问助手" }).click();
+  const planVideoButton = page.getByTestId("plan-video-button").first();
+  await planVideoButton.waitFor({ state: "visible" });
+  await expectText(planVideoButton, "观看操作视频");
+  await planVideoButton.click();
+  const planVideoDetail = page.getByTestId("discover-detail");
+  await planVideoDetail.waitFor({ state: "visible" });
+  await expectText(planVideoDetail, "抗敏要穴之迎香穴（指腹擦迎香）");
+  assert.equal(await planVideoDetail.locator("video").count(), 1, "最终方案视频按钮应打开可播放详情弹层");
+  await planVideoDetail.getByRole("button", { name: "关闭内容详情" }).click();
+
   const videoCheckPage = await context.newPage();
   await videoCheckPage.goto(origin);
   await videoCheckPage.locator(".bottom-nav button", { hasText: "首页" }).click();

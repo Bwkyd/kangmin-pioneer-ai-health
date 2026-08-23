@@ -410,6 +410,24 @@ button:focus-visible { outline: 2px solid rgba(28, 117, 96, .45); outline-offset
 .result-foot span { color: var(--green); font-weight: 700; margin-right: 5px; }
 /* final 评估结果正文：纯文本保留换行，不解析 markdown。 */
 .result-body { margin: 12px 0; color: #38544a; font-size: 12px; line-height: 1.8; white-space: pre-line; }
+.plan-video-button {
+  width: 100%;
+  margin: 5px 0 9px;
+  padding: 10px 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #bfd6ef;
+  border-radius: 11px;
+  background: #eaf3fd;
+  color: #1e5aa3;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+.plan-video-button span { width: 23px; height: 23px; display: grid; place-items: center; border-radius: 50%; background: #1e5aa3; color: #fff; font-size: 9px; }
+.plan-video-button:disabled { cursor: wait; opacity: .65; }
 
 .video-card {
   width: calc(100% - 34px);

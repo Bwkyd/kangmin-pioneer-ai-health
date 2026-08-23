@@ -7,7 +7,7 @@
  */
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
-import { ContentBody } from "./content-body";
+import { PublicContentModal } from "./PublicContentModal";
 
 import {
   askKnowledge,
@@ -258,30 +258,7 @@ export default function DiscoverView() {
         </section>
       )}
 
-      {selectedContent && (
-        <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="内容详情">
-          <article className="discover-detail" data-testid="discover-detail">
-            <button type="button" onClick={() => setSelectedContent(null)} aria-label="关闭内容详情">×</button>
-            <div className="discover-tags"><i>{selectedContent.category || "未分类"}</i></div>
-            <h2>{selectedContent.title}</h2>
-            {selectedContent.kind === "article" && selectedContent.coverUrl && (
-              <img className="discover-detail-image" src={selectedContent.coverUrl} alt={`${selectedContent.title}配图`} />
-            )}
-            {selectedContent.kind === "video" && selectedContent.mediaUrl && (
-              <video className="discover-detail-video" controls preload="metadata" src={selectedContent.mediaUrl} />
-            )}
-            <ContentBody body={selectedContent.body ?? selectedContent.summary} />
-            {selectedContent.kind === "video" && (selectedContent.instructions || selectedContent.precautions) && (
-              <section className="discover-safety-note" aria-label="视频操作安全说明">
-                {selectedContent.instructions && <p><strong>操作提示：</strong>{selectedContent.instructions}</p>}
-                {selectedContent.precautions && <p><strong>注意事项：</strong>{selectedContent.precautions}</p>}
-              </section>
-            )}
-            <p className="discover-detail-meta">来源：{selectedContent.source} · 更新于 {selectedContent.updatedAt.slice(0, 10)}</p>
-            <footer>{selectedContent.disclaimer}</footer>
-          </article>
-        </div>
-      )}
+      {selectedContent && <PublicContentModal content={selectedContent} onClose={() => setSelectedContent(null)} />}
 
       {selectedPlan && (
         <div className="modal-backdrop" role="dialog" aria-modal="true" aria-label="方案详情">
