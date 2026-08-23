@@ -425,6 +425,12 @@ export class KangminAdminApplication {
             await this.aux.getMedia(requiredString(input, "id")),
             request.requestId
           );
+        case "content article import-document":
+          return success(
+            command,
+            await this.aux.importArticleDocument(requiredString(input, "mediaId")),
+            request.requestId
+          );
         case "content media disable":
           requireConfirmation(input);
           return success(

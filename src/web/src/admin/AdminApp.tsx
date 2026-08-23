@@ -301,6 +301,18 @@ interface ContentPreview extends ContentItem {
   patientVisible: boolean;
 }
 
+interface ArticleDocumentDraft {
+  title: string;
+  body: string;
+  source: string;
+  images: Array<{
+    token: string;
+    filename: string;
+    mimeType: string;
+    dataBase64: string;
+  }>;
+}
+
 interface DraftRecovery {
   kind: ContentKind;
   draft: DraftContent;
@@ -373,6 +385,14 @@ function ContentManager({
   }, [items, query, statusFilter]);
   const draftCount = items.filter((item) => item.status === "draft").length;
   const publishedCount = items.filter((item) => item.status === "published").length;
+  const selectedVideo = draft.mediaId === null
+    ? null
+    : readyMedia.find((item) => item.kind === "video" && item.id === draft.mediaId) ?? null;
+  const importedDocumentName = editing === null
+    && /\.(?:docx|pdf)$/iu.test(draft.source)
+    && draft.body.trim() !== ""
+    ? draft.source
+    : null;
 
   useEffect(() => {
     setStatusFilter(initialStatusFilter);
@@ -420,6 +440,15 @@ function ContentManager({
     return () => window.removeEventListener("beforeunload", warnBeforeLeave);
   }, [draft, showForm]);
 
+  useEffect(() => {
+    if (!showForm) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      document.body.style.overflow = previousOverflow;
+    };
+  }, [showForm]);
+
   function clearStoredDraft() {
     try {
       sessionStorage.removeItem(storageKey);
@@ -461,14 +490,14 @@ function ContentManager({
     setDraft(blank(kind));
   }
 
-  async function save(event: FormEvent) {
-    event.preventDefault();
-    await run(async () => {
+  async function persistDraft(previewAfterSave = false) {
+    let savedItem: ContentItem | null = null;
+    const succeeded = await run(async () => {
       const input = { ...draft, kind: undefined, idempotencyKey: crypto.randomUUID() } as Record<string, unknown>;
       if (editing === null) {
-        await adminCommand("content " + kind + " create", input);
+        savedItem = await adminCommand<ContentItem>("content " + kind + " create", input);
       } else {
-        await adminCommand("content " + kind + " update", { ...input, id: editing.id, expectedRevision: editing.revision });
+        savedItem = await adminCommand<ContentItem>("content " + kind + " update", { ...input, id: editing.id, expectedRevision: editing.revision });
       }
       clearStoredDraft();
       setRecovery(null);
@@ -476,6 +505,26 @@ function ContentManager({
       setEditing(null);
       setDraft(blank(kind));
     }, label + "草稿已保存");
+    if (succeeded && previewAfterSave && savedItem !== null) {
+      await previewContent(savedItem);
+    }
+  }
+
+  async function save(event: FormEvent) {
+    event.preventDefault();
+    await persistDraft();
+  }
+
+  async function saveAndPreview() {
+    if (draft.title.trim() === "" || draft.body.trim() === "") {
+      await run(async () => {
+        throw new Error(kind === "article"
+          ? "请先填写标题和正文，或导入 Word/PDF 后再预览"
+          : "请先填写标题和视频说明后再预览");
+      }, "");
+      return;
+    }
+    await persistDraft(true);
   }
 
   async function createCategory() {
@@ -488,6 +537,41 @@ function ContentManager({
       setNewCategory("");
       setDraft((current) => ({ ...current, category: name }));
     }
+  }
+
+  async function importArticleDocument(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file === undefined) return;
+    if (hasDraftContent(draft) && !window.confirm("导入文档会覆盖当前标题、正文和来源，是否继续？")) return;
+    await run(async () => {
+      const mediaItem = await uploadFile(file);
+      const imported = await adminCommand<ArticleDocumentDraft>("content article import-document", { mediaId: mediaItem.id });
+      let importedBody = imported.body;
+      for (const image of imported.images) {
+        const binary = window.atob(image.dataBase64);
+        const bytes = new Uint8Array(binary.length);
+        for (let index = 0; index < binary.length; index += 1) bytes[index] = binary.charCodeAt(index);
+        const uploaded = await uploadFile(new File([bytes], image.filename, { type: image.mimeType }), "image");
+        importedBody = importedBody.replaceAll(image.token, `/v1/media/${uploaded.id}`);
+      }
+      setDraft((current) => ({
+        ...current,
+        title: imported.title,
+        body: importedBody,
+        source: imported.source
+      }));
+    }, "文档和图片已导入，请校对内容并补充摘要、分类");
+  }
+
+  async function uploadVideo(event: ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
+    event.target.value = "";
+    if (file === undefined) return;
+    await run(async () => {
+      const mediaItem = await uploadFile(file, "video");
+      setDraft((current) => ({ ...current, mediaId: mediaItem.id }));
+    }, "视频文件已上传并选中");
   }
 
   async function previewContent(item: ContentItem) {
@@ -514,7 +598,7 @@ function ContentManager({
           <h2>{label}管理</h2>
           <p>先保存不完整草稿，再用患者端预览确认效果；发布前由服务端校验内容、分类和素材。</p>
         </div>
-        <button className="primary" onClick={() => open()}>新增{label}</button>
+        <button type="button" className="primary" onClick={() => open()}>新增{label}</button>
       </div>
       {recovery !== null && (
         <div className="draft-recovery" role="status">
@@ -530,30 +614,65 @@ function ContentManager({
         <div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{draftCount} 条草稿 · {publishedCount} 条已发布</small></div>
       </div>
       {showForm && (
-        <form className="content-form" onSubmit={(event) => void save(event)}>
-          <div className="form-grid">
-            <label>标题<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-            <label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="">未选择（草稿可暂留空）</option>{availableCategories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
-          </div>
-          <div className="category-create"><input placeholder="没有合适分类？输入新分类" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><button type="button" onClick={() => void createCategory()}>创建分类</button></div>
-          <label>摘要<textarea rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
-          <ContentBodyEditor label={kind === "article" ? "正文" : "视频说明"} value={draft.body} onChange={(body) => setDraft((current) => ({ ...current, body }))} run={run} />
-          <div className="form-grid">
-            <label>来源<input value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })} /></label>
-            <MediaBinding label="封面素材" selectedId={draft.coverMediaId} items={readyMedia.filter((item) => item.kind === "image")} accept="image/*,.jpg,.jpeg,.png,.webp,.gif" mediaKind="image" busy={busy} run={run} onSelect={(id) => setDraft((current) => ({ ...current, coverMediaId: id }))} />
-          </div>
-          {kind === "video" && (
-            <>
-              <MediaBinding label="视频文件" selectedId={draft.mediaId} items={readyMedia.filter((item) => item.kind === "video")} accept="video/*,.mp4,.webm" mediaKind="video" busy={busy} run={run} onSelect={(id) => setDraft((current) => ({ ...current, mediaId: id }))} />
+        <div className="content-editor-backdrop" data-testid="content-editor-backdrop">
+          <form className="content-form content-editor-dialog" role="dialog" aria-modal="true" aria-labelledby={`content-editor-title-${kind}`} onSubmit={(event) => void save(event)}>
+            <div className="content-editor-heading">
+              <h2 id={`content-editor-title-${kind}`}>{editing === null ? "新增" : "编辑"}{label}</h2>
+              <button type="button" aria-label={`关闭${label}编辑`} onClick={closeForm}>×</button>
+            </div>
+            <div className="content-editor-scroll">
+              {kind === "video" && (
+                <div className={`article-import${draft.mediaId === null ? "" : " imported"}`}>
+                  <div>{draft.mediaId === null
+                    ? <><strong>上传视频文件</strong><small>支持 MP4、WebM；上传后仍可补充标题和说明。</small></>
+                    : <><strong>已选择：{selectedVideo?.filename ?? "视频素材"}</strong><small>视频已绑定到当前内容，可重新选择或继续编辑。</small></>
+                  }</div>
+                  <label className="article-import-button">{draft.mediaId === null ? "选择视频" : "重新选择"}<input aria-label="选择视频文件" type="file" accept="video/*,.mp4,.webm" disabled={busy} onChange={(event) => void uploadVideo(event)} /></label>
+                </div>
+              )}
+              {kind === "article" && editing === null && (
+                <div className={`article-import${importedDocumentName === null ? "" : " imported"}`}>
+                  <div>{importedDocumentName === null
+                    ? <><strong>从 Word/PDF 导入</strong><small>自动提取文字和图片；扫描版 PDF 按页保留。</small></>
+                    : <><strong>已导入：{importedDocumentName}</strong><small>文件内容已转换到下方标题和正文，可继续校对编辑。</small></>
+                  }</div>
+                  <label className="article-import-button">{importedDocumentName === null ? "选择文档" : "重新选择"}<input aria-label="选择文章文档" type="file" accept=".docx,.pdf" disabled={busy} onChange={(event) => void importArticleDocument(event)} /></label>
+                </div>
+              )}
               <div className="form-grid">
-                <label>操作提示<textarea rows={3} value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })} /><small className="form-hint">发布前必填，患者端会在视频下方看到。</small></label>
-                <label>注意事项<textarea rows={3} value={draft.precautions} onChange={(event) => setDraft({ ...draft, precautions: event.target.value })} /><small className="form-hint">发布前必填，缺失时服务端会阻止发布。</small></label>
+                <label>标题<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
+                <label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="">未选择（草稿可暂留空）</option>{availableCategories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
               </div>
-              <label>免责声明<input value={draft.disclaimer} onChange={(event) => setDraft({ ...draft, disclaimer: event.target.value })} /></label>
-            </>
-          )}
-          <div className="form-actions"><button type="button" onClick={closeForm}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div>
-        </form>
+              <details className="category-create">
+                <summary>新建分类</summary>
+                <div className="category-create-fields"><input aria-label="新建分类名称" placeholder="输入分类名称" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><button type="button" onClick={() => void createCategory()}>创建分类</button></div>
+                <small className="form-hint">分类会立即加入当前{label}的可选列表。</small>
+              </details>
+              <label>摘要<textarea rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
+              <ContentBodyEditor label={kind === "article" ? "正文" : "视频说明"} value={draft.body} onChange={(body) => setDraft((current) => ({ ...current, body }))} run={run} />
+              <details className="content-advanced">
+                <summary>更多设置（来源、封面{kind === "video" ? "、素材库" : ""}）</summary>
+                <div className="form-grid">
+                  <label>来源<input value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })} /></label>
+                  <MediaBinding label="封面素材" selectedId={draft.coverMediaId} items={readyMedia.filter((item) => item.kind === "image")} accept="image/*,.jpg,.jpeg,.png,.webp,.gif" mediaKind="image" busy={busy} run={run} onSelect={(id) => setDraft((current) => ({ ...current, coverMediaId: id }))} />
+                </div>
+                {kind === "video" && <label>从素材库选择视频<select aria-label="从素材库选择视频" value={draft.mediaId ?? ""} onChange={(event) => setDraft((current) => ({ ...current, mediaId: event.target.value || null }))}><option value="">未选择</option>{readyMedia.filter((item) => item.kind === "video").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label>}
+              </details>
+              {kind === "video" && (
+                <>
+                  <div className="form-grid">
+                    <label>操作提示<textarea rows={3} value={draft.instructions} onChange={(event) => setDraft({ ...draft, instructions: event.target.value })} /><small className="form-hint">发布前必填，患者端会在视频下方看到。</small></label>
+                    <label>注意事项<textarea rows={3} value={draft.precautions} onChange={(event) => setDraft({ ...draft, precautions: event.target.value })} /><small className="form-hint">发布前必填，缺失时服务端会阻止发布。</small></label>
+                  </div>
+                  <label>免责声明<input value={draft.disclaimer} onChange={(event) => setDraft({ ...draft, disclaimer: event.target.value })} /></label>
+                </>
+              )}
+            </div>
+            <div className="content-form-actions" data-testid="content-form-actions">
+              <div className="content-form-actions-buttons"><button type="button" className="secondary-action" onClick={closeForm}>取消</button><button type="button" className="preview-action" disabled={busy} onClick={() => void saveAndPreview()}>保存并预览</button><button type="submit" className="primary" disabled={busy}>保存草稿</button></div>
+            </div>
+          </form>
+        </div>
       )}
       <ContentTable items={filteredItems} emptyText={query.trim() !== "" || statusFilter !== "all" ? "没有匹配内容" : "还没有内容"} busy={busy} onEdit={open} onPreview={previewContent} onToggle={toggle} />
       {previewItem !== null && <PatientContentPreview item={previewItem} onClose={() => setPreviewItem(null)} />}
@@ -607,14 +726,13 @@ function ContentBodyEditor({
 
   return (
     <div className="body-editor">
-      <label>{label}<textarea ref={textarea} aria-label={label} rows={9} value={value} onChange={(event) => onChange(event.target.value)} /></label>
+      <label>{label}<textarea ref={textarea} aria-label={label} rows={7} value={value} onChange={(event) => onChange(event.target.value)} /></label>
       <div className="body-toolbar">
         <button type="button" onClick={() => insert("## 小标题\n\n")}>插入小标题</button>
         <button type="button" onClick={() => insert("- 重点内容\n")}>插入列表</button>
         <button type="button" onClick={() => insert("[链接文字](https://example.com)")}>插入链接</button>
-        <label className="body-upload">上传图片/附件<input aria-label="上传正文图片或附件" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.md,.markdown,.txt" onChange={(event) => void uploadBodyFile(event)} /></label>
+        <label className="body-upload">上传素材<input aria-label="上传正文图片或附件" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.md,.markdown,.txt" onChange={(event) => void uploadBodyFile(event)} /></label>
       </div>
-      <small className="form-hint">支持标题、列表、链接；上传图片或附件后会自动插入正文。发布前会校验正文引用素材是否仍可用。</small>
     </div>
   );
 }

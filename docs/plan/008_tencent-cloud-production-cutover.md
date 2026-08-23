@@ -213,3 +213,32 @@
   enabled 知识、136 个切块/向量、15 位试用患者、11 个 enabled 方案、29 个对话和 9 份评估
   保持不变。公网首页、管理页、`/live` 均为 200，两端 bundle 哈希与合并构建一致；`/ready=503`
   仍仅因试用环境既有加密密钥未配置。预检数据库和传输制品已清理，旧 release 与正式备份保留。
+- 2026-08-23 按作者明确授权，将未提交的管理后台内容编辑 UI 改动按差异哈希 `d777d79a`
+  构建并部署为 `/srv/kangmin-cli/releases/admin-editor-ui-d777d79a`，不能冒充对应 Git 提交。
+  发布包 SHA-256 为 `a6d21b13fa1dba1b8ced05fccf7197f22e6286400c0434585746191373857aed`。
+  首次 8788 预检因未继承 systemd 的 `KANGMIN_APP_ENV=local` 与开发会话标志而安全失败，公网
+  未切换；补齐与线上一致的非密钥配置后，候选库、管理页、JS/CSS 哈希和运行日志均通过。
+- 正式切换前在线备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260823-190820-before-admin-editor-ui-d777d79a.sqlite`；
+  切换后应用与 Nginx active、`NRestarts=0`，正式库和备份 `quick_check=ok`，22 项迁移、15 位
+  试用患者、11 个方案、21 份知识/136 个切块和 9 份评估保持一致。启动时按既有保留策略清理
+  1 条已过期约 1 小时的匿名会话，不属于部署丢失。公网首页、`/admin`、`/live` 均为 200，
+  管理 JS/CSS 哈希与本地构建一致；`/ready=503` 仍仅因试用环境既有加密密钥未配置。预检库、
+  日志和传输制品已清理，旧 `unified-answer-3d794b7` release 与正式备份保留回滚。
+
+- 2026-08-23 按作者明确授权，将未提交的 Word/PDF 文章导入、内容编辑弹层收口、视频上传入口
+  和患者正文展示修复按源码树摘要 `e6a1559b` 部署为
+  `/srv/kangmin-cli/releases/content-import-video-e6a1559b`，不冒充 Git 提交。发布包 SHA-256 为
+  `7ba79f7a9b7611d88c943ae1f49d33c6e88dd3e051367c816bca1d3e0d0ac489`，release 内独立执行
+  `npm ci --omit=dev`，未复用旧 release 依赖。
+- 8788 使用线上 SQLite 在线备份副本完成 22 项迁移、页面、静态资源和真实患者视频列表预检；
+  正式切换前备份为
+  `/srv/kangmin-cli/backups/kangmin-mvp-20260823-2126-before-content-import-video-e6a1559b.sqlite`。
+  浏览器上传 3.6 MB MP4 首次被 Nginx 默认 1 MB 限制拒绝，备份原配置后设置
+  `client_max_body_size 20m`，`nginx -t` 通过并热重载。
+- 按 `vault/truth/视频大全.md` 去重发布 26 条视频，统一绑定作者指定 MP4 素材
+  `med_a4c0f68e8998`；患者侧真实列表返回 26 条、5 个分类，公网媒体路由返回 200 和完整
+  3,575,858 字节。切换后应用与 Nginx active、`NRestarts=0`、SQLite `quick_check=ok`，公网
+  首页、`/admin`、`/live` 均为 200；`/ready=503` 仍仅因试用环境未配置加密密钥。预检进程、
+  临时数据库、传输包、短期管理凭据和一次失败上传产生的孤儿素材均已清理；旧 release、正式
+  数据库备份和 Nginx 配置备份保留回滚。

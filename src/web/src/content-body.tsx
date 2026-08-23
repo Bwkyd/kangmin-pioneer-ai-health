@@ -77,14 +77,15 @@ export function ContentBody({
   const lines = (body ?? "").replaceAll("\r\n", "\n").split("\n");
   const blocks: ReactNode[] = [];
   let index = 0;
+  let blockIndex = 0;
   let paragraph: string[] = [];
 
   const flushParagraph = () => {
     if (paragraph.length === 0) return;
     const text = paragraph.join(" ").trim();
     if (text !== "") {
-      blocks.push(<p key={`paragraph-${index}`}>{inlineNodes(text, `paragraph-${index}`, mediaPathPrefix)}</p>);
-      index += 1;
+      blocks.push(<p key={`paragraph-${blockIndex}`}>{inlineNodes(text, `paragraph-${blockIndex}`, mediaPathPrefix)}</p>);
+      blockIndex += 1;
     }
     paragraph = [];
   };

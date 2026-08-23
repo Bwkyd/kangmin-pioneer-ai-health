@@ -29,6 +29,7 @@ import {
   resolveMediaType,
   servableMediaContentType
 } from "./media-validation.js";
+import { extractArticleDocument, type ArticleDocumentDraft } from "./article-document-import.js";
 
 const CATEGORY_KINDS = new Set<CategoryKind>([
   "article",
@@ -88,6 +89,7 @@ export interface MediaUploadConfirmResult {
 
 /** 远程上传内容校验失败的固定文案（failure_reason 与错误消息共用前缀）。 */
 const UPLOAD_VERIFY_FAILURE_REASON = "上传内容校验失败";
+const ARTICLE_DOCUMENT_IMPORT_MAX_BYTES = 10 * 1024 * 1024;
 
 type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
 
@@ -234,6 +236,27 @@ export class ContentAuxService {
     }
     const referencedBy = await this.repository.countMediaReferences(id);
     return { ...toMediaView(media), referencedBy };
+  }
+
+  /** 将已通过上传校验的 Word/PDF 提取为可人工校对的文章草稿。 */
+  async importArticleDocument(id: string): Promise<ArticleDocumentDraft> {
+    const media = await this.repository.findMedia(id);
+    if (media === null) {
+      throw new DomainError("resource_not_found", "文档素材不存在");
+    }
+    if (media.status !== "ready") {
+      throw new DomainError("validation_failed", "文档素材尚未上传完成");
+    }
+    if (media.kind !== "word" && media.kind !== "pdf") {
+      throw new DomainError("validation_failed", "文章导入仅支持 Word 和 PDF 文件");
+    }
+    assertSizeWithinLimit(
+      media.sizeBytes,
+      ARTICLE_DOCUMENT_IMPORT_MAX_BYTES,
+      "文章导入文档"
+    );
+    const buffer = await this.storage.getObject(media.storedPath);
+    return extractArticleDocument(media.filename, buffer);
   }
 
   /** 管理端预览专用：仅返回已完成素材，调用方必须先通过管理员会话。 */
