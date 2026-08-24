@@ -1,6 +1,7 @@
 Component({
   data: {
     selected: 0,
+    hidden: false,
     items: [
       { pagePath: "/pages/home/index", text: "首页", iconClass: "nav-home" },
       { pagePath: "/pages/assistant/index", text: "问助手", iconClass: "nav-chat" },

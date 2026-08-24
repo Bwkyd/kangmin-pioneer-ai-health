@@ -64,6 +64,11 @@ for (const asset of ["brand-banner.jpg", "assistant-mascot-static.png"]) {
   }
 }
 
+const animatedMascot = readFileSync(join(root, "assets", "assistant-mascot-loop-v2.gif"));
+if (!animatedMascot.subarray(0, 6).toString("ascii").startsWith("GIF8")) {
+  throw new Error("小程序动画吉祥物必须是 GIF 资产");
+}
+
 const javascriptFiles = [
   "app.js",
   "config.js",
@@ -71,6 +76,7 @@ const javascriptFiles = [
   "utils/page.js",
   "utils/request.js",
   "utils/learning-catalog.js",
+  "utils/questionnaire.js",
   "custom-tab-bar/index.js",
   ...app.pages.map((page) => `${page}.js`)
 ];
@@ -110,6 +116,11 @@ for (const requiredCommand of ["agent conversations list", "agent conversations 
   if (!assistantSource.includes(requiredCommand)) {
     throw new Error(`原生问助手缺少服务端会话命令：${requiredCommand}`);
   }
+}
+
+const questionnaireSource = read("utils/questionnaire.js");
+if (!questionnaireSource.includes("题面正本只在 assessment-questionnaire.ts")) {
+  throw new Error("小程序问卷必须由共享题面正本机械生成");
 }
 
 console.log("check-miniprogram: PASS");

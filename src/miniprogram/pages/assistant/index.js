@@ -1,5 +1,6 @@
 var api = require("../../utils/request");
 var pageUtils = require("../../utils/page");
+var questionnaire = require("../../utils/questionnaire");
 
 var CONVERSATION_KEY = "kangmin.agent.conversationId";
 var WELCOME_MESSAGE = {
@@ -14,6 +15,12 @@ function displayDate(value) {
   if (Number.isNaN(date.getTime())) return "时间未知";
   return (date.getMonth() + 1) + "月" + date.getDate() + "日 " +
     String(date.getHours()).padStart(2, "0") + ":" +
+    String(date.getMinutes()).padStart(2, "0");
+}
+
+function currentTimeLabel() {
+  var date = new Date();
+  return "今天 " + String(date.getHours()).padStart(2, "0") + ":" +
     String(date.getMinutes()).padStart(2, "0");
 }
 
@@ -32,6 +39,8 @@ function resultKind(content) {
 
 function visibleUserText(content) {
   var value = String(content || "");
+  var questionAnswer = questionnaire.visibleAnswer(value);
+  if (questionAnswer) return questionAnswer;
   var option = /^q(\d+)=([A-D])$/i.exec(value.trim());
   if (option) return "第 " + option[1] + " 题：选择 " + option[2].toUpperCase();
   var field = /^([a-z][a-z0-9_]*)(?:=|:)(yes|no|unknown)$/i.exec(value.trim());
@@ -129,7 +138,9 @@ function turnMessages(turn) {
 }
 
 function nextQuestionsOf(verdict) {
-  return verdict && Array.isArray(verdict.nextQuestions) ? verdict.nextQuestions : [];
+  return verdict && Array.isArray(verdict.nextQuestions)
+    ? verdict.nextQuestions.map(questionnaire.view)
+    : [];
 }
 
 Page({
@@ -152,7 +163,11 @@ Page({
     historyOpen: false,
     historyLoading: false,
     historyError: "",
-    history: []
+    historyUnavailable: false,
+    history: [],
+    statusBarHeight: 20,
+    navigationBarHeight: 44,
+    timeLabel: currentTimeLabel()
   },
 
   onShow: function () {
@@ -160,15 +175,21 @@ Page({
   },
 
   onLoad: function () {
+    this.initNavigation();
     this.hydrate();
   },
 
   onUnload: function () {
+    this.setTabBarHidden(false);
     if (this._streamTask && typeof this._streamTask.abort === "function") {
       this._streamTask.abort();
     }
     this._streamTask = null;
     if (this._streamFlushTimer) clearTimeout(this._streamFlushTimer);
+  },
+
+  onHide: function () {
+    this.setTabBarHidden(false);
   },
 
   nextRequest: function () {
@@ -178,6 +199,34 @@ Page({
 
   isCurrentRequest: function (version) {
     return this._requestVersion === version;
+  },
+
+  setTabBarHidden: function (hidden) {
+    if (typeof this.getTabBar !== "function") return;
+    var tabBar = this.getTabBar();
+    if (tabBar && typeof tabBar.setData === "function") tabBar.setData({ hidden: !!hidden });
+  },
+
+  initNavigation: function () {
+    var windowInfo = {};
+    try {
+      windowInfo = typeof wx.getWindowInfo === "function" ? wx.getWindowInfo() : wx.getSystemInfoSync();
+    } catch (error) {
+      windowInfo = {};
+    }
+    var statusBarHeight = Number(windowInfo.statusBarHeight) || 20;
+    var navigationBarHeight = 44;
+    try {
+      if (typeof wx.getMenuButtonBoundingClientRect === "function") {
+        var capsule = wx.getMenuButtonBoundingClientRect();
+        if (capsule && capsule.height && capsule.top >= statusBarHeight) {
+          navigationBarHeight = capsule.height + (capsule.top - statusBarHeight) * 2;
+        }
+      }
+    } catch (error) {
+      navigationBarHeight = 44;
+    }
+    this.setData({ statusBarHeight: statusBarHeight, navigationBarHeight: navigationBarHeight });
   },
 
   clearStoredConversation: function () {
@@ -262,27 +311,39 @@ Page({
   toggleHistory: function () {
     if (this.data.historyOpen) {
       this.setData({ historyOpen: false });
+      this.setTabBarHidden(false);
       return;
     }
     this.setData({ historyOpen: true });
+    this.setTabBarHidden(true);
     this.loadHistory();
+  },
+
+  closeHistory: function () {
+    this.setData({ historyOpen: false });
+    this.setTabBarHidden(false);
   },
 
   loadHistory: function () {
     var self = this;
     var version = (self._historyRequestVersion || 0) + 1;
     self._historyRequestVersion = version;
-    self.setData({ historyLoading: true, historyError: "" });
+    self.setData({ historyLoading: true, historyError: "", historyUnavailable: false });
     api.command("agent conversations list", {}, { auth: true })
       .then(function (result) {
         if (self._historyRequestVersion !== version) return;
         self.setData({
           history: (result.items || []).map(historyView),
-          historyLoading: false
+          historyLoading: false,
+          historyUnavailable: false
         });
       })
       .catch(function (error) {
         if (self._historyRequestVersion !== version) return;
+        if (error && error.code === "capability_unavailable") {
+          self.setData({ history: [], historyLoading: false, historyError: "", historyUnavailable: true });
+          return;
+        }
         self.setData({ historyLoading: false, historyError: pageUtils.errorMessage(error) });
       });
   },
@@ -299,6 +360,7 @@ Page({
         if (!self.isCurrentRequest(requestVersion)) return;
         self.applyConversation(detail);
         self.setData({ historyOpen: false, sending: false });
+        self.setTabBarHidden(false);
       })
       .catch(function (error) {
         if (!self.isCurrentRequest(requestVersion)) return;
@@ -329,6 +391,7 @@ Page({
       historyOpen: false
     });
     this.clearStoredConversation();
+    this.setTabBarHidden(false);
   },
 
   startReassessment: function () {
@@ -358,6 +421,11 @@ Page({
     this.sendMessage(this.data.input, true);
   },
 
+  answerPending: function (event) {
+    if (this.data.sending) return;
+    this.sendMessage(event.currentTarget.dataset.value, true);
+  },
+
   retry: function () {
     if (!this.data.retryMessage || this.data.sending) return;
     this.sendMessage(this.data.retryMessage, false);
@@ -381,7 +449,7 @@ Page({
       id: "user-" + Date.now(),
       role: "user",
       kind: "user",
-      text: message,
+      text: visibleUserText(message),
       displayDate: displayDate(new Date().toISOString())
     }]);
     self.setData({
