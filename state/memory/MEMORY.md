@@ -6,6 +6,7 @@
 
 - [微信小程序上传分层验收与 CLI 服务端口收尾](20260818-wechat-cli-upload-and-closeout.md) — 区分工程检查、上传接口成功与真机/体验版/审核验收，上传后关闭本机服务端口
 - [跨端同构按当前基准逐页有界验证](20260824-cross-platform-parity-bounded-validation.md) — 以当前运行端为唯一基准，逐页设停止线并用分层证据和负向回归防旧版分叉回流
+- [小程序交互命中区与图标几何同源](20260824-miniprogram-hitbox-geometry.md) — 固定视图同时约束视觉与点击范围，用 CSS 几何和正负坐标点击防偏移与误触
 - [报价范围先于产品补全](20260818-scope-authority-before-planning.md) — 只有现行报价 truth 能授权范围，代码缺口和产品建议不自动升级
 - [决策前置化与确定性分流](20260818-decision-prioritization.md) — 可确定、可逆且授权内的直接推进，真实分叉前置给作者
 - [部署目标先核实](20260818-deploy-target-verify.md) — 交叉核对主机、服务、代码栈、数据与 release，不凭旧记录推断
