@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 
+import { ASSESSMENT_QUESTIONS } from "../modules/clinical-rules/assessment-questionnaire.js";
+
 interface CommonJsModule { exports: Record<string, unknown> }
 
 function loadModule(
@@ -45,7 +47,9 @@ function loadPage(
   let definition: PageDefinition | null = null;
   vm.runInNewContext(source, {
     Page: (page: PageDefinition) => { definition = page; },
-    require: (name: string) => modules[name] ?? {},
+    require: (name: string) => name === "../../utils/questionnaire"
+      ? loadModule("utils/questionnaire.js")
+      : modules[name] ?? {},
     wx: wxValue,
     Promise,
     Date,
@@ -568,6 +572,74 @@ test("小程序科普中心支持已发布方案详情和知识库问答入口",
   assert.deepEqual(calls, ["browse plan list", "browse plan show", "agent knowledge ask"]);
 });
 
+test("小程序问助手使用标题栏菜单与聊天记录抽屉，并拒绝旧版横向入口回流", () => {
+  const web = readFileSync(resolve("web/src/App.tsx"), "utf8");
+  const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");
+  const mini = readFileSync(resolve("miniprogram/pages/assistant/index.wxml"), "utf8");
+  const miniStyles = readFileSync(resolve("miniprogram/pages/assistant/index.wxss"), "utf8");
+  const miniConfig = JSON.parse(readFileSync(resolve("miniprogram/pages/assistant/index.json"), "utf8"));
+  const tabBar = readFileSync(resolve("miniprogram/custom-tab-bar/index.wxml"), "utf8");
+  const questionnaire = loadModule("utils/questionnaire.js") as { questions: unknown };
+
+  for (const sharedCopy of ["问问题或描述症状…"]) {
+    assert.ok(web.includes(sharedCopy), `Web 当前问助手基准已变化：${sharedCopy}`);
+    assert.ok(mini.includes(sharedCopy), `小程序问助手未复用 Web 当前文案：${sharedCopy}`);
+  }
+  for (const patientCopy of ["测一测我的鼻敏感情况", "约 2 分钟，回答几个简单问题", "开始测评"]) {
+    assert.ok(mini.includes(patientCopy), `小程序问卷入口缺少患者文案：${patientCopy}`);
+  }
+  for (const sharedClass of ["custom-navigation", "navigation-subtitle", "menu-hitarea", "history-drawer", "new-chat-button", "time-label", "mini-avatar", "start-card", "composer-mascot", "composer-placeholder", "pending-option"]) {
+    assert.ok(mini.includes(sharedClass), `小程序问助手缺少当前结构：${sharedClass}`);
+  }
+  for (const sharedStyle of ["margin: 20rpx 0 32rpx 68rpx", "width: 130rpx", "bottom: calc(108rpx + env(safe-area-inset-bottom))", "bottom: 100%"]) {
+    assert.ok(miniStyles.includes(sharedStyle), `小程序问助手未锁定当前 Web 比例：${sharedStyle}`);
+  }
+  for (const staleCopy of ["安全评估与方案建议", "固定规则优先", "☰ 历史对话", "＋ 新建聊天", "通过对话采集症状", "服务端会继续核对", "内容仅供健康科普与居家管理参考"]) {
+    assert.equal(mini.includes(staleCopy), false, `小程序问助手仍残留旧版独立文案：${staleCopy}`);
+  }
+  assert.ok(mini.includes("聊天记录"), "侧滑抽屉应显示聊天记录标题");
+  assert.ok(mini.includes("暂无聊天记录"), "微信能力不可用时应降级为空历史态");
+  assert.ok(mini.includes("回答由 AI 生成，仅供参考"), "标题栏应说明 AI 回答边界");
+  assert.ok(mini.includes("class=\"start-action\""), "问卷入口应提供明确的开始评估行动按钮");
+  assert.ok(mini.includes('aria-label="新建聊天"'), "侧滑抽屉应提供可访问的新建聊天入口");
+  assert.equal(mini.includes('button class="menu-button"'), false, "标题栏菜单不应使用命中盒可能扩大的原生 button");
+  assert.equal(mini.includes("class=\"send-button\""), false, "小程序端不应显示独立发送按钮");
+  assert.ok(mini.includes("confirm-type=\"send\""), "小程序端应保留键盘发送入口");
+  assert.ok(mini.includes("/assets/assistant-mascot-loop-v2.gif"), "小程序端应使用可循环动画的吉祥物资产");
+  assert.equal(miniStyles.includes("margin-left: 130rpx"), false, "吉祥物站到输入区上沿后不应留下空白占位");
+  assert.equal(miniConfig.navigationBarTitleText, "抗敏先锋");
+  assert.equal(miniConfig.navigationStyle, "custom");
+  assert.ok(tabBar.includes('wx:if="{{!hidden}}"'), "聊天抽屉打开时应能隐藏独立自定义底栏");
+  assert.ok(readFileSync(resolve("miniprogram/custom-tab-bar/index.wxss"), "utf8").includes("translate(-50%,-50%)"), "记录按钮十字应按几何中心绘制");
+  assert.equal(JSON.stringify(questionnaire.questions), JSON.stringify(ASSESSMENT_QUESTIONS));
+  assert.ok(webStyles.includes(".start-card"));
+});
+
+test("小程序聊天记录在微信能力未配置时降级为空态，不暴露环境配置错误", async () => {
+  const api = {
+    command: async (name: string) => {
+      assert.equal(name, "agent conversations list");
+      throw { code: "capability_unavailable", message: "微信登录尚未配置" };
+    }
+  };
+  const page = loadPage("pages/assistant/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { selectTab: () => undefined, errorMessage: () => "不应展示的环境配置错误" }
+  }, {
+    getStorageSync: () => "",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => undefined
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+
+  page.toggleHistory();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.historyLoading, false);
+  assert.equal(page.data.historyUnavailable, true);
+  assert.equal(page.data.historyError, "");
+  assert.equal(page.data.history.length, 0);
+});
+
 test("小程序问助手复用服务端会话，支持首轮评估、续问和结果收口", async () => {
   const calls: Array<{ name: string; input: Record<string, unknown>; options: Record<string, unknown> }> = [];
   const storage: Record<string, string> = {};
@@ -628,12 +700,14 @@ test("小程序问助手复用服务端会话，支持首轮评估、续问和�
   assert.equal(calls[0]?.input.conversationId, undefined);
   assert.equal(page.data.conversationId, "conversation-1");
   assert.equal(page.data.pendingQuestions[0]?.fieldCode, "q1");
+  assert.equal(page.data.pendingQuestions[0]?.title, "您打喷嚏的情况是？");
+  assert.equal(page.data.pendingQuestions[0]?.options[0]?.value, "q1=A");
   assert.equal(storage["kangmin.agent.conversationId"], "conversation-1");
 
-  page.onInput({ detail: { value: "最近鼻塞比较明显" } });
-  page.sendCurrent();
+  page.answerPending({ currentTarget: { dataset: { value: "q1=A" } } });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(calls[1]?.input.conversationId, "conversation-1");
+  assert.equal(calls[1]?.input.message, "q1=A");
   assert.equal(calls[1]?.input.startMode, undefined);
   assert.equal(page.data.conversationState, "completed");
   assert.equal(page.data.followUpEnabled, true);
@@ -684,13 +758,17 @@ test("小程序问助手恢复历史时只展示患者可读内容，并保留�
   assert.deepEqual(calls, ["agent conversations show"]);
   assert.equal(page.data.conversationState, "active");
   assert.equal(page.data.pendingQuestions[0]?.fieldCode, "q2");
-  assert.equal(page.data.messages.some((item: any) => item.text === "第 1 题：选择 A"), true);
+  assert.equal(page.data.messages.some((item: any) => item.text === "频繁打喷嚏，一次连续数个至十几个"), true);
+  assert.equal(page.data.messages.some((item: any) => item.text === "第 1 题：选择 A"), false);
   assert.equal(page.data.messages.some((item: any) => item.text === "q1=A"), false);
 
   page.toggleHistory();
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.deepEqual(calls, ["agent conversations show", "agent conversations list"]);
   assert.equal(page.data.history[0]?.stateLabel, "进行中");
+  assert.equal(page.data.historyOpen, true);
+  page.closeHistory();
+  assert.equal(page.data.historyOpen, false);
 });
 
 test("小程序问助手失败时移除思考态、保留输入并提供安全重试", async () => {

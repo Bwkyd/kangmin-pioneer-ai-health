@@ -1,1 +1,4 @@
-{ "navigationBarTitleText": "问助手" }
+{
+  "navigationStyle": "custom",
+  "navigationBarTitleText": "抗敏先锋"
+}

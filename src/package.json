@@ -11,7 +11,7 @@
     "kangmin-admin": "./dist/cli/kangmin-admin.js"
   },
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && vite build web",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && vite build web",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
     "lint": "node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs",
     "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",

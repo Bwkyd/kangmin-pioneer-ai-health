@@ -12,4 +12,6 @@
 .nav-profile::before { content: ""; position: absolute; left: 12rpx; top: 3rpx; width: 10rpx; height: 10rpx; border: 3rpx solid currentColor; border-radius: 50%; }
 .nav-profile::after { content: ""; position: absolute; left: 5rpx; bottom: 2rpx; width: 25rpx; height: 15rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-bottom: 0; border-radius: 18rpx 18rpx 3rpx 3rpx; }
 .action { transform: translateY(-18rpx); color: #1e5aa3; }
-.action .glyph { display: flex; width: 82rpx; height: 82rpx; margin-bottom: 1rpx; align-items: center; justify-content: center; box-sizing: border-box; border: 7rpx solid #f3f6fb; border-radius: 50%; color: #fff; background: #1e5aa3; font-size: 54rpx; font-weight: 300; line-height: 1; box-shadow: 0 9rpx 24rpx rgba(30,90,163,.24); }
+.action .glyph { display: block; width: 82rpx; height: 82rpx; margin-bottom: 1rpx; box-sizing: border-box; border: 7rpx solid #f3f6fb; border-radius: 50%; color: #fff; background: #1e5aa3; font-size: 0; box-shadow: 0 9rpx 24rpx rgba(30,90,163,.24); }
+.action .glyph::before, .action .glyph::after { content: ""; position: absolute; left: 50%; top: 50%; width: 34rpx; height: 4rpx; border-radius: 4rpx; background: #fff; transform: translate(-50%,-50%); }
+.action .glyph::after { transform: translate(-50%,-50%) rotate(90deg); }
