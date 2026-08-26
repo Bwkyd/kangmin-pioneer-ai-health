@@ -2,7 +2,7 @@
 
 <meta>
   <document-id>km-real</document-id>
-  <version>1.1.22</version>
+  <version>1.1.23</version>
   <project>kangmin · 抗敏先锋 AI 鼻健康管理系统</project>
   <type>Reality Constraints</type>
   <created>2026-08-13</created>
@@ -64,8 +64,10 @@
   精简并适配窄屏；视频内容操作已统一为患者端预览，并限制竖屏视频在后台弹层中的视口占用；
   视频列表支持按搜索、分类和状态筛选后的每页 20 条分页；一级素材库入口已隐藏，文章正文
   图片/附件、文章封面、视频文件和视频封面可直接在对应业务表单上传，底层文件与引用保持。
+  AI 知识资料已按上传、自动索引、单资料检索测试和运营明确启用组成连续任务；换文件保留
+  知识 ID、原子替换正文与向量并重置旧启用状态，知识列表同样按每页 20 条分页。
   当前 release 为
-  `inline-uploads-7c19bcb`，公网入口为
+  `knowledge-lifecycle-0f4527f`，公网入口为
   `https://140.143.120.176`。
   托管 PostgreSQL、COS、正式微信身份链路和其他
   正式云资源由客户支付尾款后购买并部署，当前不为此提前扩建。

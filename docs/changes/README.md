@@ -30,8 +30,9 @@
 | [008](ops/008_admin-video-pagination-deploy.md) | 2026-08-26 | 管理后台视频列表分页部署 |
 | [009](ops/009_admin-ai-knowledge-terminology-deploy.md) | 2026-08-26 | 管理后台 AI 知识库术语部署 |
 | [010](ops/010_admin-inline-uploads-deploy.md) | 2026-08-26 | 管理后台文章与视频表单内上传部署 |
+| [011](ops/011_admin-knowledge-lifecycle-deploy.md) | 2026-08-26 | 管理后台知识资料生命周期部署 |
 
-下一份生产操作编号从 `011` 开始。
+下一份生产操作编号从 `012` 开始。
 
 ## 故障复盘
 

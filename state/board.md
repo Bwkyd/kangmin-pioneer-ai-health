@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 AI 知识资料生命周期已合并、部署并关闭 Issue（2026-08-26 第216轮 · `main@0f4527f`）
+> Issue #276 实现 PR #292 的 `quality`、`image` CI 全绿后 squash 合并为 `0f4527f`，源提交与合并提交文件树一致，Issue 自动关闭。完整门禁、真实浏览器 E2E、sequential-thinking 与 `km-review` 已验证原子换文件、患者 enabled 门禁、全库旧命中不串入单资料任务、25 条分页和旧业务回归，P0–P2 为 0。
+> 候选 release 在 8788 使用正式库副本真实贯通两次上传、创建、索引、隔离测试、明确启用、换文件后全库排除、重新启用和反向删除后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-174933-before-knowledge-lifecycle-0f4527f.sqlite`，原子切换到 `/srv/kangmin-cli/releases/knowledge-lifecycle-0f4527f`。应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，23 项迁移及 `22/11/21/136/136/51/15/26` 计数不变；公网首页、后台、`/live` 为 200，JS/CSS 哈希与合并构建一致。`/ready=503` 仍只因既有加密密钥未配置；详细记录见 `docs/changes/ops/011_admin-knowledge-lifecycle-deploy.md`。
+
 > ## 🔄 AI 知识资料改为连续生命周期任务（2026-08-26 第215轮 · 基线 `main@5264455`，待提交）
 > 按 Issue #276 只处理服务/API 原子换文件、连续知识任务、唯一生命周期主操作与 20 条分页、双端回归四个实体。新增知识一次填写名称、来源、目录和文件，自动建索引后只测试当前资料，再由运营明确启用；列表每条仅突出当前唯一下一步，修改信息、换文件、移动与删除收进更多操作。换文件保留知识 ID，事务替换素材元数据、正文分块和向量，旧启用状态必重置；缺失素材保持旧知识不变，解析失败安全停用。
 > `$km-review` 首轮发现全库旧命中可串入新增/换文件任务这一 P1，已在两个任务边界清空查询证据，并补两种先全库命中后的禁用断言；sequential-thinking 六步复核原子性、证据作用域、患者 enabled 门禁与旧功能变式后 P0–P2 清零，详见 `docs/reviews/028_admin-knowledge-lifecycle-review.md`。Node 22.23.1 下完整 `src` 门禁 430 项中 352 通过、78 项因未配置 PostgreSQL/S3 按约定跳过、0 失败；真实浏览器 E2E 贯通 25 条分页、创建、自动索引、隔离测试、显式启用、换文件上传失败同文件重试、移动、停用、删除和患者/内容旧闭环；清单、结构、差异格式和敏感信息扫描通过。尚待 PR CI、合并、生产预演与部署后验证。
