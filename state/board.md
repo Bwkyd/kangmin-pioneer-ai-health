@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 内容分类注册表已部署并上传小程序开发版（2026-08-26 第224轮 · `main@bf44d26`）
+> Issue #284 的 PR #300 第二轮 `quality`（PostgreSQL 16、S3、完整门禁）与 `image` CI 全绿后 squash 合并，Issue 自动关闭；至此 GitHub 开放 Issue 已清零。文章稳定为面向全部人群的唯一分类“科普文章”，时间只排序；视频使用服务端人群、方案类别、细分类树和显式多关联，Web、小程序及旧版管理端共用稳定 ID。
+> 候选库迁移到 `0022_content_category_registry`，20 个节点、38 条视频关联、26 条迁移报告全部成功，存量视频 ID/发布/可见状态哈希不变。正式备份 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260826-225521-before-category-registry-bf44d26.sqlite` 后原子切换到 `/srv/kangmin-cli/releases/category-registry-bf44d26`；应用/Nginx active、`NRestarts=0`、正式库 `quick_check=ok`，公网 HTTPS 与生产 Chromium 患者端/旧版后台冒烟通过。`/ready=503` 仍只因既有加密密钥未配置。微信官方 CLI 预览编译成功并上传开发版 `0.1.13`；不扩大为体验版、真机、审核或正式发布。详细记录见 `docs/changes/ops/015_content-category-registry-deploy.md`。
+
 > ## 🧱 文章与视频分类统一为服务端稳定注册表（2026-08-26 第223轮 · 基线 `main@90b0325`，待提交）
 > 按 Issue #284 在四实体内完成服务端分类注册表、文章/视频关联、管理后台选择器、Web/小程序消费。作者确认文章仅有 `article-general`“科普文章”，面向全部人群且无子分类，时间只排序；视频树与 26 项精确多分类关联服从 `视频大全.md`。写接口只接受稳定 ID，文章单选、视频按“人群→方案类别→细分类”浏览并显式多选，草稿可空，发布对缺失、非法、停用、非叶节点和类型不符 fail-closed；两患者端删除硬编码目录和标题猜测，列表按 ID 筛选并实时显示完整路径，分类改名不丢关联。
 > SQLite/PostgreSQL 同步增加迁移与可复核报告；所有文章因作者确认只有一个分类而唯一迁入 `article-general`，视频仅按精确 truth 标题迁移，未命中视频保留内容和报告但自动下架，人工选择后才能恢复。sequential-thinking 六步与 `km-review` 发现并修复“未决旧发布视频仍可直达”和“旧文章字符串导致误下架”变式，最终 P0–P2 为 0，详见 `docs/reviews/032_content-category-registry-review.md`。类型、架构、小程序检查、分类/迁移窄测和真实浏览器文章/视频新增编辑发布下架、双视口、多选及旧功能闭环通过；本机 PostgreSQL 测试因未配置 URL 跳过，等待 GitHub CI 的 PostgreSQL 16 强制验证。尚待最终全门禁、PR、CI、合并、生产迁移预演、部署复核与关闭 #284。
