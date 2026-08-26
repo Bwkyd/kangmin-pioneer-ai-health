@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 三层管理工作台已合并、部署并关闭 Issue（2026-08-26 第220轮 · `main@3dc46cf`）
+> Issue #281 实现 PR #296 的 `quality`（3 分 15 秒）与 `image`（39 秒）CI 全绿后 squash 合并为 `3dc46cf`，源提交与合并提交文件树一致，Issue 自动关闭。完整门禁、开启截图的双视口 E2E、sequential-thinking 与 `$km-review` 已验证服务端权威待办、三条直接新建、四类内容概览和旧业务闭环，修复同步前伪零这一项 P1 后 P0–P2 为 0。
+> 候选 release 在 8788 使用正式库与媒体副本真实回读文章、视频、消息和 AI 知识列表后，生成正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-183848-before-workbench-3dc46cf.sqlite`，原子切换到 `/srv/kangmin-cli/releases/workbench-3dc46cf`。应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，23 项迁移及 `22/11/21/136/136/51/15/26` 计数不变；公网 HTTPS 首页、后台、`/live` 为 200，JS/CSS 哈希与合并构建一致并命中新文案。`/ready=503` 仍只因既有加密密钥未配置；8788、候选数据、媒体副本和服务器传输包已清理，详细记录见 `docs/changes/ops/013_admin-workbench-deploy.md`。
+
 > ## 🧭 管理后台工作台收敛为三层任务入口（2026-08-26 第219轮 · 基线 `main@3cdba1a`，待提交）
 > 按 Issue #281 只处理页头与三层布局、服务端权威今日待办、三条直接新建流程、内容概览与响应式回归四个实体。工作台现在按“今日待办 → 快捷新建 → 内容概览”排列，移除大欢迎横幅、五张等权统计、素材指标和重复发布链路；文章、视频、AI 知识快捷入口直接打开对应新建任务，概览独立显示文章、视频、知识、消息数量与状态，并保留“建立索引且启用后才参与 AI 问答”的边界。
 > sequential-thinking 五步元反思和 `$km-review` 三视角发现首批服务端请求完成前会短暂伪报“数据已同步”这一项 P1，已改为成功回读全部列表后才渲染权威数据，最终 P0–P2 为 0，详见 `docs/reviews/030_admin-workbench-simplification-review.md`。`cd src && npm run check` 全绿；浏览器 E2E 在 390×844 验证无横向溢出、三条直接新建，在 1440×900 验证三个主区块完整可见，并贯通既有文章、视频、消息、知识和文件管理闭环；截图版 E2E 同样通过。清单和差异格式通过；隔离 worktree 的结构检查只因被忽略的私有 `vault/raw`、`vault/truth`、`vault/style` 不存在而失败，合并后需在主工作区复跑。尚待提交、PR CI、合并、生产预演、部署复核和关闭 #281。
