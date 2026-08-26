@@ -258,28 +258,28 @@ function Overview({ articles, videos, messages, knowledge, media, onNavigate }: 
           ? "索引已完成，启用后参与检索"
           : "建立索引后才能启用检索";
   const tasks: Array<{ section: Section; focus: SectionFocus; icon: string; title: string; detail: string; count: number; action: string; tone: string }> = [
-    { section: "article", focus: "draft", icon: "文", title: "文章草稿", detail: "完成校验后再发布到小程序", count: articleDrafts, action: "处理文章", tone: "blue" },
+    { section: "article", focus: "draft", icon: "文", title: "文章草稿", detail: "预览效果后再发布到小程序", count: articleDrafts, action: "处理文章", tone: "blue" },
     { section: "video", focus: "draft", icon: "播", title: "视频草稿", detail: "确认素材和说明后再上架", count: videoDrafts, action: "处理视频", tone: "blue" },
     { section: "knowledge", focus: knowledgeFocus, icon: "知", title: "知识索引", detail: knowledgeDetail, count: knowledgeFailed + knowledgeProcessing + knowledgeIndexed, action: "处理知识", tone: knowledgeFailed > 0 ? "red" : "amber" },
     { section: "message", focus: "draft", icon: "信", title: "站内消息草稿", detail: "发布后登录用户可在消息中心看到", count: messageDrafts, action: "处理消息", tone: "green" }
   ];
   const activeTasks = tasks.filter((task) => task.count > 0);
   const deliveryCards: Array<{ section: Section; icon: string; title: string; detail: string; count: string }> = [
-    { section: "article", icon: "文", title: "文章与推送", detail: "编辑、校验、上架；需要通知时进入站内消息。", count: `${articles.length} 条文章` },
-    { section: "video", icon: "播", title: "视频内容", detail: "先上传素材，再编辑说明、校验和上架。", count: `${videos.length} 条视频` },
+    { section: "article", icon: "文", title: "文章与推送", detail: "编辑、预览、上架；需要通知时进入站内消息。", count: `${articles.length} 条文章` },
+    { section: "video", icon: "播", title: "视频内容", detail: "先上传素材，再编辑说明、预览和上架。", count: `${videos.length} 条视频` },
     { section: "knowledge", icon: "知", title: "智能体知识库", detail: "资料只有建立索引并启用后才参与检索。", count: `${knowledge.filter((item) => item.status === "enabled").length} 条已启用` }
   ];
   return <div className="admin-overview">
     <section className="welcome-card">
-      <div className="welcome-copy"><div className="welcome-eyebrow"><span>●</span> 内容运营 / 小程序同步</div><h2>今天先处理最重要的任务</h2><p>从待办开始，完成文章、视频和知识资料的准备、校验与受控生效。每一步都回读服务端状态。</p></div>
-      <div className="welcome-flow" aria-label="内容发布链路"><small>发布链路</small><div className="flow-track"><span className="flow-node active">01</span><i></i><span className="flow-node">02</span><i></i><span className="flow-node">03</span></div><div className="flow-labels"><span><strong>准备</strong><small>编辑内容</small></span><span><strong>校验</strong><small>完成校验</small></span><span><strong>发布</strong><small>用户可见</small></span></div></div>
+      <div className="welcome-copy"><div className="welcome-eyebrow"><span>●</span> 内容运营 / 小程序同步</div><h2>今天先处理最重要的任务</h2><p>从待办开始，完成文章、视频和知识资料的准备、预览与受控生效。每一步都回读服务端状态。</p></div>
+      <div className="welcome-flow" aria-label="内容发布链路"><small>发布链路</small><div className="flow-track"><span className="flow-node active">01</span><i></i><span className="flow-node">02</span><i></i><span className="flow-node">03</span></div><div className="flow-labels"><span><strong>准备</strong><small>编辑内容</small></span><span><strong>预览</strong><small>确认效果</small></span><span><strong>发布</strong><small>用户可见</small></span></div></div>
     </section>
     <section className="stat-grid"><Stat icon="待" label="待处理任务" value={attentionTotal} tone={attentionTotal > 0 ? "amber" : "green"}/><Stat icon="发" label="已发布内容" value={published} tone="green"/><Stat icon="信" label="已发布消息" value={messages.filter((item) => item.status === "published").length} tone="green"/><Stat icon="知" label="启用知识" value={knowledge.filter((item) => item.status === "enabled").length} tone="blue"/><Stat icon="材" label="可用素材" value={media.filter((item) => item.status === "ready").length} tone="blue"/></section>
     <section className="workbench-grid">
       <article className="queue-card"><div className="card-heading"><div><h2>今天先处理</h2><p>只显示需要操作者继续动作的状态。</p></div><span className={`queue-count ${attentionTotal > 0 ? "attention" : "clear"}`}>{attentionTotal}</span></div>{activeTasks.length === 0 ? <div className="queue-empty"><strong>当前没有待处理任务</strong><span>文章、视频和知识库都处于可继续工作的状态。</span></div> : <div className="task-list">{activeTasks.map((task) => <button className="task-row" key={task.section} onClick={() => onNavigate(task.section, task.focus)}><span className={`task-mark ${task.tone}`}>{task.icon}</span><span className="task-copy"><strong>{task.title}<em>{task.count}</em></strong><small>{task.detail}</small></span><span className="task-action">{task.action} →</span></button>)}</div>}</article>
       <article className="delivery-card"><div className="card-heading"><div><h2>从内容开始</h2><p>文章、视频和知识库，从这里进入处理。</p></div><span className="sync-badge"><i></i> 服务端同步</span></div><div className="delivery-links">{deliveryCards.map((card) => <button className="delivery-link" key={card.section} onClick={() => onNavigate(card.section)}><span className="task-mark blue">{card.icon}</span><span><strong>{card.title}</strong><small>{card.detail}</small><em>{card.count} · 进入处理 →</em></span></button>)}</div></article>
     </section>
-    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 边界清晰</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与校验</strong><p>文章、视频和站内消息在后台完成内容准备；素材与知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，站内消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>知识资料建立索引并启用后，才会参与智能体检索；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
+    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 边界清晰</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与预览</strong><p>文章、视频和站内消息在后台完成内容准备；素材与知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，站内消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>知识资料建立索引并启用后，才会参与智能体检索；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
   </div>;
 }
 
@@ -592,7 +592,7 @@ function ContentManager({
     await run(async () => {
       const data = await adminCommand<ContentPreview>("content " + kind + " preview", { id: item.id });
       setPreviewItem(data);
-    }, "患者端预览已打开，请查看发布校验结果");
+    }, "患者端预览已打开");
   }
 
   async function toggle(item: ContentItem) {
@@ -817,7 +817,7 @@ function PatientContentPreview({ item, onClose }: { item: ContentPreview; onClos
 
 function ContentTable({ items, emptyText, busy, onEdit, onPreview, onToggle }: { items: ContentItem[]; emptyText: string; busy: boolean; onEdit: (item: ContentItem) => void; onPreview: (item: ContentItem) => Promise<void>; onToggle: (item: ContentItem) => Promise<void> }) {
   if (items.length === 0) return <Empty icon="稿" title={emptyText} text={emptyText === "还没有内容" ? "先新增一条草稿，确认展示效果后再发布。" : "调整搜索词或状态筛选后继续。"}/>;
-  return <div className="table-wrap"><table><thead><tr><th>内容</th><th>分类</th><th>状态 / 下一步</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || "暂无摘要"}</small></td><td>{item.category || "未分类"}</td><td><span className={`status ${item.status}`}>{contentStatusLabels[item.status]}</span><small className="next-step">{item.status === "draft" ? "下一步：校验并发布" : item.status === "published" ? "用户端当前可见" : "需要时重新校验并发布"}</small></td><td>{new Date(item.updatedAt).toLocaleString("zh-CN")}</td><td className="row-actions"><button disabled={busy} onClick={() => onEdit(item)}>编辑</button><button disabled={busy} onClick={() => void onPreview(item)}>校验</button><button disabled={busy} onClick={() => void onToggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>;
+  return <div className="table-wrap"><table><thead><tr><th>内容</th><th>分类</th><th>状态 / 下一步</th><th>更新时间</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || "暂无摘要"}</small></td><td>{item.category || "未分类"}</td><td><span className={`status ${item.status}`}>{contentStatusLabels[item.status]}</span><small className="next-step">{item.status === "draft" ? "下一步：预览并发布" : item.status === "published" ? "用户端当前可见" : "需要时重新预览并发布"}</small></td><td>{new Date(item.updatedAt).toLocaleString("zh-CN")}</td><td className="row-actions"><button disabled={busy} onClick={() => onEdit(item)}>编辑</button><button disabled={busy} onClick={() => void onPreview(item)}>预览</button><button disabled={busy} onClick={() => void onToggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>;
 }
 
 function MessageManager({ items, busy, run, initialStatusFilter }: { items: MessageItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; initialStatusFilter: ContentStatusFilter }) {

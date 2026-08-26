@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🎬 管理后台视频预览收进视口并统一预览文案（2026-08-26 第206轮 · 基线 `main@bfca852`，待提交）
+> 根据作者截图修复管理后台视频预览：后台预览样式为视频增加 `560px` 宽度上限、`min(50vh, 480px)` 高度上限和 `object-fit: contain`，竖屏视频不再撑满或超出当前视口，画面保持完整；封面图片同步限制在预览容器内。内容列表按钮、下一步提示、工作台发布链路和相关说明由“校验”统一改为符合实际动作的“预览”，服务端真实发布前校验及结果提示继续保留。
+> sequential-thinking 八步元反思与 `km-review` 三视角发现首版只证明 CSS 规则存在、未证明实际视口边界这一 P2，已补移动端 `390×844`、桌面端 `1440×1000` 的计算高度、实际宽高和不裁切断言，并锁定旧“校验”按钮消失而发布前校验提示保留；结论归档于 `docs/reviews/024_admin-video-preview-meta-review.md`，P0/P1/P2 清零。`cd src && npm run check` 全量通过，包含类型、架构、小程序检查、构建、单元/契约测试与真实浏览器 E2E；`legacy` 127/127 通过，保留 4 条既有图片优化 warning 和 2 项 moderate 依赖审计提示。作者原件 `hi.md` 保持未跟踪、未修改；本轮未提交、推送、部署或改动外部状态。
+
 > ## ✅ 知识库界面任务完成关闭前审计（2026-08-26 第205轮 · 基线 `main@0962bd7`，待提交）
 > 结束对话前重新从 Git、GitHub、服务器与仓内状态核验：`main` 与 `origin/main` 同为 `0962bd7`，PR #272/#273 已合并，本地只剩 `main` 和一个根 worktree，GitHub 无本轮任务分支；线上仍为 `/srv/kangmin-cli/releases/knowledge-ui-fc2f992`，应用与 Nginx active、`NRestarts=0`。作者原件 `hi.md` 继续保持未跟踪、未修改，旧 release 与数据库备份按回滚材料保留。
 > sequential-thinking 七步收尾审计确认实现、CI、部署、回滚点、`ops/006`、`.42cog/real.md` 与第204轮状态均已闭环，无需新增重复变更文档。把本轮两个经证据复核的变式并入既有长期记忆：部署后人工复核也必须从 systemd 配置解析数据库等运行路径，并区分验证器错误与系统故障；squash 合并清理必须同时核对 PR、无未提交文件和源/合并文件树等价，才可强制删除非祖先源分支。两份记忆按最后更新日期改名并同步索引；一次性 SHA、数量和服务器路径仍只留在 board/ops。`km-review` 的患者、工程和医学安全三视角 P0–P2 为 0；清单、记忆索引、旧引用、差异格式和敏感信息扫描通过，结构检查仍只被两个任务前已有的 `_work` 目录命名阻断。待记忆 PR 合并和分支清理后，使用 `save-codex-chat` 把对话保存到 Git 忽略的 `chats/codex/`，不纳入版本控制。
