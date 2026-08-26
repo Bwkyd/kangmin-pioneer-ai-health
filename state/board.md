@@ -3,6 +3,9 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧠 对话结束前完成状态、记忆与清理复核（2026-08-27 第232轮 · 基线 `main@71473d3`，待提交）
+> 按作者结束会话指令重新回读 GitHub 与本地：#304 closed，PR #314/#315/#316 merged；本地只剩 `main` 一个 worktree，远端除 `main` 外仅有仍对应开放 PR #261/#262 的两条 Dependabot 分支，未误删他人未合并成果；仓库没有 CNB remote。`hi.md` 继续保持未跟踪、未修改。长期记忆新增“演化基线只能收紧不能复用旧额度”，并把既有 squash 清理记忆补充为：手动 `workflow_dispatch` 全绿不能冒充 required PR check，必须等真实 `pull_request` check 挂载后再合并，禁止伪造或绕过保护。本记录分支约定合并后自动删除；最终在 `main` 上再次核对分支、worktree、状态与对话导出结果。
+
 > ## 🧹 演化门禁任务分支与 worktree 已清理（2026-08-27 第231轮 · 基线 `main@97954a3`，待提交）
 > PR #315 自动 CI `quality`（3 分 21 秒）与 `image`（46 秒）全绿后合并为 `97954a3`。实现、替代和收尾的 GitHub 远端分支、本地分支及 `/Users/chenqiqiang/work/kangmin-wt-evolution-guard` 均已删除；清理前逐一确认 PR #314/#315 已合并、两组 squash 源树与合并树完全一致、任务 worktree 无未提交成果。本记录分支约定由合并动作自动删除。根工作区 `main=origin/main=97954a3`，只保留作者未跟踪原件 `hi.md`。仓库只配置 GitHub `origin`，没有 CNB remote，因此不存在 CNB 任务分支可清理。
 

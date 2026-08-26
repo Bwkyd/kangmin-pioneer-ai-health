@@ -13,7 +13,8 @@
 - [决策前置化与确定性分流](20260818-decision-prioritization.md) — 可确定、可逆且授权内的直接推进，真实分叉前置给作者
 - [部署目标与运行路径先核实](20260826-deploy-target-verify.md) — 从 systemd 实际配置解析服务、代码、数据与 release，后验验证不重新猜路径
 - [智能体调研先定角色：患者科普问答型](20260818-agent-lens-patient-qa.md) — 规则与 truth 负责裁决，知识库只提供检索依据，模型不自主诊断
-- [清理前核对主状态与 squash 等价性](20260826-reconcile-local-board-before-cleanup.md) — worktree 收尾前核对主状态、PR 与文件树等价，再安全清理 squash 源分支
+- [清理前核对主状态与 squash 等价性](20260827-reconcile-local-board-before-cleanup.md) — worktree 收尾前核对主状态、PR、required check 与文件树等价，再安全清理 squash 源分支
+- [演化基线只能收紧不能复用旧额度](20260827-evolution-baseline-tightening.md) — 存量例外带责任与期限，新增守线、存量不增长、改善即收紧，并用已暂存负例验证门禁真会失败
 - [管理后台可见文案全量盘点](20260818-admin-copy-surface-inventory.md) — 后台命名调整覆盖所有可见表面，并用正向与旧术语负向回归锁定
 - [管理后台按运营任务组织而非暴露基础设施](20260826-admin-task-oriented-information-architecture.md) — 一级入口对应运营任务，存储、索引和引用管理留在流程内部或二级入口，并让分页保留任务上下文
 - [患者内容分类必须显式归属](20260826-explicit-content-category-authority.md) — 后台与患者端共用稳定分类标识；运行时禁止标题猜测，迁移未决项失败关闭
