@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 📤 素材上传收进文章与视频任务（2026-08-26 第213轮 · 基线 `main@31c7e9f`，待提交）
+> 作为 Issue #279 的有界子轮，本轮只处理一级导航、文章图片/附件、视频文件/封面和上传回归四个实体：侧栏隐藏素材库一级入口，底层 media section、存储和引用保持；文章/视频表单内直接上传正文图片或附件、封面、视频文件，并以内联状态显示上传中、成功文件名或失败后重试，具体失败原因继续由当前页面 toast 展示。工作台素材指标、二级文件管理和 AI 知识闭环留给后续依赖子轮，#279 本轮不关闭。
+> sequential-thinking 六步元反思发现首版误把正文附件收窄为仅图片这一 P2，已恢复 PDF、Word、Markdown、TXT 接受范围与链接插入；`km-review` 患者可懂性、工程事实和医学安全三视角复核后 P0–P2 为 0，详见 `docs/reviews/027_admin-inline-upload-review.md`。Node 22.23.1 下 `cd src && npm run check` 全绿；真实浏览器 E2E 不经过素材页，从文章表单完成正文图、封面首次失败和同文件重试，从视频表单完成视频与封面上传，并验证患者预览、既有附件能力、知识生命周期和患者端旧闭环。尚未提交、推送、创建 PR、合并或部署。
+
 > ## 🚀 “AI知识库”术语已合并、部署并关闭 Issue（2026-08-26 第212轮 · `main@fb4536e`）
 > Issue #278 实现 PR #288 的 `quality`、`image` CI 全绿后 squash 合并为 `fb4536e`，Issue 自动关闭；源提交与合并提交文件树一致。完整 `src` 门禁、真实浏览器 E2E、清单、结构、差异格式和密钥扫描通过；sequential-thinking 与 `km-review` 检查运营术语变式、窄屏几何、素材职责和知识生命周期后 P0–P2 为 0。
 > 候选 release 在 8788 使用正式库副本贯通真实管理命令、后台页面与新术语资源后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-165554-before-ai-knowledge-fb4536e.sqlite`，并原子切换到 `/srv/kangmin-cli/releases/ai-knowledge-fb4536e`；发布包 SHA-256 为 `17409db26fec86e2e2fbdebe89bfc675130d02ff3076407ec01bf43d7ff25dc0`。切换后应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，数据计数 `22/11/21/136/136/51/15/26` 与切换前一致；公网首页、后台、`/live` 为 200，管理 JS 与合并构建逐字节一致。`/ready=503` 仍只因既有加密密钥未配置；8788、预演库、日志和传输制品已清理，旧 release 与正式备份保留回滚。详细记录见 `docs/changes/ops/009_admin-ai-knowledge-terminology-deploy.md`。
