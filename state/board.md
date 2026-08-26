@@ -3,9 +3,13 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 知识目录任务完成最终收尾审计（2026-08-26 第202轮 · 基线 `main@2cd43d3`，待提交）
+> 按作者要求调用 sequential-thinking 做六步收尾审计，并用 `km-review` 隔离患者可懂性、工程事实和医学安全三视角复核。审计确认 ops/005 已完整承载部署、回滚和限制，无需重复建档；发现 `.42cog/real.md` 仍指向旧 release，现更新为线上实测的 `knowledge-folders-dcc91d9` 并登记知识三级目录能力。将本轮已复现、修复并由真实 CLI E2E 验证的教训沉淀为“深层 CLI 命令必须走真实进程验收”，要求最长合法前缀解析、真实退出码/回读、负向路径和候选制品预演，避免应用层测试再次制造假绿。
+> 进入本轮审计前重新核验三个实现/修复/部署记录 PR 均已合并，源分支树与 squash 合并树逐一一致；当时本地只保留 `main` 和根 worktree，GitHub 任务分支均不存在，CNB 登录有效但无本项目仓库。生产 release、SQLite 备份和旧 release 回滚点按规则保留，任务候选 release、传输包、预演数据和本机预览进程均已清理；正式库 `quick_check=ok`、目录临时数据为 0，公网首页、后台和 `/live` 为 200，`/ready=503` 仍仅为既有加密密钥未配置。作者原件 `hi.md` 保持未跟踪、未修改；本轮状态、演化记录与记忆合并、收尾分支清理后，将完整对话快照保存到已忽略的 `chats/`。
+
 > ## 🚀 管理后台知识目录树已合并、部署并完成公网实测（2026-08-26 第201轮 · `main@dcc91d9`）
 > 实现 PR #268 与 CLI 修复 PR #269 的 `quality`、`image` CI 均全绿，分别 squash 合并为 `1d16bd9`、`dcc91d9`；部署前完整 `src` 门禁 425 项中 348 通过、77 项因未配置 PostgreSQL/S3 跳过、0 失败，`legacy` 127/127、真实浏览器 E2E、差异密钥扫描和 `km-review` 三视角 P0–P2 清零。线上库副本 8788 预演贯通迁移、资源和真实 CLI 目录 CRUD 后，正式备份为 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-123047-before-knowledge-folders-dcc91d9.sqlite`，原子切换到 `/srv/kangmin-cli/releases/knowledge-folders-dcc91d9`；发布包 SHA-256 为 `7fe5bfbc8406c7f33f4b8887f3b34f7c31f0afe261cbd1c5b541253ef6fc58b1`，旧 release 保留回滚。
-> 切换后 systemd `active/running`、`NRestarts=0`，公网首页、`/admin`、`/live` 均为 200，管理资源哈希与 release 一致。公网管理命令真实完成三级目录创建、第四级拒绝、反向删除和临时会话注销；正式库 `quick_check=ok`，`0021_knowledge_folders` 已应用，知识/分块/向量保持 `21/136/136`，临时目录残留 0，8788 已关闭。`/ready=503` 仍只因试用环境既有加密密钥未配置；Node 日志另有 SQLite 实验性提示，无新增业务异常。部署事实归档于 `docs/changes/ops/005_admin-knowledge-folder-deploy.md`；CNB CLI 已核验账号下无本项目仓库，故没有 CNB 分支可清理。待本轮文档 PR/CI 合并后清理本地 worktree、任务分支和临时制品。
+> 切换后 systemd `active/running`、`NRestarts=0`，公网首页、`/admin`、`/live` 均为 200，管理资源哈希与 release 一致。公网管理命令真实完成三级目录创建、第四级拒绝、反向删除和临时会话注销；正式库 `quick_check=ok`，`0021_knowledge_folders` 已应用，知识/分块/向量保持 `21/136/136`，临时目录残留 0，8788 已关闭。`/ready=503` 仍只因试用环境既有加密密钥未配置；Node 日志另有 SQLite 实验性提示，无新增业务异常。部署事实已通过 PR #270 归档于 `docs/changes/ops/005_admin-knowledge-folder-deploy.md` 并合并为 `main@2cd43d3`；本地 worktree、三个任务分支、GitHub 远端分支及临时发布物均已清理。CNB CLI 已核验账号下无本项目仓库，故没有 CNB 分支可清理。
 
 > ## 🔧 部署预演补齐知识目录 CLI 真入口（2026-08-26 第200轮 · 基线 `main@1d16bd9`，待提交）
 > PR #268 的 `quality`（3 分 21 秒）与 `image`（43 秒）全绿后 squash 合并为 `main@1d16bd9`，GitHub 任务分支已删除。腾讯云目标的服务、release、SQLite、回滚目录和磁盘经只读核验与 runbook 一致；合并制品 SHA-256 为 `1c601589f916aaec159c6ac5cf058ffb6cdbb51b6a5a3fb9250317f9894c141f`，但 8788 线上库副本预演在目录 CRUD 前发现真实 CLI 只拼三段命令，导致 `agent knowledge folder create` 四段命令不可达，故未切换 8787。
