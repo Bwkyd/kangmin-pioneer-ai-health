@@ -33,8 +33,9 @@
 | [011](ops/011_admin-knowledge-lifecycle-deploy.md) | 2026-08-26 | 管理后台知识资料生命周期部署 |
 | [012](ops/012_admin-file-management-deploy.md) | 2026-08-26 | 管理后台二级文件管理部署 |
 | [013](ops/013_admin-workbench-deploy.md) | 2026-08-26 | 管理后台工作台精简部署 |
+| [014](ops/014_learning-parity-deploy.md) | 2026-08-26 | 学一学人群分类修复与小程序开发版上传 |
 
-下一份生产操作编号从 `014` 开始。
+下一份生产操作编号从 `015` 开始。
 
 ## 故障复盘
 
