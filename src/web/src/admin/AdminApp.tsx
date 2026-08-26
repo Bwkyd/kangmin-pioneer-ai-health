@@ -112,7 +112,7 @@ const navigation: Array<{ key: Section; label: string; icon: string }> = [
 ];
 
 const deliveryNavigation = navigation.filter((item) => item.key === "article" || item.key === "video" || item.key === "knowledge");
-const supportNavigation = navigation.filter((item) => item.key === "message" || item.key === "media");
+const supportNavigation = navigation.filter((item) => item.key === "message");
 
 function messageOf(error: unknown): string {
   if (error instanceof AdminRequestError) {
@@ -205,7 +205,7 @@ export function AdminApp() {
           {navigation.filter((item) => item.key === "overview").map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => navigate(item.key)}><i>{item.icon}</i>{item.label}</button>)}
           <span className="admin-nav-label">内容运营</span>
           {deliveryNavigation.map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => navigate(item.key)}><i>{item.icon}</i>{item.label}</button>)}
-          <span className="admin-nav-label">消息与素材</span>
+          <span className="admin-nav-label">消息</span>
           {supportNavigation.map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => navigate(item.key)}><i>{item.icon}</i>{item.label}</button>)}
         </nav>
         <div className="admin-account"><span>{session.username?.slice(0, 1).toUpperCase()}</span><div><strong>{session.username}</strong><small>{session.role === "owner" ? "主管理员" : "内容管理员"}</small></div><button onClick={() => void run(async () => { await logout(); setSession(null); }, "已安全退出")}>退出</button></div>
@@ -391,6 +391,7 @@ function ContentManager({
   const [categoryFilter, setCategoryFilter] = useState("all");
   const [currentPage, setCurrentPage] = useState(1);
   const [previewItem, setPreviewItem] = useState<ContentPreview | null>(null);
+  const [videoUploadMessage, setVideoUploadMessage] = useState("");
   const [recovery, setRecovery] = useState<DraftRecovery | null>(null);
   const [recoveryNotice, setRecoveryNotice] = useState("");
   const storageKey = "kangmin.admin.content-draft." + adminKey + "." + kind;
@@ -512,6 +513,7 @@ function ContentManager({
     setRecoveryNotice("");
     setEditing(item ?? null);
     setDraft(item === undefined ? blank(kind) : editableContent(item));
+    setVideoUploadMessage("");
     setShowForm(true);
   }
 
@@ -603,10 +605,12 @@ function ContentManager({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file === undefined) return;
-    await run(async () => {
+    setVideoUploadMessage(`正在上传：${file.name}`);
+    const succeeded = await run(async () => {
       const mediaItem = await uploadFile(file, "video");
       setDraft((current) => ({ ...current, mediaId: mediaItem.id }));
     }, "视频文件已上传并选中");
+    setVideoUploadMessage(succeeded ? `已上传：${file.name}` : `上传失败：${file.name}，可重新选择重试`);
   }
 
   async function previewContent(item: ContentItem) {
@@ -664,6 +668,7 @@ function ContentManager({
                     : <><strong>已选择：{selectedVideo?.filename ?? "视频素材"}</strong><small>视频已绑定到当前内容，可重新选择或继续编辑。</small></>
                   }</div>
                   <label className="article-import-button">{draft.mediaId === null ? "选择视频" : "重新选择"}<input aria-label="选择视频文件" type="file" accept="video/*,.mp4,.webm" disabled={busy} onChange={(event) => void uploadVideo(event)} /></label>
+                  {videoUploadMessage !== "" && <small className="inline-upload-status" aria-live="polite">{videoUploadMessage}</small>}
                 </div>
               )}
               {kind === "article" && editing === null && (
@@ -687,12 +692,12 @@ function ContentManager({
               <label>摘要<textarea rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
               <ContentBodyEditor label={kind === "article" ? "正文" : "视频说明"} value={draft.body} onChange={(body) => setDraft((current) => ({ ...current, body }))} run={run} />
               <details className="content-advanced">
-                <summary>更多设置（来源、封面{kind === "video" ? "、素材库" : ""}）</summary>
+                <summary>更多设置（来源、封面）</summary>
                 <div className="form-grid">
                   <label>来源<input value={draft.source} onChange={(event) => setDraft({ ...draft, source: event.target.value })} /></label>
-                  <MediaBinding label="封面素材" selectedId={draft.coverMediaId} items={readyMedia.filter((item) => item.kind === "image")} accept="image/*,.jpg,.jpeg,.png,.webp,.gif" mediaKind="image" busy={busy} run={run} onSelect={(id) => setDraft((current) => ({ ...current, coverMediaId: id }))} />
+                  <MediaBinding label="封面图片" selectedId={draft.coverMediaId} items={readyMedia.filter((item) => item.kind === "image")} accept="image/*,.jpg,.jpeg,.png,.webp,.gif" mediaKind="image" busy={busy} run={run} onSelect={(id) => setDraft((current) => ({ ...current, coverMediaId: id }))} />
                 </div>
-                {kind === "video" && <label>从素材库选择视频<select aria-label="从素材库选择视频" value={draft.mediaId ?? ""} onChange={(event) => setDraft((current) => ({ ...current, mediaId: event.target.value || null }))}><option value="">未选择</option>{readyMedia.filter((item) => item.kind === "video").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label>}
+                {kind === "video" && <label>选择已上传视频<select aria-label="选择已上传视频" value={draft.mediaId ?? ""} onChange={(event) => setDraft((current) => ({ ...current, mediaId: event.target.value || null }))}><option value="">未选择</option>{readyMedia.filter((item) => item.kind === "video").map((item) => <option key={item.id} value={item.id}>{item.filename}</option>)}</select></label>}
               </details>
               {kind === "video" && (
                 <>
@@ -746,6 +751,7 @@ function ContentBodyEditor({
   run: (action: () => Promise<void>, success: string) => Promise<boolean>;
 }) {
   const textarea = useRef<HTMLTextAreaElement | null>(null);
+  const [uploadMessage, setUploadMessage] = useState("");
 
   function insert(text: string) {
     const element = textarea.current;
@@ -767,6 +773,7 @@ function ContentBodyEditor({
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file === undefined) return;
+    setUploadMessage(`正在上传：${file.name}`);
     const succeeded = await run(async () => {
       const media = await uploadFile(file);
       const safeName = file.name.replaceAll("[", "").replaceAll("]", "");
@@ -774,8 +781,8 @@ function ContentBodyEditor({
         ? "![" + safeName + "](/v1/media/" + media.id + ")"
         : "[" + safeName + "](/v1/media/" + media.id + ")";
       onChange(value.trim() === "" ? snippet : value + "\n\n" + snippet);
-    }, "正文素材已上传并插入");
-    if (!succeeded) return;
+    }, "正文图片已上传并插入");
+    setUploadMessage(succeeded ? `已上传并插入：${file.name}` : `上传失败：${file.name}，可重新选择重试`);
   }
 
   return (
@@ -785,8 +792,9 @@ function ContentBodyEditor({
         <button type="button" onClick={() => insert("## 小标题\n\n")}>插入小标题</button>
         <button type="button" onClick={() => insert("- 重点内容\n")}>插入列表</button>
         <button type="button" onClick={() => insert("[链接文字](https://example.com)")}>插入链接</button>
-        <label className="body-upload">上传素材<input aria-label="上传正文图片或附件" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.md,.markdown,.txt" onChange={(event) => void uploadBodyFile(event)} /></label>
+        <label className="body-upload">上传正文图片或附件<input aria-label="上传正文图片或附件" type="file" accept="image/*,.jpg,.jpeg,.png,.webp,.gif,.pdf,.doc,.docx,.md,.markdown,.txt" onChange={(event) => void uploadBodyFile(event)} /></label>
       </div>
+      {uploadMessage !== "" && <small className="inline-upload-status" aria-live="polite">{uploadMessage}</small>}
     </div>
   );
 }
@@ -810,14 +818,17 @@ function MediaBinding({
   run: (action: () => Promise<void>, success: string) => Promise<boolean>;
   onSelect: (id: string | null) => void;
 }) {
+  const [uploadMessage, setUploadMessage] = useState("");
   async function upload(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
     if (file === undefined) return;
-    await run(async () => {
+    setUploadMessage(`正在上传：${file.name}`);
+    const succeeded = await run(async () => {
       const media = await uploadFile(file, mediaKind);
       onSelect(media.id);
     }, label + "已上传并已选中");
+    setUploadMessage(succeeded ? `已上传并选中：${file.name}` : `上传失败：${file.name}，可重新选择重试`);
   }
 
   return (
@@ -827,7 +838,8 @@ function MediaBinding({
         {items.map((item) => <option key={item.id} value={item.id}>{item.filename} · {mediaKindLabels[item.kind] ?? item.kind}</option>)}
       </select></label>
       <label className="media-upload-choice">直接上传{mediaKind === "image" ? "封面图片" : "视频文件"}<input aria-label={"直接上传" + label} type="file" accept={accept} disabled={busy} onChange={(event) => void upload(event)} /></label>
-      <small className="form-hint">只接受{mediaKind === "image" ? "图片" : "视频"}；文件会上传到素材库并立即绑定到当前{mediaKind === "image" ? "内容封面" : "视频"}。</small>
+      <small className="form-hint">只接受{mediaKind === "image" ? "图片" : "视频"}；上传后会立即绑定到当前{mediaKind === "image" ? "内容封面" : "视频"}，也可选择已上传文件复用。</small>
+      {uploadMessage !== "" && <small className="inline-upload-status" aria-live="polite">{uploadMessage}</small>}
     </div>
   );
 }

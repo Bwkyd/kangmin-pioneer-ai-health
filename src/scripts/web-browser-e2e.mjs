@@ -737,7 +737,8 @@ try {
   await adminPage.getByRole("heading", { name: "今天先处理最重要的任务" }).waitFor({ state: "visible" });
   const adminNavLabels = await adminPage.locator(".admin-nav-label").allTextContents();
   assert.ok(adminNavLabels.includes("内容运营"), "管理后台应显示内容运营分组");
-  assert.ok(adminNavLabels.includes("消息与素材"), "管理后台应显示消息与素材分组");
+  assert.ok(adminNavLabels.includes("消息"), "管理后台应显示消息分组");
+  assert.equal(await adminPage.getByTestId("admin-nav-media").count(), 0, "素材库不应继续作为一级导航入口");
   await adminPage.getByRole("heading", { name: "从内容开始" }).waitFor({ state: "visible" });
   const overviewCopy = await adminPage.locator(".admin-shell").innerText();
   assert.doesNotMatch(overviewCopy, /报价|交付/u, "工作台不应显示报价或交付内部话术");
@@ -794,14 +795,31 @@ try {
   await articleForm.getByLabel("标题").fill("后台发布闭环测试文章");
   await articleForm.getByLabel("摘要").fill("用于确认管理后台发布和下架真实生效");
   await articleForm.getByLabel("正文", { exact: true }).fill("这是由管理后台保存的客户试用内容。");
-  await articleForm.getByLabel("上传正文图片或附件").setInputFiles({
+  const articleBodyUpload = articleForm.getByLabel("上传正文图片或附件");
+  assert.match(await articleBodyUpload.getAttribute("accept") ?? "", /\.pdf/u, "正文任务内上传应保留既有附件能力");
+  await articleBodyUpload.setInputFiles({
     name: "nose-care.png",
     mimeType: "image/png",
     buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52])
   });
-  await expectText(adminPage.getByRole("status"), "正文素材已上传并插入");
+  await expectText(adminPage.getByRole("status"), "正文图片已上传并插入");
+  await expectText(articleForm.locator(".inline-upload-status"), "已上传并插入：nose-care.png");
   await articleForm.getByText("更多设置（来源、封面）", { exact: true }).click();
   await articleForm.getByLabel("来源").fill("客户确认材料");
+  let rejectCoverUpload = true;
+  await adminPage.route("**/v1/admin/upload", async (route) => {
+    if (!rejectCoverUpload) return route.continue();
+    rejectCoverUpload = false;
+    await route.fulfill({ status: 500, contentType: "application/json", body: JSON.stringify({ error: { message: "模拟封面上传失败" } }) });
+  });
+  const articleCover = { name: "article-cover.png", mimeType: "image/png", buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 1]) };
+  await articleForm.getByLabel("直接上传封面图片").setInputFiles(articleCover);
+  await expectText(adminPage.getByRole("status"), "模拟封面上传失败");
+  await expectText(articleForm.locator(".media-binding .inline-upload-status"), "上传失败：article-cover.png，可重新选择重试");
+  await adminPage.unroute("**/v1/admin/upload");
+  await articleForm.getByLabel("直接上传封面图片").setInputFiles(articleCover);
+  await expectText(adminPage.getByRole("status"), "封面图片已上传并已选中");
+  await expectText(articleForm.locator(".media-binding .inline-upload-status"), "已上传并选中：article-cover.png");
   await articleForm.getByRole("button", { name: "保存并预览" }).click();
   await expectText(adminPage.locator(".admin-toast"), "患者端预览已打开");
   const savedArticlePreview = adminPage.getByRole("dialog", { name: "患者端预览" });
@@ -830,7 +848,8 @@ try {
   const articlePreview = adminPage.getByRole("dialog", { name: "患者端预览" });
   await articlePreview.waitFor({ state: "visible" });
   await expectText(articlePreview, "这是由管理后台编辑并保存的客户试用内容。");
-  assert.equal(await articlePreview.locator("img").count(), 1, "患者端预览应显示正文图片");
+  assert.equal(await articlePreview.locator(".discover-detail-image").count(), 1, "患者端预览应显示任务内上传的封面图片");
+  assert.equal(await articlePreview.locator(".content-body img").count(), 1, "患者端预览应显示任务内上传的正文图片");
   await articlePreview.getByRole("button", { name: "关闭患者端预览" }).click();
   await articleRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
@@ -897,15 +916,6 @@ try {
   assert.equal(await messageCheckPage.locator(".message-list button", { hasText: "换季鼻健康提醒" }).count(), 0);
   await messageCheckPage.close();
 
-  await adminPage.getByTestId("admin-nav-media").click();
-  await adminPage.getByLabel("选择素材").setInputFiles({
-    name: "nasal-care.mp4",
-    mimeType: "video/mp4",
-    buffer: Buffer.from([0, 0, 0, 16, 0x66, 0x74, 0x79, 0x70, 0x69, 0x73, 0x6f, 0x6d, 0, 0, 0, 0])
-  });
-  await adminPage.getByRole("button", { name: "上传素材" }).click();
-  await adminPage.locator(".media-grid article", { hasText: "nasal-care.mp4" }).waitFor({ state: "visible" });
-
   await adminPage.getByTestId("admin-nav-video").click();
   await adminPage.getByText("内容运营 / 视频内容", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增视频" }).click();
@@ -926,8 +936,16 @@ try {
   });
   await expectText(adminPage.getByRole("status"), "视频文件已上传并选中");
   await expectText(videoForm.locator(".article-import"), "已选择：nasal-care.mp4");
-  await videoForm.getByText("更多设置（来源、封面、素材库）", { exact: true }).click();
+  await expectText(videoForm.locator(".article-import .inline-upload-status"), "已上传：nasal-care.mp4");
+  await videoForm.getByText("更多设置（来源、封面）", { exact: true }).click();
   await videoForm.getByLabel("来源").fill("客户确认材料");
+  await videoForm.getByLabel("直接上传封面图片").setInputFiles({
+    name: "video-cover.png",
+    mimeType: "image/png",
+    buffer: Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 2])
+  });
+  await expectText(adminPage.getByRole("status"), "封面图片已上传并已选中");
+  await expectText(videoForm.locator(".media-binding .inline-upload-status"), "已上传并选中：video-cover.png");
   await videoForm.getByLabel("操作提示").fill("操作前确认环境安全，并按视频步骤进行。");
   await videoForm.getByLabel("注意事项").fill("出现不适立即停止，并咨询专业人员。");
   await videoForm.getByLabel("免责声明").fill("仅供健康科普，不替代门诊诊断或治疗建议。");
@@ -1149,7 +1167,7 @@ try {
   assert.ok(knowledgeNavigationGeometry.scrollWidth <= knowledgeNavigationGeometry.clientWidth, "390px 下 AI 知识库导航文字不应被截断或换行挤压");
   assert.ok(knowledgeNavigationGeometry.height <= 50, "390px 下 AI 知识库导航不应换行增高");
   assert.equal(knowledgeNavigationGeometry.iconVisible, true, "390px 下 AI 知识库图标应保持可见");
-  assert.match(await adminPage.getByTestId("admin-nav-media").innerText(), /素材库/u, "素材库名称和独立入口应保留");
+  assert.equal(await adminPage.getByTestId("admin-nav-media").count(), 0, "素材库不应继续作为一级导航入口");
   assert.equal(await adminPage.getByRole("columnheader", { name: "分块" }).count(), 0, "技术分块数不应占用日常运营列表");
   assert.equal(await adminPage.getByRole("dialog", { name: "上传知识" }).count(), 0, "上传表单默认应收起");
   const browserScreenshotDirectory = process.env.KANGMIN_E2E_SCREENSHOT_DIR?.trim();

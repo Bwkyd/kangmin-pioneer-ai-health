@@ -42,7 +42,7 @@
 | 分类 | 已用编号 | 下一编号 |
 | --- | --- | --- |
 | [`plan/`](plan/) | 001–011 | 012 |
-| [`reviews/`](reviews/) | 001–026 | 027 |
+| [`reviews/`](reviews/) | 001–027 | 028 |
 | [`research/`](research/) | 001–012（002 已归档） | 013 |
 | [`experiments/`](experiments/) | 001–011 | 012 |
 | [`changes/arch/`](changes/arch/) | 001–005 | 006 |
