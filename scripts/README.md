@@ -14,6 +14,8 @@
 | `structure-lint.py` | 检查项目目录、命名、导航和双入口同步 |
 | `check-manifests.py` | 校验 `plugin.json` 与 `42plugin.json` |
 | `check-tools.sh` | 只读检查本机工具，不自动安装 |
+| `evolution-guard.py` | 阻止新增超宽目录、超长文件和存量基线回退 |
+| `test-evolution-guard.py` | 在临时 Git 仓验证护栏的正常、违规、收紧与过期路径 |
 | `install-git-hooks.sh` | 安装项目 Git 防误推钩子 |
 | `worktree-create.sh` | 从最新远端基线创建任务 worktree |
 | `worktree-audit.sh` | 只读检查 worktree 是否满足清理条件 |
@@ -24,3 +26,5 @@
 - 一个脚本只做一件事，重复执行得到相同判断。
 - 检查脚本只报告问题，不擅自修改；修复动作另设入口并由人决定是否执行。
 - 第二次手工重复同一机械检查时，优先把它固化为脚本。
+- 演化护栏只读 Git 索引：未跟踪文件不可见，需要预检时先 `git add`。
+- `state/evolution-guard.json` 的存量基线不是合格线；文件或目录收缩后必须同步收紧，到期不自动延期。
