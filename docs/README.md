@@ -42,11 +42,11 @@
 | 分类 | 已用编号 | 下一编号 |
 | --- | --- | --- |
 | [`plan/`](plan/) | 001–011 | 012 |
-| [`reviews/`](reviews/) | 001–024 | 025 |
+| [`reviews/`](reviews/) | 001–025 | 026 |
 | [`research/`](research/) | 001–012（002 已归档） | 013 |
 | [`experiments/`](experiments/) | 001–011 | 012 |
 | [`changes/arch/`](changes/arch/) | 001–005 | 006 |
-| [`changes/ops/`](changes/ops/) | 001–007 | 008 |
+| [`changes/ops/`](changes/ops/) | 001–008 | 009 |
 | [故障复盘](changes/README.md#故障复盘) | — | 001 |
 
 ## 文档最低信息
