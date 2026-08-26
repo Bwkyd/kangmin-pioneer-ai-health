@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 学一学人群分类修复已部署并上传小程序开发版（2026-08-26 第222轮 · `main@ae92710`）
+> Issue #283 的 PR #298 经 `quality`（3 分 31 秒）与 `image`（40 秒）CI 全绿后 squash 合并，源/合并文件树一致，Issue 自动关闭。微信官方 CLI 使用回读一致的真实 AppID 完成预览编译，并上传开发版 `0.1.12`；上传不等于提审、正式发布或真机客户验收。
+> Web 候选在 8788 用正式库/媒体副本回读 26 个视频和五类成人/儿童分类，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-190409-before-learning-ae92710.sqlite` 后原子切换到 `/srv/kangmin-cli/releases/learning-ae92710`。应用/Nginx active、`NRestarts=0`、仅 8787 监听，正式库/备份 `quick_check=ok`，23 项迁移及 `22/11/21/136/136/51/15/26` 计数不变；公网首页、后台、`/live` 为 200，JS/CSS 哈希与合并构建一致，公网 API 回读 26 个视频。`/ready=503` 仍只因既有加密密钥未配置；候选与本轮临时件已清理，详细记录见 `docs/changes/ops/014_learning-parity-deploy.md`。下一轮只处理 #284。
+
 > ## 📚 学一学按明确人群排他并补齐小程序稳定页面壳（2026-08-26 第221轮 · 基线 `main@60d1197`，待提交）
 > 按 Issue #283 只处理人群分类、四入口标题、视频目录容器、五项导航四个实体。Web 与小程序均改为显式分类优先；只有分类缺失或未知时才允许全目录唯一标题兜底，成人/儿童共享标题、同人群多证型共享标题和重复别名均 fail-closed。小程序固定“学一学”标题与四入口，视频加载/错误/空态/紧凑列表都留在目录容器内，底部固定首页、问助手、记录、日历、我的五项导航并预留安全区。
 > sequential-thinking 五步与 `$km-review` 三视角复核了分类冲突、歧义变式、知识问答降级、详情标题和旧链路，P0–P2 为 0，详见 `docs/reviews/031_learning-audience-parity-review.md`。`cd src && npm run check` 全绿，包含 432 项 Node 测试集及真实浏览器 E2E；既有加密篡改测试的随机假红改为确定性翻转并连续 100 次通过。微信开发者工具 CLI 已读取项目，但占位 AppID 被官方工具拒绝，未冒充真机编译通过。尚待提交、PR CI、合并、部署后只读复核和关闭 #283；#284 仍单独保持开启。
