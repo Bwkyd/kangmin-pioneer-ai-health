@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 演化防退化门禁已合并并关闭 Issue（2026-08-27 第230轮 · `main@d25e428`）
+> Issue #304 的实现经 PR #314 squash 合并为 `d25e428` 并自动关闭；源分支 `218cb68` 与合并文件树一致。PR #313 因 GitHub 起初未生成 `pull_request`/`synchronize` run 而关闭，没有绕过保护规则；同 SHA 的新 PR #314 最终获得自动 CI run `32991479701`，`quality`（PostgreSQL 16、MinIO/S3、完整回归）3 分 23 秒、`image`（OCI 构建、容器冒烟、生产依赖审计、SBOM）1 分 13 秒，全部通过后正常合并。CI 同时新增 `workflow_dispatch` 恢复入口，期间两次同 SHA 手动 run 也全绿，但不冒充 required check。
+> 合并树相对线上 release `category-registry-bf44d26` 的 `src/` 完全无差异，因此没有重复部署相同业务制品。部署收尾只读实测：`/srv/kangmin-cli/app` 仍指向该 release，应用/Nginx active、`NRestarts=0`、仅 127.0.0.1:8787 监听；正式库 `quick_check=ok`，24 项迁移最新 `0022_content_category_registry`，患者/方案/知识/分块/向量/会话/评估/视频/分类节点/关联/成功报告为 `27/11/21/136/136/46/16/26/20/38/26`，与开工实测一致。公网首页、后台、`/live` 为 200；`/ready=503` 仍只因既有加密配置未完成。本轮未改产品、数据库、医学规则或患者数据；待本收尾记录合并后删除 GitHub 任务分支、本地任务分支和 worktree，仓库没有 CNB remote，故不存在 CNB 任务分支可删。
+
 > ## 🧱 首次体检转为持续防退化门禁（2026-08-27 第229轮 · 基线 `main@4667976`，待提交）
 > 本轮仅处理 Issue #304，开工实时确认 `main=origin/main=46679767089a5a9c3d1f822238db925752434af8`，根工作区已有 `state/board.md`、`state/evolve/` 与只读作者原件 `hi.md`，均未覆盖；生产仍指向 `category-registry-bf44d26`，应用与 Nginx active、`NRestarts=0`、仅 127.0.0.1:8787 监听，公网首页、后台、`/live` 为 200，`/ready` 的 503 仍只因既有加密配置缺失。正式 SQLite `quick_check=ok`，24 项迁移最新为 `0022_content_category_registry`；实时计数为患者 27、启用方案 11、启用知识 21、分块/向量 136/136、会话 46、评估 16、已发布视频 26、分类节点/关联 20/38、成功迁移报告 26。
 > 任务严格限制为四个实体：基线配置、唯一护栏实现、结构总检/CI 入口、状态与交付记录，无需再拆子任务。新增有责任人、原因、基线 commit 和 2026-09-30 到期日的存量例外：新目录最多 7 个子目录、新代码文件最多 600 个逻辑行；45 个存量长文件和 7 个存量宽目录只能持平或收紧，改善后必须同步缩小/删除豁免，禁止恢复旧额度。CLI、`structure-lint`、日期护栏和 GitHub CI 共用同一 Python 判定实现。
