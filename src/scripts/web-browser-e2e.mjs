@@ -741,7 +741,7 @@ try {
   await adminPage.getByRole("heading", { name: "从内容开始" }).waitFor({ state: "visible" });
   const overviewCopy = await adminPage.locator(".admin-shell").innerText();
   assert.doesNotMatch(overviewCopy, /报价|交付/u, "工作台不应显示报价或交付内部话术");
-  await adminPage.getByText("校验", { exact: true }).waitFor({ state: "visible" });
+  await adminPage.getByText("预览", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByText("服务端同步", { exact: true }).waitFor({ state: "visible" });
   await adminPage.getByText("可用素材", { exact: true }).waitFor({ state: "visible" });
   assert.equal(await adminPage.getByRole("link", { name: /查看用户端/u }).count(), 0, "管理后台不再跳转患者 Web，患者入口统一为小程序");
@@ -824,7 +824,8 @@ try {
   await articleForm.getByRole("button", { name: "保存草稿" }).click();
   await expectText(adminPage.getByRole("status"), "文章草稿已保存");
   await expectText(articleRow, "编辑后用于确认");
-  await articleRow.getByRole("button", { name: "校验" }).click();
+  assert.equal(await articleRow.getByRole("button", { name: "校验" }).count(), 0, "内容展示动作不应继续误标为校验");
+  await articleRow.getByRole("button", { name: "预览" }).click();
   await expectText(adminPage.locator(".admin-toast"), "患者端预览已打开");
   const articlePreview = adminPage.getByRole("dialog", { name: "患者端预览" });
   await articlePreview.waitFor({ state: "visible" });
@@ -938,13 +939,32 @@ try {
   await videoForm.getByRole("button", { name: "保存草稿" }).click();
   await expectText(adminPage.getByRole("status"), "视频草稿已保存");
   await expectText(videoRow, "编辑后的客户试用版");
-  await videoRow.getByRole("button", { name: "校验" }).click();
+  await videoRow.getByRole("button", { name: "预览" }).click();
   await expectText(adminPage.locator(".admin-toast"), "患者端预览已打开");
   const videoPreview = adminPage.getByRole("dialog", { name: "患者端预览" });
   await videoPreview.waitFor({ state: "visible" });
+  await expectText(videoPreview, "发布前校验已通过");
   await expectText(videoPreview, "操作前确认环境安全，并按视频步骤进行。");
   await expectText(videoPreview, "出现不适立即停止，并咨询专业人员。");
   assert.equal(await videoPreview.locator("video").count(), 1, "患者端预览应显示视频");
+  for (const viewport of [{ width: 390, height: 844 }, { width: 1440, height: 1000 }]) {
+    await adminPage.setViewportSize(viewport);
+    const previewVideo = videoPreview.locator("video");
+    const previewVideoStyle = await previewVideo.evaluate((element) => {
+      const style = getComputedStyle(element);
+      return { maxHeight: style.maxHeight, objectFit: style.objectFit };
+    });
+    const previewVideoBox = await previewVideo.boundingBox();
+    assert.ok(previewVideoBox, "患者端预览视频应有可见尺寸");
+    assert.ok(
+      Number.parseFloat(previewVideoStyle.maxHeight) <= Math.min(viewport.height * 0.5, 480),
+      "患者端预览视频最大高度不应超过当前视口的一半或 480px"
+    );
+    assert.ok(previewVideoBox.width <= Math.min(viewport.width, 560), "患者端预览视频宽度不应超过容器或 560px");
+    assert.ok(previewVideoBox.height <= Math.min(viewport.height * 0.5, 480), "患者端预览视频实际高度不应超出视口上限");
+    assert.equal(previewVideoStyle.objectFit, "contain", "患者端预览视频不应为适配尺寸而裁切画面");
+  }
+  await adminPage.setViewportSize({ width: 390, height: 844 });
   await videoPreview.getByRole("button", { name: "关闭患者端预览" }).click();
   await videoRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");

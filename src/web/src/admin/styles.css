@@ -49,3 +49,7 @@
 .knowledge-upload-fields{align-content:start;grid-auto-rows:max-content}
 .knowledge-upload-heading>button:disabled{opacity:.45;cursor:not-allowed}
 @media(max-width:760px){.knowledge-list .table-wrap{overflow:visible}.knowledge-list table,.knowledge-list tbody{display:block}.knowledge-list thead{display:none}.knowledge-list tbody{display:grid;gap:10px;padding:12px 14px}.knowledge-list tbody tr{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:12px;padding:14px;border:1px solid #e1e8f0;border-radius:11px;background:#fff}.knowledge-list tbody td{padding:0;border:0}.knowledge-item-copy{grid-column:1/-1}.knowledge-item-copy>strong{font-size:13px}.knowledge-item-copy>small{max-width:none;white-space:normal}.knowledge-folder-cell{grid-column:1}.knowledge-state-cell{grid-column:2;grid-row:2;text-align:right}.knowledge-state-cell .next-step{max-width:130px}.knowledge-row-actions{grid-column:1/-1;justify-content:flex-end;padding-top:10px!important;border-top:1px solid #edf1f5!important}.knowledge-row-actions button{min-width:64px}}
+
+/* 患者端预览在后台弹窗内保持完整画面，并限制竖屏视频占用的视口高度。 */
+.preview-phone .discover-detail-image{display:block;max-width:100%;max-height:320px;margin:0 auto 12px;object-fit:contain;border-radius:10px}
+.preview-phone .discover-detail-video{display:block;width:min(100%,560px);max-height:min(50vh,480px);margin:0 auto 12px;object-fit:contain;border-radius:10px;background:#10231c}
