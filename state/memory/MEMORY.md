@@ -10,9 +10,9 @@
 - [小程序交互命中区与图标几何同源](20260824-miniprogram-hitbox-geometry.md) — 固定视图同时约束视觉与点击范围，用 CSS 几何和正负坐标点击防偏移与误触
 - [报价范围先于产品补全](20260818-scope-authority-before-planning.md) — 只有现行报价 truth 能授权范围，代码缺口和产品建议不自动升级
 - [决策前置化与确定性分流](20260818-decision-prioritization.md) — 可确定、可逆且授权内的直接推进，真实分叉前置给作者
-- [部署目标先核实](20260818-deploy-target-verify.md) — 交叉核对主机、服务、代码栈、数据与 release，不凭旧记录推断
+- [部署目标与运行路径先核实](20260826-deploy-target-verify.md) — 从 systemd 实际配置解析服务、代码、数据与 release，后验验证不重新猜路径
 - [智能体调研先定角色：患者科普问答型](20260818-agent-lens-patient-qa.md) — 规则与 truth 负责裁决，知识库只提供检索依据，模型不自主诊断
-- [清理前合并本地主状态](20260818-reconcile-local-board-before-cleanup.md) — 任务 worktree 收尾前额外核对主工作区的独有 board 记录
+- [清理前核对主状态与 squash 等价性](20260826-reconcile-local-board-before-cleanup.md) — worktree 收尾前核对主状态、PR 与文件树等价，再安全清理 squash 源分支
 - [管理后台可见文案全量盘点](20260818-admin-copy-surface-inventory.md) — 后台命名调整覆盖所有可见表面，并用正向与旧术语负向回归锁定
 - [模板对齐必须核对完整生成清单](20260818-template-alignment-full-inventory.md) — 在隔离目录生成基线，区分真实缺失、项目定制和本地特例
 - [零材料模板不得制造隐性授权](20260818-zero-context-template-authority.md) — 未核实事实明确待核实，初始化不默认扩大人或 AI 的权限
