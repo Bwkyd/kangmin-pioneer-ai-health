@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 管理后台视频预览修复已合并、部署并完成公网复核（2026-08-26 第207轮 · `main@b0b18a3`）
+> 实现 PR #275 的 `quality`、`image` CI 全绿后 squash 合并为 `b0b18a3`；源提交与 squash 合并文件树一致。完整 `src` 门禁、真实浏览器双视口 E2E、`legacy` 127/127、清单、差异密钥扫描和 `git diff --check` 通过；sequential-thinking 与 `km-review` 修复首版仅验证 CSS 声明而未验证实际尺寸的 P2 后，患者可懂性、工程事实和医学安全三视角 P0–P2 清零。
+> 候选 release 在 8788 使用线上库副本贯通真实视频列表与已发布视频预览 API 后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-153151-before-admin-video-preview-b0b18a3.sqlite`，并原子切换到 `/srv/kangmin-cli/releases/admin-video-preview-b0b18a3`；发布包 SHA-256 为 `123753176232bd97536afce3f0340f62a7406503b1872b64ba7d12cde54ab235`。切换后应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，23 项迁移和八项计数 `21/11/21/136/136/51/15/26` 一致；公网首页、后台、`/live` 为 200，管理 JS/CSS 与合并构建逐字节一致。`/ready=503` 仍只因既有加密密钥未配置；8788、预演库、日志和传输制品均已清理，旧 release 与正式备份保留回滚。详细记录见 `docs/changes/ops/007_admin-video-preview-deploy.md`；作者原件 `hi.md` 保持未跟踪、未修改。
+
 > ## 🎬 管理后台视频预览收进视口并统一预览文案（2026-08-26 第206轮 · 基线 `main@bfca852`，待提交）
 > 根据作者截图修复管理后台视频预览：后台预览样式为视频增加 `560px` 宽度上限、`min(50vh, 480px)` 高度上限和 `object-fit: contain`，竖屏视频不再撑满或超出当前视口，画面保持完整；封面图片同步限制在预览容器内。内容列表按钮、下一步提示、工作台发布链路和相关说明由“校验”统一改为符合实际动作的“预览”，服务端真实发布前校验及结果提示继续保留。
 > sequential-thinking 八步元反思与 `km-review` 三视角发现首版只证明 CSS 规则存在、未证明实际视口边界这一 P2，已补移动端 `390×844`、桌面端 `1440×1000` 的计算高度、实际宽高和不裁切断言，并锁定旧“校验”按钮消失而发布前校验提示保留；结论归档于 `docs/reviews/024_admin-video-preview-meta-review.md`，P0/P1/P2 清零。`cd src && npm run check` 全量通过，包含类型、架构、小程序检查、构建、单元/契约测试与真实浏览器 E2E；`legacy` 127/127 通过，保留 4 条既有图片优化 warning 和 2 项 moderate 依赖审计提示。作者原件 `hi.md` 保持未跟踪、未修改；本轮未提交、推送、部署或改动外部状态。
