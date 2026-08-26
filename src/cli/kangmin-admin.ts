@@ -50,7 +50,8 @@ content 命令：
 
 agent 命令：
   status
-  knowledge     list|show|add <file>|add-from-media --media <id>|update|delete|index|enable|disable|search-test <query>
+  knowledge     folder list|create|update|delete
+                list|show|add <file>|add-from-media --media <id>|update|delete|index|enable|disable|search-test <query>|move
   plan          list|show|create|update|preview|enable|disable|mappings
   model         show|update|test（--api-key 为标志，密钥从 stdin 读取）
   test          run|case <case-id>
@@ -122,7 +123,8 @@ const NUMBER_OPTIONS = new Set([
   "retrievalCount",
   "limit",
   "sizeBytes",
-  "olderThanMinutes"
+  "olderThanMinutes",
+  "sortOrder"
 ]);
 /** 允许重复出现、收集为数组的选项。 */
 const REPEATABLE_OPTIONS = new Set(["--step", "--method-tag"]);
@@ -174,6 +176,9 @@ const OPTION_NAMES: Record<string, string> = {
   "--size-bytes": "sizeBytes",
   "--sha256": "sha256",
   "--older-than": "olderThanMinutes",
+  "--folder-id": "folderId",
+  "--parent-id": "parentId",
+  "--sort-order": "sortOrder",
   "--yes": "yes"
 };
 
@@ -324,8 +329,15 @@ function parse(argv: string[]): Parsed {
   const [group, resource, action, ...rest] = tokens;
   let command: string;
   let optionTokens: string[];
+  const matchedCommand = Object.keys(COMMAND_SPECS)
+    .map((candidate) => ({ candidate, words: candidate.split(" ") }))
+    .sort((left, right) => right.words.length - left.words.length)
+    .find(({ words }) => words.every((word, index) => tokens[index] === word));
 
-  if (group === "auth") {
+  if (matchedCommand !== undefined) {
+    command = matchedCommand.candidate;
+    optionTokens = tokens.slice(matchedCommand.words.length);
+  } else if (group === "auth") {
     if (resource === undefined) {
       return parseError("auth", GROUP_HINTS.auth ?? "auth 需要子命令", json);
     }

@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🔧 部署预演补齐知识目录 CLI 真入口（2026-08-26 第200轮 · 基线 `main@1d16bd9`，待提交）
+> PR #268 的 `quality`（3 分 21 秒）与 `image`（43 秒）全绿后 squash 合并为 `main@1d16bd9`，GitHub 任务分支已删除。腾讯云目标的服务、release、SQLite、回滚目录和磁盘经只读核验与 runbook 一致；合并制品 SHA-256 为 `1c601589f916aaec159c6ac5cf058ffb6cdbb51b6a5a3fb9250317f9894c141f`，但 8788 线上库副本预演在目录 CRUD 前发现真实 CLI 只拼三段命令，导致 `agent knowledge folder create` 四段命令不可达，故未切换 8787。
+> 现改为按命令表最长前缀解析，补齐 `--parent-id`、`--folder-id`、`--sort-order` 和帮助文案；真实 CLI 进程回归贯通目录新建、改名、列表、知识入目录、移动到根目录/未分类及反向删除。目录/CLI 窄测 20/20、完整 `cd src && npm run check` 425 项中 348 通过、77 项因本机未配置 PostgreSQL/S3 跳过、0 失败，浏览器 E2E PASS；差异密钥扫描与 `git diff --check` 通过。修复将走独立 PR 与全新 CI，线上仍是旧 `plan-video-complete-a43cc72`，数据库和流量未改。
+
 > ## 🌳 管理后台知识库改为三级目录树（2026-08-26 第199轮 · 实现 `feat/admin-console@dc2ec51`，补测待提交）
 > 按作者统一选择的 A 方案实现：客户可像文件夹一样创建、改名、改上级和删除空目录，层级最多三级；点击目录只看本层知识，不汇总子目录；知识通过“移动到”下拉框归档，不提供拖拽。后台增加“全部知识”和“未分类”入口，上传时可选目录，目录只负责运营整理，知识仍须独立建立索引并启用后才参与检索。
 > SQLite 与 PostgreSQL 新增目录邻接表和知识 `folder_id`，旧 `category` 确定性迁为一级目录，保留知识状态、分块和向量；目录路径只从树实时派生，后续编辑不会把旧分类字段写成假路径。服务层阻止同级重名、第四级、循环移动和删除非空目录，并记录目录增删改及知识移动审计。补测后完整 `cd src && npm run check` 通过：425 项测试中 348 通过、77 项因本机未配置 PostgreSQL/S3 按约定跳过、0 失败；`legacy` 127/127 通过；真实 Web 浏览器 E2E 完成目录创建、改名、换上级、三级限制、本层隔离、非空删除失败、上传、移动、索引、检索、启停与删除。`check-manifests`、新增差异密钥扫描和 `git diff --check` 通过。`km-review` 先后修复目录兼容字段 P1 与测试漏断言 P2 后，患者可懂性、工程事实、医学安全三视角 P0/P1/P2 均为 0。`structure-lint` 仅因独立 worktree 不含被忽略的私有 `vault/raw`、`vault/truth`、`vault/style` 而失败；未复制私有资料，未改医学规则、患者侧或 `hi.md`，尚待 PR、CI、合并与部署。
