@@ -95,7 +95,7 @@ interface KnowledgeHit { knowledgeId: string; name: string; snippet: string }
 
 type ContentStatusFilter = "all" | ContentItem["status"];
 type KnowledgeStatusFilter = "all" | KnowledgeItem["status"];
-type SectionFocus = ContentStatusFilter | KnowledgeStatusFilter;
+type SectionFocus = ContentStatusFilter | KnowledgeStatusFilter | "create";
 
 const knowledgeStatusLabels: Record<KnowledgeItem["status"], string> = {
   processing: "待建索引",
@@ -145,6 +145,7 @@ export function AdminApp() {
   const [categories, setCategories] = useState<CategoryItem[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
+  const [synced, setSynced] = useState(false);
 
   const navigate = useCallback((nextSection: Section, focus: SectionFocus = "all") => {
     setSection(nextSection);
@@ -152,6 +153,7 @@ export function AdminApp() {
   }, []);
 
   const refresh = useCallback(async () => {
+    setSynced(false);
     const [articleData, videoData, messageData, mediaData, knowledgeData, folderData, categoryData] = await Promise.all([
       adminCommand<{ items: ContentItem[] }>("content article list"),
       adminCommand<{ items: ContentItem[] }>("content video list"),
@@ -168,6 +170,7 @@ export function AdminApp() {
     setKnowledge(knowledgeData.items);
     setKnowledgeFolders(folderData.items);
     setCategories(categoryData.items);
+    setSynced(true);
   }, []);
 
   useEffect(() => {
@@ -220,13 +223,13 @@ export function AdminApp() {
         <div className="admin-account"><span>{session.username?.slice(0, 1).toUpperCase()}</span><div><strong>{session.username}</strong><small>{session.role === "owner" ? "主管理员" : "内容管理员"}</small></div><button onClick={() => void run(async () => { await logout(); setSession(null); }, "已安全退出")}>退出</button></div>
       </aside>
       <section className="admin-main">
-        <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1><p className="topbar-description">{section === "overview" ? "先处理待办，再让内容安全地到达小程序。" : "按状态完成当前运营任务，所有写操作由服务端确认。"}</p></div></header>
+        <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1><p className="topbar-description">{section === "overview" ? "处理待办，管理小程序内容" : "按状态完成当前运营任务，所有写操作由服务端确认。"}</p></div>{section === "overview" && <span className={`sync-badge${synced ? "" : " pending"}`}><i></i> {synced ? "数据已同步" : "正在同步…"}</span>}</header>
         {notice !== "" && <div className="admin-toast" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice("")}>×</button></div>}
-        {section === "overview" && <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} media={media} onNavigate={navigate} />}
-        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "overview" && (synced ? <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} onNavigate={navigate} /> : <section className="workbench-loading" role="status">正在读取服务端内容状态…</section>)}
+        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
         {section === "message" && <MessageManager items={messages} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "knowledge" && <KnowledgeFolderManager items={knowledge} folders={knowledgeFolders} busy={busy} run={run} onOpenFiles={() => navigate("media")} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
+        {section === "knowledge" && <KnowledgeFolderManager items={knowledge} folders={knowledgeFolders} busy={busy} run={run} onOpenFiles={() => navigate("media")} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
         {section === "media" && <MediaManager items={media} busy={busy} run={run} />}
       </section>
     </main>
@@ -248,8 +251,7 @@ function Login({ onSuccess }: { onSuccess: (session: AdminSession) => void }) {
   return <main className="admin-login"><section><div className="login-mark">抗</div><small>抗敏先锋 · 鼻健康内容中心</small><h1>管理后台</h1><p>登录后管理客户可见的文章、视频和 AI 知识资料。</p><form onSubmit={(event) => void submit(event)}><label>管理员账号<input data-testid="admin-username" autoComplete="username" required value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>密码<input data-testid="admin-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error !== "" && <div className="form-error" role="alert">{error}</div>}<button data-testid="admin-login" disabled={busy}>{busy ? "正在登录…" : "登录"}</button></form><footer>管理操作会记录审计；医疗内容发布前请完成专业审核。</footer></section></main>;
 }
 
-function Overview({ articles, videos, messages, knowledge, media, onNavigate }: { articles: ContentItem[]; videos: ContentItem[]; messages: MessageItem[]; knowledge: KnowledgeItem[]; media: MediaItem[]; onNavigate: (section: Section, focus?: SectionFocus) => void }) {
-  const published = [...articles, ...videos].filter((item) => item.status === "published").length;
+function Overview({ articles, videos, messages, knowledge, onNavigate }: { articles: ContentItem[]; videos: ContentItem[]; messages: MessageItem[]; knowledge: KnowledgeItem[]; onNavigate: (section: Section, focus?: SectionFocus) => void }) {
   const articleDrafts = articles.filter((item) => item.status === "draft").length;
   const videoDrafts = videos.filter((item) => item.status === "draft").length;
   const knowledgeProcessing = knowledge.filter((item) => item.status === "processing").length;
@@ -279,26 +281,18 @@ function Overview({ articles, videos, messages, knowledge, media, onNavigate }: 
     { section: "message", focus: "draft", icon: "信", title: "站内消息草稿", detail: "发布后登录用户可在消息中心看到", count: messageDrafts, action: "处理消息", tone: "green" }
   ];
   const activeTasks = tasks.filter((task) => task.count > 0);
-  const deliveryCards: Array<{ section: Section; icon: string; title: string; detail: string; count: string }> = [
-    { section: "article", icon: "文", title: "文章与推送", detail: "编辑、预览、上架；需要通知时进入站内消息。", count: `${articles.length} 条文章` },
-    { section: "video", icon: "播", title: "视频内容", detail: "先上传素材，再编辑说明、预览和上架。", count: `${videos.length} 条视频` },
-    { section: "knowledge", icon: "知", title: "AI知识库", detail: "资料只有建立索引并启用后才参与 AI 问答。", count: `${knowledge.filter((item) => item.status === "enabled").length} 条已启用` }
+  const summaries: Array<{ section: Section; title: string; total: number; detail: string }> = [
+    { section: "article", title: "科普文章", total: articles.length, detail: `${articles.filter((item) => item.status === "published").length} 已发布 · ${articleDrafts} 草稿 · ${articles.filter((item) => item.status === "unpublished").length} 已下架` },
+    { section: "video", title: "视频内容", total: videos.length, detail: `${videos.filter((item) => item.status === "published").length} 已发布 · ${videoDrafts} 草稿 · ${videos.filter((item) => item.status === "unpublished").length} 已下架` },
+    { section: "knowledge", title: "AI 知识资料", total: knowledge.length, detail: `${knowledge.filter((item) => item.status === "enabled").length} 已启用 · ${knowledgeIndexed} 待启用 · ${knowledgeProcessing + knowledgeFailed} 待处理` },
+    { section: "message", title: "站内消息", total: messages.length, detail: `${messages.filter((item) => item.status === "published").length} 已发布 · ${messageDrafts} 草稿 · ${messages.filter((item) => item.status === "unpublished").length} 已下架` }
   ];
-  return <div className="admin-overview">
-    <section className="welcome-card">
-      <div className="welcome-copy"><div className="welcome-eyebrow"><span>●</span> 内容运营 / 小程序同步</div><h2>今天先处理最重要的任务</h2><p>从待办开始，完成文章、视频和知识资料的准备、预览与受控生效。每一步都回读服务端状态。</p></div>
-      <div className="welcome-flow" aria-label="内容发布链路"><small>发布链路</small><div className="flow-track"><span className="flow-node active">01</span><i></i><span className="flow-node">02</span><i></i><span className="flow-node">03</span></div><div className="flow-labels"><span><strong>准备</strong><small>编辑内容</small></span><span><strong>预览</strong><small>确认效果</small></span><span><strong>发布</strong><small>用户可见</small></span></div></div>
-    </section>
-    <section className="stat-grid"><Stat icon="待" label="待处理任务" value={attentionTotal} tone={attentionTotal > 0 ? "amber" : "green"}/><Stat icon="发" label="已发布内容" value={published} tone="green"/><Stat icon="信" label="已发布消息" value={messages.filter((item) => item.status === "published").length} tone="green"/><Stat icon="知" label="启用知识" value={knowledge.filter((item) => item.status === "enabled").length} tone="blue"/><Stat icon="材" label="可用素材" value={media.filter((item) => item.status === "ready").length} tone="blue"/></section>
-    <section className="workbench-grid">
-      <article className="queue-card"><div className="card-heading"><div><h2>今天先处理</h2><p>只显示需要操作者继续动作的状态。</p></div><span className={`queue-count ${attentionTotal > 0 ? "attention" : "clear"}`}>{attentionTotal}</span></div>{activeTasks.length === 0 ? <div className="queue-empty"><strong>当前没有待处理任务</strong><span>文章、视频和 AI 知识库都处于可继续工作的状态。</span></div> : <div className="task-list">{activeTasks.map((task) => <button className="task-row" key={task.section} onClick={() => onNavigate(task.section, task.focus)}><span className={`task-mark ${task.tone}`}>{task.icon}</span><span className="task-copy"><strong>{task.title}<em>{task.count}</em></strong><small>{task.detail}</small></span><span className="task-action">{task.action} →</span></button>)}</div>}</article>
-      <article className="delivery-card"><div className="card-heading"><div><h2>从内容开始</h2><p>文章、视频和 AI 知识库，从这里进入处理。</p></div><span className="sync-badge"><i></i> 服务端同步</span></div><div className="delivery-links">{deliveryCards.map((card) => <button className="delivery-link" key={card.section} onClick={() => onNavigate(card.section)}><span className="task-mark blue">{card.icon}</span><span><strong>{card.title}</strong><small>{card.detail}</small><em>{card.count} · 进入处理 →</em></span></button>)}</div></article>
-    </section>
-    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 边界清晰</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与预览</strong><p>文章、视频和站内消息在后台完成内容准备；素材与 AI 知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，站内消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>AI 知识资料建立索引并启用后，才会参与 AI 问答；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
+  return <div className="admin-overview workbench-overview">
+    <section className="workbench-section todo-section" data-testid="workbench-todos"><div className="workbench-heading"><div><h2>今日待办</h2><p>来自服务端的待处理状态，点击直接进入对应列表。</p></div><span className={`queue-count ${attentionTotal > 0 ? "attention" : "clear"}`}>{attentionTotal}</span></div>{activeTasks.length === 0 ? <div className="queue-empty"><strong>今日没有待办</strong><span>当前没有草稿、待索引、待启用或索引失败的内容。</span></div> : <div className="task-list">{activeTasks.map((task) => <button className="task-row" key={task.section} onClick={() => onNavigate(task.section, task.focus)}><span className={`task-mark ${task.tone}`}>{task.icon}</span><span className="task-copy"><strong>{task.title}<em>{task.count}</em></strong><small>{task.detail}</small></span><span className="task-action">{task.action} →</span></button>)}</div>}</section>
+    <section className="workbench-section quick-create-section" data-testid="workbench-quick-create"><div className="workbench-heading"><div><h2>快捷新建</h2><p>一步进入对应的新建流程。</p></div></div><div className="quick-create-actions"><button onClick={() => onNavigate("article", "create")}><span>文</span><strong>新建科普文章</strong><small>打开文章编辑器</small></button><button onClick={() => onNavigate("video", "create")}><span>播</span><strong>上传视频</strong><small>打开视频上传与编辑</small></button><button onClick={() => onNavigate("knowledge", "create")}><span>知</span><strong>添加 AI 知识资料</strong><small>上传并建立索引</small></button></div></section>
+    <section className="workbench-section overview-section" data-testid="workbench-content-overview"><div className="workbench-heading"><div><h2>内容概览</h2><p>按内容类型查看数量与当前状态。</p></div></div><div className="overview-rows">{summaries.map((item) => <div className="overview-row" key={item.section}><span><strong>{item.title}</strong><small>{item.detail}</small></span><b>{item.total}</b><button onClick={() => onNavigate(item.section)}>查看 →</button></div>)}</div><p className="knowledge-safety-note">AI 知识资料只有已建立索引且已启用后，才会参与 AI 问答。</p></section>
   </div>;
 }
-
-function Stat({ icon, label, value, tone }: { icon: string; label: string; value: number; tone: string }) { return <article><i className={tone}>{icon}</i><small>{label}</small><strong>{value}</strong><p>实时读取服务端</p></article>; }
 
 const blank = (kind: ContentKind): Omit<ContentItem, "id" | "revision" | "status" | "updatedAt"> => ({ kind, title: "", category: "", summary: "", body: "", source: "", coverMediaId: null, mediaId: null, instructions: "", precautions: "", disclaimer: "", displayOrder: 0 });
 
@@ -381,6 +375,7 @@ function ContentManager({
   run,
   onOpenFiles,
   adminKey,
+  initialCreate,
   initialStatusFilter
 }: {
   kind: ContentKind;
@@ -391,11 +386,12 @@ function ContentManager({
   run: (action: () => Promise<void>, success: string) => Promise<boolean>;
   onOpenFiles: () => void;
   adminKey: string;
+  initialCreate: boolean;
   initialStatusFilter: ContentStatusFilter;
 }) {
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [draft, setDraft] = useState(blank(kind));
-  const [showForm, setShowForm] = useState(false);
+  const [showForm, setShowForm] = useState(initialCreate);
   const [newCategory, setNewCategory] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ContentStatusFilter>(initialStatusFilter);
@@ -976,12 +972,12 @@ function MediaManager({ items, busy, run }: { items: MediaItem[]; busy: boolean;
   );
 }
 
-function KnowledgeFolderManager({ items, folders, busy, run, onOpenFiles, initialStatusFilter }: { items: KnowledgeItem[]; folders: KnowledgeFolder[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; onOpenFiles: () => void; initialStatusFilter: KnowledgeStatusFilter }) {
+function KnowledgeFolderManager({ items, folders, busy, run, onOpenFiles, initialCreate, initialStatusFilter }: { items: KnowledgeItem[]; folders: KnowledgeFolder[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; onOpenFiles: () => void; initialCreate: boolean; initialStatusFilter: KnowledgeStatusFilter }) {
   const [file, setFile] = useState<File | null>(null);
   const [knowledgeName, setKnowledgeName] = useState("");
   const [source, setSource] = useState("");
   const [uploadFolderId, setUploadFolderId] = useState("");
-  const [uploadOpen, setUploadOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(initialCreate);
   const [selectedFolder, setSelectedFolder] = useState<"all" | "unfiled" | string>("all");
   const [query, setQuery] = useState("");
   const [listQuery, setListQuery] = useState("");
