@@ -8,6 +8,8 @@ import type {
   ChunkInput,
   IdempotentCreateResult,
   KnowledgeGuardedUpdateResult,
+  KnowledgeFolderRow,
+  KnowledgeFolderWriteResult,
   KnowledgeRow,
   KnowledgeSourceMediaRow,
   ModelConfigRow,
@@ -54,6 +56,7 @@ function toMediaRow(row: MediaRowShape): KnowledgeSourceMediaRow {
 interface KnowledgeRowShape {
   id: string;
   name: string;
+  folder_id: string | null;
   category: string | null;
   source: string | null;
   description: string | null;
@@ -67,6 +70,28 @@ interface KnowledgeRowShape {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface KnowledgeFolderRowShape {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function toKnowledgeFolder(row: KnowledgeFolderRowShape): KnowledgeFolderRow {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
 interface PlanRowShape {
@@ -119,6 +144,7 @@ function toKnowledge(row: KnowledgeRowShape): KnowledgeRow {
   return {
     id: row.id,
     name: row.name,
+    folderId: row.folder_id,
     category: row.category,
     source: row.source,
     description: row.description,
@@ -176,6 +202,75 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   ) {}
 
   // ---- 知识 ----
+
+  async listKnowledgeFolders(): Promise<KnowledgeFolderRow[]> {
+    const rows = this.database.connection.prepare(`
+      SELECT id, parent_id, name, sort_order, created_by, created_at, updated_at
+      FROM agent_knowledge_folders
+      ORDER BY sort_order ASC, name ASC, id ASC
+    `).all() as unknown as KnowledgeFolderRowShape[];
+    return rows.map(toKnowledgeFolder);
+  }
+
+  async createKnowledgeFolder(input: KnowledgeFolderRow): Promise<"created" | "duplicate"> {
+    try {
+      this.database.connection.prepare(`
+        INSERT INTO agent_knowledge_folders(
+          id, parent_id, name, sort_order, created_by, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(input.id, input.parentId, input.name, input.sortOrder, input.createdBy, input.createdAt, input.updatedAt);
+      return "created";
+    } catch (error) {
+      if (String(error).includes("UNIQUE constraint failed")) return "duplicate";
+      throw error;
+    }
+  }
+
+  async updateKnowledgeFolder(
+    id: string,
+    input: { parentId: string | null; name: string; sortOrder: number; updatedAt: string }
+  ): Promise<KnowledgeFolderWriteResult> {
+    try {
+      const result = this.database.connection.prepare(`
+        UPDATE agent_knowledge_folders
+        SET parent_id = ?, name = ?, sort_order = ?, updated_at = ?
+        WHERE id = ?
+      `).run(input.parentId, input.name, input.sortOrder, input.updatedAt, id);
+      if (result.changes !== 1) return { kind: "not_found" };
+      const row = this.database.connection.prepare(`
+        SELECT id, parent_id, name, sort_order, created_by, created_at, updated_at
+        FROM agent_knowledge_folders WHERE id = ?
+      `).get(id) as unknown as KnowledgeFolderRowShape;
+      return { kind: "updated", folder: toKnowledgeFolder(row) };
+    } catch (error) {
+      if (String(error).includes("UNIQUE constraint failed")) return { kind: "duplicate" };
+      throw error;
+    }
+  }
+
+  async deleteKnowledgeFolder(id: string): Promise<"deleted" | "not_found" | "not_empty"> {
+    return this.database.transaction(() => {
+      const exists = this.database.connection.prepare(
+        "SELECT id FROM agent_knowledge_folders WHERE id = ?"
+      ).get(id);
+      if (exists === undefined) return "not_found" as const;
+      const usage = this.database.connection.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM agent_knowledge_folders WHERE parent_id = ?) +
+          (SELECT COUNT(*) FROM agent_knowledge_items WHERE folder_id = ?) AS count
+      `).get(id, id) as unknown as { count: number };
+      if (usage.count > 0) return "not_empty" as const;
+      this.database.connection.prepare("DELETE FROM agent_knowledge_folders WHERE id = ?").run(id);
+      return "deleted" as const;
+    });
+  }
+
+  async moveKnowledge(id: string, folderId: string | null, updatedAt: string): Promise<"updated" | "not_found"> {
+    const result = this.database.connection.prepare(`
+      UPDATE agent_knowledge_items SET folder_id = ?, updated_at = ? WHERE id = ?
+    `).run(folderId, updatedAt, id);
+    return result.changes === 1 ? "updated" : "not_found";
+  }
 
   async createKnowledge(input: KnowledgeRow & { chunks: ChunkInput[] }): Promise<void> {
     this.database.transaction(() => {
@@ -277,13 +372,14 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   ): void {
     connection.prepare(`
       INSERT INTO agent_knowledge_items(
-        id, name, source, description, source_media_id, size_bytes,
+        id, name, folder_id, source, description, source_media_id, size_bytes,
         mime_type, sha256, status, parse_error, chunk_count,
         created_by, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `).run(
       input.id,
       input.name,
+      input.folderId ?? null,
       input.source,
       input.description,
       input.sourceMediaId,
@@ -308,12 +404,23 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
 
   async listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]> {
     const rows = this.database.connection.prepare(`
-      SELECT id, name, category, source, description, source_media_id, size_bytes,
-             mime_type, sha256, status, parse_error, chunk_count,
-             created_by, created_at, updated_at
-      FROM agent_knowledge_items
-      ${status === undefined ? "" : "WHERE status = ?"}
-      ORDER BY updated_at DESC, id ASC
+      WITH RECURSIVE folder_paths(id, path, depth) AS (
+        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
+        FROM agent_knowledge_folders AS child
+        JOIN folder_paths AS parent ON child.parent_id = parent.id
+        WHERE parent.depth < 3
+      )
+      SELECT items.id, items.name, items.folder_id,
+             folder_paths.path AS category,
+             items.source, items.description, items.source_media_id, items.size_bytes,
+             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
+             items.created_by, items.created_at, items.updated_at
+      FROM agent_knowledge_items AS items
+      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
+      ${status === undefined ? "" : "WHERE items.status = ?"}
+      ORDER BY items.updated_at DESC, items.id ASC
     `).all(...(status === undefined ? [] : [status])) as unknown as KnowledgeRowShape[];
     return rows.map(toKnowledge);
   }
@@ -323,12 +430,12 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
     return row === undefined ? null : toKnowledge(row);
   }
 
-  async updateKnowledgeMetadata(id: string, input: { name: string; category: string | null; source: string | null; description: string | null; updatedAt: string }): Promise<"updated" | "not_found"> {
+  async updateKnowledgeMetadata(id: string, input: { name: string; source: string | null; description: string | null; updatedAt: string }): Promise<"updated" | "not_found"> {
     const result = this.database.connection.prepare(`
       UPDATE agent_knowledge_items
-      SET name = ?, category = ?, source = ?, description = ?, updated_at = ?
+      SET name = ?, source = ?, description = ?, updated_at = ?
       WHERE id = ?
-    `).run(input.name, input.category, input.source, input.description, input.updatedAt, id);
+    `).run(input.name, input.source, input.description, input.updatedAt, id);
     return result.changes === 1 ? "updated" : "not_found";
   }
 
@@ -407,10 +514,22 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
   /** 事务内知识读取（与 findKnowledge 同 SQL）。 */
   private findKnowledgeSync(id: string): KnowledgeRowShape | undefined {
     return this.database.connection.prepare(`
-      SELECT id, name, category, source, description, source_media_id, size_bytes,
-             mime_type, sha256, status, parse_error, chunk_count,
-             created_by, created_at, updated_at
-      FROM agent_knowledge_items WHERE id = ?
+      WITH RECURSIVE folder_paths(id, path, depth) AS (
+        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
+        FROM agent_knowledge_folders AS child
+        JOIN folder_paths AS parent ON child.parent_id = parent.id
+        WHERE parent.depth < 3
+      )
+      SELECT items.id, items.name, items.folder_id,
+             folder_paths.path AS category,
+             items.source, items.description, items.source_media_id, items.size_bytes,
+             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
+             items.created_by, items.created_at, items.updated_at
+      FROM agent_knowledge_items AS items
+      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
+      WHERE items.id = ?
     `).get(id) as unknown as KnowledgeRowShape | undefined;
   }
 

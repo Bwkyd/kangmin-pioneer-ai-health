@@ -7,6 +7,7 @@ import type {
 export interface KnowledgeItem {
   id: string;
   name: string;
+  folderId: string | null;
   category?: string | null;
   source: string | null;
   description: string | null;
@@ -18,6 +19,18 @@ export interface KnowledgeItem {
   parseError: string | null;
   chunkCount: number;
   createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeFolder {
+  id: string;
+  parentId: string | null;
+  name: string;
+  sortOrder: number;
+  depth: 1 | 2 | 3;
+  knowledgeCount: number;
+  childCount: number;
   createdAt: string;
   updatedAt: string;
 }

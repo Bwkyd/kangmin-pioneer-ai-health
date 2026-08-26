@@ -645,5 +645,44 @@ export const PG_MIGRATIONS: PgMigration[] = [
       `CREATE INDEX agent_knowledge_embeddings_model
         ON agent_knowledge_embeddings(model_name, dimensions)`
     ]
+  },
+  {
+    // 与 SQLite 0021 对齐：旧 category 迁为一级目录；目录不改变知识
+    // 状态、正文、分块或向量。
+    version: "0010_knowledge_folders",
+    statements: [
+      `CREATE TABLE agent_knowledge_folders (
+        id TEXT PRIMARY KEY,
+        parent_id TEXT REFERENCES agent_knowledge_folders(id) ON DELETE RESTRICT,
+        name TEXT NOT NULL CHECK(length(btrim(name)) > 0),
+        sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+        created_by TEXT,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`,
+      `CREATE UNIQUE INDEX agent_knowledge_folders_root_name
+        ON agent_knowledge_folders(name) WHERE parent_id IS NULL`,
+      `CREATE UNIQUE INDEX agent_knowledge_folders_sibling_name
+        ON agent_knowledge_folders(parent_id, name) WHERE parent_id IS NOT NULL`,
+      `ALTER TABLE agent_knowledge_items
+        ADD COLUMN folder_id TEXT REFERENCES agent_knowledge_folders(id) ON DELETE RESTRICT`,
+      `INSERT INTO agent_knowledge_folders(
+        id, parent_id, name, sort_order, created_by, created_at, updated_at
+      )
+      SELECT 'kfd_legacy_' || substr(md5(category), 1, 12), NULL, category,
+             row_number() OVER (ORDER BY category) - 1, NULL,
+             MIN(created_at), MAX(updated_at)
+      FROM agent_knowledge_items
+      WHERE category IS NOT NULL AND btrim(category) <> ''
+      GROUP BY category`,
+      `UPDATE agent_knowledge_items AS items
+       SET folder_id = folders.id
+       FROM agent_knowledge_folders AS folders
+       WHERE items.folder_id IS NULL
+         AND folders.parent_id IS NULL
+         AND folders.name = items.category`,
+      `CREATE INDEX agent_knowledge_items_folder
+        ON agent_knowledge_items(folder_id, updated_at DESC)`
+    ]
   }
 ];

@@ -236,6 +236,10 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
 
   // ---- agent ----
   "agent status": { positional: null, required: false },
+  "agent knowledge folder list": { positional: null, required: false },
+  "agent knowledge folder create": { positional: null, required: false },
+  "agent knowledge folder update": { positional: "id", required: true },
+  "agent knowledge folder delete": { positional: "id", required: true },
   "agent knowledge list": { positional: null, required: false },
   "agent knowledge show": { positional: "id", required: true },
   "agent knowledge add": { positional: "file", required: true },
@@ -246,6 +250,7 @@ const COMMAND_SPECS: Record<string, CommandSpec> = {
   "agent knowledge enable": { positional: "id", required: true },
   "agent knowledge disable": { positional: "id", required: true },
   "agent knowledge search-test": { positional: "query", required: true },
+  "agent knowledge move": { positional: "id", required: true },
   "agent plan list": { positional: null, required: false },
   "agent plan create": { positional: null, required: false },
   "agent plan show": { positional: "id", required: true },

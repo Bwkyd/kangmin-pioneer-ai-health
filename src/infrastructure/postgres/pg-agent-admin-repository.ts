@@ -8,6 +8,8 @@ import type {
   ChunkInput,
   IdempotentCreateResult,
   KnowledgeGuardedUpdateResult,
+  KnowledgeFolderRow,
+  KnowledgeFolderWriteResult,
   KnowledgeRow,
   KnowledgeSourceMediaRow,
   ModelConfigRow,
@@ -18,7 +20,7 @@ import type {
 } from "../../modules/agent-admin/agent-admin-ports.js";
 import type { AgentPlan } from "../../modules/agent-admin/contracts.js";
 import type { KnowledgeStatus, PlanStatus } from "../../modules/agent-admin/domain.js";
-import { KangminPgDatabase } from "./pg-database.js";
+import { isUniqueViolation, KangminPgDatabase } from "./pg-database.js";
 import { runPgIdempotentCreate } from "./pg-idempotency.js";
 
 interface MediaRowShape {
@@ -61,6 +63,7 @@ function toMediaRow(row: MediaRowShape): KnowledgeSourceMediaRow {
 interface KnowledgeRowShape {
   id: string;
   name: string;
+  folder_id: string | null;
   category: string | null;
   source: string | null;
   description: string | null;
@@ -74,6 +77,28 @@ interface KnowledgeRowShape {
   created_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+interface KnowledgeFolderRowShape {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  sort_order: number;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+function toKnowledgeFolder(row: KnowledgeFolderRowShape): KnowledgeFolderRow {
+  return {
+    id: row.id,
+    parentId: row.parent_id,
+    name: row.name,
+    sortOrder: row.sort_order,
+    createdBy: row.created_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at
+  };
 }
 
 interface PlanRowShape {
@@ -126,6 +151,7 @@ function toKnowledge(row: KnowledgeRowShape): KnowledgeRow {
   return {
     id: row.id,
     name: row.name,
+    folderId: row.folder_id,
     category: row.category,
     source: row.source,
     description: row.description,
@@ -183,6 +209,74 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   ) {}
 
   // ---- 知识 ----
+
+  async listKnowledgeFolders(): Promise<KnowledgeFolderRow[]> {
+    const { rows } = await this.database.query<KnowledgeFolderRowShape>(`
+      SELECT id, parent_id, name, sort_order, created_by, created_at, updated_at
+      FROM agent_knowledge_folders
+      ORDER BY sort_order ASC, name ASC, id ASC
+    `);
+    return rows.map(toKnowledgeFolder);
+  }
+
+  async createKnowledgeFolder(input: KnowledgeFolderRow): Promise<"created" | "duplicate"> {
+    try {
+      await this.database.query(`
+        INSERT INTO agent_knowledge_folders(
+          id, parent_id, name, sort_order, created_by, created_at, updated_at
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+      `, [input.id, input.parentId, input.name, input.sortOrder, input.createdBy, input.createdAt, input.updatedAt]);
+      return "created";
+    } catch (error) {
+      if (isUniqueViolation(error)) return "duplicate";
+      throw error;
+    }
+  }
+
+  async updateKnowledgeFolder(
+    id: string,
+    input: { parentId: string | null; name: string; sortOrder: number; updatedAt: string }
+  ): Promise<KnowledgeFolderWriteResult> {
+    try {
+      const { rows } = await this.database.query<KnowledgeFolderRowShape>(`
+        UPDATE agent_knowledge_folders
+        SET parent_id = $1, name = $2, sort_order = $3, updated_at = $4
+        WHERE id = $5
+        RETURNING id, parent_id, name, sort_order, created_by, created_at, updated_at
+      `, [input.parentId, input.name, input.sortOrder, input.updatedAt, id]);
+      const row = rows[0];
+      return row === undefined
+        ? { kind: "not_found" }
+        : { kind: "updated", folder: toKnowledgeFolder(row) };
+    } catch (error) {
+      if (isUniqueViolation(error)) return { kind: "duplicate" };
+      throw error;
+    }
+  }
+
+  async deleteKnowledgeFolder(id: string): Promise<"deleted" | "not_found" | "not_empty"> {
+    return this.database.transaction(async (client) => {
+      const existing = await this.database.queryIn(client,
+        "SELECT id FROM agent_knowledge_folders WHERE id = $1 FOR UPDATE", [id]);
+      if (existing.rows[0] === undefined) return "not_found" as const;
+      const usage = await this.database.queryIn<{ count: number }>(client, `
+        SELECT (
+          (SELECT COUNT(*) FROM agent_knowledge_folders WHERE parent_id = $1) +
+          (SELECT COUNT(*) FROM agent_knowledge_items WHERE folder_id = $1)
+        )::int AS count
+      `, [id]);
+      if ((usage.rows[0]?.count ?? 0) > 0) return "not_empty" as const;
+      await this.database.queryIn(client, "DELETE FROM agent_knowledge_folders WHERE id = $1", [id]);
+      return "deleted" as const;
+    });
+  }
+
+  async moveKnowledge(id: string, folderId: string | null, updatedAt: string): Promise<"updated" | "not_found"> {
+    const { rowCount } = await this.database.query(`
+      UPDATE agent_knowledge_items SET folder_id = $1, updated_at = $2 WHERE id = $3
+    `, [folderId, updatedAt, id]);
+    return rowCount === 1 ? "updated" : "not_found";
+  }
 
   async createKnowledge(input: KnowledgeRow & { chunks: ChunkInput[] }): Promise<void> {
     await this.database.transaction(async (client) => {
@@ -290,13 +384,14 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     await this.database.queryIn(
       client,
       `INSERT INTO agent_knowledge_items(
-        id, name, source, description, source_media_id, size_bytes,
+        id, name, folder_id, source, description, source_media_id, size_bytes,
         mime_type, sha256, status, parse_error, chunk_count,
         created_by, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
       [
         input.id,
         input.name,
+        input.folderId ?? null,
         input.source,
         input.description,
         input.sourceMediaId,
@@ -323,12 +418,23 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
 
   async listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]> {
     const { rows } = await this.database.query<KnowledgeRowShape>(
-      `SELECT id, name, category, source, description, source_media_id, size_bytes,
-             mime_type, sha256, status, parse_error, chunk_count,
-             created_by, created_at, updated_at
-      FROM agent_knowledge_items
-      ${status === undefined ? "" : "WHERE status = $1"}
-      ORDER BY updated_at DESC, id ASC`,
+      `WITH RECURSIVE folder_paths(id, path, depth) AS (
+        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
+        FROM agent_knowledge_folders AS child
+        JOIN folder_paths AS parent ON child.parent_id = parent.id
+        WHERE parent.depth < 3
+      )
+      SELECT items.id, items.name, items.folder_id,
+             folder_paths.path AS category,
+             items.source, items.description, items.source_media_id, items.size_bytes,
+             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
+             items.created_by, items.created_at, items.updated_at
+      FROM agent_knowledge_items AS items
+      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
+      ${status === undefined ? "" : "WHERE items.status = $1"}
+      ORDER BY items.updated_at DESC, items.id ASC`,
       status === undefined ? [] : [status]
     );
     return rows.map(toKnowledge);
@@ -339,12 +445,12 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     return row === undefined ? null : toKnowledge(row);
   }
 
-  async updateKnowledgeMetadata(id: string, input: { name: string; category: string | null; source: string | null; description: string | null; updatedAt: string }): Promise<"updated" | "not_found"> {
+  async updateKnowledgeMetadata(id: string, input: { name: string; source: string | null; description: string | null; updatedAt: string }): Promise<"updated" | "not_found"> {
     const { rowCount } = await this.database.query(`
       UPDATE agent_knowledge_items
-      SET name = $1, category = $2, source = $3, description = $4, updated_at = $5
-      WHERE id = $6
-    `, [input.name, input.category, input.source, input.description, input.updatedAt, id]);
+      SET name = $1, source = $2, description = $3, updated_at = $4
+      WHERE id = $5
+    `, [input.name, input.source, input.description, input.updatedAt, id]);
     return rowCount === 1 ? "updated" : "not_found";
   }
 
@@ -356,10 +462,22 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   /** 事务外知识读取（与 findKnowledge 同 SQL）。 */
   private async findKnowledgeById(id: string): Promise<KnowledgeRowShape | undefined> {
     const { rows } = await this.database.query<KnowledgeRowShape>(
-      `SELECT id, name, category, source, description, source_media_id, size_bytes,
-             mime_type, sha256, status, parse_error, chunk_count,
-             created_by, created_at, updated_at
-      FROM agent_knowledge_items WHERE id = $1`,
+      `WITH RECURSIVE folder_paths(id, path, depth) AS (
+        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
+        FROM agent_knowledge_folders AS child
+        JOIN folder_paths AS parent ON child.parent_id = parent.id
+        WHERE parent.depth < 3
+      )
+      SELECT items.id, items.name, items.folder_id,
+             folder_paths.path AS category,
+             items.source, items.description, items.source_media_id, items.size_bytes,
+             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
+             items.created_by, items.created_at, items.updated_at
+      FROM agent_knowledge_items AS items
+      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
+      WHERE items.id = $1`,
       [id]
     );
     return rows[0];
@@ -372,10 +490,22 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   ): Promise<KnowledgeRowShape | undefined> {
     const { rows } = await this.database.queryIn<KnowledgeRowShape>(
       client,
-      `SELECT id, name, category, source, description, source_media_id, size_bytes,
-             mime_type, sha256, status, parse_error, chunk_count,
-             created_by, created_at, updated_at
-      FROM agent_knowledge_items WHERE id = $1`,
+      `WITH RECURSIVE folder_paths(id, path, depth) AS (
+        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
+        FROM agent_knowledge_folders AS child
+        JOIN folder_paths AS parent ON child.parent_id = parent.id
+        WHERE parent.depth < 3
+      )
+      SELECT items.id, items.name, items.folder_id,
+             folder_paths.path AS category,
+             items.source, items.description, items.source_media_id, items.size_bytes,
+             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
+             items.created_by, items.created_at, items.updated_at
+      FROM agent_knowledge_items AS items
+      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
+      WHERE items.id = $1`,
       [id]
     );
     return rows[0];
