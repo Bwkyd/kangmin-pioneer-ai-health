@@ -2,7 +2,7 @@
 
 <meta>
   <document-id>km-real</document-id>
-  <version>1.1.24</version>
+  <version>1.1.25</version>
   <project>kangmin · 抗敏先锋 AI 鼻健康管理系统</project>
   <type>Reality Constraints</type>
   <created>2026-08-13</created>
@@ -67,9 +67,10 @@
   AI 知识资料已按上传、自动索引、单资料检索测试和运营明确启用组成连续任务；换文件保留
   知识 ID、原子替换正文与向量并重置旧启用状态，知识列表同样按每页 20 条分页。文章、视频
   和 AI 知识页现提供二级文件管理入口，按用途显示文件引用去向；任一状态仍被业务使用的文件
-  均不能直接删除。
+  均不能直接删除。管理后台工作台现按今日待办、快捷新建、内容概览三层组织，文章、视频和
+  AI 知识资料可直接进入新建任务，首批服务端状态回读完成前不显示伪零数据。
   当前 release 为
-  `file-management-880421f`，公网入口为
+  `workbench-3dc46cf`，公网入口为
   `https://140.143.120.176`。
   托管 PostgreSQL、COS、正式微信身份链路和其他
   正式云资源由客户支付尾款后购买并部署，当前不为此提前扩建。
