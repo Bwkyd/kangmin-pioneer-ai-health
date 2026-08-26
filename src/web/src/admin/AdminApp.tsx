@@ -911,6 +911,7 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
   const [file, setFile] = useState<File | null>(null);
   const [source, setSource] = useState("");
   const [uploadFolderId, setUploadFolderId] = useState("");
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [selectedFolder, setSelectedFolder] = useState<"all" | "unfiled" | string>("all");
   const [query, setQuery] = useState("");
   const [listQuery, setListQuery] = useState("");
@@ -923,6 +924,7 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
   const [folderMode, setFolderMode] = useState<"create" | "edit" | null>(null);
   const [folderName, setFolderName] = useState("");
   const [folderParentId, setFolderParentId] = useState("");
+  const [movingItemId, setMovingItemId] = useState<string | null>(null);
 
   useEffect(() => {
     setStatusFilter(initialStatusFilter);
@@ -974,14 +976,24 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
   async function add(event: FormEvent) {
     event.preventDefault();
     if (file === null) return;
-    await run(async () => {
+    const succeeded = await run(async () => {
       const media = await uploadFile(file);
       await adminCommand("agent knowledge add-from-media", { mediaId: media.id, source, description: "后台上传", folderId: uploadFolderId || null });
       setFile(null);
       setSource("");
+      setUploadFolderId("");
     }, "知识资料已上传，请建立索引后启用");
+    if (succeeded) setUploadOpen(false);
+  }
+  function closeUpload() {
+    if (busy) return;
+    setUploadOpen(false);
+    setFile(null);
+    setSource("");
+    setUploadFolderId("");
   }
   async function action(item: KnowledgeItem, command: "index" | "enable" | "disable") {
+    if (command === "disable" && !window.confirm(`停用“${item.name}”后，它将不再参与智能体检索。确认停用？`)) return;
     const succeeded = await run(() => adminCommand(`agent knowledge ${command}`, { id: item.id, yes: true }).then(() => undefined), command === "index" ? "索引已建立" : command === "enable" ? "知识已启用" : "知识已停用");
     if (succeeded) setStatusFilter("all");
   }
@@ -1003,7 +1015,8 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
     if (succeeded) setEditing(null);
   }
   async function moveItem(item: KnowledgeItem, folderId: string) {
-    await run(() => adminCommand("agent knowledge move", { id: item.id, folderId: folderId || null }).then(() => undefined), folderId === "" ? "知识已移到未分类" : "知识已移动到目标目录");
+    const succeeded = await run(() => adminCommand("agent knowledge move", { id: item.id, folderId: folderId || null }).then(() => undefined), folderId === "" ? "知识已移到未分类" : "知识已移动到目标目录");
+    if (succeeded) setMovingItemId(null);
   }
   async function remove(item: KnowledgeItem) {
     if (!window.confirm(`确认删除知识“${item.name}”？源素材会保留在素材库。`)) return;
@@ -1059,7 +1072,61 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
   const selectedLabel = selectedFolder === "all" ? "全部知识" : selectedFolder === "unfiled" ? "未分类" : folderPath(selectedFolder);
   const allowedParents = folderOptions.filter((folder) => folder.depth < 3 && (folderMode !== "edit" || (folder.id !== selectedFolderItem?.id && !descendantsOfSelected.has(folder.id))));
 
-  return <section className="manager-card knowledge-manager"><div className="manager-heading knowledge-heading"><div><span className="section-kicker">内容运营 / 受控知识生效</span><h2>智能体知识库</h2><p>目录只用于整理资料；知识仍需单独建立索引并启用后才参与检索。</p></div><form className="knowledge-upload" onSubmit={(event) => void add(event)}><select aria-label="上传到目录" value={uploadFolderId} onChange={(event) => setUploadFolderId(event.target.value)}><option value="">未分类</option>{folderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folderPath(folder.id)}</option>)}</select><input aria-label="知识来源" placeholder="来源说明（可选）" value={source} onChange={(event) => setSource(event.target.value)}/><input aria-label="选择知识文件" type="file" accept=".md,.markdown,.txt,.pdf,.docx" required onChange={(event) => setFile(event.target.files?.[0] ?? null)}/><button className="primary" disabled={busy || file === null}>上传知识</button></form></div><div className="knowledge-workspace"><aside className="knowledge-folders"><div className="folder-title"><strong>知识目录</strong><button disabled={busy} onClick={() => startCreate(null)}>新建目录</button></div><nav aria-label="知识目录树"><button className={selectedFolder === "all" ? "active system-folder" : "system-folder"} onClick={() => { setSelectedFolder("all"); setFolderMode(null); }}><span>▦</span><strong>全部知识</strong><small>{items.length}</small></button><button className={selectedFolder === "unfiled" ? "active system-folder" : "system-folder"} onClick={() => { setSelectedFolder("unfiled"); setFolderMode(null); }}><span>□</span><strong>未分类</strong><small>{items.filter((item) => item.folderId === null).length}</small></button>{renderFolders(null)}</nav>{selectedFolderItem !== null && <div className="folder-actions"><button disabled={busy || selectedFolderItem.depth >= 3} onClick={() => startCreate(selectedFolderItem.id)}>新建子目录</button><button disabled={busy} onClick={startEdit}>编辑目录</button><button className="danger-link" disabled={busy} onClick={() => void deleteSelectedFolder()}>删除空目录</button></div>}{folderMode !== null && <form className="folder-form" onSubmit={(event) => void saveFolder(event)}><strong>{folderMode === "edit" ? "编辑目录" : "新建目录"}</strong><label>目录名称<input autoFocus required maxLength={40} value={folderName} onChange={(event) => setFolderName(event.target.value)}/></label><label>上级目录<select value={folderParentId} onChange={(event) => setFolderParentId(event.target.value)}><option value="">根目录</option>{allowedParents.map((folder) => <option key={folder.id} value={folder.id}>{folderPath(folder.id)}</option>)}</select></label><div><button type="button" onClick={() => setFolderMode(null)}>取消</button><button className="primary" disabled={busy}>保存</button></div></form>}</aside><div className="knowledge-list"><div className="manager-toolbar"><label className="filter-field">搜索当前视图<input aria-label="搜索知识资料" placeholder="按名称、目录、来源或错误搜索" value={listQuery} onChange={(event) => setListQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label="筛选知识状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as KnowledgeStatusFilter)}><option value="all">全部状态</option><option value="processing">待建索引</option><option value="indexed">已建索引</option><option value="enabled">已启用</option><option value="disabled">已停用</option><option value="index_failed">索引失败</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>{selectedLabel}</span><small>只显示本层资料，不包含子目录</small></div></div>{editing !== null && <form className="content-form knowledge-edit-form" data-testid="knowledge-edit-form" onSubmit={(event) => void saveEdit(event)}><div className="form-grid"><label>知识名称<input required value={editName} onChange={(event) => setEditName(event.target.value)}/></label><label>来源说明（可留空）<input value={editSource} onChange={(event) => setEditSource(event.target.value)}/></label></div>{editError !== "" && <div className="form-error" role="alert">{editError}</div>}<div className="form-actions"><button type="button" onClick={() => setEditing(null)}>取消编辑</button><button className="primary" disabled={busy}>保存修改</button></div></form>}{filteredItems.length === 0 ? <Empty icon="知" title={items.length === 0 ? "还没有知识资料" : "当前目录没有匹配知识"} text={items.length === 0 ? "先创建目录或直接上传到未分类，建立索引并启用后再做检索测试。" : "切换目录、搜索词或状态筛选后继续。"}/> : <div className="table-wrap"><table><thead><tr><th>资料</th><th>所在目录</th><th>状态 / 下一步</th><th>分块</th><th>操作</th></tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}><td><strong>{item.name}</strong><small>{item.source || "未填写来源"}{item.parseError ? ` · ${item.parseError}` : ""}</small></td><td><select aria-label={`移动知识 ${item.name}`} value={item.folderId ?? ""} disabled={busy} onChange={(event) => void moveItem(item, event.target.value)}><option value="">未分类</option>{folderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folderPath(folder.id)}</option>)}</select></td><td><span className={`status ${item.status}`}>{knowledgeStatusLabels[item.status]}</span><small className="next-step">{item.status === "processing" ? "下一步：建立索引" : item.status === "indexed" ? "下一步：启用后参与检索" : item.status === "enabled" ? "当前参与检索" : item.status === "disabled" ? "需要时重新启用" : `需更换文件：${item.parseError ?? "解析失败"}`}</small></td><td>{item.chunkCount}</td><td className="row-actions"><button disabled={busy || editing?.id === item.id} onClick={() => openEdit(item)}>{editing?.id === item.id ? "正在编辑" : "编辑"}</button>{item.status === "processing" && <button disabled={busy} onClick={() => void action(item, "index")}>建立索引</button>}{(item.status === "indexed" || item.status === "disabled") && <button disabled={busy} onClick={() => void action(item, "enable")}>启用</button>}{item.status === "enabled" && <button disabled={busy} onClick={() => void action(item, "disable")}>停用</button>}{item.status !== "enabled" && <button disabled={busy} onClick={() => void remove(item)}>删除</button>}</td></tr>)}</tbody></table></div>}<form className="search-test" onSubmit={(event) => void search(event)}><label>全库检索测试<input required placeholder="输入客户可能询问的问题" value={query} onChange={(event) => setQuery(event.target.value)}/></label><button disabled={busy}>测试检索</button></form>{hits.length > 0 && <div className="search-results">{hits.map((hit, index) => <article key={`${hit.knowledgeId}-${index}`}><strong>{hit.name}</strong><p>{hit.snippet}</p></article>)}</div>}</div></div></section>;
+  return (
+    <section className="manager-card knowledge-manager">
+      <div className="knowledge-primary-actions">
+        <p>只有已建立索引并启用的资料才参与智能体检索。</p>
+        <button className="primary" disabled={busy} onClick={() => setUploadOpen(true)}>上传知识</button>
+      </div>
+      {uploadOpen && (
+        <div className="knowledge-upload-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeUpload(); }}>
+          <form className="knowledge-upload-dialog" role="dialog" aria-modal="true" aria-labelledby="knowledge-upload-title" onSubmit={(event) => void add(event)}>
+            <div className="knowledge-upload-heading">
+              <div><h2 id="knowledge-upload-title">上传知识</h2><p>支持 Markdown、文本、PDF 和 Word；上传后还需建立索引并启用。</p></div>
+              <button type="button" aria-label="关闭上传知识" disabled={busy} onClick={closeUpload}>×</button>
+            </div>
+            <div className="knowledge-upload-fields">
+              <label>保存到目录<select aria-label="上传到目录" value={uploadFolderId} onChange={(event) => setUploadFolderId(event.target.value)}><option value="">未分类</option>{folderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folderPath(folder.id)}</option>)}</select></label>
+              <label>来源说明（可选）<input aria-label="知识来源" placeholder="例如：客户提供资料" value={source} onChange={(event) => setSource(event.target.value)}/></label>
+              <label className="knowledge-file-picker"><span>{file?.name ?? "选择知识文件"}</span><small>Markdown、TXT、PDF 或 DOCX</small><input aria-label="选择知识文件" type="file" accept=".md,.markdown,.txt,.pdf,.docx" required onChange={(event) => setFile(event.target.files?.[0] ?? null)}/></label>
+            </div>
+            <div className="knowledge-upload-actions"><button type="button" disabled={busy} onClick={closeUpload}>取消</button><button className="primary" disabled={busy || file === null}>确认上传</button></div>
+          </form>
+        </div>
+      )}
+      <div className="knowledge-workspace">
+        <aside className="knowledge-folders">
+          <div className="folder-title"><strong>知识目录</strong><button disabled={busy} onClick={() => startCreate(null)}>新建目录</button></div>
+          <nav aria-label="知识目录树">
+            <button className={selectedFolder === "all" ? "active system-folder" : "system-folder"} onClick={() => { setSelectedFolder("all"); setFolderMode(null); }}><span>▦</span><strong>全部知识</strong><small>{items.length}</small></button>
+            <button className={selectedFolder === "unfiled" ? "active system-folder" : "system-folder"} onClick={() => { setSelectedFolder("unfiled"); setFolderMode(null); }}><span>□</span><strong>未分类</strong><small>{items.filter((item) => item.folderId === null).length}</small></button>
+            {renderFolders(null)}
+          </nav>
+          {selectedFolderItem !== null && <div className="folder-actions"><button disabled={busy || selectedFolderItem.depth >= 3} onClick={() => startCreate(selectedFolderItem.id)}>新建子目录</button><button disabled={busy} onClick={startEdit}>编辑目录</button><button className="danger-link" disabled={busy} onClick={() => void deleteSelectedFolder()}>删除空目录</button></div>}
+          {folderMode !== null && <form className="folder-form" onSubmit={(event) => void saveFolder(event)}><strong>{folderMode === "edit" ? "编辑目录" : "新建目录"}</strong><label>目录名称<input autoFocus required maxLength={40} value={folderName} onChange={(event) => setFolderName(event.target.value)}/></label><label>上级目录<select value={folderParentId} onChange={(event) => setFolderParentId(event.target.value)}><option value="">根目录</option>{allowedParents.map((folder) => <option key={folder.id} value={folder.id}>{folderPath(folder.id)}</option>)}</select></label><div><button type="button" onClick={() => setFolderMode(null)}>取消</button><button className="primary" disabled={busy}>保存</button></div></form>}
+        </aside>
+        <div className="knowledge-list">
+          <div className="manager-toolbar">
+            <label className="filter-field">搜索当前视图<input aria-label="搜索知识资料" placeholder="按名称、目录、来源或错误搜索" value={listQuery} onChange={(event) => setListQuery(event.target.value)}/></label>
+            <label className="filter-field filter-status">状态筛选<select aria-label="筛选知识状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as KnowledgeStatusFilter)}><option value="all">全部状态</option><option value="processing">待建索引</option><option value="indexed">已建索引</option><option value="enabled">已启用</option><option value="disabled">已停用</option><option value="index_failed">索引失败</option></select></label>
+            <div className="knowledge-view-note"><strong>{selectedLabel}</strong><small>只显示本层资料，不包含子目录</small></div>
+          </div>
+          {editing !== null && <form className="content-form knowledge-edit-form" data-testid="knowledge-edit-form" onSubmit={(event) => void saveEdit(event)}><div className="form-grid"><label>知识名称<input required value={editName} onChange={(event) => setEditName(event.target.value)}/></label><label>来源说明（可留空）<input value={editSource} onChange={(event) => setEditSource(event.target.value)}/></label></div>{editError !== "" && <div className="form-error" role="alert">{editError}</div>}<div className="form-actions"><button type="button" onClick={() => setEditing(null)}>取消编辑</button><button className="primary" disabled={busy}>保存修改</button></div></form>}
+          {filteredItems.length === 0 ? <Empty icon="知" title={items.length === 0 ? "还没有知识资料" : "当前目录没有匹配知识"} text={items.length === 0 ? "先创建目录或直接上传到未分类，建立索引并启用后再做检索测试。" : "切换目录、搜索词或状态筛选后继续。"}/> : (
+            <div className="table-wrap"><table><thead><tr><th>资料</th><th>所在目录</th><th>状态 / 下一步</th><th>操作</th></tr></thead><tbody>{filteredItems.map((item) => (
+              <tr key={item.id}>
+                <td className="knowledge-item-copy"><strong>{item.name}</strong><small>{item.source || "未填写来源"}{item.parseError ? ` · ${item.parseError}` : ""}</small></td>
+                <td className="knowledge-folder-cell"><span>{item.folderId === null ? "未分类" : folderPath(item.folderId)}</span>{movingItemId === item.id ? <select autoFocus aria-label={`移动知识 ${item.name}`} value={item.folderId ?? ""} disabled={busy} onChange={(event) => void moveItem(item, event.target.value)} onBlur={() => setMovingItemId(null)}><option value="">未分类</option>{folderOptions.map((folder) => <option key={folder.id} value={folder.id}>{folderPath(folder.id)}</option>)}</select> : <button className="table-link" disabled={busy} onClick={() => setMovingItemId(item.id)}>移动</button>}</td>
+                <td className="knowledge-state-cell"><span className={`status ${item.status}`}>{knowledgeStatusLabels[item.status]}</span>{item.status !== "enabled" && <small className="next-step">{item.status === "processing" ? "下一步：建立索引" : item.status === "indexed" ? "下一步：启用后参与检索" : item.status === "disabled" ? "需要时重新启用" : `需更换文件：${item.parseError ?? "解析失败"}`}</small>}</td>
+                <td className="row-actions knowledge-row-actions"><button disabled={busy || editing?.id === item.id} onClick={() => openEdit(item)}>{editing?.id === item.id ? "正在编辑" : "编辑"}</button>{item.status === "processing" && <button disabled={busy} onClick={() => void action(item, "index")}>建立索引</button>}{(item.status === "indexed" || item.status === "disabled") && <button disabled={busy} onClick={() => void action(item, "enable")}>启用</button>}{item.status === "enabled" && <button disabled={busy} onClick={() => void action(item, "disable")}>停用</button>}{item.status !== "enabled" && <button disabled={busy} onClick={() => void remove(item)}>删除</button>}</td>
+              </tr>
+            ))}</tbody></table></div>
+          )}
+          <details className="knowledge-search-test"><summary>检索测试 <span>验证启用资料能否被问题命中</span></summary><form className="search-test" onSubmit={(event) => void search(event)}><label>全库检索测试<input required placeholder="输入客户可能询问的问题" value={query} onChange={(event) => setQuery(event.target.value)}/></label><button disabled={busy}>测试检索</button></form>{hits.length > 0 && <div className="search-results">{hits.map((hit, index) => <article key={`${hit.knowledgeId}-${index}`}><strong>{hit.name}</strong><p>{hit.snippet}</p></article>)}</div>}</details>
+        </div>
+      </div>
+    </section>
+  );
 }
 
 function Empty({ icon, title, text }: { icon: string; title: string; text: string }) { return <div className="empty-state"><span>{icon}</span><strong>{title}</strong><p>{text}</p></div>; }
