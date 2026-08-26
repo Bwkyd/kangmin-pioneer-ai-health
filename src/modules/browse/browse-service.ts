@@ -8,6 +8,7 @@ import type {
   CarePlanSummary,
   PatientMessage,
   PublicContent,
+  PublicContentCategory,
   PublicContentKind,
   PublishedMedia
 } from "./contracts.js";
@@ -84,6 +85,10 @@ export class BrowseService {
 
   async categories(kind: PublicContentKind): Promise<string[]> {
     return this.repository.categories(kind);
+  }
+
+  async categoryRegistry(kind: PublicContentKind): Promise<PublicContentCategory[]> {
+    return this.repository.categoryRegistry(kind);
   }
 
   async search(

@@ -24,6 +24,7 @@ interface ContentItem {
   kind: ContentKind;
   title: string;
   category: string;
+  categoryIds: string[];
   summary: string;
   body: string;
   source: string;
@@ -90,7 +91,17 @@ interface MessageItem {
   updatedAt: string;
 }
 
-interface CategoryItem { id: string; name: string; kind: string; status: string }
+interface CategoryRegistryItem {
+  id: string;
+  name: string;
+  kind: ContentKind;
+  parentId: string | null;
+  audience: "adult" | "child" | "all";
+  nodeType: "audience" | "group" | "leaf";
+  status: "active" | "disabled";
+  selectable: boolean;
+  displayOrder: number;
+}
 interface KnowledgeHit { knowledgeId: string; name: string; snippet: string }
 
 type ContentStatusFilter = "all" | ContentItem["status"];
@@ -142,7 +153,8 @@ export function AdminApp() {
   const [knowledge, setKnowledge] = useState<KnowledgeItem[]>([]);
   const [knowledgeFolders, setKnowledgeFolders] = useState<KnowledgeFolder[]>([]);
   const [messages, setMessages] = useState<MessageItem[]>([]);
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [videoCategoryRegistry, setVideoCategoryRegistry] = useState<CategoryRegistryItem[]>([]);
+  const [articleCategoryRegistry, setArticleCategoryRegistry] = useState<CategoryRegistryItem[]>([]);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [synced, setSynced] = useState(false);
@@ -154,14 +166,15 @@ export function AdminApp() {
 
   const refresh = useCallback(async () => {
     setSynced(false);
-    const [articleData, videoData, messageData, mediaData, knowledgeData, folderData, categoryData] = await Promise.all([
+    const [articleData, videoData, messageData, mediaData, knowledgeData, folderData, articleRegistryData, videoRegistryData] = await Promise.all([
       adminCommand<{ items: ContentItem[] }>("content article list"),
       adminCommand<{ items: ContentItem[] }>("content video list"),
       adminCommand<{ items: MessageItem[] }>("content message list"),
       adminCommand<{ items: MediaItem[] }>("content media list"),
       adminCommand<{ items: KnowledgeItem[] }>("agent knowledge list"),
       adminCommand<{ items: KnowledgeFolder[] }>("agent knowledge folder list"),
-      adminCommand<{ items: CategoryItem[] }>("content category list")
+      adminCommand<{ items: CategoryRegistryItem[] }>("content article category-registry"),
+      adminCommand<{ items: CategoryRegistryItem[] }>("content video category-registry")
     ]);
     setArticles(articleData.items);
     setVideos(videoData.items);
@@ -169,7 +182,8 @@ export function AdminApp() {
     setMedia(mediaData.items);
     setKnowledge(knowledgeData.items);
     setKnowledgeFolders(folderData.items);
-    setCategories(categoryData.items);
+    setArticleCategoryRegistry(articleRegistryData.items);
+    setVideoCategoryRegistry(videoRegistryData.items);
     setSynced(true);
   }, []);
 
@@ -226,8 +240,8 @@ export function AdminApp() {
         <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1><p className="topbar-description">{section === "overview" ? "处理待办，管理小程序内容" : "按状态完成当前运营任务，所有写操作由服务端确认。"}</p></div>{section === "overview" && <span className={`sync-badge${synced ? "" : " pending"}`}><i></i> {synced ? "数据已同步" : "正在同步…"}</span>}</header>
         {notice !== "" && <div className="admin-toast" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice("")}>×</button></div>}
         {section === "overview" && (synced ? <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} onNavigate={navigate} /> : <section className="workbench-loading" role="status">正在读取服务端内容状态…</section>)}
-        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "article" && <ContentManager kind="article" items={articles} media={media} categoryRegistry={articleCategoryRegistry} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "video" && <ContentManager kind="video" items={videos} media={media} categoryRegistry={videoCategoryRegistry} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
         {section === "message" && <MessageManager items={messages} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
         {section === "knowledge" && <KnowledgeFolderManager items={knowledge} folders={knowledgeFolders} busy={busy} run={run} onOpenFiles={() => navigate("media")} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
         {section === "media" && <MediaManager items={media} busy={busy} run={run} />}
@@ -294,7 +308,7 @@ function Overview({ articles, videos, messages, knowledge, onNavigate }: { artic
   </div>;
 }
 
-const blank = (kind: ContentKind): Omit<ContentItem, "id" | "revision" | "status" | "updatedAt"> => ({ kind, title: "", category: "", summary: "", body: "", source: "", coverMediaId: null, mediaId: null, instructions: "", precautions: "", disclaimer: "", displayOrder: 0 });
+const blank = (kind: ContentKind): Omit<ContentItem, "id" | "revision" | "status" | "updatedAt"> => ({ kind, title: "", category: "", categoryIds: [], summary: "", body: "", source: "", coverMediaId: null, mediaId: null, instructions: "", precautions: "", disclaimer: "", displayOrder: 0 });
 
 /**
  * 列表响应还可能包含 publishedAt、methodTags 等服务端字段。编辑表单只保留页面明确
@@ -305,6 +319,7 @@ function editableContent(item: ContentItem): ReturnType<typeof blank> {
     kind: item.kind,
     title: item.title,
     category: item.category,
+    categoryIds: item.categoryIds,
     summary: item.summary,
     body: item.body,
     source: item.source,
@@ -352,7 +367,7 @@ const mediaKindLabels: Record<string, string> = {
 };
 
 function hasDraftContent(draft: DraftContent): boolean {
-  return [
+  return draft.categoryIds.length > 0 || [
     draft.title,
     draft.category,
     draft.summary,
@@ -370,7 +385,7 @@ function ContentManager({
   kind,
   items,
   media,
-  categories,
+  categoryRegistry,
   busy,
   run,
   onOpenFiles,
@@ -381,7 +396,7 @@ function ContentManager({
   kind: ContentKind;
   items: ContentItem[];
   media: MediaItem[];
-  categories: CategoryItem[];
+  categoryRegistry: CategoryRegistryItem[];
   busy: boolean;
   run: (action: () => Promise<void>, success: string) => Promise<boolean>;
   onOpenFiles: () => void;
@@ -392,7 +407,6 @@ function ContentManager({
   const [editing, setEditing] = useState<ContentItem | null>(null);
   const [draft, setDraft] = useState(blank(kind));
   const [showForm, setShowForm] = useState(initialCreate);
-  const [newCategory, setNewCategory] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ContentStatusFilter>(initialStatusFilter);
   const [categoryFilter, setCategoryFilter] = useState("all");
@@ -404,15 +418,42 @@ function ContentManager({
   const storageKey = "kangmin.admin.content-draft." + adminKey + "." + kind;
   const label = kind === "article" ? "文章" : "视频";
   const readyMedia = media.filter((item) => item.status === "ready");
-  const availableCategories = categories.filter((item) => item.status === "active" && (item.kind === kind || item.kind === "general"));
-  const filterCategories = useMemo(() => Array.from(new Set(items
-    .map((item) => item.category)
-    .filter((category) => category.trim() !== ""))).sort((left, right) => left.localeCompare(right, "zh-CN")), [items]);
+  const selectableRegistry = useMemo(() => categoryRegistry.filter((item) =>
+    item.status === "active" && item.selectable
+  ), [categoryRegistry]);
+  const registryById = useMemo(() => new Map(categoryRegistry.map((item) => [item.id, item])), [categoryRegistry]);
+  const categoryPath = useCallback((item: CategoryRegistryItem) => {
+    const names = [item.name];
+    let parentId = item.parentId;
+    while (parentId !== null) {
+      const parent = registryById.get(parentId);
+      if (parent === undefined) break;
+      names.unshift(parent.name);
+      parentId = parent.parentId;
+    }
+    return names.join(" / ");
+  }, [registryById]);
+  const filterCategories = selectableRegistry;
+  const videoCategoryGroups = useMemo(() => categoryRegistry
+    .filter((item) => item.status === "active" && item.nodeType === "audience")
+    .sort((left, right) => left.displayOrder - right.displayOrder)
+    .map((audience) => ({
+      audience,
+      groups: categoryRegistry
+        .filter((item) => item.status === "active" && item.parentId === audience.id)
+        .sort((left, right) => left.displayOrder - right.displayOrder)
+        .map((group) => ({
+          group,
+          leaves: selectableRegistry
+            .filter((item) => item.parentId === group.id)
+            .sort((left, right) => left.displayOrder - right.displayOrder)
+        }))
+    })), [categoryRegistry, selectableRegistry]);
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return items.filter((item) => {
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
-      const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
+      const matchesCategory = categoryFilter === "all" || item.categoryIds.includes(categoryFilter);
       const matchesQuery = normalized === "" || [item.title, item.summary, item.category].join(" ").toLocaleLowerCase().includes(normalized);
       return matchesStatus && matchesCategory && matchesQuery;
     });
@@ -537,7 +578,8 @@ function ContentManager({
   async function persistDraft(previewAfterSave = false) {
     let savedItem: ContentItem | null = null;
     const succeeded = await run(async () => {
-      const input = { ...draft, kind: undefined, idempotencyKey: crypto.randomUUID() } as Record<string, unknown>;
+      const { category: _derivedCategory, ...writableDraft } = draft;
+      const input = { ...writableDraft, kind: undefined, idempotencyKey: crypto.randomUUID() } as Record<string, unknown>;
       if (editing === null) {
         savedItem = await adminCommand<ContentItem>("content " + kind + " create", input);
       } else {
@@ -569,18 +611,6 @@ function ContentManager({
       return;
     }
     await persistDraft(true);
-  }
-
-  async function createCategory() {
-    const name = newCategory.trim();
-    if (name === "") return;
-    const succeeded = await run(async () => {
-      await adminCommand("content category create", { name, kind, displayOrder: 0 });
-    }, "分类已创建");
-    if (succeeded) {
-      setNewCategory("");
-      setDraft((current) => ({ ...current, category: name }));
-    }
   }
 
   async function importArticleDocument(event: ChangeEvent<HTMLInputElement>) {
@@ -656,7 +686,7 @@ function ContentManager({
       {recoveryNotice !== "" && <p className="form-hint recovery-hint">{recoveryNotice}</p>}
       <div className="manager-toolbar">
         <label className="filter-field">搜索{label}<input aria-label={"搜索" + label} placeholder="按标题、摘要或分类搜索" value={query} onChange={(event) => { setQuery(event.target.value); setCurrentPage(1); }} /></label>
-        {kind === "video" && <label className="filter-field filter-category">分类筛选<select aria-label="筛选视频分类" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setCurrentPage(1); }}><option value="all">全部分类</option>{filterCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>}
+        <label className="filter-field filter-category">分类筛选<select aria-label={`筛选${label}分类`} value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setCurrentPage(1); }}><option value="all">全部分类</option>{filterCategories.map((category) => <option key={category.id} value={category.id}>{categoryPath(category)}</option>)}</select></label>
         <label className="filter-field filter-status">状态筛选<select aria-label={"筛选" + label + "状态"} value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as ContentStatusFilter); setCurrentPage(1); }}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label>
         <div className="status-summary"><strong>{filteredItems.length}</strong><span>筛选结果</span><small>{draftCount} 条草稿 · {publishedCount} 条已发布</small></div>
       </div>
@@ -689,13 +719,10 @@ function ContentManager({
               )}
               <div className="form-grid">
                 <label>标题<input value={draft.title} onChange={(event) => setDraft({ ...draft, title: event.target.value })} /></label>
-                <label>分类<select value={draft.category} onChange={(event) => setDraft({ ...draft, category: event.target.value })}><option value="">未选择（草稿可暂留空）</option>{availableCategories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}</select></label>
+                {kind === "article" && <label>文章分类<select value={draft.categoryIds[0] ?? ""} onChange={(event) => setDraft({ ...draft, categoryIds: event.target.value === "" ? [] : [event.target.value] })}><option value="">未选择（草稿可暂留空）</option>{selectableRegistry.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
               </div>
-              <details className="category-create">
-                <summary>新建分类</summary>
-                <div className="category-create-fields"><input aria-label="新建分类名称" placeholder="输入分类名称" value={newCategory} onChange={(event) => setNewCategory(event.target.value)} /><button type="button" onClick={() => void createCategory()}>创建分类</button></div>
-                <small className="form-hint">分类会立即加入当前{label}的可选列表。</small>
-              </details>
+              {kind === "video" && <fieldset className="category-registry-select"><legend>视频分类（可多选）</legend><p>按适用人群、方案类别、细分类逐级选择；跨人群内容必须分别勾选。</p>{videoCategoryGroups.map(({ audience, groups }) => <section key={audience.id}><h3>{audience.name}</h3>{groups.map(({ group, leaves }) => <div className="category-registry-group" key={group.id}><strong>{group.name}</strong><div>{leaves.map((category) => { const fullPath = categoryPath(category); return <label key={category.id}><input aria-label={fullPath} type="checkbox" checked={draft.categoryIds.includes(category.id)} onChange={(event) => setDraft((current) => ({ ...current, categoryIds: event.target.checked ? [...new Set([...current.categoryIds, category.id])] : current.categoryIds.filter((id) => id !== category.id) }))} /><span>{category.name}<small>{fullPath}</small></span></label>; })}</div></div>)}</section>)}{selectableRegistry.length === 0 && <small>暂无可用视频分类，请核对 truth 与迁移状态。</small>}</fieldset>}
+              {kind === "article" && <p className="form-hint">文章统一归入“科普文章”，按最近更新时间排序；时间不是分类。</p>}
               <label>摘要<textarea rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
               <ContentBodyEditor label={kind === "article" ? "正文" : "视频说明"} value={draft.body} onChange={(body) => setDraft((current) => ({ ...current, body }))} run={run} />
               <details className="content-advanced">

@@ -48,6 +48,7 @@ function map(row: Row): AdminContentItem {
     kind: row.kind,
     title: row.title,
     category: row.category,
+    categoryIds: [],
     summary: row.summary,
     body: row.body,
     source: row.source,
@@ -81,6 +82,20 @@ function methodTagsJson(tags: readonly string[]): string {
  */
 export class PgContentAdminRepository implements ContentAdminRepository {
   constructor(private readonly database: KangminPgDatabase) {}
+
+  async listCategoryRegistry(kind: ContentItemKind) {
+    const { rows } = await this.database.query<{
+      id: string; name: string; kind: ContentItemKind; parent_id: string | null;
+      audience: "adult" | "child" | "all"; node_type: "audience" | "group" | "leaf";
+      status: "active" | "disabled"; selectable: number; display_order: number;
+    }>(`SELECT id, name, kind, parent_id, audience, node_type, status, selectable, display_order
+        FROM content_category_registry WHERE kind = $1
+        ORDER BY display_order ASC, id ASC`, [kind]);
+    return rows.map(({ parent_id, node_type, display_order, selectable, ...row }) => ({
+      ...row, parentId: parent_id, nodeType: node_type,
+      selectable: selectable === 1, displayOrder: display_order
+    }));
+  }
 
   async create(
     adminId: string,
@@ -142,6 +157,7 @@ export class PgContentAdminRepository implements ContentAdminRepository {
               item.displayOrder
             ]
           );
+          await this.syncCategoryLinks(client, item);
         }
       });
       switch (outcome.kind) {
@@ -153,10 +169,15 @@ export class PgContentAdminRepository implements ContentAdminRepository {
           return { kind: "stale_replay" as const };
         case "replayed":
           // 重放返回存储的原内容（原始 id），与患者侧语义一致。
+          {
+            const replayed = JSON.parse(outcome.resultJson) as AdminContentItem;
+            const stored = await this.find(item.kind, replayed.id);
+            if (stored === null) return { kind: "stale_replay" as const };
           return {
             kind: "replayed" as const,
-            item: JSON.parse(outcome.resultJson) as AdminContentItem
+              item: stored
           };
+          }
         case "date_conflict":
           // 管理端未启用 uniqueConflictAsDateConflict，结构上不可达；
           // 归入冲突，不向调用方泄露内部状态。
@@ -175,7 +196,7 @@ export class PgContentAdminRepository implements ContentAdminRepository {
        ORDER BY updated_at DESC, id ASC`,
       status === undefined ? [kind] : [kind, status]
     );
-    return rows.map(map);
+    return Promise.all(rows.map(async (row) => this.withCategoryIds(map(row))));
   }
 
   async find(
@@ -187,7 +208,7 @@ export class PgContentAdminRepository implements ContentAdminRepository {
       [kind, id]
     );
     const row = rows[0];
-    return row === undefined ? null : map(row);
+    return row === undefined ? null : this.withCategoryIds(map(row));
   }
 
   async update(
@@ -239,6 +260,7 @@ export class PgContentAdminRepository implements ContentAdminRepository {
       if (rowCount !== 1) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
+      await this.syncCategoryLinks(client, item);
       return { kind: "updated" as const, item };
     });
   }
@@ -303,6 +325,7 @@ export class PgContentAdminRepository implements ContentAdminRepository {
       if (rowCount !== 1) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
+      await this.syncCategoryLinks(client, item);
       return { kind: "updated" as const, item };
     });
   }
@@ -362,12 +385,55 @@ export class PgContentAdminRepository implements ContentAdminRepository {
     const bodyMedia = (await Promise.all(
       mediaIdsInContentBody(item.body).map((mediaId) => mediaState(mediaId))
     )).filter((media): media is PublishMediaState => media !== null);
+    const { rows: categories } = await this.database.queryIn<{
+      id: string; status: "active" | "disabled";
+      kind: ContentItemKind; selectable: number;
+    }>(client, `SELECT id, status, kind, selectable
+                FROM content_category_registry WHERE id = ANY($1::text[])
+                FOR SHARE`,
+      [item.categoryIds]);
     return {
       category: categoryRow ?? null,
+      categories: categories.map((category) => ({
+        ...category, selectable: category.selectable === 1
+      })),
       coverMedia: await mediaState(item.coverMediaId),
       media: await mediaState(item.mediaId),
       bodyMedia
     };
+  }
+
+  private async withCategoryIds(item: AdminContentItem): Promise<AdminContentItem> {
+    const { rows } = await this.database.query<{ category_id: string; path: string }>(`
+      WITH RECURSIVE paths(id, parent_id, name, path) AS (
+        SELECT id, parent_id, name, name::text
+        FROM content_category_registry WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, child.parent_id, child.name, paths.path || ' / ' || child.name
+        FROM content_category_registry AS child
+        JOIN paths ON child.parent_id = paths.id
+      )
+      SELECT links.category_id, paths.path
+      FROM content_item_category_links AS links
+      JOIN paths ON paths.id = links.category_id
+      WHERE links.content_id = $1 ORDER BY links.category_id ASC
+    `, [item.id]);
+    return {
+      ...item,
+      categoryIds: rows.map((row) => row.category_id),
+      category: rows.map((row) => row.path).join("；")
+    };
+  }
+
+  private async syncCategoryLinks(client: PoolClient, item: AdminContentItem): Promise<void> {
+    await this.database.queryIn(client,
+      "DELETE FROM content_item_category_links WHERE content_id = $1", [item.id]);
+    for (const categoryId of [...new Set(item.categoryIds)]) {
+      await this.database.queryIn(client, `
+        INSERT INTO content_item_category_links(content_id, category_id, created_at)
+        VALUES ($1, $2, $3)
+      `, [item.id, categoryId, item.updatedAt]);
+    }
   }
 
   private scopeOf(kind: ContentItemKind): string {

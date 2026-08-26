@@ -97,7 +97,8 @@ if (databaseUrl === undefined) {
       disclaimer: "",
       methodTags: [],
       displayOrder: 0,
-      ...overrides
+      ...overrides,
+      categoryIds: overrides.categoryIds ?? []
     };
   }
 

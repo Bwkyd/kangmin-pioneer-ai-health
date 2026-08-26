@@ -25,7 +25,7 @@ export type ContentItemChanges = OptionalOf<
   Pick<
     AdminContentItem,
     | "title"
-    | "category"
+    | "categoryIds"
     | "summary"
     | "body"
     | "source"
@@ -55,9 +55,9 @@ export class ContentAdminService {
   // ==== 文章（#135 兼容，扩展媒体/分类校验） ====
 
   async create(adminId: string, input: CreateContentInput) {
-    await this.assertCategoryExists("article", input.category);
+    const category = await this.categoryDisplay("article", input.categoryIds);
     const timestamp = new Date().toISOString();
-    const request = this.businessFields(input);
+    const request = { ...this.businessFields(input), category };
     const item: AdminContentItem = {
       id: randomUUID(),
       kind: "article",
@@ -127,9 +127,9 @@ export class ContentAdminService {
   // ==== 视频 ====
 
   async createVideo(adminId: string, input: CreateContentInput) {
-    await this.assertCategoryExists("video", input.category);
+    const category = await this.categoryDisplay("video", input.categoryIds);
     const timestamp = new Date().toISOString();
-    const request = this.businessFields(input);
+    const request = { ...this.businessFields(input), category };
     const item: AdminContentItem = {
       id: randomUUID(),
       kind: "video",
@@ -156,6 +156,10 @@ export class ContentAdminService {
 
   async listVideos(status?: "draft" | "published" | "unpublished") {
     return this.repository.list("video", status);
+  }
+
+  async categoryRegistry(kind: ContentItemKind) {
+    return this.repository.listCategoryRegistry(kind);
   }
 
   async getVideo(id: string): Promise<AdminContentItem> {
@@ -202,6 +206,7 @@ export class ContentAdminService {
     return {
       title: input.title,
       category: input.category,
+      categoryIds: [...new Set(input.categoryIds)],
       summary: input.summary,
       body: input.body,
       source: input.source,
@@ -240,15 +245,15 @@ export class ContentAdminService {
     if (Object.keys(changes).length === 0) {
       throw new DomainError("validation_failed", "至少提供一个需要更新的字段");
     }
-    if (changes.category !== undefined) {
-      await this.assertCategoryExists(kind, changes.category);
-    }
     // 显式 undefined 表示未提供（继承当前值），不能覆盖现有字段。
     const provided: Record<string, unknown> = {};
     for (const [key, value] of Object.entries(changes)) {
       if (value !== undefined) {
         provided[key] = value;
       }
+    }
+    if (changes.categoryIds !== undefined) {
+      provided.category = await this.categoryDisplay(kind, changes.categoryIds);
     }
     return this.commitItem(
       {
@@ -350,32 +355,35 @@ export class ContentAdminService {
     return unpublished;
   }
 
-  /**
-   * 分类统一（评审 A P1-6）：create/update 的 category（非空时）必须
-   * 引用 content_categories 中已存在的分类，kind 为 general 或与内容
-   * 类型一致；不存在或类型不符 → validation_failed。
-   * 停用状态仍由发布前校验把关（草稿可保留引用停用分类的分类名）。
-   */
-  private async assertCategoryExists(
-    kind: ContentItemKind,
-    category: string
-  ): Promise<void> {
-    if (category.trim() === "") {
-      return;
+  /** 写入只接受稳定分类 ID；category 仅由注册表路径派生用于展示。 */
+  private async categoryDisplay(kind: ContentItemKind, categoryIds: readonly string[]): Promise<string> {
+    const ids = [...new Set(categoryIds)];
+    const registry = await this.repository.listCategoryRegistry(kind);
+    const byId = new Map(registry.map((category) => [category.id, category]));
+    for (const id of ids) {
+      const category = byId.get(id);
+      if (category === undefined) {
+        const otherKind = kind === "article" ? "video" : "article";
+        const belongsToOtherKind = (await this.repository.listCategoryRegistry(otherKind))
+          .some((candidate) => candidate.id === id);
+        if (belongsToOtherKind) {
+          throw new DomainError("validation_failed", `分类 ID「${id}」与${kind === "article" ? "文章" : "视频"}类型不符`);
+        }
+        throw new DomainError("validation_failed", `${kind === "article" ? "文章" : "视频"}分类 ID「${id}」不存在`);
+      }
+      if (!category.selectable || category.status !== "active") {
+        throw new DomainError("validation_failed", `分类「${category.name}」当前不可选择`);
+      }
     }
-    const row = await this.aux.findCategoryByName(category);
-    if (row === null) {
-      throw new DomainError(
-        "validation_failed",
-        `分类「${category}」不存在，请先创建分类`
-      );
-    }
-    if (row.kind !== "general" && row.kind !== kind) {
-      throw new DomainError(
-        "validation_failed",
-        "分类类型与内容类型不符"
-      );
-    }
+    return ids.map((id) => {
+      const names: string[] = [];
+      let current = byId.get(id);
+      while (current !== undefined) {
+        names.unshift(current.name);
+        current = current.parentId === null ? undefined : byId.get(current.parentId);
+      }
+      return names.join(" / ");
+    }).join("；");
   }
 
   /**
@@ -385,19 +393,12 @@ export class ContentAdminService {
    */
   private async validateForPublish(item: AdminContentItem): Promise<string[]> {
     const missing = this.staticPublishMissing(item);
-    if (item.category.trim() !== "") {
-      const category = await this.aux.findCategoryByName(item.category);
-      if (category === null) {
-        // 与发布路径的 dependencyMissing 一致：引用了不存在的分类 → 缺失。
-        missing.push("分类不存在");
-      } else if (category.status !== "active") {
-        missing.push("分类已停用");
-      } else if (
-        category.kind !== "general" &&
-        category.kind !== item.kind
-      ) {
-        missing.push("分类类型不符");
-      }
+    {
+      const registry = await this.repository.listCategoryRegistry(item.kind);
+      const selected = registry.filter((category) => item.categoryIds.includes(category.id));
+      if (selected.length !== item.categoryIds.length) missing.push("分类不存在");
+      if (selected.some((category) => !category.selectable)) missing.push("分类不可选择");
+      if (selected.some((category) => category.status !== "active")) missing.push("分类已停用");
     }
 
     for (const mediaId of [item.coverMediaId, item.mediaId]) {
@@ -437,13 +438,15 @@ export class ContentAdminService {
     const missing: string[] = [];
     for (const [field, value] of Object.entries({
       标题: item.title,
-      分类: item.category,
       摘要: item.summary,
       来源: item.source
     })) {
       if (value.trim() === "") {
         missing.push(field);
       }
+    }
+    if (item.categoryIds.length === 0) {
+      missing.push("分类");
     }
     if (item.body.trim() === "") {
       missing.push("正文");
@@ -464,18 +467,15 @@ export class ContentAdminService {
     state: PublishGuardState
   ): string[] {
     const missing: string[] = [];
-    if (item.category.trim() !== "" && state.category === null) {
-      // 区分"未引用"与"引用不存在"：分类名非空但事务内快照查不到
-      // （被删除/改名）→ 发布前校验必须失败，草稿不携带失效分类。
-      missing.push("分类不存在");
-    } else if (state.category !== null) {
-      if (state.category.status !== "active") {
-        missing.push("分类已停用");
-      } else if (
-        state.category.kind !== "general" &&
-        state.category.kind !== item.kind
-      ) {
+    {
+      if (state.categories.length !== item.categoryIds.length) {
+        missing.push("分类不存在");
+      } else if (state.categories.some((category) => category.kind !== item.kind)) {
         missing.push("分类类型不符");
+      } else if (state.categories.some((category) => !category.selectable)) {
+        missing.push("分类不可选择");
+      } else if (state.categories.some((category) => category.status !== "active")) {
+        missing.push("分类已停用");
       }
     }
     const mediaChecks: Array<{ media: PublishGuardState["media"]; videoFile: boolean }> = [

@@ -20,13 +20,12 @@ const here=dirname(fileURLToPath(import.meta.url));
 const adminCli=join(here,"../cli/kangmin-admin.js");
 const adminSessionCli=join(here,"../dev/create-admin-session.js");
 function dataOf<T>(result:CommandResult):T { if(!result.ok) assert.fail(`${result.error.code}: ${result.error.message}`); return result.data as T; }
-async function fixture(){const directory=mkdtempSync(join(tmpdir(),"kangmin-admin-"));const databasePath=join(directory,"content.sqlite");const admin=createAdminApplication(databasePath);const session=await admin.sessions.createDevelopmentSession("owner-a");// 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories。
-for(const name of ["鼻健康","科普"]){const result=await admin.execute({command:"content category create",adminToken:session.token,input:{name,kind:"article"}});if(!result.ok)assert.fail(`${result.error.code}: ${result.error.message}`);}return{databasePath,admin,token:session.token};}
+async function fixture(){const directory=mkdtempSync(join(tmpdir(),"kangmin-admin-"));const databasePath=join(directory,"content.sqlite");const admin=createAdminApplication(databasePath);const session=await admin.sessions.createDevelopmentSession("owner-a");return{databasePath,admin,token:session.token};}
 
 test("管理员文章从草稿到发布再下架，与 Browse 共用真实门禁",async()=>{
   const {databasePath,admin,token}=await fixture();
   try{
-    const created=dataOf<AdminArticle>(await admin.execute({command:"content article create",adminToken:token,input:{title:"换季鼻健康",category:"鼻健康",idempotencyKey:"article-1"}}));
+    const created=dataOf<AdminArticle>(await admin.execute({command:"content article create",adminToken:token,input:{title:"换季鼻健康",categoryIds:["article-general"],idempotencyKey:"article-1"}}));
     assert.equal(created.status,"draft");
     const invalid=await admin.execute({command:"content article publish",adminToken:token,input:{id:created.id,expectedRevision:1,yes:true}});
     assert.equal(invalid.ok,false); if(!invalid.ok)assert.equal(invalid.error.code,"validation_failed");
@@ -44,7 +43,7 @@ test("管理员文章从草稿到发布再下架，与 Browse 共用真实门禁
 
 test("管理身份、幂等、版本和重启恢复保持边界",async()=>{
   const {databasePath,admin,token}=await fixture();
-  const input={title:"文章",category:"科普",summary:"摘要",body:"正文",source:"来源",idempotencyKey:"same"};
+  const input={title:"文章",categoryIds:["article-general"],summary:"摘要",body:"正文",source:"来源",idempotencyKey:"same"};
   const unauth=await admin.execute({command:"content article list"});assert.equal(unauth.ok,false);
   const forged=await admin.execute({command:"content article list",adminToken:token,input:{role:"owner"}});assert.equal(forged.ok,false);if(!forged.ok)assert.equal(forged.error.code,"permission_denied");
   const first=dataOf<AdminArticle>(await admin.execute({command:"content article create",adminToken:token,input}));
@@ -57,6 +56,6 @@ test("管理身份、幂等、版本和重启恢复保持边界",async()=>{
 
 test("真实 kangmin-admin CLI 使用独立令牌，生产禁用开发管理会话",async()=>{
   const {databasePath,admin,token}=await fixture();admin.close();
-  const run=spawnSync(process.execPath,[adminCli,"content","article","create","--title","命令行文章","--category","科普","--summary","摘要","--body","正文","--source","来源","--idempotency-key","cli-1","--json"],{encoding:"utf8",env:{...process.env,KANGMIN_DB_PATH:databasePath,KANGMIN_ADMIN_TOKEN:token}});assert.equal(run.status,0,run.stderr);assert.equal(run.stdout.trim().split("\n").length,1);
+  const run=spawnSync(process.execPath,[adminCli,"content","article","create","--title","命令行文章","--category-id","article-general","--summary","摘要","--body","正文","--source","来源","--idempotency-key","cli-1","--json"],{encoding:"utf8",env:{...process.env,KANGMIN_DB_PATH:databasePath,KANGMIN_ADMIN_TOKEN:token}});assert.equal(run.status,0,run.stderr);assert.equal(run.stdout.trim().split("\n").length,1);
   const denied=spawnSync(process.execPath,[adminSessionCli,"--subject","owner-prod"],{encoding:"utf8",env:{...process.env,KANGMIN_DB_PATH:databasePath,KANGMIN_APP_ENV:"production",KANGMIN_ALLOW_DEV_ADMIN_SESSION:"1"}});assert.equal(denied.status,9);assert.match(denied.stderr,/拒绝/u);
 });

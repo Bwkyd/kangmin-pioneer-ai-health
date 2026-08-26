@@ -17,8 +17,9 @@ function knowledgeView(answer) {
   });
 }
 
-function firstCatalogView(audience) {
-  var catalog = learningCatalog.catalogs.find(function (item) { return item.id === audience; }) || learningCatalog.catalogs[0];
+function firstCatalogView(catalogs, audience) {
+  var catalog = catalogs.find(function (item) { return item.id === audience; }) || catalogs[0];
+  if (!catalog || !catalog.sections[0] || !catalog.sections[0].categories[0]) return null;
   var section = catalog.sections[0];
   var category = section.categories[0];
   return {
@@ -35,13 +36,13 @@ Page({
   data: {
     kind: "video",
     audience: "adult",
-    catalogs: learningCatalog.catalogs,
-    catalog: firstCatalogView("adult").catalog,
-    activeSectionId: firstCatalogView("adult").activeSectionId,
-    activeSectionLabel: firstCatalogView("adult").activeSectionLabel,
-    activeCategories: firstCatalogView("adult").activeCategories,
-    activeCategoryId: firstCatalogView("adult").activeCategoryId,
-    activeCategory: firstCatalogView("adult").activeCategory,
+    catalogs: [],
+    catalog: { sections: [] },
+    activeSectionId: "",
+    activeSectionLabel: "",
+    activeCategories: [],
+    activeCategoryId: "",
+    activeCategory: null,
     items: [],
     plans: [],
     query: "",
@@ -96,7 +97,8 @@ Page({
   },
 
   chooseAudience: function (event) {
-    var view = firstCatalogView(event.currentTarget.dataset.id);
+    var view = firstCatalogView(this.data.catalogs, event.currentTarget.dataset.id);
+    if (!view) return;
     this.setData(Object.assign({ audience: view.catalog.id }, view), function () {
       this.setData({ items: this.filterItems(this._allItems || [], this.data.query) });
     }.bind(this));
@@ -134,9 +136,20 @@ Page({
         .catch(function (error) { self.setData({ plans: [], loading: false, error: pageUtils.errorMessage(error) }); });
       return;
     }
-    api.command("browse " + self.data.kind + " list", { limit: 100, offset: 0 }, { auth: false })
-      .then(function (result) {
-        self._allItems = (result.items || []).map(contentView);
+    var requests = [api.command("browse " + self.data.kind + " list", { limit: 100, offset: 0 }, { auth: false })];
+    if (self.data.kind === "video") requests.push(api.command("browse video category-registry", {}, { auth: false }));
+    Promise.all(requests)
+      .then(function (results) {
+        self._allItems = (results[0].items || []).map(contentView);
+        if (self.data.kind === "video") {
+          var catalogs = learningCatalog.catalogsFromRegistry(results[1].items || []);
+          var view = firstCatalogView(catalogs, self.data.audience);
+          if (!view) {
+            self.setData({ catalogs: [], items: [], loading: false, error: "视频分类暂不可用，请稍后重试" });
+            return;
+          }
+          self.setData(Object.assign({ catalogs: catalogs, audience: view.catalog.id }, view));
+        }
         self.setData({ items: self.filterItems(self._allItems, self.data.query), loading: false });
       })
       .catch(function (error) { self._allItems = []; self.setData({ items: [], loading: false, error: pageUtils.errorMessage(error) }); });

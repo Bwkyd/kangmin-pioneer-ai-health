@@ -1,60 +1,30 @@
-// 与 Web 学一学目录保持同一套患者可见分类；目录只负责查找已发布内容，
-// 不参与证型、诊断或调理规则判断。
-var LEARNING_CATALOGS = [
-  {
-    id: "adult",
-    label: "成人方案",
-    sections: [
-      { id: "adult-quick", label: "快速通窍方案", categories: [{ id: "adult-quick-content", label: "快速通窍方案", aliases: ["成人快速通窍方案", "成人快速通窍", "快速通窍方案"], titles: ["鼻三线姜刮", "姜行通窍", "迎香穴", "指腹擦迎香"] }] },
-      { id: "adult-conditioning", label: "调体方案", categories: [
-        { id: "adult-lung-qi-cold", label: "肺气虚寒", aliases: ["肺气虚寒"], titles: ["肺俞穴", "耳穴过敏区", "身柱穴", "风门", "大椎穴", "中府", "云门", "耳穴压豆"] },
-        { id: "adult-spleen-qi", label: "脾气虚弱", aliases: ["脾气虚弱"], titles: ["天枢穴", "足三里穴", "耳穴过敏区", "耳穴压豆"] },
-        { id: "adult-kidney-yang", label: "肾阳不足", aliases: ["肾阳不足"], titles: ["身柱穴", "大椎穴", "耳穴过敏区", "耳穴压豆"] },
-        { id: "adult-lung-heat", label: "肺经伏热", aliases: ["肺经伏热"], titles: ["肺俞穴", "耳穴过敏区", "耳穴压豆"] },
-        { id: "adult-mixed", label: "寒热错杂", aliases: ["寒热错杂", "虚实并见"], titles: ["肺俞穴", "风门", "大椎穴", "耳穴过敏区"] }
-      ] },
-      { id: "adult-symptom", label: "按症状分类", categories: [
-        { id: "adult-cough", label: "伴咳嗽", aliases: ["过敏性鼻炎伴咳嗽", "伴咳嗽"], titles: ["天突", "膻中", "尺泽", "刮痧法"] },
-        { id: "adult-headache", label: "伴头痛", aliases: ["过敏性鼻炎伴头痛", "伴头痛"], titles: ["太阳穴", "印堂穴", "合谷穴", "耳穴压豆"] },
-        { id: "adult-sleep", label: "睡眠不佳", aliases: ["过敏性鼻炎伴睡眠不佳", "睡眠不佳"], titles: ["颈三线刮痧"] },
-        { id: "adult-skin", label: "局部皮疹", aliases: ["局部湿疹", "皮疹", "瘙痒"], titles: ["麦灸棒点灸"] }
-      ] }
-    ]
-  },
-  {
-    id: "child",
-    label: "儿童方案",
-    sections: [
-      { id: "child-quick", label: "快速通窍方案", categories: [{ id: "child-quick-content", label: "快速通窍方案", aliases: ["儿童快速通窍方案", "儿童快速通窍"], titles: ["鼻炎手法", "头面四大手法", "鼻三线姜刮"] }] },
-      { id: "child-conditioning", label: "调体方案", categories: [{ id: "child-conditioning-content", label: "调体方案", aliases: ["儿童调体方案", "儿童调体"], titles: ["过敏手法", "呼吸手法", "清肺经", "清大肠", "揉天枢", "摩腹", "消化手法", "清热手法"] }] }
-    ]
-  }
-];
-
-function normalized(value) {
-  return String(value || "").replace(/[\s·——、，,()（）+]/g, "").toLocaleLowerCase();
+// 分类树完全由服务端 truth 注册表生成；客户端不保留标题/别名猜测规则。
+function catalogsFromRegistry(nodes) {
+  nodes = Array.isArray(nodes) ? nodes : [];
+  return nodes.filter(function (node) { return node.nodeType === "audience"; }).map(function (root) {
+    return {
+      id: root.audience,
+      label: root.name,
+      sections: nodes.filter(function (node) {
+        return node.parentId === root.id && node.nodeType === "group";
+      }).map(function (group) {
+        return {
+          id: group.id,
+          label: group.name,
+          categories: nodes.filter(function (node) {
+            return node.parentId === group.id && node.selectable;
+          }).map(function (leaf) { return { id: leaf.id, label: leaf.name }; })
+        };
+      }).filter(function (section) { return section.categories.length > 0; })
+    };
+  }).filter(function (catalog) { return catalog.sections.length > 0; });
 }
 
-var ALL_CATEGORIES = LEARNING_CATALOGS.reduce(function (categories, catalog) {
-  return categories.concat(catalog.sections.reduce(function (items, section) {
-    return items.concat(section.categories);
-  }, []));
-}, []);
-
 function belongsToCategory(item, category) {
-  var categoryText = normalized(item.category);
-  var titleText = normalized(item.title);
-  var explicitMatches = categoryText ? ALL_CATEGORIES.filter(function (candidate) {
-    return (candidate.aliases || []).some(function (alias) { return categoryText === normalized(alias); });
-  }) : [];
-  if (explicitMatches.length) return explicitMatches.length === 1 && explicitMatches[0].id === category.id;
-  var titleMatches = ALL_CATEGORIES.filter(function (candidate) {
-    return (candidate.titles || []).some(function (title) { return titleText.indexOf(normalized(title)) >= 0; });
-  });
-  return titleMatches.length === 1 && titleMatches[0].id === category.id;
+  return Array.isArray(item.categoryIds) && item.categoryIds.indexOf(category.id) >= 0;
 }
 
 module.exports = {
-  catalogs: LEARNING_CATALOGS,
+  catalogsFromRegistry: catalogsFromRegistry,
   belongsToCategory: belongsToCategory
 };

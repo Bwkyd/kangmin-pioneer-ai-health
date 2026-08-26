@@ -41,6 +41,7 @@ const HELP = `抗敏先锋管理后台 CLI
 content 命令：
   article       list|show|create|update|preview|publish|unpublish
   video         list|show|create|update|preview|publish|unpublish
+                create/update 使用 --category-id <稳定分类 ID>（可重复）
   media         list|show|upload <file>|disable|delete
                 upload-init --filename <f> --size-bytes <n> --sha256 <hex> [--kind <k>]
                 upload-confirm --media <id> --sha256 <hex>
@@ -127,14 +128,14 @@ const NUMBER_OPTIONS = new Set([
   "sortOrder"
 ]);
 /** 允许重复出现、收集为数组的选项。 */
-const REPEATABLE_OPTIONS = new Set(["--step", "--method-tag"]);
+const REPEATABLE_OPTIONS = new Set(["--step", "--method-tag", "--category-id"]);
 
 const OPTION_NAMES: Record<string, string> = {
   "--username": "username",
   "--role": "role",
   "--title": "title",
   "--category": "category",
-  "--category-id": "categoryId",
+  "--category-id": "categoryIds",
   "--summary": "summary",
   "--body": "body",
   "--source": "source",

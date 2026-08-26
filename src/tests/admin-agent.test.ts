@@ -699,7 +699,7 @@ test("方案关联视频校验：不存在或未发布的视频不能启用", as
       await app.execute({
         command: "content video create",
         adminToken: token,
-        input: { title: "未发布视频", category: "居家护理", idempotencyKey: "plan-video-1" }
+        input: { title: "未发布视频", categoryIds: ["video-adult-quick-content"], idempotencyKey: "plan-video-1" }
       })
     );
     const plan = dataOf<AgentPlan>(
@@ -811,7 +811,7 @@ test("方案启用走事务路径：启用前视频被下架 → enablePlan 拒�
         adminToken: token,
         input: {
           title: "将被下架的视频",
-          category: "居家护理",
+          categoryIds: ["video-adult-quick-content"],
           idempotencyKey: "plan-video-unpublish"
         }
       })
@@ -935,7 +935,7 @@ test("启用状态方案的更新重跑启用校验：清空步骤/换未发布�
         adminToken: token,
         input: {
           title: "未发布视频",
-          category: "居家护理",
+          categoryIds: ["video-adult-quick-content"],
           idempotencyKey: "enabled-update-video-1"
         }
       })

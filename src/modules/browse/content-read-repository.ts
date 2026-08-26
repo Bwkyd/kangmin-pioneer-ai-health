@@ -3,6 +3,7 @@ import type {
   CarePlanSummary,
   PatientMessage,
   PublicContent,
+  PublicContentCategory,
   PublicContentKind
 } from "./contracts.js";
 
@@ -29,6 +30,7 @@ export interface ContentReadRepository {
   find(kind: PublicContentKind, id: string): Promise<PublicContent | null>;
   search(kind: PublicContentKind, query: string): Promise<PublicContent[]>;
   categories(kind: PublicContentKind): Promise<string[]>;
+  categoryRegistry(kind: PublicContentKind): Promise<PublicContentCategory[]>;
 
   /** 通用护理方案只读：published_revision 非空的当前发布内容。 */
   listPlans(): Promise<CarePlanSummary[]>;

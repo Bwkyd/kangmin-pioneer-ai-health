@@ -12,6 +12,21 @@
  * - JSON 载荷以 TEXT 存储，不启用 jsonb 自动解析。
  */
 
+import {
+  CONTENT_CATEGORY_REGISTRY,
+  VIDEO_TRUTH_ASSIGNMENTS
+} from "../../modules/admin/content-category-registry.js";
+
+const sqlText = (value: string): string => `'${value.replaceAll("'", "''")}'`;
+const categorySeedValues = CONTENT_CATEGORY_REGISTRY.map((category) =>
+  `(${sqlText(category.id)}, ${sqlText(category.kind)}, ${category.parentId === null ? "NULL" : sqlText(category.parentId)}, ${sqlText(category.name)}, ${sqlText(category.audience)}, ${sqlText(category.nodeType)}, ${category.selectable ? 1 : 0}, ${category.displayOrder}, 'active', 1, '2026-08-26T00:00:00.000Z', '2026-08-26T00:00:00.000Z')`
+).join(",\n");
+const videoAssignmentValues = VIDEO_TRUTH_ASSIGNMENTS.flatMap((assignment) =>
+  assignment.categoryIds.map((categoryId) =>
+    `(${sqlText(assignment.title)}, ${sqlText(categoryId)})`
+  )
+).join(",\n");
+
 export interface PgMigration {
   version: string;
   statements: string[];
@@ -683,6 +698,87 @@ export const PG_MIGRATIONS: PgMigration[] = [
          AND folders.name = items.category`,
       `CREATE INDEX agent_knowledge_items_folder
         ON agent_knowledge_items(folder_id, updated_at DESC)`
+    ]
+  },
+  {
+    version: "0011_content_category_registry",
+    statements: [
+      `CREATE TABLE content_category_registry (
+        id TEXT PRIMARY KEY,
+        kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+        parent_id TEXT REFERENCES content_category_registry(id) ON DELETE RESTRICT,
+        name TEXT NOT NULL CHECK(length(btrim(name)) > 0),
+        audience TEXT NOT NULL CHECK(audience IN ('adult', 'child', 'all')),
+        node_type TEXT NOT NULL CHECK(node_type IN ('audience', 'group', 'leaf')),
+        selectable INTEGER NOT NULL CHECK(selectable IN (0, 1)),
+        display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0),
+        status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+        revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        CHECK((node_type = 'leaf' AND selectable = 1) OR selectable = 0)
+      )`,
+      `CREATE UNIQUE INDEX content_category_registry_root_name
+        ON content_category_registry(kind, name) WHERE parent_id IS NULL`,
+      `CREATE UNIQUE INDEX content_category_registry_sibling_name
+        ON content_category_registry(kind, parent_id, name) WHERE parent_id IS NOT NULL`,
+      `CREATE INDEX content_category_registry_tree
+        ON content_category_registry(kind, parent_id, display_order, id)`,
+      `CREATE TABLE content_item_category_links (
+        content_id TEXT NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+        category_id TEXT NOT NULL REFERENCES content_category_registry(id) ON DELETE RESTRICT,
+        created_at TEXT NOT NULL,
+        PRIMARY KEY(content_id, category_id)
+      )`,
+      `CREATE INDEX content_item_category_links_category
+        ON content_item_category_links(category_id, content_id)`,
+      `CREATE TABLE content_category_migration_report (
+        content_id TEXT PRIMARY KEY REFERENCES content_items(id) ON DELETE CASCADE,
+        kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+        title TEXT NOT NULL,
+        legacy_category TEXT NOT NULL,
+        status TEXT NOT NULL CHECK(status IN ('migrated', 'unresolved')),
+        reason TEXT NOT NULL,
+        category_ids_json TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`,
+      `INSERT INTO content_category_registry(
+        id, kind, parent_id, name, audience, node_type, selectable,
+        display_order, status, revision, created_at, updated_at
+      ) VALUES ${categorySeedValues}`,
+      `INSERT INTO content_item_category_links(content_id, category_id, created_at)
+       SELECT items.id, assignments.category_id, '2026-08-26T00:00:00.000Z'
+       FROM content_items AS items
+       JOIN (VALUES ${videoAssignmentValues}) AS assignments(title, category_id)
+         ON items.kind = 'video' AND btrim(items.title) = assignments.title
+       UNION ALL
+       SELECT items.id, 'article-general', '2026-08-26T00:00:00.000Z'
+       FROM content_items AS items
+       WHERE items.kind = 'article'`,
+      `INSERT INTO content_category_migration_report(
+        content_id, kind, title, legacy_category, status, reason,
+        category_ids_json, created_at
+      )
+       SELECT items.id, items.kind, items.title, items.category,
+              CASE WHEN COUNT(links.category_id) > 0 THEN 'migrated' ELSE 'unresolved' END,
+              CASE WHEN COUNT(links.category_id) > 0 AND items.kind = 'video' THEN 'video_truth_exact_title'
+                   WHEN COUNT(links.category_id) > 0 THEN 'article_single_confirmed_category'
+                   WHEN items.kind = 'article' THEN 'article_registry_missing'
+                   ELSE 'video_title_not_in_truth' END,
+              COALESCE(json_agg(links.category_id ORDER BY links.category_id)
+                FILTER (WHERE links.category_id IS NOT NULL), '[]'::json)::text,
+              '2026-08-26T00:00:00.000Z'
+       FROM content_items AS items
+       LEFT JOIN content_item_category_links AS links ON links.content_id = items.id
+       WHERE items.kind IN ('article', 'video')
+       GROUP BY items.id, items.kind, items.title, items.category`,
+      `UPDATE content_items
+       SET status = 'unpublished', patient_visible = 0,
+           published_at = NULL, updated_at = '2026-08-26T00:00:00.000Z'
+       WHERE id IN (
+         SELECT content_id FROM content_category_migration_report
+         WHERE status = 'unresolved'
+       ) AND status = 'published'`
     ]
   }
 ];

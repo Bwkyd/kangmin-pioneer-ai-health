@@ -52,6 +52,7 @@ browse 命令：
   browse [--location X]
   browse article list [--limit N] [--offset N]
   browse article categories
+  browse article category-registry
   browse article search <query>
   browse article show <id>
   browse message list
@@ -61,6 +62,7 @@ browse 命令：
   agent knowledge ask --question <问题>
   browse video list [--limit N] [--offset N]
   browse video categories
+  browse video category-registry
   browse video search <query>
   browse video show <id>
   browse plan list（返回后台已启用且通过规则门禁的方案）

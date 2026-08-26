@@ -65,26 +65,54 @@ async function fixture(): Promise<{
 test("文章发布闭环：create→update→publish→患者可见→unpublish 不可见", async () => {
   const { app, databasePath, token } = await fixture();
   try {
-    dataOf<ContentCategoryRow>(
-      await app.execute({
-        command: "content category create",
-        adminToken: token,
-        input: { name: "日常防护", kind: "article", description: "日常防护分类" }
-      })
-    );
+    const legacyDisplayName = await app.execute({
+      command: "content article create",
+      adminToken: token,
+      input: {
+        title: "错误使用显示名称",
+        category: "科普文章",
+        idempotencyKey: "legacy-category-name"
+      }
+    });
+    assert.equal(legacyDisplayName.ok, false);
+    if (!legacyDisplayName.ok) assert.match(legacyDisplayName.error.message, /categoryIds/u);
 
-    // 分类统一：不存在的分类 create 直接拒绝（validation_failed）
+    // 写接口只接受稳定 ID：不存在的 ID 直接拒绝。
     const badCategory = await app.execute({
       command: "content article create",
       adminToken: token,
       input: {
         title: "无分类文章",
-        category: "不存在的分类",
+        categoryIds: ["article-missing"],
         idempotencyKey: "bad-category"
       }
     });
     assert.equal(badCategory.ok, false);
     if (!badCategory.ok) assert.equal(badCategory.error.code, "validation_failed");
+
+    const wrongKind = await app.execute({
+      command: "content article create",
+      adminToken: token,
+      input: {
+        title: "错误类型分类",
+        categoryIds: ["video-adult-quick-content"],
+        idempotencyKey: "wrong-kind-category"
+      }
+    });
+    assert.equal(wrongKind.ok, false);
+    if (!wrongKind.ok) assert.match(wrongKind.error.message, /类型不符/u);
+
+    const nonLeaf = await app.execute({
+      command: "content video create",
+      adminToken: token,
+      input: {
+        title: "错误父级分类",
+        categoryIds: ["video-adult"],
+        idempotencyKey: "non-leaf-category"
+      }
+    });
+    assert.equal(nonLeaf.ok, false);
+    if (!nonLeaf.ok) assert.match(nonLeaf.error.message, /不可选择/u);
 
     const created = dataOf<AdminArticle>(
       await app.execute({
@@ -92,7 +120,7 @@ test("文章发布闭环：create→update→publish→患者可见→unpublish 
         adminToken: token,
         input: {
           title: "换季鼻敏感注意事项",
-          category: "日常防护",
+          categoryIds: ["article-general"],
           idempotencyKey: "content-loop-1"
         }
       })
@@ -278,20 +306,15 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
     );
     assert.equal(media.status, "ready");
 
-    // 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories。
-    dataOf<ContentCategoryRow>(
-      await app.execute({
-        command: "content category create",
-        adminToken: token,
-        input: { name: "居家护理", kind: "video" }
-      })
-    );
-
     const video = dataOf<AdminContentItem>(
       await app.execute({
         command: "content video create",
         adminToken: token,
-        input: { title: "鼻腔护理基础视频", category: "居家护理", idempotencyKey: "video-1" }
+        input: {
+          title: "鼻腔护理基础视频",
+          categoryIds: ["video-adult-quick-content", "video-child-quick-content"],
+          idempotencyKey: "video-1"
+        }
       })
     );
 
@@ -328,15 +351,24 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
       })
     );
     assert.equal(published.status, "published");
+    assert.deepEqual(published.categoryIds, [
+      "video-adult-quick-content",
+      "video-child-quick-content"
+    ]);
+    assert.match(published.category, /成人方案 \/ 快速通窍方案 \/ 快速通窍方案/u);
+    assert.match(published.category, /儿童方案 \/ 快速通窍方案 \/ 快速通窍方案/u);
 
     // 患者 browse 视频可见
     const patient = createApplication(databasePath);
     try {
-      const visible = await patient.execute({
+      const visible = dataOf<AdminContentItem>(await patient.execute({
         command: "browse video show",
         input: { id: video.id }
-      });
-      assert.equal(visible.ok, true);
+      }));
+      assert.deepEqual(visible.categoryIds, [
+        "video-adult-quick-content",
+        "video-child-quick-content"
+      ]);
     } finally {
       patient.close();
     }
@@ -431,7 +463,7 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
 });
 
 test("公告状态机与分类停用后禁止新发布", async () => {
-  const { app, token } = await fixture();
+  const { app, databasePath, token } = await fixture();
   try {
     dataOf<ContentCategoryRow>(
       await app.execute({
@@ -478,20 +510,13 @@ test("公告状态机与分类停用后禁止新发布", async () => {
     assert.equal(unpublished.status, "unpublished");
 
     // 分类停用后，引用该分类的新内容不能发布
-    dataOf<ContentCategoryRow>(
-      await app.execute({
-        command: "content category create",
-        adminToken: token,
-        input: { name: "待停用分类", kind: "article" }
-      })
-    );
     const article = dataOf<AdminArticle>(
       await app.execute({
         command: "content article create",
         adminToken: token,
         input: {
           title: "引用停用分类的文章",
-          category: "待停用分类",
+          categoryIds: ["article-general"],
           summary: "摘要",
           body: "正文内容。",
           source: "来源",
@@ -499,23 +524,11 @@ test("公告状态机与分类停用后禁止新发布", async () => {
         }
       })
     );
-    const categoryList = dataOf<{ items: ContentCategoryRow[] }>(
-      await app.execute({
-        command: "content category list",
-        adminToken: token,
-        input: { kind: "article" }
-      })
-    );
-    const category = categoryList.items.find(
-      (item) => item.name === "待停用分类"
-    ) as ContentCategoryRow;
-    dataOf(
-      await app.execute({
-        command: "content category disable",
-        adminToken: token,
-        input: { id: category.id, expectedRevision: category.revision, yes: true }
-      })
-    );
+    const database = new KangminDatabase(databasePath);
+    database.connection.prepare(
+      "UPDATE content_category_registry SET status = 'disabled', revision = revision + 1 WHERE id = 'article-general'"
+    ).run();
+    database.close();
     const blocked = await app.execute({
       command: "content article publish",
       adminToken: token,
@@ -531,17 +544,9 @@ test("公告状态机与分类停用后禁止新发布", async () => {
 test("admin 无显式幂等键：同命令同内容重试 → 确定性键重放，不重复创建（评审 C 真实缺陷）", async () => {
   const { app, databasePath, token } = await fixture();
   try {
-    dataOf<ContentCategoryRow>(
-      await app.execute({
-        command: "content category create",
-        adminToken: token,
-        input: { name: "幂等分类", kind: "article" }
-      })
-    );
-
     const input = {
       title: "确定性幂等文章",
-      category: "幂等分类",
+      categoryIds: ["article-general"],
       summary: "摘要",
       body: "正文内容。",
       source: "来源"
@@ -617,20 +622,13 @@ test("admin 无显式幂等键：同命令同内容重试 → 确定性键重放
 test("已发布文章被修改后置回草稿：患者不再看到未校验修改（事务与卫生残留批 P1-1）", async () => {
   const { app, databasePath, token } = await fixture();
   try {
-    dataOf<ContentCategoryRow>(
-      await app.execute({
-        command: "content category create",
-        adminToken: token,
-        input: { name: "改稿分类", kind: "article" }
-      })
-    );
     const created = dataOf<AdminArticle>(
       await app.execute({
         command: "content article create",
         adminToken: token,
         input: {
           title: "已发布改稿文章",
-          category: "改稿分类",
+          categoryIds: ["article-general"],
           idempotencyKey: "publish-edit-1"
         }
       })
@@ -696,23 +694,16 @@ test("已发布文章被修改后置回草稿：患者不再看到未校验修�
   }
 });
 
-test("分类被改名后，引用旧分类名的内容发布失败（区分未引用与引用不存在，P1-6 补测）", async () => {
-  const { app, token } = await fixture();
+test("分类改名只改显示名，稳定 ID 关联与发布保持有效", async () => {
+  const { app, databasePath, token } = await fixture();
   try {
-    dataOf<ContentCategoryRow>(
-      await app.execute({
-        command: "content category create",
-        adminToken: token,
-        input: { name: "旧分类名", kind: "article" }
-      })
-    );
     const article = dataOf<AdminArticle>(
       await app.execute({
         command: "content article create",
         adminToken: token,
         input: {
           title: "引用被改名分类的文章",
-          category: "旧分类名",
+          categoryIds: ["article-general"],
           summary: "摘要",
           body: "正文。",
           source: "来源",
@@ -720,33 +711,18 @@ test("分类被改名后，引用旧分类名的内容发布失败（区分未�
         }
       })
     );
-    // 改名分类：原名在 content_categories 中不再存在
-    const listed = dataOf<{ items: ContentCategoryRow[] }>(
-      await app.execute({
-        command: "content category list",
-        adminToken: token,
-        input: { kind: "article" }
-      })
-    );
-    const category = listed.items.find(
-      (item) => item.name === "旧分类名"
-    ) as ContentCategoryRow;
-    dataOf(
-      await app.execute({
-        command: "content category update",
-        adminToken: token,
-        input: { id: category.id, expectedRevision: category.revision, name: "新分类名" }
-      })
-    );
-    // 事务内快照查不到分类名 → validation_failed（引用不存在的分类）
-    const blocked = await app.execute({
+    const database = new KangminDatabase(databasePath);
+    database.connection.prepare(
+      "UPDATE content_category_registry SET name = '鼻健康科普', revision = revision + 1 WHERE id = 'article-general'"
+    ).run();
+    database.close();
+    const published = dataOf<AdminArticle>(await app.execute({
       command: "content article publish",
       adminToken: token,
       input: { id: article.id, expectedRevision: 1, yes: true }
-    });
-    assert.equal(blocked.ok, false);
-    if (!blocked.ok) assert.equal(blocked.error.code, "validation_failed");
-    // 预览同样报告分类缺失（与发布路径一致）
+    }));
+    assert.deepEqual(published.categoryIds, ["article-general"]);
+    assert.equal(published.category, "鼻健康科普");
     const preview = dataOf<{ validation: { ok: boolean; missing: string[] } }>(
       await app.execute({
         command: "content article preview",
@@ -754,7 +730,19 @@ test("分类被改名后，引用旧分类名的内容发布失败（区分未�
         input: { id: article.id }
       })
     );
-    assert.ok(preview.validation.missing.includes("分类不存在"));
+    assert.equal(preview.validation.ok, true);
+    assert.deepEqual(preview.validation.missing, []);
+    const patient = createApplication(databasePath);
+    try {
+      const visible = dataOf<AdminArticle>(await patient.execute({
+        command: "browse article show",
+        input: { id: article.id }
+      }));
+      assert.deepEqual(visible.categoryIds, ["article-general"]);
+      assert.equal(visible.category, "鼻健康科普");
+    } finally {
+      patient.close();
+    }
   } finally {
     app.close();
   }

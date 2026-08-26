@@ -180,20 +180,11 @@ test("真实 CLI 全流程：引导→登录→发布→患者可见→退出码
   assert.equal(statusBody.data.loggedIn, true);
   assert.equal(statusBody.data.role, "owner");
 
-  // 分类统一（评审 A P1-6）：create 校验 category 必须存在于 content_categories
-  const categoryCreate = run([
-    "content", "category", "create",
-    "--name", "鼻健康",
-    "--kind", "article",
-    "--json"
-  ], environment);
-  assert.equal(categoryCreate.status, 0, categoryCreate.stderr);
-
-  // 发布文章并验证患者可见
+  // 发布文章并验证患者可见：写接口只接收服务端注册表中的稳定分类 ID。
   const create = run([
     "content", "article", "create",
     "--title", "CLI 发布科普",
-    "--category", "鼻健康",
+    "--category-id", "article-general",
     "--summary", "摘要",
     "--body", "已审核正文内容。",
     "--source", "客户已审核来源",

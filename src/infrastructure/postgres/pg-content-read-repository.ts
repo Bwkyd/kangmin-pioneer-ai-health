@@ -8,6 +8,7 @@ import type {
   CarePlanSummary,
   PatientMessage,
   PublicContent,
+  PublicContentCategory,
   PublicContentKind
 } from "../../modules/browse/contracts.js";
 import { likePatternOf } from "../../modules/browse/domain.js";
@@ -40,6 +41,7 @@ interface ContentRow {
   kind: PublicContentKind;
   title: string;
   category: string;
+  category_ids_json: string[];
   summary: string;
   body: string | null;
   source: string;
@@ -49,6 +51,30 @@ interface ContentRow {
   updated_at: string;
   instructions: string | null;
   precautions: string | null;
+}
+
+interface CategoryRegistryRow {
+  id: string;
+  kind: PublicContentKind;
+  parent_id: string | null;
+  name: string;
+  audience: PublicContentCategory["audience"];
+  node_type: PublicContentCategory["nodeType"];
+  selectable: number;
+  display_order: number;
+}
+
+function toPublicContentCategory(row: CategoryRegistryRow): PublicContentCategory {
+  return {
+    id: row.id,
+    kind: row.kind,
+    parentId: row.parent_id,
+    name: row.name,
+    audience: row.audience,
+    nodeType: row.node_type,
+    selectable: row.selectable === 1,
+    displayOrder: row.display_order
+  };
 }
 
 interface PlanRow {
@@ -89,6 +115,7 @@ function toPublicContent(row: ContentRow): PublicContent {
     kind: row.kind,
     title: row.title,
     category: row.category,
+    categoryIds: row.category_ids_json,
     summary: row.summary,
     body: row.body,
     source: row.source,
@@ -194,7 +221,10 @@ export class PgContentReadRepository implements ContentReadRepository {
   async list(kind: PublicContentKind): Promise<PublicContent[]> {
     return this.guard(async () => {
       const { rows } = await this.database.query<ContentRow>(
-        `SELECT id, kind, title, category, summary, body, source,
+        `SELECT id, kind, title, category,
+                ARRAY(SELECT category_id FROM content_item_category_links
+                      WHERE content_id = content_items.id ORDER BY category_id) AS category_ids_json,
+                summary, body, source,
                 cover_url, media_url, published_at, updated_at,
                 instructions, precautions
          FROM content_items
@@ -202,7 +232,7 @@ export class PgContentReadRepository implements ContentReadRepository {
          ORDER BY updated_at DESC, id ASC`,
         [kind]
       );
-      return rows.map(toPublicContent);
+      return Promise.all(rows.map((row) => this.withCategoryDisplay(toPublicContent(row))));
     });
   }
 
@@ -213,7 +243,10 @@ export class PgContentReadRepository implements ContentReadRepository {
   ): Promise<PublicContent[]> {
     return this.guard(async () => {
       const { rows } = await this.database.query<ContentRow>(
-        `SELECT id, kind, title, category, summary, body, source,
+        `SELECT id, kind, title, category,
+                ARRAY(SELECT category_id FROM content_item_category_links
+                      WHERE content_id = content_items.id ORDER BY category_id) AS category_ids_json,
+                summary, body, source,
                 cover_url, media_url, published_at, updated_at,
                 instructions, precautions
          FROM content_items
@@ -222,7 +255,7 @@ export class PgContentReadRepository implements ContentReadRepository {
          LIMIT $2 OFFSET $3`,
         [kind, limit, offset]
       );
-      return rows.map(toPublicContent);
+      return Promise.all(rows.map((row) => this.withCategoryDisplay(toPublicContent(row))));
     });
   }
 
@@ -232,7 +265,10 @@ export class PgContentReadRepository implements ContentReadRepository {
   ): Promise<PublicContent | null> {
     return this.guard(async () => {
       const { rows } = await this.database.query<ContentRow>(
-        `SELECT id, kind, title, category, summary, body, source,
+        `SELECT id, kind, title, category,
+                ARRAY(SELECT category_id FROM content_item_category_links
+                      WHERE content_id = content_items.id ORDER BY category_id) AS category_ids_json,
+                summary, body, source,
                 cover_url, media_url, published_at, updated_at,
                 instructions, precautions
          FROM content_items
@@ -240,7 +276,7 @@ export class PgContentReadRepository implements ContentReadRepository {
         [kind, id]
       );
       const row = rows[0];
-      return row === undefined ? null : toPublicContent(row);
+      return row === undefined ? null : this.withCategoryDisplay(toPublicContent(row));
     });
   }
 
@@ -251,7 +287,10 @@ export class PgContentReadRepository implements ContentReadRepository {
     return this.guard(async () => {
       const pattern = likePatternOf(query);
       const { rows } = await this.database.query<ContentRow>(
-        `SELECT id, kind, title, category, summary, body, source,
+        `SELECT id, kind, title, category,
+                ARRAY(SELECT category_id FROM content_item_category_links
+                      WHERE content_id = content_items.id ORDER BY category_id) AS category_ids_json,
+                summary, body, source,
                 cover_url, media_url, published_at, updated_at,
                 instructions, precautions
          FROM content_items
@@ -262,7 +301,7 @@ export class PgContentReadRepository implements ContentReadRepository {
          ORDER BY updated_at DESC, id ASC`,
         [kind, pattern, pattern, pattern]
       );
-      return rows.map(toPublicContent);
+      return Promise.all(rows.map((row) => this.withCategoryDisplay(toPublicContent(row))));
     });
   }
 
@@ -280,6 +319,40 @@ export class PgContentReadRepository implements ContentReadRepository {
       );
       return rows.map((row) => row.name);
     });
+  }
+
+  async categoryRegistry(kind: PublicContentKind): Promise<PublicContentCategory[]> {
+    return this.guard(async () => {
+      const { rows } = await this.database.query<CategoryRegistryRow>(
+        `SELECT id, kind, parent_id, name, audience, node_type,
+                selectable, display_order
+         FROM content_category_registry
+         WHERE kind = $1 AND status = 'active'
+         ORDER BY display_order ASC, id ASC`,
+        [kind]
+      );
+      return rows.map(toPublicContentCategory);
+    });
+  }
+
+  private async withCategoryDisplay(item: PublicContent): Promise<PublicContent> {
+    if (item.categoryIds.length === 0) return { ...item, category: "" };
+    const { rows } = await this.database.query<{ id: string; path: string }>(`
+      WITH RECURSIVE paths(id, parent_id, name, path) AS (
+        SELECT id, parent_id, name, name::text
+        FROM content_category_registry WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, child.parent_id, child.name, paths.path || ' / ' || child.name
+        FROM content_category_registry AS child
+        JOIN paths ON child.parent_id = paths.id
+      )
+      SELECT id, path FROM paths WHERE id = ANY($1::text[])
+    `, [item.categoryIds]);
+    const paths = new Map(rows.map((row) => [row.id, row.path]));
+    return {
+      ...item,
+      category: item.categoryIds.map((id) => paths.get(id) ?? "").filter(Boolean).join("；")
+    };
   }
 
   async listPlans(): Promise<CarePlanSummary[]> {

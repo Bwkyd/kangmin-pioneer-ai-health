@@ -5,6 +5,10 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { DomainError } from "../kernel/errors.js";
 import type { EncryptionPort } from "../kernel/encryption.js";
+import {
+  CONTENT_CATEGORY_REGISTRY,
+  VIDEO_TRUTH_ASSIGNMENTS
+} from "../modules/admin/content-category-registry.js";
 import { encryptStoredField } from "./encrypted-fields.js";
 
 /**
@@ -1380,6 +1384,155 @@ const MIGRATIONS: Migration[] = [
         CREATE INDEX IF NOT EXISTS agent_knowledge_items_folder
         ON agent_knowledge_items(folder_id, updated_at DESC);
       `);
+    }
+  },
+  {
+    // 患者内容分类注册表：稳定 ID、父子树、人群和可选叶节点为权威；
+    // 旧 content_categories/category 字符串暂留兼容，不再作为新关联键。
+    // 视频种子和标题关联只编译自 vault/truth/视频大全.md；作者确认文章
+    // 只有“科普文章”一个分类，因此全部存量文章都存在唯一、安全映射。
+    version: "0022_content_category_registry",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS content_category_registry (
+          id TEXT PRIMARY KEY,
+          kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+          parent_id TEXT REFERENCES content_category_registry(id) ON DELETE RESTRICT,
+          name TEXT NOT NULL CHECK(length(trim(name)) > 0),
+          audience TEXT NOT NULL CHECK(audience IN ('adult', 'child', 'all')),
+          node_type TEXT NOT NULL CHECK(node_type IN ('audience', 'group', 'leaf')),
+          selectable INTEGER NOT NULL CHECK(selectable IN (0, 1)),
+          display_order INTEGER NOT NULL DEFAULT 0 CHECK(display_order >= 0),
+          status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'disabled')),
+          revision INTEGER NOT NULL DEFAULT 1 CHECK(revision >= 1),
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL,
+          CHECK((node_type = 'leaf' AND selectable = 1) OR selectable = 0)
+        ) STRICT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS content_category_registry_root_name
+        ON content_category_registry(kind, name) WHERE parent_id IS NULL;
+        CREATE UNIQUE INDEX IF NOT EXISTS content_category_registry_sibling_name
+        ON content_category_registry(kind, parent_id, name) WHERE parent_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS content_category_registry_tree
+        ON content_category_registry(kind, parent_id, display_order, id);
+
+        CREATE TABLE IF NOT EXISTS content_item_category_links (
+          content_id TEXT NOT NULL REFERENCES content_items(id) ON DELETE CASCADE,
+          category_id TEXT NOT NULL REFERENCES content_category_registry(id) ON DELETE RESTRICT,
+          created_at TEXT NOT NULL,
+          PRIMARY KEY(content_id, category_id)
+        ) STRICT;
+        CREATE INDEX IF NOT EXISTS content_item_category_links_category
+        ON content_item_category_links(category_id, content_id);
+
+        CREATE TABLE IF NOT EXISTS content_category_migration_report (
+          content_id TEXT PRIMARY KEY REFERENCES content_items(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK(kind IN ('article', 'video')),
+          title TEXT NOT NULL,
+          legacy_category TEXT NOT NULL,
+          status TEXT NOT NULL CHECK(status IN ('migrated', 'unresolved')),
+          reason TEXT NOT NULL,
+          category_ids_json TEXT NOT NULL,
+          created_at TEXT NOT NULL
+        ) STRICT;
+      `);
+
+      const timestamp = "2026-08-26T00:00:00.000Z";
+      const insertCategory = connection.prepare(`
+        INSERT OR IGNORE INTO content_category_registry(
+          id, kind, parent_id, name, audience, node_type, selectable,
+          display_order, status, revision, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 1, ?, ?)
+      `);
+      for (const category of CONTENT_CATEGORY_REGISTRY) {
+        insertCategory.run(
+          category.id,
+          category.kind,
+          category.parentId,
+          category.name,
+          category.audience,
+          category.nodeType,
+          category.selectable ? 1 : 0,
+          category.displayOrder,
+          timestamp,
+          timestamp
+        );
+      }
+
+      // 极早期账号-only 数据库可能没有 content_items。此时仍建立并
+      // 填充分类注册表，但不能把“没有内容表”误判成存储整体不可用。
+      const hasContentItems = connection.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'content_items'"
+      ).get() !== undefined;
+      if (!hasContentItems) return;
+
+      const assignments = new Map(
+        VIDEO_TRUTH_ASSIGNMENTS.map((item) => [item.title, item.categoryIds])
+      );
+      const rows = connection.prepare(`
+        SELECT id, kind, title, category
+        FROM content_items
+        WHERE kind IN ('article', 'video')
+        ORDER BY id ASC
+      `).all() as unknown as Array<{
+        id: string;
+        kind: "article" | "video";
+        title: string;
+        category: string;
+      }>;
+      const link = connection.prepare(`
+        INSERT OR IGNORE INTO content_item_category_links(content_id, category_id, created_at)
+        VALUES (?, ?, ?)
+      `);
+      const report = connection.prepare(`
+        INSERT OR REPLACE INTO content_category_migration_report(
+          content_id, kind, title, legacy_category, status, reason,
+          category_ids_json, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      `);
+      for (const row of rows) {
+        const categoryIds = row.kind === "video"
+          ? assignments.get(row.title.trim())
+          : ["article-general"];
+        if (categoryIds !== undefined && categoryIds.length > 0) {
+          for (const categoryId of categoryIds) {
+            link.run(row.id, categoryId, timestamp);
+          }
+          report.run(
+            row.id,
+            row.kind,
+            row.title,
+            row.category,
+            "migrated",
+            row.kind === "video" ? "video_truth_exact_title" : "article_single_confirmed_category",
+            JSON.stringify(categoryIds),
+            timestamp
+          );
+          continue;
+        }
+        report.run(
+          row.id,
+          row.kind,
+          row.title,
+          row.category,
+          "unresolved",
+          row.kind === "article" ? "article_legacy_category_unmatched" : "video_title_not_in_truth",
+          "[]",
+          timestamp
+        );
+      }
+      // 无法唯一匹配的存量内容必须 fail-closed：保留内容与报告供人工
+      // 选择，但不允许旧发布状态绕过新分类门禁继续对患者直达可见。
+      connection.prepare(`
+        UPDATE content_items
+        SET status = 'unpublished', patient_visible = 0,
+            published_at = NULL, updated_at = ?
+        WHERE id IN (
+          SELECT content_id FROM content_category_migration_report
+          WHERE status = 'unresolved'
+        ) AND status = 'published'
+      `).run(timestamp);
     }
   }
 ];

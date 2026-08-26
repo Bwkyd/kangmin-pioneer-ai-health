@@ -187,6 +187,12 @@ export class KangminApplication {
             { items: await this.browse.categories("article") },
             request.requestId
           );
+        case "browse article category-registry":
+          return success(
+            command,
+            { items: await this.browse.categoryRegistry("article") },
+            request.requestId
+          );
         case "browse article search":
           return success(
             command,
@@ -221,6 +227,12 @@ export class KangminApplication {
           return success(
             command,
             { items: await this.browse.categories("video") },
+            request.requestId
+          );
+        case "browse video category-registry":
+          return success(
+            command,
+            { items: await this.browse.categoryRegistry("video") },
             request.requestId
           );
         case "browse video search":

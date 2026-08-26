@@ -75,6 +75,12 @@ function nullableOpt(input: Record<string, unknown>, key: string): string | null
   return optionalString(input, key);
 }
 
+function rejectDerivedCategory(input: Record<string, unknown>): void {
+  if (Object.hasOwn(input, "category")) {
+    throw new DomainError("validation_failed", "分类显示名称不可写入，请使用 categoryIds");
+  }
+}
+
 /** 期别入参收窄（智能体设计 v4）：仅 'acute' 有效，其他值按未设置。 */
 function phaseCodeOf(
   input: Record<string, unknown>
@@ -271,12 +277,16 @@ export class KangminAdminApplication {
           );
 
         // ---- content article ----
+        case "content article category-registry":
+          return success(command, { items: await this.content.categoryRegistry("article") }, request.requestId);
         case "content article create":
+          rejectDerivedCategory(input);
           return success(
             command,
             await this.content.create(adminId, {
               title: opt(input, "title") ?? "",
-              category: opt(input, "category") ?? "",
+              category: "",
+              categoryIds: optionalStringArray(input, "categoryIds") ?? [],
               summary: opt(input, "summary") ?? "",
               body: opt(input, "body") ?? "",
               source: opt(input, "source") ?? "",
@@ -341,12 +351,16 @@ export class KangminAdminApplication {
           );
 
         // ---- content video ----
+        case "content video category-registry":
+          return success(command, { items: await this.content.categoryRegistry("video") }, request.requestId);
         case "content video create":
+          rejectDerivedCategory(input);
           return success(
             command,
             await this.content.createVideo(adminId, {
               title: opt(input, "title") ?? "",
-              category: opt(input, "category") ?? "",
+              category: "",
+              categoryIds: optionalStringArray(input, "categoryIds") ?? [],
               summary: opt(input, "summary") ?? "",
               body: opt(input, "body") ?? "",
               source: opt(input, "source") ?? "",
@@ -998,6 +1012,7 @@ export class KangminAdminApplication {
   }
 
   private contentChanges(input: Record<string, unknown>) {
+    rejectDerivedCategory(input);
     const textChange = (key: string): string | undefined => {
       if (!Object.hasOwn(input, key)) return undefined;
       const value = optionalString(input, key);
@@ -1010,7 +1025,7 @@ export class KangminAdminApplication {
     };
     return {
       title: textChange("title"),
-      category: textChange("category"),
+      categoryIds: optionalStringArray(input, "categoryIds"),
       summary: textChange("summary"),
       body: textChange("body"),
       source: textChange("source"),

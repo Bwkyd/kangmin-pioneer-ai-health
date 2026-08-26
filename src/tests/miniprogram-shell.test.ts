@@ -785,18 +785,30 @@ test("小程序科普中心支持已发布方案详情和知识库问答入口",
   assert.deepEqual(calls, ["browse plan list", "browse plan show", "agent knowledge ask"]);
 });
 
-test("小程序学一学对明确人群分类排他，歧义标题不跨人群兜底", () => {
+function categoryRegistryFixture(): Array<Record<string, unknown>> {
+  return [
+    { id: "video-adult", parentId: null, name: "成人方案", audience: "adult", nodeType: "audience", selectable: false },
+    { id: "video-child", parentId: null, name: "儿童方案", audience: "child", nodeType: "audience", selectable: false },
+    { id: "video-adult-quick", parentId: "video-adult", name: "快速通窍方案", audience: "adult", nodeType: "group", selectable: false },
+    { id: "video-child-quick", parentId: "video-child", name: "快速通窍方案", audience: "child", nodeType: "group", selectable: false },
+    { id: "video-adult-quick-content", parentId: "video-adult-quick", name: "快速通窍方案", audience: "adult", nodeType: "leaf", selectable: true },
+    { id: "video-child-quick-content", parentId: "video-child-quick", name: "快速通窍方案", audience: "child", nodeType: "leaf", selectable: true }
+  ];
+}
+
+test("小程序学一学只按服务端稳定分类 ID 归类，不再猜标题", () => {
   const catalog = loadModule("utils/learning-catalog.js") as {
-    catalogs: Array<{ sections: Array<{ categories: Array<Record<string, unknown>> }> }>;
+    catalogsFromRegistry(nodes: Array<Record<string, unknown>>): Array<{ sections: Array<{ categories: Array<Record<string, unknown>> }> }>;
     belongsToCategory(item: Record<string, unknown>, category: Record<string, unknown>): boolean;
   };
-  const adultQuick = catalog.catalogs[0]!.sections[0]!.categories[0]!;
-  const childQuick = catalog.catalogs[1]!.sections[0]!.categories[0]!;
-  const shared = { category: "儿童快速通窍", title: "鼻三线姜刮" };
+  const catalogs = catalog.catalogsFromRegistry(categoryRegistryFixture());
+  const adultQuick = catalogs[0]!.sections[0]!.categories[0]!;
+  const childQuick = catalogs[1]!.sections[0]!.categories[0]!;
+  const shared = { categoryIds: ["video-child-quick-content"], category: "错误旧文本", title: "鼻三线姜刮" };
   assert.equal(catalog.belongsToCategory(shared, adultQuick), false);
   assert.equal(catalog.belongsToCategory(shared, childQuick), true);
-  assert.equal(catalog.belongsToCategory({ category: "", title: "鼻三线姜刮" }, adultQuick), false);
-  assert.equal(catalog.belongsToCategory({ category: "", title: "鼻三线姜刮" }, childQuick), false);
+  assert.equal(catalog.belongsToCategory({ categoryIds: [], title: "鼻三线姜刮" }, adultQuick), false);
+  assert.equal(catalog.belongsToCategory({ categoryIds: [], title: "鼻三线姜刮" }, childQuick), false);
 });
 
 test("小程序学一学固定四入口、目录内视频列表和五项主导航", async () => {
@@ -808,10 +820,11 @@ test("小程序学一学固定四入口、目录内视频列表和五项主导�
     command: async (name: string) => {
       if (name === "browse video list") {
         return { items: [
-          { id: "adult-1", category: "成人快速通窍", title: "迎香穴" },
-          { id: "child-1", category: "儿童快速通窍", title: "鼻三线姜刮" }
+          { id: "adult-1", categoryIds: ["video-adult-quick-content"], category: "成人快速通窍", title: "迎香穴" },
+          { id: "child-1", categoryIds: ["video-child-quick-content"], category: "儿童快速通窍", title: "鼻三线姜刮" }
         ] };
       }
+      if (name === "browse video category-registry") return { items: categoryRegistryFixture() };
       throw new Error(`unexpected command: ${name}`);
     }
   };

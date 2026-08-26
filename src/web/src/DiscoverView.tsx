@@ -12,6 +12,7 @@ import { PublicContentModal } from "./PublicContentModal";
 import {
   askKnowledge,
   listCarePlans,
+  listContentCategoryRegistry,
   listPublicContent,
   showCarePlan,
   showPublicContent,
@@ -22,7 +23,8 @@ import {
 } from "./discover";
 import {
   belongsToCategory,
-  LEARNING_CATALOGS,
+  catalogsFromRegistry,
+  type LearningAudienceCatalog,
   type LearningAudience
 } from "./learning-catalog";
 
@@ -33,7 +35,8 @@ export default function DiscoverView() {
   const [items, setItems] = useState<PublicContent[]>([]);
   const [plans, setPlans] = useState<CarePlanSummary[]>([]);
   const [audience, setAudience] = useState<LearningAudience>("adult");
-  const [category, setCategory] = useState("adult-quick-content");
+  const [category, setCategory] = useState("");
+  const [catalogs, setCatalogs] = useState<LearningAudienceCatalog[]>([]);
   const [query, setQuery] = useState("");
   const [status, setStatus] = useState<"loading" | "ready" | "error">("loading");
   const [notice, setNotice] = useState("");
@@ -66,9 +69,17 @@ export default function DiscoverView() {
           if (contentRequest.current !== requestVersion) return;
           setPlans(planItems);
         } else {
-          const contentItems = await listPublicContent(tab);
+          const [contentItems, registry] = tab === "video"
+            ? await Promise.all([listPublicContent(tab), listContentCategoryRegistry("video")])
+            : [await listPublicContent(tab), []];
           if (contentRequest.current !== requestVersion) return;
           setItems(contentItems);
+          if (tab === "video") {
+            const nextCatalogs = catalogsFromRegistry(registry);
+            setCatalogs(nextCatalogs);
+            const first = nextCatalogs.find((item) => item.id === audience) ?? nextCatalogs[0];
+            setCategory(first?.sections[0]?.categories[0]?.id ?? "");
+          }
         }
         setStatus("ready");
       } catch (error) {
@@ -115,18 +126,19 @@ export default function DiscoverView() {
     }
   }
 
-  const activeCatalog = LEARNING_CATALOGS.find((item) => item.id === audience) ?? LEARNING_CATALOGS[0];
-  const activeSection = activeCatalog.sections.find((section) => section.categories.some((item) => item.id === category)) ?? activeCatalog.sections[0];
-  const activeCategory = activeSection.categories.find((item) => item.id === category) ?? activeSection.categories[0];
+  const activeCatalog = catalogs.find((item) => item.id === audience) ?? catalogs[0];
+  const activeSection = activeCatalog?.sections.find((section) => section.categories.some((item) => item.id === category)) ?? activeCatalog?.sections[0];
+  const activeCategory = activeSection?.categories.find((item) => item.id === category) ?? activeSection?.categories[0];
   const normalizedQuery = query.trim().toLocaleLowerCase("zh-CN");
   const visibleItems = items.filter((item) => {
-    if (tab === "video" && !belongsToCategory(item, activeCategory)) return false;
+    if (tab === "video" && (activeCategory === undefined || !belongsToCategory(item, activeCategory))) return false;
     if (!normalizedQuery) return true;
     return `${item.title} ${item.summary} ${item.category}`.toLocaleLowerCase("zh-CN").includes(normalizedQuery);
   });
 
   function chooseAudience(nextAudience: LearningAudience) {
-    const nextCatalog = LEARNING_CATALOGS.find((item) => item.id === nextAudience) ?? LEARNING_CATALOGS[0];
+    const nextCatalog = catalogs.find((item) => item.id === nextAudience) ?? catalogs[0];
+    if (nextCatalog === undefined) return;
     setAudience(nextAudience);
     setCategory(nextCatalog.sections[0].categories[0].id);
   }
@@ -147,7 +159,7 @@ export default function DiscoverView() {
             <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索穴位、手法或症状" aria-label="搜索学一学视频" />
           </label>
           <div className="discover-audience" aria-label="适用人群">
-            {LEARNING_CATALOGS.map((catalog) => (
+            {catalogs.map((catalog) => (
               <button type="button" key={catalog.id} className={audience === catalog.id ? "active" : ""} aria-pressed={audience === catalog.id} onClick={() => chooseAudience(catalog.id)}>{catalog.label}</button>
             ))}
           </div>
@@ -158,7 +170,7 @@ export default function DiscoverView() {
       {notice && <p className={`discover-notice ${status === "error" ? "error-text" : ""}`} role="alert">{notice}</p>}
       {status === "loading" && <p className="discover-notice">正在读取已发布内容…</p>}
 
-      {status === "ready" && tab === "video" && (
+      {status === "ready" && tab === "video" && activeCatalog !== undefined && activeSection !== undefined && activeCategory !== undefined && (
         <section className="discover-catalog" data-testid="discover-video-catalog">
           <aside className="discover-category-rail" aria-label="视频方案分类">
             {activeCatalog.sections.map((section) => (
