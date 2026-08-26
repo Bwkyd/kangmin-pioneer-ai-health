@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 全部任务完成并落实计划与长期记忆（2026-08-26 第225轮 · 基线 `main@bd2eb6b`，待提交）
+> 结束前重新 fetch 并回读 GitHub、生产和本地状态：开放 Issue 为 0，#284 已关闭，PR #300/#301 已合并且 CI 全绿；生产继续指向 `category-registry-bf44d26`，应用 active、`NRestarts=0`、仅 8787 监听，正式库 `quick_check=ok`，24 项迁移、20 个分类节点、38 条关联和 26 条成功报告不变。任务 worktree、本地及远端任务分支、候选服务和临时制品均已清理；开放 PR 仅剩 Dependabot #261/#262，其分支因仍有未合并成果而保留。
+> 将任务前未提交的管理后台方案按最新事实整理为已完成档案 `docs/plan/013_admin-operator-task-flow.md`，不移植旧基线上重复且已过时的 board 轮次。长期记忆新增“管理后台按运营任务组织”和“患者内容分类必须显式归属”；后者按最终实现明确运行时禁止标题猜测、迁移须报告、未决发布内容失败关闭，文章固定为“科普文章”且时间只排序，视频才允许显式多叶关联。sequential-thinking 六步终审与 `$km-review` 患者可懂性、工程事实、医学安全三视角均未发现 P0–P2 或新的实现、部署、医学边界遗漏；清单、目标链接、差异格式和逐文件敏感信息检查通过，隔离 worktree 的结构检查只缺 Git 忽略的私密 truth 目录。根工作区的作者原稿与 `hi.md` 保持未覆盖，待本轮文档 PR 合并、分支清理后保存对话并结束。
+
 > ## 🚀 内容分类注册表已部署并上传小程序开发版（2026-08-26 第224轮 · `main@bf44d26`）
 > Issue #284 的 PR #300 第二轮 `quality`（PostgreSQL 16、S3、完整门禁）与 `image` CI 全绿后 squash 合并，Issue 自动关闭；至此 GitHub 开放 Issue 已清零。文章稳定为面向全部人群的唯一分类“科普文章”，时间只排序；视频使用服务端人群、方案类别、细分类树和显式多关联，Web、小程序及旧版管理端共用稳定 ID。
 > 候选库迁移到 `0022_content_category_registry`，20 个节点、38 条视频关联、26 条迁移报告全部成功，存量视频 ID/发布/可见状态哈希不变。正式备份 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260826-225521-before-category-registry-bf44d26.sqlite` 后原子切换到 `/srv/kangmin-cli/releases/category-registry-bf44d26`；应用/Nginx active、`NRestarts=0`、正式库 `quick_check=ok`，公网 HTTPS 与生产 Chromium 患者端/旧版后台冒烟通过。`/ready=503` 仍只因既有加密密钥未配置。微信官方 CLI 预览编译成功并上传开发版 `0.1.13`；不扩大为体验版、真机、审核或正式发布。详细记录见 `docs/changes/ops/015_content-category-registry-deploy.md`。
