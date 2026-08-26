@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 管理后台知识库精简界面已合并、部署并完成公网复核（2026-08-26 第204轮 · `main@fc2f992`）
+> 实现 PR #272 的 `quality`、`image` CI 全绿后 squash 合并为 `fc2f992`；完整 `src` 门禁 425 项中 348 通过、77 项因未配置 PostgreSQL/S3 按约定跳过、0 失败，`legacy` 127/127、真实浏览器 E2E、生产依赖审计、差异密钥扫描和 `git diff --check` 通过。sequential-thinking 与 `km-review` 发现并修复移动端拉伸/表格拥挤、停用无确认、上传取消后文件/来源/目录残留，P0–P2 清零。
+> 候选 release 在 8788 使用线上库副本预演通过后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-144738-before-knowledge-ui-fc2f992.sqlite` 并原子切换到 `/srv/kangmin-cli/releases/knowledge-ui-fc2f992`；发布包 SHA-256 为 `9a9a8f037c14ae3810344b85955081d6e269708a461fb43507fdb8a1b05821d0`，旧 release 保留回滚。切换后应用/Nginx active、`NRestarts=0`、正式库与备份 `quick_check=ok`，八项数据计数保持 `21/11/21/136/136/51/15/26`，公网首页、后台、`/live` 为 200，公网管理 JS 与合并构建逐字节一致，服务无新增 warning；8788、传输包和预演物已清理。`/ready=503` 仍只因既有加密密钥未配置；详细记录见 `docs/changes/ops/006_admin-knowledge-ui-deploy.md`。
+
 > ## 🎛️ 管理后台知识库完成信息减法与双端重排（2026-08-26 第203轮 · 基线 `main@aeee098`，待提交）
 > 开工重新核验本地、GitHub、CNB 与腾讯云实时状态：本地/远端 `main` 均为 `aeee098`，服务器仍运行 `/srv/kangmin-cli/releases/knowledge-folders-dcc91d9`，应用与 Nginx active、`NRestarts=0`、数据库 `quick_check=ok`、最新迁移为 `0021_knowledge_folders`；实时数据为 21 位患者、11 个启用方案、21 份知识、136 个分块/向量、51 个会话、15 份评估和 26 个已发布视频。CNB 登录有效但按 `kangmin`、`pioneer` 查询均无本项目仓库，没有沿用旧状态。
 > 本轮把知识上传收进按需弹窗，删除重复标题、常驻上传表单、分块技术列和正常启用状态的重复解释；目录移动改为按需展开，检索测试折叠为次级区域，移动端列表改为卡片。停用知识增加明确确认；上传取消、关闭和遮罩统一清空文件、来源与目录，上传中禁止关闭，避免旧草稿误提交或误归档。
