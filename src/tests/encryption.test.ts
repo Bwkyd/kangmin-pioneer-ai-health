@@ -88,7 +88,7 @@ test("篡改密文、IV 或认证标签都会导致认证失败", () => {
 
   const tamperedCipher = {
     ...payload,
-    ciphertext: `${payload.ciphertext.slice(0, -2)}AA`
+    ciphertext: flipFirstChar(payload.ciphertext)
   };
   assert.throws(() => encryption.decrypt(tamperedCipher), EncryptionError);
 
