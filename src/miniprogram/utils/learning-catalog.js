@@ -35,11 +35,23 @@ function normalized(value) {
   return String(value || "").replace(/[\s·——、，,()（）+]/g, "").toLocaleLowerCase();
 }
 
+var ALL_CATEGORIES = LEARNING_CATALOGS.reduce(function (categories, catalog) {
+  return categories.concat(catalog.sections.reduce(function (items, section) {
+    return items.concat(section.categories);
+  }, []));
+}, []);
+
 function belongsToCategory(item, category) {
   var categoryText = normalized(item.category);
   var titleText = normalized(item.title);
-  return (category.aliases || []).some(function (alias) { return categoryText.indexOf(normalized(alias)) >= 0; }) ||
-    (category.titles || []).some(function (title) { return titleText.indexOf(normalized(title)) >= 0; });
+  var explicitMatches = categoryText ? ALL_CATEGORIES.filter(function (candidate) {
+    return (candidate.aliases || []).some(function (alias) { return categoryText === normalized(alias); });
+  }) : [];
+  if (explicitMatches.length) return explicitMatches.length === 1 && explicitMatches[0].id === category.id;
+  var titleMatches = ALL_CATEGORIES.filter(function (candidate) {
+    return (candidate.titles || []).some(function (title) { return titleText.indexOf(normalized(title)) >= 0; });
+  });
+  return titleMatches.length === 1 && titleMatches[0].id === category.id;
 }
 
 module.exports = {
