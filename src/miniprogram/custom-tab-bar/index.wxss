@@ -1,17 +1,26 @@
-.tab-bar { position: fixed; z-index: 1000; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(5,1fr); box-sizing: border-box; min-height: 108rpx; padding: 10rpx 16rpx calc(12rpx + env(safe-area-inset-bottom)); gap: 6rpx; border-top: 2rpx solid #e2e8ef; background: rgba(255,255,255,.98); }
-.tab-item { display: flex; min-width: 0; flex-direction: column; align-items: center; justify-content: center; gap: 3rpx; border-radius: 18rpx; color: #91a099; font-size: 18rpx; }
-.glyph { position: relative; display: block; width: 35rpx; height: 35rpx; color: #879991; font-size: 0; }
-.selected { color: #1e5aa3; background: #eaf2fb; font-weight: 700; }
-.selected .glyph { color: #1e5aa3; }
-.nav-home::before { content: ""; position: absolute; left: 7rpx; top: 14rpx; width: 19rpx; height: 16rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-top: 0; border-radius: 3rpx; }
-.nav-home::after { content: ""; position: absolute; left: 9rpx; top: 7rpx; width: 16rpx; height: 16rpx; box-sizing: border-box; border-top: 3rpx solid currentColor; border-left: 3rpx solid currentColor; border-radius: 2rpx; transform: rotate(45deg); }
-.nav-chat::before { content: ""; position: absolute; inset: 4rpx 4rpx 7rpx; border: 3rpx solid currentColor; border-radius: 50%; }
-.nav-chat::after { content: ""; position: absolute; left: 6rpx; bottom: 4rpx; width: 10rpx; height: 10rpx; border-left: 3rpx solid currentColor; transform: rotate(25deg); }
-.nav-calendar::before { content: ""; position: absolute; inset: 5rpx 4rpx 3rpx; border: 3rpx solid currentColor; border-radius: 5rpx; }
-.nav-calendar::after { content: ""; position: absolute; left: 9rpx; top: 14rpx; width: 4rpx; height: 4rpx; background: currentColor; box-shadow: 7rpx 0 currentColor,14rpx 0 currentColor,0 7rpx currentColor,7rpx 7rpx currentColor,14rpx 7rpx currentColor; }
-.nav-profile::before { content: ""; position: absolute; left: 12rpx; top: 3rpx; width: 10rpx; height: 10rpx; border: 3rpx solid currentColor; border-radius: 50%; }
-.nav-profile::after { content: ""; position: absolute; left: 5rpx; bottom: 2rpx; width: 25rpx; height: 15rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-bottom: 0; border-radius: 18rpx 18rpx 3rpx 3rpx; }
-.action { transform: translateY(-18rpx); color: #1e5aa3; }
-.action .glyph { display: block; width: 82rpx; height: 82rpx; margin-bottom: 1rpx; box-sizing: border-box; border: 7rpx solid #f3f6fb; border-radius: 50%; color: #fff; background: #1e5aa3; font-size: 0; box-shadow: 0 9rpx 24rpx rgba(30,90,163,.24); }
+.tab-bar { position: fixed; z-index: 1000; right: 0; bottom: 0; left: 0; display: grid; grid-template-columns: repeat(5,1fr); box-sizing: border-box; min-height: 112rpx; padding: 8rpx 16rpx calc(12rpx + env(safe-area-inset-bottom)); gap: 4rpx; border-top: 2rpx solid #e4ebf1; background: linear-gradient(180deg,rgba(255,255,255,.98),#fff); box-shadow: 0 -8rpx 22rpx rgba(29,57,83,.06); }
+.tab-item { position: relative; display: flex; min-width: 0; min-height: 82rpx; flex-direction: column; align-items: center; justify-content: center; gap: 4rpx; border-radius: 22rpx; color: #849791; font-size: 18rpx; font-weight: 600; letter-spacing: .3rpx; }
+.tab-item:not(.action)::after { content: ""; position: absolute; bottom: 4rpx; width: 8rpx; height: 3rpx; border-radius: 4rpx; background: transparent; }
+.glyph { position: relative; display: block; width: 44rpx; height: 44rpx; box-sizing: border-box; border-radius: 15rpx; color: #78908a; font-size: 0; }
+.icon-mark { position: absolute; inset: 0; }
+.tab-item.selected:not(.action) { color: #1e5aa3; font-weight: 700; }
+.tab-item.selected:not(.action)::after { background: #2d6bb4; }
+.tab-item.selected:not(.action) .glyph { color: #1e5aa3; background: #e9f3ff; box-shadow: inset 0 0 0 1rpx rgba(47,109,184,.08); }
+.nav-home::before { content: ""; position: absolute; left: 10rpx; top: 8rpx; width: 23rpx; height: 23rpx; box-sizing: border-box; border-top: 3rpx solid currentColor; border-left: 3rpx solid currentColor; border-radius: 4rpx; transform: rotate(45deg); }
+.nav-home::after { content: ""; position: absolute; left: 9rpx; top: 18rpx; width: 26rpx; height: 18rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-top: 0; border-radius: 4rpx 4rpx 7rpx 7rpx; }
+.nav-home .icon-mark::before { content: ""; position: absolute; left: 19rpx; bottom: 8rpx; width: 6rpx; height: 10rpx; border-radius: 4rpx 4rpx 2rpx 2rpx; background: currentColor; }
+.nav-home .icon-mark::after { content: ""; position: absolute; left: 13rpx; top: 22rpx; width: 4rpx; height: 4rpx; border-radius: 50%; background: currentColor; }
+.nav-chat::before { content: ""; position: absolute; left: 6rpx; top: 8rpx; width: 30rpx; height: 23rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-radius: 12rpx 12rpx 12rpx 5rpx; }
+.nav-chat::after { content: ""; position: absolute; left: 10rpx; top: 27rpx; width: 9rpx; height: 9rpx; box-sizing: border-box; border-bottom: 3rpx solid currentColor; border-left: 3rpx solid currentColor; border-radius: 2rpx; transform: skewY(-30deg); }
+.nav-chat .icon-mark::before { content: ""; position: absolute; left: 14rpx; top: 18rpx; width: 4rpx; height: 4rpx; border-radius: 50%; background: currentColor; box-shadow: 7rpx 0 currentColor,14rpx 0 currentColor; }
+.nav-calendar::before { content: ""; position: absolute; left: 6rpx; top: 7rpx; width: 32rpx; height: 30rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-radius: 8rpx; }
+.nav-calendar::after { content: ""; position: absolute; left: 8rpx; top: 16rpx; width: 28rpx; height: 3rpx; border-radius: 3rpx; background: currentColor; }
+.nav-calendar .icon-mark::before { content: ""; position: absolute; left: 13rpx; top: 4rpx; width: 4rpx; height: 8rpx; border-radius: 4rpx; background: currentColor; box-shadow: 14rpx 0 currentColor; }
+.nav-calendar .icon-mark::after { content: ""; position: absolute; left: 12rpx; top: 24rpx; width: 4rpx; height: 4rpx; border-radius: 2rpx; background: currentColor; box-shadow: 8rpx 0 currentColor,16rpx 0 currentColor,0 7rpx currentColor,8rpx 7rpx currentColor,16rpx 7rpx currentColor; }
+.nav-profile::before { content: ""; position: absolute; left: 16rpx; top: 5rpx; width: 12rpx; height: 12rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-radius: 50%; }
+.nav-profile::after { content: ""; position: absolute; left: 8rpx; bottom: 4rpx; width: 28rpx; height: 16rpx; box-sizing: border-box; border: 3rpx solid currentColor; border-bottom: 0; border-radius: 20rpx 20rpx 5rpx 5rpx; }
+.nav-profile .icon-mark::before { content: ""; position: absolute; left: 20rpx; top: 18rpx; width: 4rpx; height: 6rpx; border-radius: 0 0 4rpx 4rpx; background: currentColor; }
+.action { transform: translateY(-8rpx); color: #1e5aa3; font-weight: 700; }
+.action .glyph { display: block; width: 84rpx; height: 84rpx; margin-bottom: 3rpx; box-sizing: border-box; border: 7rpx solid #f4f7fb; border-radius: 50%; color: #fff; background: linear-gradient(145deg,#2f74c2,#1d5ca6); font-size: 0; box-shadow: 0 10rpx 26rpx rgba(30,90,163,.26),0 2rpx 5rpx rgba(30,90,163,.18); }
 .action .glyph::before, .action .glyph::after { content: ""; position: absolute; left: 50%; top: 50%; width: 34rpx; height: 4rpx; border-radius: 4rpx; background: #fff; transform: translate(-50%,-50%); }
 .action .glyph::after { transform: translate(-50%,-50%) rotate(90deg); }

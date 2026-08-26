@@ -37,6 +37,74 @@ function resultKind(content) {
     : "text";
 }
 
+var PLAN_VIDEO_RULES = [
+  { method: ["肺俞", "点揉"], title: ["肺俞", "点揉", "不灸"] },
+  { method: ["肺俞"], title: ["肺俞"], rejectTitle: ["点揉"] },
+  { method: ["鼻三线"], title: ["鼻三线"] }, { method: ["迎香"], title: ["迎香"] },
+  { method: ["耳穴过敏区"], title: ["耳穴过敏区"] }, { method: ["身柱"], title: ["身柱"] },
+  { method: ["风门"], title: ["风门"] }, { method: ["大椎"], title: ["大椎"] },
+  { method: ["足三里"], title: ["足三里"] }, { method: ["揉天枢", "摩腹"], title: ["揉天枢", "摩腹"] },
+  { method: ["天枢"], title: ["天枢"] }, { method: ["清肺经", "清大肠"], title: ["清肺经", "清大肠"] },
+  { method: ["头面四大手法"], title: ["头面四大手法"] }, { method: ["鼻炎手法"], title: ["鼻炎手法"] },
+  { method: ["过敏手法"], title: ["过敏手法"] }, { method: ["呼吸手法"], title: ["呼吸手法"] },
+  { method: ["消化手法"], title: ["消化手法"] }, { method: ["清热手法"], title: ["清热手法"] }
+];
+
+function normalized(value) {
+  return String(value || "").replace(/[\s·—–、，,：:()（）+]/g, "").toLocaleLowerCase("zh-CN");
+}
+
+function matchedPlanVideo(method, videos) {
+  var normalizedMethod = normalized(method);
+  var audience = /(?:小儿|儿童)/.test(method) ? "儿童" : "成人";
+  var rule = PLAN_VIDEO_RULES.find(function (candidate) {
+    return candidate.method.every(function (part) { return normalizedMethod.indexOf(normalized(part)) >= 0; });
+  });
+  if (!rule) return null;
+  return (videos || []).find(function (video) {
+    var title = normalized(video.title);
+    return video.kind === "video" && String(video.category || "").indexOf(audience) >= 0 &&
+      rule.title.every(function (part) { return title.indexOf(normalized(part)) >= 0; }) &&
+      !(rule.rejectTitle || []).some(function (part) { return title.indexOf(normalized(part)) >= 0; });
+  }) || null;
+}
+
+function resultBlocks(content, videos) {
+  var lines = String(content || "").replace(/\r\n/g, "\n").split("\n");
+  var blocks = [];
+  var currentMethod = "";
+  for (var index = 0; index < lines.length; index += 1) {
+    var line = lines[index] || "";
+    var trimmed = line.trim();
+    var numbered = trimmed.match(/^\d+[.．、]\s*(.+)$/);
+    if (numbered && numbered[1]) currentMethod = numbered[1].trim();
+    if (trimmed === "方法：") currentMethod = (lines[index + 1] || "").trim();
+    if (trimmed === "【操作视频】") {
+      var video = matchedPlanVideo(currentMethod, videos);
+      if (video) {
+        blocks.push({ type: "video", id: video.id, method: currentMethod });
+        var nextLine = (lines[index + 1] || "").trim();
+        if (nextLine === "视频暂未上传（医学审核后补充）。" || nextLine === "操作视频已提供（见视频资源）。") index += 1;
+        continue;
+      }
+    }
+    blocks.push({ type: trimmed ? "text" : "space", text: line });
+  }
+  return blocks;
+}
+
+function resultPhase(content) {
+  return String(content || "").indexOf("【急性发作期】") >= 0 ? "急性发作期" : "缓解期";
+}
+
+function enrichResultMessage(message, videos) {
+  if (message.kind !== "result") return message;
+  return Object.assign({}, message, {
+    resultPhase: resultPhase(message.text),
+    resultBlocks: resultBlocks(message.text, videos)
+  });
+}
+
 function visibleUserText(content) {
   var value = String(content || "");
   var questionAnswer = questionnaire.visibleAnswer(value);
@@ -96,34 +164,34 @@ function historyView(item) {
   });
 }
 
-function messageView(message) {
+function messageView(message, videos) {
   var role = message.role === "user"
     ? "user"
     : message.role === "system_notice" ? "notice" : "assistant";
   var text = role === "user" ? visibleUserText(message.content) : String(message.content || "");
-  return {
+  return enrichResultMessage({
     id: message.id,
     role: role,
     kind: role === "assistant" ? resultKind(text) : role,
     text: text,
     displayDate: displayDate(message.createdAt)
-  };
+  }, videos);
 }
 
-function restoreMessages(detail) {
-  return [WELCOME_MESSAGE].concat((detail.messages || []).map(messageView));
+function restoreMessages(detail, videos) {
+  return [WELCOME_MESSAGE].concat((detail.messages || []).map(function (message) { return messageView(message, videos); }));
 }
 
-function turnMessages(turn) {
+function turnMessages(turn, videos) {
   var messages = [];
   if (turn.message && turn.message.content) {
-    messages.push({
+    messages.push(enrichResultMessage({
       id: "assistant-" + Date.now(),
       role: "assistant",
       kind: resultKind(turn.message.content),
       text: turn.message.content,
       displayDate: displayDate(new Date().toISOString())
-    });
+    }, videos));
   }
   (turn.notices || []).forEach(function (notice, index) {
     messages.push({
@@ -143,6 +211,19 @@ function nextQuestionsOf(verdict) {
     : [];
 }
 
+function isCapabilityUnavailable(error) {
+  return !!error && error.code === "capability_unavailable";
+}
+
+function agentAvailable() {
+  return api.wechatLoginEnabled !== false || api.anonymousAgentEnabled === true;
+}
+
+/** 匿名体验没有患者级历史会话权限，不能把一次性会话 ID 带到下次页面恢复。 */
+function anonymousExperience() {
+  return api.wechatLoginEnabled === false && api.anonymousAgentEnabled === true;
+}
+
 Page({
   data: {
     hydrated: false,
@@ -156,8 +237,9 @@ Page({
     conversationState: "",
     pendingQuestions: [],
     followUpEnabled: false,
-    canSend: true,
-    startAvailable: true,
+    canSend: agentAvailable(),
+    startAvailable: agentAvailable(),
+    capabilityUnavailable: !agentAvailable(),
     endReason: "",
     nextStartMode: "inherit_assessment",
     historyOpen: false,
@@ -229,6 +311,24 @@ Page({
     this.setData({ statusBarHeight: statusBarHeight, navigationBarHeight: navigationBarHeight });
   },
 
+  loadPlanVideos: function () {
+    var self = this;
+    if (self._planVideosLoading || self._planVideosLoaded) return;
+    self._planVideosLoading = true;
+    self._planVideos = [];
+    api.command("browse video list", { limit: 100, offset: 0 }, { auth: false })
+      .then(function (result) {
+        self._planVideos = result.items || [];
+        self._planVideosLoaded = true;
+        self._planVideosLoading = false;
+        self.setData({ messages: self.data.messages.map(function (message) { return enrichResultMessage(message, self._planVideos); }) });
+      })
+      .catch(function () {
+        self._planVideosLoading = false;
+        self._planVideos = [];
+      });
+  },
+
   clearStoredConversation: function () {
     try {
       wx.removeStorageSync(CONVERSATION_KEY);
@@ -238,6 +338,7 @@ Page({
   },
 
   storeConversation: function (id) {
+    if (anonymousExperience()) return;
     try {
       wx.setStorageSync(CONVERSATION_KEY, id);
     } catch (error) {
@@ -245,8 +346,47 @@ Page({
     }
   },
 
+  markCapabilityUnavailable: function () {
+    this.clearStoredConversation();
+    this.setData({
+      hydrated: true,
+      loading: false,
+      sending: false,
+      input: "",
+      error: "",
+      retryMessage: "",
+      messages: [WELCOME_MESSAGE],
+      conversationId: "",
+      conversationState: "",
+      pendingQuestions: [],
+      followUpEnabled: false,
+      canSend: false,
+      startAvailable: false,
+      capabilityUnavailable: true,
+      endReason: "",
+      historyOpen: false,
+      historyLoading: false,
+      historyError: "",
+      historyUnavailable: true,
+      history: []
+    });
+    this.setTabBarHidden(false);
+  },
+
   hydrate: function () {
     var self = this;
+    if (anonymousExperience()) {
+      self.clearStoredConversation();
+      self.setData({
+        hydrated: true,
+        loading: false,
+        error: "",
+        capabilityUnavailable: false,
+        canSend: true,
+        startAvailable: true
+      });
+      return;
+    }
     var id = "";
     try {
       id = wx.getStorageSync(CONVERSATION_KEY) || "";
@@ -254,7 +394,14 @@ Page({
       id = "";
     }
     if (!id) {
-      self.setData({ hydrated: true, loading: false, error: "" });
+      self.setData({
+        hydrated: true,
+        loading: false,
+        error: "",
+        capabilityUnavailable: !agentAvailable(),
+        canSend: agentAvailable(),
+        startAvailable: agentAvailable()
+      });
       return;
     }
 
@@ -267,6 +414,10 @@ Page({
       })
       .catch(function (error) {
         if (!self.isCurrentRequest(requestVersion)) return;
+        if (isCapabilityUnavailable(error)) {
+          self.markCapabilityUnavailable();
+          return;
+        }
         if (error && error.code === "resource_not_found") {
           self.clearStoredConversation();
           self.setData({
@@ -297,15 +448,17 @@ Page({
       loading: false,
       error: "",
       retryMessage: "",
-      messages: restoreMessages(detail),
+      messages: restoreMessages(detail, this._planVideos),
       conversationId: session.id || "",
       conversationState: state,
+      capabilityUnavailable: false,
       pendingQuestions: pending,
       followUpEnabled: !!followUp,
       canSend: state === "active" || !!followUp,
       startAvailable: false,
       endReason: state === "abandoned" ? "评估规则已更新，请新建对话后重新评估。" : ""
     });
+    if (state === "completed") this.loadPlanVideos();
   },
 
   toggleHistory: function () {
@@ -364,6 +517,10 @@ Page({
       })
       .catch(function (error) {
         if (!self.isCurrentRequest(requestVersion)) return;
+        if (isCapabilityUnavailable(error)) {
+          self.markCapabilityUnavailable();
+          return;
+        }
         self.setData({ sending: false, historyError: pageUtils.errorMessage(error) });
       });
   },
@@ -384,8 +541,9 @@ Page({
       conversationState: "",
       pendingQuestions: [],
       followUpEnabled: false,
-      canSend: true,
-      startAvailable: true,
+      canSend: agentAvailable(),
+      startAvailable: agentAvailable(),
+      capabilityUnavailable: !agentAvailable(),
       endReason: "",
       nextStartMode: "inherit_assessment",
       historyOpen: false
@@ -400,7 +558,7 @@ Page({
   },
 
   beginConsultation: function () {
-    if (!this.data.startAvailable || this.data.sending) return;
+    if (!this.data.startAvailable || this.data.sending || this.data.capabilityUnavailable) return;
     this.sendMessage(
       this.data.nextStartMode === "reassess"
         ? "我想重新评估我的鼻炎情况"
@@ -421,6 +579,12 @@ Page({
     this.sendMessage(this.data.input, true);
   },
 
+  openPlanVideo: function (event) {
+    var id = event.currentTarget.dataset.id;
+    if (!id || this.data.sending) return;
+    wx.navigateTo({ url: "/pages/content-detail/index?kind=video&id=" + encodeURIComponent(id) });
+  },
+
   answerPending: function (event) {
     if (this.data.sending) return;
     this.sendMessage(event.currentTarget.dataset.value, true);
@@ -434,7 +598,7 @@ Page({
   sendMessage: function (value, echoUser) {
     var self = this;
     var message = String(value || "").trim();
-    if (!message || self.data.sending || !self.data.hydrated || !self.data.canSend) return;
+    if (!message || self.data.sending || !self.data.hydrated || !self.data.canSend || self.data.capabilityUnavailable) return;
 
     var conversationId = self.data.conversationId;
     var input = { message: message };
@@ -500,13 +664,14 @@ Page({
         var state = turn.state || "active";
         var messages = self.data.messages
           .filter(function (item) { return item.id !== streamMessageId && item.kind !== "thinking"; })
-          .concat(turnMessages(turn));
+          .concat(turnMessages(turn, self._planVideos));
         if (turn.conversationId) self.storeConversation(turn.conversationId);
         self._streamTask = null;
         self.setData({
           messages: messages,
           conversationId: turn.conversationId || conversationId || "",
           conversationState: state,
+          capabilityUnavailable: false,
           pendingQuestions: turn.closed ? [] : nextQuestionsOf(turn.verdict),
           followUpEnabled: !!followUp,
           canSend: state === "active" || !!followUp,
@@ -515,6 +680,7 @@ Page({
           error: "",
           retryMessage: ""
         });
+        if (turn.message && resultKind(turn.message.content) === "result") self.loadPlanVideos();
       })
       .catch(function (error) {
         if (!self.isCurrentRequest(requestVersion)) return;
@@ -522,6 +688,10 @@ Page({
         self._streamFlushTimer = null;
         self._streamTask = null;
         var messages = self.data.messages.filter(function (item) { return item.id !== streamMessageId && item.kind !== "thinking"; });
+        if (isCapabilityUnavailable(error)) {
+          self.markCapabilityUnavailable();
+          return;
+        }
         if (error && error.code === "protocol_incompatible") {
           self.setData({
             messages: messages,

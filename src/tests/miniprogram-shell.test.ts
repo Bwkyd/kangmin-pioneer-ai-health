@@ -18,7 +18,9 @@ function loadModule(
   vm.runInNewContext(source, {
     module,
     exports: module.exports,
-    require: () => requireValue,
+    require: (name: string) => name === "./local-experience"
+      ? loadModule("utils/local-experience.js")
+      : requireValue,
     console,
     Promise,
     Date,
@@ -77,7 +79,7 @@ interface RequestOptions {
 }
 
 function createWxMock(handler: (options: RequestOptions) => void, initialToken = "") {
-  const storage: Record<string, string> = initialToken
+  const storage: Record<string, any> = initialToken
     ? { "kangmin.session.token": initialToken }
     : {};
   let loginCount = 0;
@@ -90,7 +92,7 @@ function createWxMock(handler: (options: RequestOptions) => void, initialToken =
         success({ code: `login-code-${loginCount}` });
       },
       getStorageSync: (key: string) => storage[key] ?? "",
-      setStorageSync: (key: string, value: string) => { storage[key] = value; },
+      setStorageSync: (key: string, value: any) => { storage[key] = value; },
       removeStorageSync: (key: string) => { removeCount += 1; delete storage[key]; }
     },
     loginCount: () => loginCount,
@@ -197,6 +199,217 @@ test("微信登录未配置时患者命令安全拒绝且不发出身份请求",
   );
   assert.equal(wxMock.loginCount(), 0);
   assert.equal(calls.length, 0);
+});
+
+test("客户体验版在无微信登录时把健康记录保存在本机并贯通概览、日历和趋势", async () => {
+  const calls: RequestOptions[] = [];
+  const wxMock = createWxMock((options) => calls.push(options));
+  const exports = loadModule("utils/request.js", { wx: wxMock.api }, {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: false,
+    anonymousRecordsEnabled: true
+  });
+  const createClient = exports.createClient as (
+    api: typeof wxMock.api,
+    options: { apiBaseUrl: string; requestTimeoutMs: number; wechatLoginEnabled: boolean; anonymousRecordsEnabled: boolean }
+  ) => { command(name: string, input: Record<string, unknown>, options: { auth: boolean }): Promise<any> };
+  const options = {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: false,
+    anonymousRecordsEnabled: true
+  };
+  const client = createClient(wxMock.api, options);
+
+  const privacy = await client.command("account privacy", {}, { auth: false });
+  assert.match(privacy.statement, /只保存在当前设备/u);
+  await client.command("account consent update", { decision: "granted" }, { auth: true });
+  await client.command("record profile update", {
+    expectedRevision: 0,
+    displayName: "体验患者",
+    birthDate: null,
+    sex: "unspecified",
+    allergyHistory: null
+  }, { auth: true });
+  const symptomInput = {
+    localDate: "2026-08-26",
+    sneezing: 1,
+    runnyNose: 2,
+    nasalCongestion: 3,
+    nasalItching: 0,
+    notes: null,
+    idempotencyKey: "local-symptom-1"
+  };
+  const firstSymptom = await client.command("record symptom add", symptomInput, { auth: true });
+  const replayedSymptom = await client.command("record symptom add", symptomInput, { auth: true });
+  assert.equal(replayedSymptom.id, firstSymptom.id, "重复提交应重放原记录而不是新增一条");
+  await assert.rejects(
+    client.command("record symptom add", { ...symptomInput, sneezing: 2 }, { auth: true }),
+    (reason: unknown) => (reason as { code?: string }).code === "conflict"
+  );
+  await assert.rejects(
+    client.command("record symptom add", { ...symptomInput, idempotencyKey: "local-symptom-conflict" }, { auth: true }),
+    (reason: unknown) => (reason as { code?: string }).code === "conflict"
+  );
+  await assert.rejects(
+    client.command("record symptom add", { ...symptomInput, localDate: "2099-01-01", idempotencyKey: "future" }, { auth: true }),
+    (reason: unknown) => (reason as { code?: string }).code === "validation_failed"
+  );
+  await assert.rejects(
+    client.command("record symptom add", { ...symptomInput, sneezing: 4, idempotencyKey: "bad-score" }, { auth: true }),
+    (reason: unknown) => (reason as { code?: string }).code === "validation_failed"
+  );
+
+  const restoredClient = createClient(wxMock.api, options);
+  const overview = await restoredClient.command("record overview", {}, { auth: true });
+  const calendar = await restoredClient.command("record calendar", { month: "2026-08" }, { auth: true });
+  const trend = await restoredClient.command("record trend", { from: "2026-08-01", to: "2026-08-31" }, { auth: true });
+  const profile = await restoredClient.command("record profile show", {}, { auth: true });
+  const unread = await restoredClient.command("browse message unread-count", {}, { auth: true });
+
+  assert.deepEqual({
+    recentSymptomDate: overview.recentSymptomDate,
+    monthRecordCount: overview.monthRecordCount,
+    lastTnss: overview.lastTnss,
+    calendarTotal: calendar.days[0]?.tnssTotal,
+    trendTotal: trend.items[0]?.tnssTotal,
+    displayName: profile.displayName,
+    unread: unread.count
+  }, {
+    recentSymptomDate: "2026-08-26",
+    monthRecordCount: 1,
+    lastTnss: 6,
+    calendarTotal: 6,
+    trendTotal: 6,
+    displayName: "体验患者",
+    unread: 0
+  });
+  assert.equal(wxMock.loginCount(), 0);
+  assert.equal(calls.length, 0);
+});
+
+test("客户体验版真实页面链路可授权、保存症状并在日历和我的页回显", async () => {
+  const wxMock = createWxMock(() => { throw new Error("本地体验链路不应发送网络请求"); });
+  const requestExports = loadModule("utils/request.js", { wx: wxMock.api }, {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: false,
+    anonymousRecordsEnabled: true
+  });
+  const createClient = requestExports.createClient as (
+    api: typeof wxMock.api,
+    options: { apiBaseUrl: string; requestTimeoutMs: number; wechatLoginEnabled: boolean; anonymousRecordsEnabled: boolean }
+  ) => Record<string, any>;
+  const api = {
+    ...createClient(wxMock.api, {
+      apiBaseUrl: "https://example.test",
+      requestTimeoutMs: 1000,
+      wechatLoginEnabled: false,
+      anonymousRecordsEnabled: true
+    }),
+    wechatLoginEnabled: false,
+    anonymousRecordsEnabled: true
+  };
+  const navigations: string[] = [];
+  const wxPage = {
+    ...wxMock.api,
+    showToast: () => undefined,
+    switchTab: ({ url }: { url: string }) => navigations.push(url),
+    navigateTo: ({ url }: { url: string }) => navigations.push(url)
+  };
+  const pageUtils = { selectTab: () => undefined, errorMessage: (error: any) => error?.message || "加载失败" };
+  const dateUtils = loadModule("utils/date.js");
+  const symptom = loadPage("pages/symptom-edit/index.js", {
+    "../../utils/request": api,
+    "../../utils/date": dateUtils,
+    "../../utils/page": pageUtils
+  }, wxPage);
+  symptom.setData = (changes) => { symptom.data = { ...symptom.data, ...changes }; };
+  symptom.onLoad({ date: "2026-08-26" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(symptom.data.error, "");
+  assert.equal(symptom.data.consentGranted, false);
+  symptom.setData({ consentAccepted: true });
+  symptom.grantConsent();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(symptom.data.consentGranted, true);
+  symptom.setData({ scores: { sneezing: 1, runnyNose: 2, nasalCongestion: 1, nasalItching: 0 } });
+  symptom.save();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+
+  const calendar = loadPage("pages/calendar/index.js", {
+    "../../utils/request": api,
+    "../../utils/date": dateUtils,
+    "../../utils/page": pageUtils
+  }, wxPage);
+  calendar.setData = (changes) => { calendar.data = { ...calendar.data, ...changes }; };
+  calendar.onShow();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(calendar.data.error, "");
+  assert.equal(calendar.data.trend.length, 1);
+  assert.equal(calendar.data.trend[0]?.tnssTotal, 4);
+  assert.equal(calendar.data.cells.find((cell: any) => cell.date === "2026-08-26")?.hasSymptom, true);
+
+  const mine = loadPage("pages/mine/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": pageUtils
+  }, wxPage);
+  mine.setData = (changes) => { mine.data = { ...mine.data, ...changes }; };
+  mine.onShow();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(mine.data.overviewError, "");
+  assert.equal(mine.data.profileError, "");
+  assert.equal(mine.data.unreadError, "");
+  assert.equal(mine.data.overview.monthRecordCount, 1);
+  assert.equal(mine.data.overview.lastTnss, 4);
+  assert.equal(mine.data.localExperience, true);
+});
+
+test("体验版匿名问助手不触发微信登录并发送无身份请求", async () => {
+  const calls: any[] = [];
+  let receiveChunk: ((value: { data: ArrayBuffer }) => void) | null = null;
+  let loginCount = 0;
+  const task = {
+    onChunkReceived(listener: (value: { data: ArrayBuffer }) => void) { receiveChunk = listener; },
+    abort() { /* noop */ }
+  };
+  const wx = {
+    request(options: any) {
+      calls.push(options);
+      setTimeout(() => {
+        const encoded = new TextEncoder().encode([
+          '{"type":"start"}\n',
+          '{"type":"done","data":{"message":{"content":"体验回答"}}}\n'
+        ].join(""));
+        assert.ok(receiveChunk);
+        receiveChunk!({ data: encoded.buffer });
+        options.success({ statusCode: 200, data: new ArrayBuffer(0) });
+      }, 0);
+      return task;
+    },
+    getStorageSync: () => "",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => undefined,
+    login: () => { loginCount += 1; throw new Error("体验版匿名问助手不应触发 wx.login"); }
+  };
+  const exports = loadModule("utils/request.js", { wx, ArrayBuffer, Uint8Array }, {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: false,
+    anonymousAgentEnabled: true
+  });
+  const client = (exports.createClient as any)(wx, {
+    apiBaseUrl: "https://example.test",
+    requestTimeoutMs: 1000,
+    wechatLoginEnabled: false,
+    anonymousAgentEnabled: true
+  });
+  const result = await client.streamAgent({ message: "你好" }, {});
+  assert.equal(result.message.content, "体验回答");
+  assert.equal(loginCount, 0);
+  assert.equal(calls[0].header.Authorization, "");
 });
 
 test("小程序流式请求按 NDJSON 增量输出，并正确还原跨 chunk 的中文 UTF-8", async () => {
@@ -572,7 +785,7 @@ test("小程序科普中心支持已发布方案详情和知识库问答入口",
   assert.deepEqual(calls, ["browse plan list", "browse plan show", "agent knowledge ask"]);
 });
 
-test("小程序问助手使用标题栏菜单与聊天记录抽屉，并拒绝旧版横向入口回流", () => {
+test("小程序问助手删除页面内重复摘要和对话按钮，保留抽屉、结果卡和发送入口", () => {
   const web = readFileSync(resolve("web/src/App.tsx"), "utf8");
   const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");
   const mini = readFileSync(resolve("miniprogram/pages/assistant/index.wxml"), "utf8");
@@ -594,22 +807,41 @@ test("小程序问助手使用标题栏菜单与聊天记录抽屉，并拒绝�
   for (const sharedStyle of ["margin: 20rpx 0 32rpx 68rpx", "width: 130rpx", "bottom: calc(108rpx + env(safe-area-inset-bottom))", "bottom: 100%"]) {
     assert.ok(miniStyles.includes(sharedStyle), `小程序问助手未锁定当前 Web 比例：${sharedStyle}`);
   }
-  for (const staleCopy of ["安全评估与方案建议", "固定规则优先", "☰ 历史对话", "＋ 新建聊天", "通过对话采集症状", "服务端会继续核对", "内容仅供健康科普与居家管理参考"]) {
+  for (const sharedCopy of ["新建聊天", "评估已完成", "观看操作视频", "继续追问当前方案…"]) {
+    assert.ok(mini.includes(sharedCopy), `小程序问助手未复用 Web 当前结构文案：${sharedCopy}`);
+  }
+  assert.equal(mini.includes("安全评估与方案建议"), false, "页面内不应重复展示评估摘要");
+  assert.equal(mini.includes("历史对话"), false, "页面内不应重复展示历史对话按钮");
+  for (const staleCopy of ["通过对话采集症状", "服务端会继续核对", "内容仅供健康科普与居家管理参考"]) {
     assert.equal(mini.includes(staleCopy), false, `小程序问助手仍残留旧版独立文案：${staleCopy}`);
   }
   assert.ok(mini.includes("聊天记录"), "侧滑抽屉应显示聊天记录标题");
   assert.ok(mini.includes("暂无聊天记录"), "微信能力不可用时应降级为空历史态");
-  assert.ok(mini.includes("回答由 AI 生成，仅供参考"), "标题栏应说明 AI 回答边界");
+  assert.ok(mini.includes("鼻健康智能助手"), "标题栏应与 Web 问助手名称对齐");
+  assert.ok(mini.includes("问助手暂未开放"), "微信登录未配置时应使用中性不可用态");
   assert.ok(mini.includes("class=\"start-action\""), "问卷入口应提供明确的开始评估行动按钮");
   assert.ok(mini.includes('aria-label="新建聊天"'), "侧滑抽屉应提供可访问的新建聊天入口");
   assert.equal(mini.includes('button class="menu-button"'), false, "标题栏菜单不应使用命中盒可能扩大的原生 button");
-  assert.equal(mini.includes("class=\"send-button\""), false, "小程序端不应显示独立发送按钮");
-  assert.ok(mini.includes("confirm-type=\"send\""), "小程序端应保留键盘发送入口");
-  assert.ok(mini.includes("/assets/assistant-mascot-loop-v2.gif"), "小程序端应使用可循环动画的吉祥物资产");
+  assert.ok(mini.includes("class=\"send-button {{(!hydrated || sending || !canSend || capabilityUnavailable) ? 'disabled' : ''}}\""), "小程序端应提供与 Web 一致的发送入口");
+  assert.ok(mini.includes("confirm-type=\"send\""), "小程序端应同时保留键盘发送入口");
+  assert.ok(mini.includes("class=\"result-card\""), "完成评估后应以 Web 同构的结果卡呈现方案");
+  assert.equal(mini.includes("class=\"chat-toolbar\""), false, "页面内重复对话工具栏应删除");
+  assert.ok(mini.includes("/assets/assistant-avatar.png"), "小程序端应使用作者提供的问助手头像");
+  assert.equal(mini.includes('class="mini-avatar">抗'), false, "问助手头像不应继续使用文字占位");
+  assert.ok(mini.includes("/assets/assistant-mascot-loop-v3.gif"), "小程序端应使用透明背景的循环吉祥物资产");
+  assert.ok(mini.includes('class="pending-option {{sending ? \'disabled\' : \'\'}}"'), "补问题选项应使用不受原生 button 居中规则影响的点击容器");
+  assert.ok(miniStyles.includes(".pending-card { width: calc(100% - 68rpx);"), "补问题卡应与聊天内容区对齐并避开助手头像");
+  assert.ok(miniStyles.includes(".pending-question { width: 100%;"), "补问题目应撑满卡片宽度");
+  assert.ok(miniStyles.includes(".pending-option > text:last-child"), "补问题选项文字应占满余下横向空间");
+  assert.equal(miniStyles.includes(".assessment-banner"), false, "已删除的评估摘要不应残留样式");
+  assert.ok(miniStyles.includes(".plan-video-button"), "小程序结果卡应提供匹配视频入口");
   assert.equal(miniStyles.includes("margin-left: 130rpx"), false, "吉祥物站到输入区上沿后不应留下空白占位");
   assert.equal(miniConfig.navigationBarTitleText, "抗敏先锋");
   assert.equal(miniConfig.navigationStyle, "custom");
   assert.ok(tabBar.includes('wx:if="{{!hidden}}"'), "聊天抽屉打开时应能隐藏独立自定义底栏");
+  assert.ok(tabBar.includes('class="icon-mark"'), "底栏图标应保留统一的细节绘制层");
+  assert.ok(readFileSync(resolve("miniprogram/custom-tab-bar/index.wxss"), "utf8").includes("selected:not(.action) .glyph"), "选中态应只突出图标，不铺满整块底栏入口");
+  assert.ok(readFileSync(resolve("miniprogram/custom-tab-bar/index.wxss"), "utf8").includes("translateY(-8rpx)"), "记录主按钮应留在底栏横线以内");
   assert.ok(readFileSync(resolve("miniprogram/custom-tab-bar/index.wxss"), "utf8").includes("translate(-50%,-50%)"), "记录按钮十字应按几何中心绘制");
   assert.equal(JSON.stringify(questionnaire.questions), JSON.stringify(ASSESSMENT_QUESTIONS));
   assert.ok(webStyles.includes(".start-card"));
@@ -640,12 +872,136 @@ test("小程序聊天记录在微信能力未配置时降级为空态，不暴�
   assert.equal(page.data.history.length, 0);
 });
 
+test("小程序问助手在微信登录未配置时不展示红色配置错误", async () => {
+  const calls: string[] = [];
+  const api = {
+    wechatLoginEnabled: false,
+    command: async () => { throw new Error("不应调用私有接口"); },
+    streamAgent: async () => { calls.push("stream"); throw { code: "capability_unavailable", message: "微信登录尚未配置" }; }
+  };
+  const page = loadPage("pages/assistant/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { selectTab: () => undefined, errorMessage: () => "不应展示的环境配置错误" }
+  }, {
+    getStorageSync: () => "",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => undefined
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+
+  page.onLoad();
+  assert.equal(page.data.capabilityUnavailable, true);
+  assert.equal(page.data.startAvailable, false);
+  assert.equal(page.data.canSend, false);
+  assert.equal(page.data.error, "");
+  page.beginConsultation();
+  page.sendCurrent();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.deepEqual(calls, []);
+  assert.equal(page.data.error, "");
+});
+
+test("小程序体验版在微信登录关闭时开放匿名问助手入口", async () => {
+  const inputs: Record<string, unknown>[] = [];
+  const api = {
+    wechatLoginEnabled: false,
+    anonymousAgentEnabled: true,
+    command: async (name: string) => { throw new Error(`体验版不应调用私有命令：${name}`); },
+    streamAgent: async (input: Record<string, unknown>) => {
+      inputs.push(input);
+      return {
+        conversationId: "anonymous-conversation-1",
+        state: "active",
+        message: { content: "体验回答" },
+        notices: [],
+        verdict: { outcome: "need_more_information", nextQuestions: [] },
+        closed: false
+      };
+    }
+  };
+  const page = loadPage("pages/assistant/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { selectTab: () => undefined, errorMessage: () => "不应展示的环境配置错误" }
+  }, {
+    getStorageSync: () => "",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => undefined
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+
+  page.onLoad();
+  assert.equal(page.data.capabilityUnavailable, false);
+  assert.equal(page.data.startAvailable, true);
+  assert.equal(page.data.canSend, true);
+  page.beginConsultation();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(inputs.length, 1);
+  assert.equal(inputs[0]?.startMode, "inherit_assessment");
+  assert.equal(page.data.error, "");
+  assert.equal(page.data.messages.some((item: any) => item.text === "体验回答"), true);
+});
+
+test("小程序匿名体验忽略遗留会话 ID，不因历史接口受保护而降级", () => {
+  let removed = 0;
+  const api = {
+    wechatLoginEnabled: false,
+    anonymousAgentEnabled: true,
+    command: () => { throw new Error("匿名体验不应恢复受保护的历史会话"); }
+  };
+  const page = loadPage("pages/assistant/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { selectTab: () => undefined, errorMessage: () => "加载失败" }
+  }, {
+    getStorageSync: () => "anonymous-conversation-leftover",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => { removed += 1; }
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+
+  page.onLoad();
+  assert.equal(removed, 1);
+  assert.equal(page.data.capabilityUnavailable, false);
+  assert.equal(page.data.startAvailable, true);
+  assert.equal(page.data.canSend, true);
+});
+
+test("小程序问助手请求返回微信能力未配置时回退到中性不可用态", async () => {
+  const api = {
+    command: async (name: string) => { throw new Error(`unexpected command: ${name}`); },
+    streamAgent: async () => { throw { code: "capability_unavailable", message: "微信登录尚未配置" }; }
+  };
+  const page = loadPage("pages/assistant/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { selectTab: () => undefined, errorMessage: () => "不应展示的环境配置错误" }
+  }, {
+    getStorageSync: () => "",
+    setStorageSync: () => undefined,
+    removeStorageSync: () => undefined
+  });
+  page.setData = (changes) => { page.data = { ...page.data, ...changes }; };
+
+  page.onLoad();
+  page.onInput({ detail: { value: "请结合我最近的评估，告诉我当前方案重点" } });
+  page.sendCurrent();
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.capabilityUnavailable, true);
+  assert.equal(page.data.error, "");
+  assert.equal(page.data.retryMessage, "");
+  assert.equal(page.data.messages.length, 1);
+  assert.equal(page.data.messages[0]?.id, "welcome");
+  assert.equal(page.data.input, "");
+});
+
 test("小程序问助手复用服务端会话，支持首轮评估、续问和结果收口", async () => {
   const calls: Array<{ name: string; input: Record<string, unknown>; options: Record<string, unknown> }> = [];
   const storage: Record<string, string> = {};
   let turnCount = 0;
   const api = {
     command: async (name: string, input: Record<string, unknown>, options: Record<string, unknown>) => {
+      if (name === "browse video list") {
+        assert.equal(options.auth, false);
+        return { items: [{ id: "video-nasal-line", kind: "video", category: "成人快速通窍", title: "鼻三线姜姜刮" }] };
+      }
       throw new Error(`unexpected command: ${name}`);
     },
     streamAgent: async (input: Record<string, unknown>, handlers: { onStart: () => void; onDelta: (content: string) => void }) => {
@@ -668,11 +1024,11 @@ test("小程序问助手复用服务端会话，支持首轮评估、续问和�
           closed: false
         };
       }
-      handlers.onDelta("【缓解期】\n已完成当前评估，请结合页面中的已审核方案。");
+      handlers.onDelta("【缓解期】\n已完成当前评估，请结合页面中的已审核方案。\n1. 鼻三线姜姜刮\n【操作视频】\n操作视频已提供（见视频资源）。");
       return {
         conversationId: "conversation-1",
         state: "completed",
-        message: { content: "【缓解期】\n已完成当前评估，请结合页面中的已审核方案。" },
+        message: { content: "【缓解期】\n已完成当前评估，请结合页面中的已审核方案。\n1. 鼻三线姜姜刮\n【操作视频】\n操作视频已提供（见视频资源）。" },
         notices: [{ content: "结果仅供健康管理参考。" }],
         verdict: { outcome: "classified", nextQuestions: [] },
         closed: true
@@ -713,6 +1069,10 @@ test("小程序问助手复用服务端会话，支持首轮评估、续问和�
   assert.equal(page.data.followUpEnabled, true);
   assert.equal(page.data.pendingQuestions.length, 0);
   assert.equal(page.data.messages.some((item: any) => item.kind === "result"), true);
+  const result = page.data.messages.find((item: any) => item.kind === "result");
+  assert.equal(result?.resultPhase, "缓解期");
+  assert.equal(result?.resultBlocks?.some((block: any) => block.text === "已完成当前评估，请结合页面中的已审核方案。"), true);
+  assert.equal(result?.resultBlocks?.some((block: any) => block.type === "video" && block.id === "video-nasal-line"), true);
   assert.equal(page.data.messages.some((item: any) => item.kind === "notice"), true);
 });
 
