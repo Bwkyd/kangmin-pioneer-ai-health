@@ -29,8 +29,9 @@
 | [007](ops/007_admin-video-preview-deploy.md) | 2026-08-26 | 管理后台视频预览尺寸与文案修复部署 |
 | [008](ops/008_admin-video-pagination-deploy.md) | 2026-08-26 | 管理后台视频列表分页部署 |
 | [009](ops/009_admin-ai-knowledge-terminology-deploy.md) | 2026-08-26 | 管理后台 AI 知识库术语部署 |
+| [010](ops/010_admin-inline-uploads-deploy.md) | 2026-08-26 | 管理后台文章与视频表单内上传部署 |
 
-下一份生产操作编号从 `010` 开始。
+下一份生产操作编号从 `011` 开始。
 
 ## 故障复盘
 
