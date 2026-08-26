@@ -1,4 +1,5 @@
 var config = require("../config");
+var localExperienceFactory = require("./local-experience");
 
 var TOKEN_KEY = "kangmin.session.token";
 var AGENT_STREAM_PATH = "/v1/patient/agent/stream";
@@ -25,6 +26,11 @@ function createClient(wxApi, options) {
   var baseUrl = String(options.apiBaseUrl || "").replace(/\/$/, "");
   var timeout = options.requestTimeoutMs || 15000;
   var wechatLoginEnabled = options.wechatLoginEnabled === true;
+  var anonymousAgentEnabled = options.anonymousAgentEnabled === true;
+  var localExperience = localExperienceFactory.createLocalExperience(
+    wxApi,
+    !wechatLoginEnabled && options.anonymousRecordsEnabled === true
+  );
   var loginPromise = null;
 
   function toError(payload, statusCode) {
@@ -119,6 +125,9 @@ function createClient(wxApi, options) {
   }
 
   function command(name, input, optionsValue) {
+    if (localExperience.enabled && localExperience.supports(name)) {
+      return Promise.resolve().then(function () { return localExperience.execute(name, input || {}); });
+    }
     var settings = optionsValue || {};
     var auth = settings.auth !== false;
     var body = {
@@ -372,7 +381,9 @@ function createClient(wxApi, options) {
       };
       function attempt(retried) {
         var existing = wxApi.getStorageSync(TOKEN_KEY) || "";
-        var tokenPromise = existing ? Promise.resolve(existing) : login();
+        var tokenPromise = existing
+          ? Promise.resolve(existing)
+          : anonymousAgentEnabled ? Promise.resolve("") : login();
         tokenPromise.then(function (token) {
           if (controller.aborted) {
             rejectOnce(abortedError());
@@ -382,7 +393,14 @@ function createClient(wxApi, options) {
           stream.then(resolveOnce).catch(function (error) {
             if (!retried && error && error.code === "authentication_required") {
               wxApi.removeStorageSync(TOKEN_KEY);
-              login().then(function (newToken) {
+              if (anonymousAgentEnabled && !existing) {
+                rejectOnce(error);
+                return;
+              }
+              var retryToken = anonymousAgentEnabled
+                ? Promise.resolve("")
+                : login();
+              retryToken.then(function (newToken) {
                 if (controller.aborted) {
                   rejectOnce(abortedError());
                   return;
@@ -424,6 +442,9 @@ module.exports = {
   CommandError: CommandError,
   command: client.command,
   createClient: createClient,
+  wechatLoginEnabled: config.wechatLoginEnabled === true,
+  anonymousAgentEnabled: config.anonymousAgentEnabled === true,
+  anonymousRecordsEnabled: config.anonymousRecordsEnabled === true,
   login: client.login,
   streamAgent: client.streamAgent,
   mediaUrl: client.mediaUrl,

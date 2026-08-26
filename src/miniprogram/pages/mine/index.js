@@ -1,7 +1,17 @@
 var api = require("../../utils/request");
 var pageUtils = require("../../utils/page");
 Page({
-  data: { privacy: null, privacyError: "", unreadCount: 0, unreadError: "", overview: null, overviewError: "", profile: null, profileError: "" },
+  data: {
+    privacy: null,
+    privacyError: "",
+    unreadCount: 0,
+    unreadError: "",
+    overview: null,
+    overviewError: "",
+    profile: null,
+    profileError: "",
+    localExperience: api.wechatLoginEnabled === false && api.anonymousRecordsEnabled === true
+  },
   onShow: function () {
     var self = this;
     pageUtils.selectTab(this, 4);

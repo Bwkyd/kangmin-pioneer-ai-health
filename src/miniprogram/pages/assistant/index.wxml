@@ -5,7 +5,7 @@
     </view>
     <view class="navigation-copy">
       <text class="navigation-title">抗敏先锋</text>
-      <text class="navigation-subtitle">回答由 AI 生成，仅供参考</text>
+      <text class="navigation-subtitle">鼻健康智能助手</text>
     </view>
   </view>
 
@@ -39,13 +39,30 @@
     <view wx:if="{{loading}}" class="empty-state">正在恢复上次对话…</view>
     <view wx:if="{{error}}" class="error-box" role="alert"><text>{{error}}</text><button wx:if="{{retryMessage}}" class="secondary-button compact-button" bindtap="retry">重试</button></view>
 
-    <view wx:for="{{messages}}" wx:key="id" class="message-row {{item.role}} {{item.kind}}">
-      <view wx:if="{{item.role === 'assistant'}}" class="mini-avatar">抗</view>
-      <view class="message-bubble">
-        <view wx:if="{{item.kind === 'thinking'}}" class="typing"><text></text><text></text><text></text></view>
-        <text wx:else user-select="true">{{item.text}}</text>
-        <view wx:if="{{item.kind === 'result'}}" class="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</view>
+    <view wx:for="{{messages}}" wx:key="id">
+      <view wx:if="{{item.kind === 'result'}}" class="result-card" aria-label="评估结果">
+        <view class="result-head"><view><text>评估已完成</text><text>{{item.resultPhase}}</text></view><text>评估结果</text></view>
+        <view class="result-body">
+          <view wx:for="{{item.resultBlocks}}" wx:for-item="block" wx:key="index" class="result-block {{block.type}}">
+            <text wx:if="{{block.type === 'text'}}" user-select="true">{{block.text}}</text>
+            <view wx:elif="{{block.type === 'video'}}" class="plan-video-button" role="button" aria-label="观看{{block.method}}操作视频" hover-class="plan-video-button-pressed" data-id="{{block.id}}" bindtap="openPlanVideo"><text>▶</text><text>观看操作视频</text></view>
+          </view>
+        </view>
+        <view class="result-foot"><text>方案来源</text><text>已审核的体质调理方案</text></view>
+        <view class="result-disclaimer">结果仅供参考，最终方案请以门诊诊断为准。</view>
       </view>
+      <view wx:else class="message-row {{item.role}} {{item.kind}}">
+        <image wx:if="{{item.role === 'assistant'}}" class="mini-avatar" src="/assets/assistant-avatar.png" mode="aspectFill" />
+        <view class="message-bubble">
+          <view wx:if="{{item.kind === 'thinking'}}" class="typing"><text></text><text></text><text></text></view>
+          <text wx:else user-select="true">{{item.text}}</text>
+        </view>
+      </view>
+    </view>
+
+    <view wx:if="{{capabilityUnavailable && hydrated}}" class="unavailable-card" role="status">
+      <text>问助手暂未开放</text>
+      <text>完成正式微信联调后即可使用。</text>
     </view>
 
     <view wx:if="{{startAvailable && hydrated}}" class="start-card {{sending ? 'disabled' : ''}}" role="button" aria-label="{{nextStartMode === 'reassess' ? '重新测评鼻敏感情况' : '开始鼻敏感测评'}}" hover-class="start-card-pressed" bindtap="beginConsultation">
@@ -60,15 +77,17 @@
     <view wx:if="{{pendingQuestions.length}}" class="pending-card">
       <view wx:for="{{pendingQuestions}}" wx:key="fieldCode" class="pending-question">
         <view class="pending-title"><text>问</text><text>{{item.title}}</text></view>
-        <button wx:for="{{item.options}}" wx:for-item="option" wx:key="value" class="pending-option" data-value="{{option.value}}" bindtap="answerPending" disabled="{{sending}}"><text>{{option.code}}</text>{{option.text}}</button>
+        <view wx:for="{{item.options}}" wx:for-item="option" wx:key="value" class="pending-option {{sending ? 'disabled' : ''}}" role="button" aria-label="{{option.text}}" data-value="{{option.value}}" hover-class="pending-option-pressed" bindtap="answerPending"><text>{{option.code}}</text><text>{{option.text}}</text></view>
       </view>
     </view>
 
-    <view wx:if="{{endReason}}" class="end-card"><text>{{endReason}}</text><button bindtap="startNewConversation">新建聊天</button><button bindtap="startReassessment">重新评估</button></view>
+    <view wx:if="{{followUpEnabled}}" class="end-card"><text>评估已完成，你可以继续追问当前方案。</text><button bindtap="startNewConversation">新建聊天</button><button bindtap="startReassessment">重新评估</button></view>
+    <view wx:elif="{{endReason}}" class="end-card"><text>{{endReason}}</text><button bindtap="startNewConversation">新建聊天</button><button bindtap="startReassessment">重新评估</button></view>
   </view>
 
   <view class="composer">
-    <image class="composer-mascot" src="/assets/assistant-mascot-loop-v2.gif" mode="aspectFit" />
-    <input class="composer-input" placeholder-class="composer-placeholder" value="{{input}}" maxlength="4096" confirm-type="send" placeholder="{{!hydrated ? '正在恢复对话…' : !canSend ? '该对话已结束' : sending ? '正在发送…' : followUpEnabled ? '继续追问当前方案…' : '问问题或描述症状…'}}" disabled="{{!hydrated || sending || !canSend}}" bindinput="onInput" bindconfirm="sendFromInput" />
+    <image class="composer-mascot" src="/assets/assistant-mascot-loop-v3.gif" mode="aspectFit" />
+    <input class="composer-input" placeholder-class="composer-placeholder" value="{{input}}" maxlength="4096" confirm-type="send" placeholder="{{!hydrated ? '正在恢复对话…' : capabilityUnavailable ? '问助手将在正式微信联调后开放' : !canSend ? '该对话已结束' : sending ? '正在发送…' : followUpEnabled ? '继续追问当前方案…' : '问问题或描述症状…'}}" disabled="{{!hydrated || sending || !canSend || capabilityUnavailable}}" bindinput="onInput" bindconfirm="sendFromInput" />
+    <view class="send-button {{(!hydrated || sending || !canSend || capabilityUnavailable) ? 'disabled' : ''}}" role="button" aria-label="发送" hover-class="send-button-pressed" bindtap="sendCurrent"><text>{{sending ? '…' : '↑'}}</text></view>
   </view>
 </view>

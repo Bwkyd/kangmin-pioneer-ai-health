@@ -6,7 +6,7 @@
     data-item="{{item}}"
     bindtap="switchTab"
   >
-    <view class="glyph {{item.iconClass}}">{{item.glyph}}</view>
+    <view class="glyph {{item.iconClass}}"><view class="icon-mark"></view>{{item.glyph}}</view>
     <text>{{item.text}}</text>
   </view>
 </view>

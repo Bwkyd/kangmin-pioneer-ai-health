@@ -53,12 +53,14 @@ Page({
     qaQuestion: "",
     qaAnswer: null,
     qaLoading: false,
+    knowledgeAvailable: api.wechatLoginEnabled !== false,
     loading: true,
     error: ""
   },
 
   onLoad: function (options) {
     var kind = options && ["article", "video", "plan", "qa"].indexOf(options.kind) >= 0 ? options.kind : "video";
+    if (kind === "qa" && !this.data.knowledgeAvailable) kind = "video";
     this.setData({ kind: kind });
     this.load();
   },

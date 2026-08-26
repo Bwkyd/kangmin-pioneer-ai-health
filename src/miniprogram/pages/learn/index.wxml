@@ -1,5 +1,5 @@
 <view class="page learn-page">
-  <view class="segment"><view class="{{kind === 'video' ? 'active' : ''}}" data-kind="video" bindtap="switchKind">操作视频</view><view class="{{kind === 'article' ? 'active' : ''}}" data-kind="article" bindtap="switchKind">科普文章</view><view class="{{kind === 'plan' ? 'active' : ''}}" data-kind="plan" bindtap="switchKind">调理方案</view><view class="{{kind === 'qa' ? 'active' : ''}}" data-kind="qa" bindtap="switchKind">知识问答</view></view>
+  <view class="segment"><view class="{{kind === 'video' ? 'active' : ''}}" data-kind="video" bindtap="switchKind">操作视频</view><view class="{{kind === 'article' ? 'active' : ''}}" data-kind="article" bindtap="switchKind">科普文章</view><view class="{{kind === 'plan' ? 'active' : ''}}" data-kind="plan" bindtap="switchKind">调理方案</view><view wx:if="{{knowledgeAvailable}}" class="{{kind === 'qa' ? 'active' : ''}}" data-kind="qa" bindtap="switchKind">知识问答</view></view>
 
   <view wx:if="{{kind === 'article' || kind === 'video'}}" class="search-box"><input value="{{query}}" placeholder="{{kind === 'video' ? '搜索穴位、手法或症状' : '搜索标题、摘要或分类'}}" bindinput="onSearch" /></view>
   <view wx:if="{{kind === 'video'}}" class="video-catalog">
