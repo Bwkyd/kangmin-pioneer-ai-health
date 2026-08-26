@@ -736,23 +736,52 @@ try {
   }
 
   // ---- 管理 Web：真实账号、HttpOnly 会话、文章发布闭环、知识上传 ----
+  const browserScreenshotDirectory = process.env.KANGMIN_E2E_SCREENSHOT_DIR?.trim();
+  if (browserScreenshotDirectory) mkdirSync(browserScreenshotDirectory, { recursive: true });
   const adminPage = await context.newPage();
   await adminPage.goto(`${origin}/admin`);
   await adminPage.getByTestId("admin-username").fill("browser-owner");
   await adminPage.getByTestId("admin-password").fill("browser-owner-password");
   await adminPage.getByTestId("admin-login").click();
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
-  await adminPage.getByRole("heading", { name: "今天先处理最重要的任务" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("heading", { name: "今日待办" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("heading", { name: "快捷新建" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("heading", { name: "内容概览" }).waitFor({ state: "visible" });
   const adminNavLabels = await adminPage.locator(".admin-nav-label").allTextContents();
   assert.ok(adminNavLabels.includes("内容运营"), "管理后台应显示内容运营分组");
   assert.ok(adminNavLabels.includes("消息"), "管理后台应显示消息分组");
   assert.equal(await adminPage.getByTestId("admin-nav-media").count(), 0, "素材库不应继续作为一级导航入口");
-  await adminPage.getByRole("heading", { name: "从内容开始" }).waitFor({ state: "visible" });
   const overviewCopy = await adminPage.locator(".admin-shell").innerText();
   assert.doesNotMatch(overviewCopy, /报价|交付/u, "工作台不应显示报价或交付内部话术");
-  await adminPage.getByText("预览", { exact: true }).waitFor({ state: "visible" });
-  await adminPage.getByText("服务端同步", { exact: true }).waitFor({ state: "visible" });
-  await adminPage.getByText("可用素材", { exact: true }).waitFor({ state: "visible" });
+  assert.doesNotMatch(overviewCopy, /发布链路|内容如何到达小程序|实时读取服务端|可用素材/u, "工作台不应保留重复链路或素材统计");
+  await adminPage.getByText("处理待办，管理小程序内容", { exact: true }).waitFor({ state: "visible" });
+  await adminPage.getByText("数据已同步", { exact: true }).waitFor({ state: "visible" });
+  await adminPage.getByText("AI 知识资料只有已建立索引且已启用后，才会参与 AI 问答。", { exact: true }).waitFor({ state: "visible" });
+  const workbenchOrder = await adminPage.locator(".workbench-section h2").allTextContents();
+  assert.deepEqual(workbenchOrder, ["今日待办", "快捷新建", "内容概览"], "工作台应按待办、新建、概览排序");
+  assert.equal(await adminPage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth), true, "390px 工作台不应横向溢出");
+  if (browserScreenshotDirectory) await adminPage.screenshot({ path: join(browserScreenshotDirectory, "workbench-mobile.png"), fullPage: true });
+  await adminPage.setViewportSize({ width: 1440, height: 900 });
+  const desktopSections = await adminPage.locator(".workbench-section").evaluateAll((nodes) => nodes.map((node) => {
+    const box = node.getBoundingClientRect();
+    return { top: box.top, bottom: box.bottom, height: box.height };
+  }));
+  assert.equal(desktopSections.length, 3, "桌面工作台应只有三个主区块");
+  assert.ok(desktopSections.every((box) => box.top >= 0 && box.bottom <= 900 && box.height > 40), "1440×900 应完整看到三个主区块");
+  if (browserScreenshotDirectory) await adminPage.screenshot({ path: join(browserScreenshotDirectory, "workbench-desktop.png"), fullPage: false });
+  await adminPage.setViewportSize({ width: 390, height: 844 });
+  await adminPage.getByRole("button", { name: /新建科普文章/u }).click();
+  await adminPage.getByRole("dialog", { name: "新增文章" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("dialog", { name: "新增文章" }).getByRole("button", { name: "取消" }).click();
+  await adminPage.getByTestId("admin-nav-overview").click();
+  await adminPage.getByRole("button", { name: /上传视频/u }).click();
+  await adminPage.getByRole("dialog", { name: "新增视频" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("dialog", { name: "新增视频" }).getByRole("button", { name: "取消" }).click();
+  await adminPage.getByTestId("admin-nav-overview").click();
+  await adminPage.getByRole("button", { name: /添加 AI 知识资料/u }).click();
+  await adminPage.getByRole("dialog", { name: "新增知识" }).waitFor({ state: "visible" });
+  await adminPage.getByRole("dialog", { name: "新增知识" }).getByRole("button", { name: "取消" }).click();
+  await adminPage.getByTestId("admin-nav-overview").click();
   assert.equal(await adminPage.getByRole("link", { name: /查看用户端/u }).count(), 0, "管理后台不再跳转患者 Web，患者入口统一为小程序");
   assert.deepEqual(await adminPage.evaluate(() => ({
     local: Object.keys(localStorage).filter((key) => /admin|token/iu.test(key)),
@@ -1209,9 +1238,7 @@ try {
   assert.equal(await adminPage.locator(".knowledge-list tbody tr").count(), 1);
   await adminPage.getByLabel("搜索知识资料").fill("");
   await knowledgePagination.getByRole("button", { name: "第 1 页" }).click();
-  const browserScreenshotDirectory = process.env.KANGMIN_E2E_SCREENSHOT_DIR?.trim();
   if (browserScreenshotDirectory) {
-    mkdirSync(browserScreenshotDirectory, { recursive: true });
     await adminPage.screenshot({ path: join(browserScreenshotDirectory, "knowledge-list-mobile.png"), fullPage: true });
     await adminPage.setViewportSize({ width: 1440, height: 1000 });
     await adminPage.screenshot({ path: join(browserScreenshotDirectory, "knowledge-list-desktop.png"), fullPage: true });
