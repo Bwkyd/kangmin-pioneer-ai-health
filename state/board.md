@@ -3,9 +3,9 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
-> ## 🌳 管理后台知识库改为三级目录树（2026-08-26 第199轮 · 基线 `main@4c565d3`，未提交）
+> ## 🌳 管理后台知识库改为三级目录树（2026-08-26 第199轮 · 实现 `feat/admin-console@dc2ec51`，补测待提交）
 > 按作者统一选择的 A 方案实现：客户可像文件夹一样创建、改名、改上级和删除空目录，层级最多三级；点击目录只看本层知识，不汇总子目录；知识通过“移动到”下拉框归档，不提供拖拽。后台增加“全部知识”和“未分类”入口，上传时可选目录，目录只负责运营整理，知识仍须独立建立索引并启用后才参与检索。
-> SQLite 与 PostgreSQL 新增目录邻接表和知识 `folder_id`，旧 `category` 确定性迁为一级目录，保留知识状态、分块和向量；目录路径只从树实时派生，后续编辑不会把旧分类字段写成假路径。服务层阻止同级重名、第四级、循环移动和删除非空目录，并记录目录增删改及知识移动审计。完整 `cd src && npm run check` 通过：424 项测试中 347 通过、77 项因未配置 PostgreSQL/S3 按约定跳过、0 失败，真实 Web 浏览器 E2E PASS；`check-manifests` 与 `git diff --check` 通过。`km-review` 发现并修复 1 个目录兼容字段 P1 后，患者可懂性、工程事实、医学安全三视角 P0/P1/P2 均为 0。`structure-lint` 仅因独立 worktree 不含被忽略的私有 `vault/raw`、`vault/truth`、`vault/style` 而失败；未复制私有资料，未改医学规则、患者侧、`hi.md`，未提交、推送、部署或客户验收。
+> SQLite 与 PostgreSQL 新增目录邻接表和知识 `folder_id`，旧 `category` 确定性迁为一级目录，保留知识状态、分块和向量；目录路径只从树实时派生，后续编辑不会把旧分类字段写成假路径。服务层阻止同级重名、第四级、循环移动和删除非空目录，并记录目录增删改及知识移动审计。补测后完整 `cd src && npm run check` 通过：425 项测试中 348 通过、77 项因本机未配置 PostgreSQL/S3 按约定跳过、0 失败；`legacy` 127/127 通过；真实 Web 浏览器 E2E 完成目录创建、改名、换上级、三级限制、本层隔离、非空删除失败、上传、移动、索引、检索、启停与删除。`check-manifests`、新增差异密钥扫描和 `git diff --check` 通过。`km-review` 先后修复目录兼容字段 P1 与测试漏断言 P2 后，患者可懂性、工程事实、医学安全三视角 P0/P1/P2 均为 0。`structure-lint` 仅因独立 worktree 不含被忽略的私有 `vault/raw`、`vault/truth`、`vault/style` 而失败；未复制私有资料，未改医学规则、患者侧或 `hi.md`，尚待 PR、CI、合并与部署。
 
 > ## ✅ 小程序本机体验任务结束前归档（2026-08-26 第198轮 · 基线 `main@0c7167d`，待提交）
 > 结束前重新 fetch 并核验：`main` 与 `origin/main` 同为 `0c7167d`，本任务实现/状态分支均已清除，GitHub 无开放 Issue；仅有两个既有 Dependabot PR。CNB 无本项目可见仓库，没有可清理分支；既有 `feat/admin-console` worktree 属于另一任务，未越权删除。补建 `docs/changes/ops/004_miniprogram-local-experience-upload.md`，归档 `0.1.11` 的实现、测试、两轮 CI、隔离预览、上传和交付边界；相关长期记忆补充“同步临时项目必须排除项目身份配置并回读 AppID”，避免仓库空配置再次覆盖体验身份。作者原件 `hi.md` 继续保持未跟踪、未修改。

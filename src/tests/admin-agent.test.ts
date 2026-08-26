@@ -290,11 +290,12 @@ test("知识目录支持三级创建、本层归档、移动与安全删除", as
     }));
     assert.equal(afterRename.category, "鼻敏感基础 / 症状机制 / 换季诱因");
 
-    await app.execute({
+    const editedInFolder = dataOf<KnowledgeItem>(await app.execute({
       command: "agent knowledge update",
       adminToken: token,
       input: { id: added.id, source: "目录内更新来源" }
-    });
+    }));
+    assert.equal(editedInFolder.source, "目录内更新来源");
 
     const cycle = await app.execute({
       command: "agent knowledge folder update",
@@ -332,6 +333,70 @@ test("知识目录支持三级创建、本层归档、移动与安全删除", as
     assert.equal(auditRowsOf(databasePath, "agent.knowledge-folder.update").length, 1);
     assert.equal(auditRowsOf(databasePath, "agent.knowledge-folder.delete").length, 3);
     assert.equal(auditRowsOf(databasePath, "agent.knowledge.move").length, 1);
+  } finally {
+    app.close();
+  }
+});
+
+test("知识目录拒绝重复改名、无效目标和移动后超深", async () => {
+  const { app, mediaDirectory, token } = await fixture();
+  try {
+    const createFolder = async (name: string, parentId: string | null = null) =>
+      dataOf<KnowledgeFolder>(await app.execute({
+        command: "agent knowledge folder create",
+        adminToken: token,
+        input: { name, parentId }
+      }));
+    const rootA = await createFolder("树甲");
+    const childA = await createFolder("树甲二级", rootA.id);
+    await createFolder("树甲三级", childA.id);
+    const rootB = await createFolder("树乙");
+    const childB = await createFolder("树乙二级", rootB.id);
+    await createFolder("同级占位", rootB.id);
+
+    const duplicateRename = await app.execute({
+      command: "agent knowledge folder update",
+      adminToken: token,
+      input: { id: childB.id, name: "同级占位" }
+    });
+    assert.equal(duplicateRename.ok, false);
+    if (!duplicateRename.ok) assert.equal(duplicateRename.error.code, "validation_failed");
+
+    const tooDeep = await app.execute({
+      command: "agent knowledge folder update",
+      adminToken: token,
+      input: { id: rootA.id, parentId: childB.id }
+    });
+    assert.equal(tooDeep.ok, false);
+    if (!tooDeep.ok) assert.equal(tooDeep.error.code, "validation_failed");
+
+    const missingParent = await app.execute({
+      command: "agent knowledge folder create",
+      adminToken: token,
+      input: { name: "无效目录", parentId: "kfd_missing" }
+    });
+    assert.equal(missingParent.ok, false);
+    if (!missingParent.ok) assert.equal(missingParent.error.code, "resource_not_found");
+
+    const file = join(mediaDirectory, "移动目标校验.md");
+    writeFileSync(file, "# 移动目标校验\n\n用于验证不存在目录不能接收知识。");
+    const knowledge = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge add",
+      adminToken: token,
+      input: { file }
+    }));
+    const missingMoveTarget = await app.execute({
+      command: "agent knowledge move",
+      adminToken: token,
+      input: { id: knowledge.id, folderId: "kfd_missing" }
+    });
+    assert.equal(missingMoveTarget.ok, false);
+    if (!missingMoveTarget.ok) assert.equal(missingMoveTarget.error.code, "resource_not_found");
+    assert.equal((dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge show",
+      adminToken: token,
+      input: { id: knowledge.id }
+    }))).folderId, null);
   } finally {
     app.close();
   }

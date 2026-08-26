@@ -1066,7 +1066,28 @@ try {
   await adminPage.getByLabel("目录名称").fill("日常防护");
   await adminPage.locator(".folder-form").getByRole("button", { name: "保存" }).click();
   await expectText(adminPage.getByRole("status"), "目录已创建");
-  await adminPage.getByLabel("上传到目录").selectOption({ label: "鼻炎基础 / 日常防护" });
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /日常防护/u }).click();
+  await adminPage.getByRole("button", { name: "编辑目录" }).click();
+  await adminPage.getByLabel("目录名称").fill("居家防护");
+  await adminPage.locator(".folder-form").getByRole("button", { name: "保存" }).click();
+  await expectText(adminPage.getByRole("status"), "目录已更新");
+  await adminPage.getByRole("button", { name: "新建子目录" }).click();
+  await adminPage.getByLabel("目录名称").fill("换季护理");
+  await adminPage.locator(".folder-form").getByRole("button", { name: "保存" }).click();
+  await expectText(adminPage.getByRole("status"), "目录已创建");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /换季护理/u }).click();
+  assert.equal(await adminPage.getByRole("button", { name: "新建子目录" }).isDisabled(), true, "三级目录不应允许继续创建子目录");
+
+  await adminPage.locator(".folder-title").getByRole("button", { name: "新建目录" }).click();
+  await adminPage.getByLabel("目录名称").fill("客户资料");
+  await adminPage.locator(".folder-form").getByRole("button", { name: "保存" }).click();
+  await expectText(adminPage.getByRole("status"), "目录已创建");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /居家防护/u }).click();
+  await adminPage.getByRole("button", { name: "编辑目录" }).click();
+  await adminPage.getByLabel("上级目录").selectOption({ label: "客户资料" });
+  await adminPage.locator(".folder-form").getByRole("button", { name: "保存" }).click();
+  await expectText(adminPage.getByRole("status"), "目录已更新");
+  await adminPage.getByLabel("上传到目录").selectOption({ label: "客户资料 / 居家防护 / 换季护理" });
   await adminPage.getByLabel("知识来源").fill("客户试用资料");
   await adminPage.getByLabel("选择知识文件").setInputFiles({
     name: "browser-guide.md",
@@ -1075,6 +1096,11 @@ try {
   });
   await adminPage.getByRole("button", { name: "上传知识" }).click();
   assert.equal(await adminPage.locator("tbody tr", { hasText: "browser-guide.md" }).count(), 0, "父目录只显示本层知识，不应混入子目录资料");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /换季护理/u }).click();
+  await adminPage.locator("tbody tr", { hasText: "browser-guide.md" }).waitFor({ state: "visible" });
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await adminPage.getByRole("button", { name: "删除空目录" }).click();
+  await expectText(adminPage.getByRole("status"), "目录中仍有知识或子目录，不能删除");
   await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /全部知识/u }).click();
   const knowledgeRow = adminPage.locator("tbody tr", { hasText: "browser-guide.md" });
   await knowledgeRow.waitFor({ state: "visible" });
@@ -1099,7 +1125,7 @@ try {
   await expectText(adminPage.getByRole("status"), "知识资料已更新");
   assert.equal(await adminPage.getByTestId("knowledge-edit-form").count(), 0);
   const updatedKnowledgeRow = adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南" });
-  assert.equal(await updatedKnowledgeRow.getByLabel("移动知识 鼻健康清洁指南").locator("option:checked").innerText(), "鼻炎基础 / 日常防护");
+  assert.equal(await updatedKnowledgeRow.getByLabel("移动知识 鼻健康清洁指南").locator("option:checked").innerText(), "客户资料 / 居家防护 / 换季护理");
   await expectText(updatedKnowledgeRow, "客户试用资料·已复核");
   await updatedKnowledgeRow.getByLabel("移动知识 鼻健康清洁指南").selectOption({ label: "鼻炎基础" });
   await expectText(adminPage.getByRole("status"), "知识已移动到目标目录");
@@ -1125,7 +1151,15 @@ try {
   await updatedKnowledgeRow.getByRole("button", { name: "删除" }).click();
   await expectText(adminPage.getByRole("status"), "知识资料已删除");
   assert.equal(await adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南" }).count(), 0);
-  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /日常防护/u }).click();
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /换季护理/u }).click();
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await adminPage.getByRole("button", { name: "删除空目录" }).click();
+  await expectText(adminPage.getByRole("status"), "空目录已删除");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /居家防护/u }).click();
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await adminPage.getByRole("button", { name: "删除空目录" }).click();
+  await expectText(adminPage.getByRole("status"), "空目录已删除");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /客户资料/u }).click();
   adminPage.once("dialog", (dialog) => void dialog.accept());
   await adminPage.getByRole("button", { name: "删除空目录" }).click();
   await expectText(adminPage.getByRole("status"), "空目录已删除");
@@ -1137,7 +1171,7 @@ try {
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
   await adminPage.close();
   process.stdout.write(
-    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication calendar-trend reload restart discover overview-stats chat-exec plan-dialogue-follow-up admin-cookie article-edit-publish-unpublish message-edit-publish-read-unpublish video-upload-edit-publish-unpublish knowledge-upload-update-index-search-disable-delete\n"
+    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication calendar-trend reload restart discover overview-stats chat-exec plan-dialogue-follow-up admin-cookie article-edit-publish-unpublish message-edit-publish-read-unpublish video-upload-edit-publish-unpublish knowledge-folder-create-rename-reparent-depth-direct-view-move-upload-update-index-search-disable-delete\n"
   );
 } finally {
   if (isolatedContext !== undefined) {
