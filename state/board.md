@@ -3,6 +3,9 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧹 演化门禁任务分支与 worktree 已清理（2026-08-27 第231轮 · 基线 `main@97954a3`，待提交）
+> PR #315 自动 CI `quality`（3 分 21 秒）与 `image`（46 秒）全绿后合并为 `97954a3`。实现、替代和收尾的 GitHub 远端分支、本地分支及 `/Users/chenqiqiang/work/kangmin-wt-evolution-guard` 均已删除；清理前逐一确认 PR #314/#315 已合并、两组 squash 源树与合并树完全一致、任务 worktree 无未提交成果。本记录分支约定由合并动作自动删除。根工作区 `main=origin/main=97954a3`，只保留作者未跟踪原件 `hi.md`。仓库只配置 GitHub `origin`，没有 CNB remote，因此不存在 CNB 任务分支可清理。
+
 > ## ✅ 演化防退化门禁已合并并关闭 Issue（2026-08-27 第230轮 · `main@d25e428`）
 > Issue #304 的实现经 PR #314 squash 合并为 `d25e428` 并自动关闭；源分支 `218cb68` 与合并文件树一致。PR #313 因 GitHub 起初未生成 `pull_request`/`synchronize` run 而关闭，没有绕过保护规则；同 SHA 的新 PR #314 最终获得自动 CI run `32991479701`，`quality`（PostgreSQL 16、MinIO/S3、完整回归）3 分 23 秒、`image`（OCI 构建、容器冒烟、生产依赖审计、SBOM）1 分 13 秒，全部通过后正常合并。CI 同时新增 `workflow_dispatch` 恢复入口，期间两次同 SHA 手动 run 也全绿，但不冒充 required check。
 > 合并树相对线上 release `category-registry-bf44d26` 的 `src/` 完全无差异，因此没有重复部署相同业务制品。部署收尾只读实测：`/srv/kangmin-cli/app` 仍指向该 release，应用/Nginx active、`NRestarts=0`、仅 127.0.0.1:8787 监听；正式库 `quick_check=ok`，24 项迁移最新 `0022_content_category_registry`，患者/方案/知识/分块/向量/会话/评估/视频/分类节点/关联/成功报告为 `27/11/21/136/136/46/16/26/20/38/26`，与开工实测一致。公网首页、后台、`/live` 为 200；`/ready=503` 仍只因既有加密配置未完成。本轮未改产品、数据库、医学规则或患者数据；待本收尾记录合并后删除 GitHub 任务分支、本地任务分支和 worktree，仓库没有 CNB remote，故不存在 CNB 任务分支可删。
