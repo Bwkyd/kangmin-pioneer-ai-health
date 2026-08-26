@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 二级文件管理已合并、部署并关闭 Issue（2026-08-26 第218轮 · `main@880421f`）
+> Issue #279 收尾实现 PR #294 的 `quality`（含 PostgreSQL 16 契约）与 `image` CI 全绿后 squash 合并为 `880421f`，源提交与合并提交文件树一致，Issue 自动关闭。完整门禁、真实浏览器双视口 E2E、sequential-thinking 与 `$km-review` 已验证三类业务入口、四种引用角色、全状态禁删、显式解绑和未使用文件删除，P0–P2 为 0。
+> 候选 release 在 8788 使用正式库副本贯通真实管理 HTTP 引用列表、下架视频禁删、显式解绑与删除后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-181645-before-file-management-880421f.sqlite`，原子切换到 `/srv/kangmin-cli/releases/file-management-880421f`。应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，23 项迁移及 `22/11/21/136/136/51/15/26` 计数不变；公网 HTTPS 首页、后台、`/live` 为 200，JS/CSS 哈希与合并构建一致。`/ready=503` 仍只因既有加密密钥未配置；8788、候选数据和传输制品已清理，详细记录见 `docs/changes/ops/012_admin-file-management-deploy.md`。
+
 > ## 🗂️ 文件管理补齐引用去向与全状态删除保护（2026-08-26 第217轮 · 基线 `main@ef8df00`，待提交）
 > 作为 Issue #279 的收尾子轮，本轮只处理二级文件管理入口、权威引用读模型、全状态删除保护和双视口回归四个实体。文章、视频和 AI 知识页增加次要“文件管理”入口，一级导航保持不变；文件按图片、视频、知识文件与附件筛选，逐项显示业务名称、文件用途和业务状态。列表由 SQLite/PG 批量返回文章/视频文件、封面、正文附件与知识源引用；任一状态仍有引用时服务端事务拒绝删除，不再自动断开草稿、下架内容或停用知识，未使用文件可确认后删除。
 > sequential-thinking 六步元反思与 `$km-review` 三视角发现并修复 PostgreSQL 契约漏锁封面/正文附件变式这一项 P2，最终 P0–P2 为 0，详见 `docs/reviews/029_admin-file-management-review.md`。`cd src && npm run check` 全绿，真实浏览器在 390×844 与 1440×1000 路径贯通三类业务引用、下架/启用状态、使用中禁删、未使用文件真实删除和既有患者/内容/知识闭环；本机未配置 PostgreSQL，PG 契约待 GitHub CI 的 PostgreSQL 16 强制执行。尚待提交、PR CI、合并、生产预演、部署后复核与关闭 #279。
