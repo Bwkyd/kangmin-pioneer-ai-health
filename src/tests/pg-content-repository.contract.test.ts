@@ -383,6 +383,7 @@ if (databaseUrl === undefined) {
     assert.deepEqual(failed, { kind: "validation_failed", missing: ["media"] });
     assert.deepEqual(observed, {
       category: { status: "active", kind: "article" },
+      categories: [],
       coverMedia: { found: true, status: "ready", kind: "image" },
       media: { found: true, status: "processing", kind: "video" },
       bodyMedia: []

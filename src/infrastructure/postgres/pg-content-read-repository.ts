@@ -336,7 +336,7 @@ export class PgContentReadRepository implements ContentReadRepository {
   }
 
   private async withCategoryDisplay(item: PublicContent): Promise<PublicContent> {
-    if (item.categoryIds.length === 0) return { ...item, category: "" };
+    if (item.categoryIds.length === 0) return item;
     const { rows } = await this.database.query<{ id: string; path: string }>(`
       WITH RECURSIVE paths(id, parent_id, name, path) AS (
         SELECT id, parent_id, name, name::text

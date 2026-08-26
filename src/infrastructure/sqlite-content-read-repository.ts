@@ -340,6 +340,7 @@ export class SqliteContentReadRepository implements ContentReadRepository {
   }
 
   private withCategoryDisplay(item: PublicContent): PublicContent {
+    if (item.categoryIds.length === 0) return item;
     const path = this.database.connection.prepare(`
       WITH RECURSIVE ancestors(id, parent_id, name, depth) AS (
         SELECT id, parent_id, name, 0 FROM content_category_registry WHERE id = ?

@@ -421,7 +421,7 @@ export class PgContentAdminRepository implements ContentAdminRepository {
     return {
       ...item,
       categoryIds: rows.map((row) => row.category_id),
-      category: rows.map((row) => row.path).join("；")
+      category: rows.length === 0 ? item.category : rows.map((row) => row.path).join("；")
     };
   }
 

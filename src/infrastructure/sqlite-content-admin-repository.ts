@@ -370,7 +370,11 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
 
   private withCategoryIds(item: AdminContentItem): AdminContentItem {
     const categoryIds = this.categoryIdsOf(item.id);
-    return { ...item, categoryIds, category: this.categoryPathsOf(categoryIds).join("；") };
+    return {
+      ...item,
+      categoryIds,
+      category: categoryIds.length === 0 ? item.category : this.categoryPathsOf(categoryIds).join("；")
+    };
   }
 
   private categoryPathsOf(categoryIds: readonly string[]): string[] {
