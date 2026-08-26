@@ -1,0 +1,65 @@
+{
+ "date": "2026-08-27 00:45",
+ "langs": {
+  ".tsx": {
+   "files": 12,
+   "lines": 5919,
+   "sig_lines": 4295,
+   "dup": 28.5,
+   "dup_alt": {
+    "8": 32.1,
+    "16": 28.1
+   },
+   "tests": 0
+  },
+  ".ts": {
+   "files": 276,
+   "lines": 74241,
+   "sig_lines": 51784,
+   "dup": 38.6,
+   "dup_alt": {
+    "8": 41.4,
+    "16": 36.3
+   },
+   "tests": 491
+  },
+  ".py": {
+   "files": 5,
+   "lines": 935,
+   "sig_lines": 647,
+   "dup": 14.5,
+   "dup_alt": {
+    "8": 17.2,
+    "16": 14.5
+   },
+   "tests": 12
+  },
+  ".js": {
+   "files": 19,
+   "lines": 2959,
+   "sig_lines": 2018,
+   "dup": 23.6,
+   "dup_alt": {
+    "8": 24.4,
+    "16": 18.3
+   },
+   "tests": 0
+  }
+ },
+ "struct": {
+  "code_files": 318,
+  "p50": 120,
+  "p90": 784,
+  "max": 2012,
+  "over_soft": 19.5,
+  "over_hard": 14.2,
+  "widest": 16,
+  "widest_dir": "<顶层>",
+  "tops": 16,
+  "nav": 13.45
+ },
+ "behavior": {
+  "tests": 503,
+  "per_kline": 6.0
+ }
+}

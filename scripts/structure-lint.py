@@ -7,6 +7,8 @@ import re
 import sys
 from pathlib import Path
 
+from evolution_guard import audit as audit_evolution_guard
+
 
 REQUIRED_FILES = (
     ".gitignore",
@@ -32,6 +34,10 @@ REQUIRED_FILES = (
     "scripts/README.md",
     "scripts/check-manifests.py",
     "scripts/check-tools.sh",
+    "scripts/evolution-guard.py",
+    "scripts/evolution_guard.py",
+    "scripts/test-evolution-guard.py",
+    "state/evolution-guard.json",
     ".claude/workflows/README.md",
     ".claude/workflows/km-review.js",
     "state/board.md",
@@ -238,6 +244,13 @@ def check_removed_paths(root: Path, errors: list[str]) -> None:
                 errors.append(f"已废弃路径或规则残留：{relative} -> {value}")
 
 
+def check_evolution_guard(root: Path, errors: list[str]) -> None:
+    """复用独立护栏的唯一实现，避免同一条结构规则出现两种口径。"""
+    result = audit_evolution_guard(root)
+    errors.extend(f"演化护栏配置错误：{error}" for error in result.config_errors)
+    errors.extend(f"演化护栏：{violation}" for violation in result.violations)
+
+
 def main() -> int:
     root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
     errors: list[str] = []
@@ -252,6 +265,7 @@ def main() -> int:
     check_agents_claude_sync(root, errors)
     check_codex_entrypoints(root, errors)
     check_removed_paths(root, errors)
+    check_evolution_guard(root, errors)
 
     if errors:
         print("目录结构检查失败：", file=sys.stderr)
