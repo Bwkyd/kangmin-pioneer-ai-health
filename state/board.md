@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 “AI知识库”术语已合并、部署并关闭 Issue（2026-08-26 第212轮 · `main@fb4536e`）
+> Issue #278 实现 PR #288 的 `quality`、`image` CI 全绿后 squash 合并为 `fb4536e`，Issue 自动关闭；源提交与合并提交文件树一致。完整 `src` 门禁、真实浏览器 E2E、清单、结构、差异格式和密钥扫描通过；sequential-thinking 与 `km-review` 检查运营术语变式、窄屏几何、素材职责和知识生命周期后 P0–P2 为 0。
+> 候选 release 在 8788 使用正式库副本贯通真实管理命令、后台页面与新术语资源后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-165554-before-ai-knowledge-fb4536e.sqlite`，并原子切换到 `/srv/kangmin-cli/releases/ai-knowledge-fb4536e`；发布包 SHA-256 为 `17409db26fec86e2e2fbdebe89bfc675130d02ff3076407ec01bf43d7ff25dc0`。切换后应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，数据计数 `22/11/21/136/136/51/15/26` 与切换前一致；公网首页、后台、`/live` 为 200，管理 JS 与合并构建逐字节一致。`/ready=503` 仍只因既有加密密钥未配置；8788、预演库、日志和传输制品已清理，旧 release 与正式备份保留回滚。详细记录见 `docs/changes/ops/009_admin-ai-knowledge-terminology-deploy.md`。
+
 > ## 🏷️ 管理后台统一使用“AI知识库”（2026-08-26 第211轮 · 基线 `main@af3e8ff`，待提交）
 > 按 Issue #278 只处理运营术语、工作台帮助、素材/知识职责边界和双端回归四个实体：侧栏、面包屑、页头、登录说明、工作台入口、空状态与停用确认统一使用“AI知识库/AI知识资料”，素材库继续保持独立名称和入口；帮助文案明确素材库保存原始文件，只有登记到 AI 知识库、建立索引并启用的资料才参与 AI 问答。后端 `knowledge` key、`agent knowledge` 命令、API、数据库、生命周期和患者侧均未改变。
 > sequential-thinking 六步元反思覆盖旧词在登录页、卡片、空状态、确认框、面包屑和无障碍名称中的变式；`km-review` 患者可懂性、工程事实和医学安全三视角 P0–P2 为 0，详见 `docs/reviews/026_admin-ai-knowledge-terminology-review.md`。Node 22.23.1 下 `cd src && npm run check` 全绿；真实浏览器 E2E 在 390×844 验证新名称、图标、导航高度、无截断与素材库独立入口，并贯通知识上传、索引、启用、检索、停用、删除及患者端旧闭环。尚未提交、推送、创建 PR、合并或部署。
