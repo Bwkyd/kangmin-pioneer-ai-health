@@ -834,6 +834,7 @@ try {
   await articlePreview.getByRole("button", { name: "关闭患者端预览" }).click();
   await articleRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
+  assert.equal(await adminPage.getByLabel("筛选文章状态").inputValue(), "all", "视频分页改动不应改变文章发布后的既有筛选行为");
 
   const patientCheckPage = await context.newPage();
   await patientCheckPage.goto(origin);
@@ -1013,6 +1014,56 @@ try {
     }), "浏览器 E2E 应发布分页填充视频");
   }
 
+  // 后台视频列表按筛选结果每页 20 条展示；分页、预览和上下架不能丢失当前位置。
+  await adminPage.reload();
+  await adminPage.getByTestId("admin-nav-video").click();
+  const videoPagination = adminPage.getByRole("navigation", { name: "视频列表分页" });
+  await videoPagination.waitFor({ state: "visible" });
+  assert.equal(await adminPage.locator("tbody tr").count(), 20, "视频列表第一页应固定显示 20 条");
+  assert.equal(await videoPagination.getByRole("button", { name: "上一页" }).isDisabled(), true, "第一页应禁用上一页");
+  await videoPagination.getByRole("button", { name: "下一页" }).click();
+  await expectText(videoPagination, "第 2 /");
+  assert.equal(await adminPage.locator("tbody tr").count(), 20, "视频列表第二页应固定显示 20 条");
+  const pageButtons = videoPagination.locator('button[aria-label^="第 "]');
+  await pageButtons.last().click();
+  assert.equal(await videoPagination.getByRole("button", { name: "下一页" }).isDisabled(), true, "最后一页应禁用下一页");
+  assert.ok(await adminPage.locator("tbody tr").count() <= 20, "视频列表最后一页不应超过 20 条");
+  await videoPagination.getByRole("button", { name: "第 2 页" }).click();
+  await expectText(videoPagination, "第 2 /");
+
+  const secondPageTitle = await adminPage.locator("tbody tr").first().locator("td").first().locator("strong").innerText();
+  const secondPageRow = adminPage.locator("tbody tr", { hasText: secondPageTitle });
+  await secondPageRow.getByRole("button", { name: "预览" }).click();
+  await adminPage.getByRole("dialog", { name: "患者端预览" }).getByRole("button", { name: "关闭患者端预览" }).click();
+  await expectText(videoPagination, "第 2 /");
+  await videoPagination.scrollIntoViewIfNeeded();
+  const paginationBox = await videoPagination.boundingBox();
+  const nextPageBox = await videoPagination.getByRole("button", { name: "下一页" }).boundingBox();
+  assert.ok(paginationBox && paginationBox.x >= 0 && paginationBox.x + paginationBox.width <= 390, "390px 窄屏分页区不应超出视口宽度");
+  assert.ok(nextPageBox && nextPageBox.x >= 0 && nextPageBox.x + nextPageBox.width <= 390, "390px 窄屏下一页按钮应完整可见");
+  await secondPageRow.getByRole("button", { name: "下架" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端已不可见");
+  await expectText(videoPagination, "第 2 /");
+  await adminPage.getByLabel("搜索视频").fill(secondPageTitle);
+  await adminPage.locator("tbody tr", { hasText: secondPageTitle }).getByRole("button", { name: "发布" }).click();
+  await expectText(adminPage.getByRole("status"), "用户端现在可见");
+  assert.equal(await adminPage.getByLabel("搜索视频").inputValue(), secondPageTitle, "重新发布后应保留搜索条件");
+  await adminPage.getByLabel("搜索视频").fill("");
+
+  await adminPage.getByLabel("筛选视频分类").selectOption(targetVideo.category);
+  await expectText(videoPagination, "第 1 /");
+  await adminPage.getByLabel("筛选视频状态").selectOption("published");
+  await expectText(videoPagination, "第 1 /");
+  await adminPage.getByLabel("搜索视频").fill("分页填充视频50");
+  assert.equal(await videoPagination.count(), 0, "筛选结果不足一页时不应显示分页控件");
+  assert.equal(await adminPage.locator("tbody tr").count(), 1, "搜索变化后应从第一页显示唯一匹配结果");
+  await adminPage.getByLabel("搜索视频").fill("抗敏要穴之迎香穴");
+  await adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" }).waitFor({ state: "visible" });
+
+  await adminPage.setViewportSize({ width: 390, height: 844 });
+  const adminBodyWidth = await adminPage.locator("body").evaluate((element) => ({ scrollWidth: element.scrollWidth, clientWidth: element.clientWidth }));
+  assert.ok(adminBodyWidth.scrollWidth <= adminBodyWidth.clientWidth, "390px 窄屏视频筛选与分页不应产生横向滚动");
+
   // 已保存的最终方案无需重做评估：重新读取已发布视频后，方法下出现按钮，
   // 点击复用学一学的同一详情弹层并直接播放对应操作视频。
   await page.bringToFront();
@@ -1036,6 +1087,8 @@ try {
   await adminPage.bringToFront();
   await videoRow.getByRole("button", { name: "下架" }).click();
   await expectText(adminPage.getByRole("status"), "用户端已不可见");
+  assert.equal(await adminPage.getByLabel("筛选视频状态").inputValue(), "published", "下架后应保留已发布筛选");
+  assert.equal(await videoRow.count(), 0, "下架视频应离开已发布筛选结果");
   await page.bringToFront();
   await page.getByTestId("plan-video-button").first().click();
   await page.getByRole("alert").waitFor({ state: "visible" });
@@ -1044,8 +1097,14 @@ try {
 
   // 重新发布并清掉分页填充数据后，刷新历史评估即可恢复按钮；无需重做问卷。
   await adminPage.bringToFront();
+  await adminPage.getByLabel("筛选视频状态").selectOption("unpublished");
+  await videoRow.waitFor({ state: "visible" });
   await videoRow.getByRole("button", { name: "发布" }).click();
   await expectText(adminPage.getByRole("status"), "用户端现在可见");
+  assert.equal(await adminPage.getByLabel("筛选视频状态").inputValue(), "unpublished", "发布后应保留已下架筛选");
+  assert.equal(await videoRow.count(), 0, "重新发布的视频应离开已下架筛选结果");
+  await adminPage.getByLabel("筛选视频状态").selectOption("all");
+  await videoRow.waitFor({ state: "visible" });
   const browserDatabase = new KangminDatabase(databasePath);
   try {
     browserDatabase.connection.prepare(`
