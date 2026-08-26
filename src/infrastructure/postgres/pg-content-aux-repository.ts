@@ -10,6 +10,7 @@ import type {
   IdempotentCreateResult,
   MediaKind,
   MediaReferenceCounts,
+  MediaReferenceRow,
   MediaStatus,
   UpdateMessageResult
 } from "../../modules/admin/content-aux-repository.js";
@@ -408,6 +409,27 @@ export class PgContentAuxRepository implements ContentAuxRepository {
     return rows.map(toMedia);
   }
 
+  async listMediaReferences(): Promise<MediaReferenceRow[]> {
+    const { rows } = await this.database.query<MediaReferenceRow>(`
+      SELECT media_id AS "mediaId", kind AS "entityType", id AS "entityId",
+             title AS name, status, 'file' AS role
+      FROM content_items WHERE media_id IS NOT NULL
+      UNION ALL
+      SELECT cover_media_id, kind, id, title, status, 'cover'
+      FROM content_items WHERE cover_media_id IS NOT NULL
+      UNION ALL
+      SELECT media.id, item.kind, item.id, item.title, item.status, 'body'
+      FROM content_resource_media media
+      JOIN content_items item
+        ON POSITION('/v1/media/' || media.id IN COALESCE(item.body, '')) > 0
+      UNION ALL
+      SELECT source_media_id, 'knowledge', id, name, status, 'knowledge_source'
+      FROM agent_knowledge_items WHERE source_media_id IS NOT NULL
+      ORDER BY "mediaId" ASC, "entityType" ASC, "entityId" ASC, role ASC
+    `);
+    return rows;
+  }
+
   /**
    * 引用检查与停用写入同一事务（评审 C 事务变式）：SQLite 版靠
    * BEGIN IMMEDIATE 持写锁消除"countMediaReferences 检查 →
@@ -443,9 +465,8 @@ export class PgContentAuxRepository implements ContentAuxRepository {
   }
 
   /**
-   * 引用检查与删除同一事务（评审 C 事务变式）：删除前检查 + 清除
-   * 草稿/下架内容与非启用知识的引用 + 置 deleted 一次提交；已发布
-   * 内容的引用由事务内 guard 判定（引用>0 → validation_failed 回滚）。
+   * 引用检查与删除同一事务：任一状态的引用由 guard 拦截；无引用时
+   * 直接删除文件行，不静默修改文章、视频或知识实体。
    */
   async deleteMediaGuarded(
     id: string,
@@ -460,21 +481,6 @@ export class PgContentAuxRepository implements ContentAuxRepository {
       if (missing.length > 0) {
         return { kind: "validation_failed" as const, missing };
       }
-      // 这里清除草稿/下架内容与非启用知识的引用，避免外键约束阻断删除
-      // （删除只断引用不断内容）。
-      await this.database.queryIn(
-        client,
-        `UPDATE content_items
-         SET media_id = NULL, cover_media_id = NULL
-         WHERE (media_id = $1 OR cover_media_id = $2) AND status != 'published'`,
-        [id, id]
-      );
-      await this.database.queryIn(
-        client,
-        `UPDATE agent_knowledge_items SET source_media_id = NULL
-         WHERE source_media_id = $1`,
-        [id]
-      );
       await this.database.queryIn(
         client,
         "DELETE FROM content_resource_media WHERE id = $1",
@@ -487,24 +493,27 @@ export class PgContentAuxRepository implements ContentAuxRepository {
   async countMediaReferences(mediaId: string): Promise<MediaReferenceCounts> {
     // COUNT(*) 在 PG 返回 int8（node-pg 解析为 string），::int 强转保持
     // 与 SQLite 的 number 语义一致。
-    const published = await this.database.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM content_items
-       WHERE status = 'published'
-         AND (
+    const content = await this.database.query<{ total: number; active: number }>(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'published')::int AS active
+       FROM content_items WHERE (
            media_id = $1
            OR cover_media_id = $2
            OR POSITION('/v1/media/' || $3 IN COALESCE(body, '')) > 0
          )`,
       [mediaId, mediaId, mediaId]
     );
-    const knowledge = await this.database.query<{ count: number }>(
-      `SELECT COUNT(*)::int AS count FROM agent_knowledge_items
-       WHERE status = 'enabled' AND source_media_id = $1`,
+    const knowledge = await this.database.query<{ total: number; active: number }>(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'enabled')::int AS active
+       FROM agent_knowledge_items WHERE source_media_id = $1`,
       [mediaId]
     );
     return {
-      publishedResources: published.rows[0]?.count ?? 0,
-      enabledKnowledge: knowledge.rows[0]?.count ?? 0,
+      contentResources: content.rows[0]?.total ?? 0,
+      knowledgeItems: knowledge.rows[0]?.total ?? 0,
+      publishedResources: content.rows[0]?.active ?? 0,
+      enabledKnowledge: knowledge.rows[0]?.active ?? 0,
       // 方案引用的是视频内容（content_items），不直接引用素材。
       enabledPlans: 0
     };
@@ -615,26 +624,29 @@ export class PgContentAuxRepository implements ContentAuxRepository {
     client: PoolClient,
     mediaId: string
   ): Promise<MediaReferenceCounts> {
-    const published = await this.database.queryIn<{ count: number }>(
+    const content = await this.database.queryIn<{ total: number; active: number }>(
       client,
-      `SELECT COUNT(*)::int AS count FROM content_items
-       WHERE status = 'published'
-         AND (
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'published')::int AS active
+       FROM content_items WHERE (
            media_id = $1
            OR cover_media_id = $2
            OR POSITION('/v1/media/' || $3 IN COALESCE(body, '')) > 0
          )`,
       [mediaId, mediaId, mediaId]
     );
-    const knowledge = await this.database.queryIn<{ count: number }>(
+    const knowledge = await this.database.queryIn<{ total: number; active: number }>(
       client,
-      `SELECT COUNT(*)::int AS count FROM agent_knowledge_items
-       WHERE status = 'enabled' AND source_media_id = $1`,
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE status = 'enabled')::int AS active
+       FROM agent_knowledge_items WHERE source_media_id = $1`,
       [mediaId]
     );
     return {
-      publishedResources: published.rows[0]?.count ?? 0,
-      enabledKnowledge: knowledge.rows[0]?.count ?? 0,
+      contentResources: content.rows[0]?.total ?? 0,
+      knowledgeItems: knowledge.rows[0]?.total ?? 0,
+      publishedResources: content.rows[0]?.active ?? 0,
+      enabledKnowledge: knowledge.rows[0]?.active ?? 0,
       // 方案引用的是视频内容（content_items），不直接引用素材。
       enabledPlans: 0
     };

@@ -20,6 +20,7 @@ import type {
   ContentCategoryRow,
   ContentMediaRow,
   ContentMessageRow,
+  MediaReferenceRow,
   MessageStatus
 } from "./content-aux-repository.js";
 import {
@@ -98,6 +99,10 @@ type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
  * storedPath（机器集成不需要，泄露服务器布局）。filename 保留。
  */
 export type ContentMediaView = Omit<ContentMediaRow, "storedPath">;
+export type MediaReferenceView = Omit<MediaReferenceRow, "mediaId">;
+export type ContentMediaListView = ContentMediaView & {
+  references: MediaReferenceView[];
+};
 
 export interface AdminMediaPreview {
   body: Buffer;
@@ -223,8 +228,21 @@ export class ContentAuxService {
     return toMediaView(outcome.item);
   }
 
-  async listMedia(): Promise<ContentMediaView[]> {
-    return (await this.repository.listMedia()).map(toMediaView);
+  async listMedia(): Promise<ContentMediaListView[]> {
+    const [media, references] = await Promise.all([
+      this.repository.listMedia(),
+      this.repository.listMediaReferences()
+    ]);
+    const byMedia = new Map<string, MediaReferenceView[]>();
+    for (const { mediaId, ...reference } of references) {
+      const current = byMedia.get(mediaId) ?? [];
+      current.push(reference);
+      byMedia.set(mediaId, current);
+    }
+    return media.map((item) => ({
+      ...toMediaView(item),
+      references: byMedia.get(item.id) ?? []
+    }));
   }
 
   async getMedia(
@@ -306,11 +324,11 @@ export class ContentAuxService {
       throw new DomainError("resource_not_found", "素材不存在");
     }
     // 引用检查与删除同一事务（repository.deleteMediaGuarded）：
-    // 删除前检查 + 清草稿引用 + 置 deleted 一次提交，并发进程不能在
-    // 检查通过后、提交前创建新的已发布引用（评审 C 事务变式）。
+    // 删除前检查与写入一次提交；任一状态的业务引用都阻止删除，避免
+    // 删除文件时静默切断草稿、下架内容或停用知识的来源。
     const outcome = await this.repository.deleteMediaGuarded(id, (references) =>
-      references.publishedResources > 0 || references.enabledKnowledge > 0
-        ? ["素材仍被已发布内容或已启用知识引用，不能删除"]
+      references.contentResources > 0 || references.knowledgeItems > 0
+        ? ["文件仍被文章、视频或 AI 知识使用，请先在对应业务中更换或移除"]
         : []
     );
     if (outcome.kind === "not_found") {

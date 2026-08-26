@@ -45,6 +45,15 @@ interface MediaItem {
   sizeBytes: number;
   status: string;
   failureReason?: string | null;
+  references?: MediaReference[];
+}
+
+interface MediaReference {
+  entityType: "article" | "video" | "knowledge";
+  entityId: string;
+  name: string;
+  status: string;
+  role: "file" | "cover" | "body" | "knowledge_source";
 }
 
 interface KnowledgeItem {
@@ -108,7 +117,7 @@ const navigation: Array<{ key: Section; label: string; icon: string }> = [
   { key: "video", label: "视频内容", icon: "播" },
   { key: "message", label: "站内消息", icon: "信" },
   { key: "knowledge", label: "AI知识库", icon: "知" },
-  { key: "media", label: "素材库", icon: "图" }
+  { key: "media", label: "文件管理", icon: "档" }
 ];
 
 const deliveryNavigation = navigation.filter((item) => item.key === "article" || item.key === "video" || item.key === "knowledge");
@@ -214,10 +223,10 @@ export function AdminApp() {
         <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1><p className="topbar-description">{section === "overview" ? "先处理待办，再让内容安全地到达小程序。" : "按状态完成当前运营任务，所有写操作由服务端确认。"}</p></div></header>
         {notice !== "" && <div className="admin-toast" role="status"><span>{notice}</span><button aria-label="关闭提示" onClick={() => setNotice("")}>×</button></div>}
         {section === "overview" && <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} media={media} onNavigate={navigate} />}
-        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "article" && <ContentManager kind="article" items={articles} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "video" && <ContentManager kind="video" items={videos} media={media} categories={categories} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
         {section === "message" && <MessageManager items={messages} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "knowledge" && <KnowledgeFolderManager items={knowledge} folders={knowledgeFolders} busy={busy} run={run} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
+        {section === "knowledge" && <KnowledgeFolderManager items={knowledge} folders={knowledgeFolders} busy={busy} run={run} onOpenFiles={() => navigate("media")} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
         {section === "media" && <MediaManager items={media} busy={busy} run={run} />}
       </section>
     </main>
@@ -370,6 +379,7 @@ function ContentManager({
   categories,
   busy,
   run,
+  onOpenFiles,
   adminKey,
   initialStatusFilter
 }: {
@@ -379,6 +389,7 @@ function ContentManager({
   categories: CategoryItem[];
   busy: boolean;
   run: (action: () => Promise<void>, success: string) => Promise<boolean>;
+  onOpenFiles: () => void;
   adminKey: string;
   initialStatusFilter: ContentStatusFilter;
 }) {
@@ -637,7 +648,7 @@ function ContentManager({
           <h2>{label}管理</h2>
           <p>先保存不完整草稿，再用患者端预览确认效果；发布前由服务端校验内容、分类和素材。</p>
         </div>
-        <button type="button" className="primary" onClick={() => open()}>新增{label}</button>
+        <div className="manager-heading-actions"><button type="button" onClick={onOpenFiles}>文件管理</button><button type="button" className="primary" onClick={() => open()}>新增{label}</button></div>
       </div>
       {recovery !== null && (
         <div className="draft-recovery" role="status">
@@ -918,48 +929,54 @@ const mediaStatusLabels: Record<string, string> = {
   disabled: "已停用"
 };
 
+const mediaReferenceEntityLabels = { article: "文章", video: "视频", knowledge: "AI 知识" } as const;
+const mediaReferenceRoleLabels = { file: "内容文件", cover: "封面", body: "正文附件", knowledge_source: "知识源文件" } as const;
+
 function MediaManager({ items, busy, run }: { items: MediaItem[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean> }) {
-  const [file, setFile] = useState<File | null>(null);
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (file === null) return;
-    await run(async () => {
-      await uploadFile(file);
-      setFile(null);
-    }, "素材已上传并通过完整性校验");
+  const [group, setGroup] = useState<"all" | "image" | "video" | "document">("all");
+  const visible = items.filter((item) => group === "all" || (group === "document" ? item.kind !== "image" && item.kind !== "video" : item.kind === group));
+  async function remove(item: MediaItem) {
+    if (!window.confirm(`确认删除未被使用的文件“${item.filename}”？`)) return;
+    await run(
+      () => adminCommand("content media delete", { id: item.id, yes: true }).then(() => undefined),
+      "未使用文件已删除"
+    );
   }
   return (
     <section className="manager-card">
       <div className="manager-heading">
         <div>
-          <h2>素材库</h2>
-          <p>按用途上传图片、视频或附件；文章封面只能选择图片，视频内容只能选择视频。</p>
-          <small className="form-hint">支持图片、视频、Word、PDF、Markdown，单文件上限 200MB；失败会保留原因。</small>
+          <span className="section-kicker">内容运营 / 辅助工具</span>
+          <h2>文件管理</h2>
+          <p>查看文件去向并清理未使用文件；新增或替换请回到文章、视频或 AI 知识任务。</p>
         </div>
-        <form className="upload-form" onSubmit={(event) => void submit(event)}>
-          <input aria-label="选择素材" type="file" accept="image/*,video/*,.jpg,.jpeg,.png,.webp,.gif,.mp4,.webm,.doc,.docx,.pdf,.md,.markdown,.txt" required onChange={(event) => setFile(event.target.files?.[0] ?? null)} />
-          <button className="primary" disabled={busy || file === null}>上传素材</button>
-        </form>
       </div>
-      {items.length === 0 ? <Empty icon="图" title="还没有素材" text="上传后可在文章、视频或 AI 知识库中引用。" /> : (
+      <div className="media-manager-toolbar" aria-label="文件用途筛选">
+        {([['all', '全部文件'], ['image', '图片'], ['video', '视频'], ['document', '知识文件与附件']] as const).map(([value, label]) => <button key={value} className={group === value ? "active" : ""} onClick={() => setGroup(value)}>{label}</button>)}
+      </div>
+      {visible.length === 0 ? <Empty icon="档" title={items.length === 0 ? "还没有文件" : "该分组没有文件"} text="请回到对应业务任务上传和绑定文件。" /> : (
         <div className="media-grid">
-          {items.map((item) => (
+          {visible.map((item) => {
+            const references = item.references ?? [];
+            return (
             <article key={item.id}>
               <span>{mediaKindLabels[item.kind] ?? item.kind}</span>
-              <div>
+              <div className="media-file-copy">
                 <strong>{item.filename}</strong>
                 <small>{mediaKindLabels[item.kind] ?? item.kind} · {(item.sizeBytes / 1024).toFixed(1)} KB · {mediaStatusLabels[item.status] ?? item.status}</small>
                 {item.failureReason && <small className="action-note">{item.failureReason}</small>}
+                {references.length === 0 ? <p className="media-unused">未被业务使用</p> : <ul className="media-reference-list">{references.map((reference) => <li key={`${reference.entityType}-${reference.entityId}-${reference.role}`}><strong>{mediaReferenceEntityLabels[reference.entityType]}：{reference.name}</strong><small>{mediaReferenceRoleLabels[reference.role]} · {reference.entityType === "knowledge" ? knowledgeStatusLabels[reference.status as KnowledgeItem["status"]] ?? reference.status : contentStatusLabels[reference.status as ContentItem["status"]] ?? reference.status}</small></li>)}</ul>}
+                <button className="media-delete" disabled={busy || references.length > 0} title={references.length > 0 ? "请先在对应业务中更换或移除文件" : undefined} onClick={() => void remove(item)}>{references.length > 0 ? "使用中，不能删除" : "删除文件"}</button>
               </div>
             </article>
-          ))}
+          )})}
         </div>
       )}
     </section>
   );
 }
 
-function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter }: { items: KnowledgeItem[]; folders: KnowledgeFolder[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; initialStatusFilter: KnowledgeStatusFilter }) {
+function KnowledgeFolderManager({ items, folders, busy, run, onOpenFiles, initialStatusFilter }: { items: KnowledgeItem[]; folders: KnowledgeFolder[]; busy: boolean; run: (action: () => Promise<void>, success: string) => Promise<boolean>; onOpenFiles: () => void; initialStatusFilter: KnowledgeStatusFilter }) {
   const [file, setFile] = useState<File | null>(null);
   const [knowledgeName, setKnowledgeName] = useState("");
   const [source, setSource] = useState("");
@@ -1220,7 +1237,7 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
     <section className="manager-card knowledge-manager">
       <div className="knowledge-primary-actions">
         <p>素材库保存原始文件；只有登记到 AI 知识库、建立索引并启用的资料才参与 AI 问答。</p>
-        <button className="primary" disabled={busy} onClick={() => { setWorkflowItem(null); setUploadOpen(true); }}>新增知识</button>
+        <div className="manager-heading-actions"><button type="button" onClick={onOpenFiles}>文件管理</button><button className="primary" disabled={busy} onClick={() => { setWorkflowItem(null); setUploadOpen(true); }}>新增知识</button></div>
       </div>
       {uploadOpen && (
         <div className="knowledge-upload-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) closeUpload(); }}>
