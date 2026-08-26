@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 管理后台视频预览任务关闭前审计（2026-08-26 第208轮 · 基线 `main@cecafae`，待提交）
+> 按作者关闭要求重新核验 Git、GitHub、CNB、腾讯云、文档和运行事实：代码 PR #275、部署记录 PR #277 均已合并，源提交与 squash 合并文件树等价；本地与 `origin/main` 同为 `cecafae`，仅有根 worktree，GitHub 任务分支已清除。CNB 登录有效但按 `kangmin`、`pioneer` 均查不到本项目仓库，因此没有本项目 CNB 分支可删。线上仍指向 `/srv/kangmin-cli/releases/admin-video-preview-b0b18a3`，服务 active、`NRestarts=0`、正式库 `quick_check=ok`；旧 release 与正式备份按回滚要求保留，不视为待清垃圾。作者原件 `hi.md` 继续保持未跟踪、未修改。
+> sequential-thinking 八步审计确认实现、双视口 E2E、发布前校验保留、部署预演、公网哈希、ops/007、review/024 与 `.42cog/real.md` 已闭环，没有新增代码、部署或医学规则缺口。`km-review` 的患者可懂性、工程事实和医学安全三视角 P0–P2 为 0。将本轮已复现并修复的假绿模式沉淀为“响应式界面必须验证实际几何”：CSS 字符串断言须升级为代表性视口下的 computed style、bounding box 和旧功能正负回归；PATH、`jq` 与 zsh 特殊变量等一次性部署坑已由 ops/007 追溯，不重复写入长期记忆。待本轮记忆 PR 通过 CI、合并并清理分支后，使用 `save-codex-chat` 将当前对话保存到 Git 忽略的 `chats/codex/`。
+
 > ## 🚀 管理后台视频预览修复已合并、部署并完成公网复核（2026-08-26 第207轮 · `main@b0b18a3`）
 > 实现 PR #275 的 `quality`、`image` CI 全绿后 squash 合并为 `b0b18a3`；源提交与 squash 合并文件树一致。完整 `src` 门禁、真实浏览器双视口 E2E、`legacy` 127/127、清单、差异密钥扫描和 `git diff --check` 通过；sequential-thinking 与 `km-review` 修复首版仅验证 CSS 声明而未验证实际尺寸的 P2 后，患者可懂性、工程事实和医学安全三视角 P0–P2 清零。
 > 候选 release 在 8788 使用线上库副本贯通真实视频列表与已发布视频预览 API 后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-153151-before-admin-video-preview-b0b18a3.sqlite`，并原子切换到 `/srv/kangmin-cli/releases/admin-video-preview-b0b18a3`；发布包 SHA-256 为 `123753176232bd97536afce3f0340f62a7406503b1872b64ba7d12cde54ab235`。切换后应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，23 项迁移和八项计数 `21/11/21/136/136/51/15/26` 一致；公网首页、后台、`/live` 为 200，管理 JS/CSS 与合并构建逐字节一致。`/ready=503` 仍只因既有加密密钥未配置；8788、预演库、日志和传输制品均已清理，旧 release 与正式备份保留回滚。详细记录见 `docs/changes/ops/007_admin-video-preview-deploy.md`；作者原件 `hi.md` 保持未跟踪、未修改。
