@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 知识库界面任务完成关闭前审计（2026-08-26 第205轮 · 基线 `main@0962bd7`，待提交）
+> 结束对话前重新从 Git、GitHub、服务器与仓内状态核验：`main` 与 `origin/main` 同为 `0962bd7`，PR #272/#273 已合并，本地只剩 `main` 和一个根 worktree，GitHub 无本轮任务分支；线上仍为 `/srv/kangmin-cli/releases/knowledge-ui-fc2f992`，应用与 Nginx active、`NRestarts=0`。作者原件 `hi.md` 继续保持未跟踪、未修改，旧 release 与数据库备份按回滚材料保留。
+> sequential-thinking 七步收尾审计确认实现、CI、部署、回滚点、`ops/006`、`.42cog/real.md` 与第204轮状态均已闭环，无需新增重复变更文档。把本轮两个经证据复核的变式并入既有长期记忆：部署后人工复核也必须从 systemd 配置解析数据库等运行路径，并区分验证器错误与系统故障；squash 合并清理必须同时核对 PR、无未提交文件和源/合并文件树等价，才可强制删除非祖先源分支。两份记忆按最后更新日期改名并同步索引；一次性 SHA、数量和服务器路径仍只留在 board/ops。`km-review` 的患者、工程和医学安全三视角 P0–P2 为 0；清单、记忆索引、旧引用、差异格式和敏感信息扫描通过，结构检查仍只被两个任务前已有的 `_work` 目录命名阻断。待记忆 PR 合并和分支清理后，使用 `save-codex-chat` 把对话保存到 Git 忽略的 `chats/codex/`，不纳入版本控制。
+
 > ## 🚀 管理后台知识库精简界面已合并、部署并完成公网复核（2026-08-26 第204轮 · `main@fc2f992`）
 > 实现 PR #272 的 `quality`、`image` CI 全绿后 squash 合并为 `fc2f992`；完整 `src` 门禁 425 项中 348 通过、77 项因未配置 PostgreSQL/S3 按约定跳过、0 失败，`legacy` 127/127、真实浏览器 E2E、生产依赖审计、差异密钥扫描和 `git diff --check` 通过。sequential-thinking 与 `km-review` 发现并修复移动端拉伸/表格拥挤、停用无确认、上传取消后文件/来源/目录残留，P0–P2 清零。
 > 候选 release 在 8788 使用线上库副本预演通过后，正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-144738-before-knowledge-ui-fc2f992.sqlite` 并原子切换到 `/srv/kangmin-cli/releases/knowledge-ui-fc2f992`；发布包 SHA-256 为 `9a9a8f037c14ae3810344b85955081d6e269708a461fb43507fdb8a1b05821d0`，旧 release 保留回滚。切换后应用/Nginx active、`NRestarts=0`、正式库与备份 `quick_check=ok`，八项数据计数保持 `21/11/21/136/136/51/15/26`，公网首页、后台、`/live` 为 200，公网管理 JS 与合并构建逐字节一致，服务无新增 warning；8788、传输包和预演物已清理。`/ready=503` 仍只因既有加密密钥未配置；详细记录见 `docs/changes/ops/006_admin-knowledge-ui-deploy.md`。
