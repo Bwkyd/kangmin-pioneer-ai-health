@@ -516,15 +516,10 @@ try {
     assert.equal(result.ok, true, `admin 造数失败：${output}`);
     return result.data;
   };
-  runAdmin([
-    "content", "category", "create",
-    "--name", "日常防护",
-    "--kind", "article"
-  ]);
   const created = runAdmin([
     "content", "article", "create",
     "--title", "换季鼻敏感注意事项",
-    "--category", "日常防护",
+    "--category-id", "article-general",
     "--idempotency-key", "e2e-discover-article"
   ]);
   runAdmin([
@@ -792,6 +787,8 @@ try {
   await adminPage.getByText("内容运营 / 科普内容", { exact: true }).waitFor({ state: "visible" });
   assert.equal(await adminPage.getByRole("button", { name: "回到工作台" }).count(), 0, "内容页不应显示返回工作台按钮");
   await adminPage.getByLabel("搜索文章").waitFor({ state: "visible" });
+  await adminPage.getByLabel("筛选文章分类").selectOption("all");
+  assert.equal(await adminPage.getByLabel("筛选文章分类").locator('option[value="article-general"]').textContent(), "科普文章");
   await adminPage.getByLabel("筛选文章状态").waitFor({ state: "visible" });
   await adminPage.getByRole("button", { name: "新增文章" }).click();
   const blankArticleForm = adminPage.locator(".content-form");
@@ -820,15 +817,15 @@ try {
   assert.match(await blankArticleForm.getByLabel("正文", { exact: true }).inputValue(), /从 Word 自动提取的正文/u);
   await blankArticleForm.getByText("更多设置（来源、封面）", { exact: true }).click();
   assert.equal(await blankArticleForm.getByLabel("来源").inputValue(), "客户科普文章.docx");
+  await blankArticleForm.getByLabel("文章分类").selectOption("article-general");
   await blankArticleForm.getByRole("button", { name: "保存草稿" }).click();
   await expectText(adminPage.getByRole("status"), "文章草稿已保存");
   assert.equal(await adminPage.evaluate(() => document.body.style.overflow), "", "文章编辑层关闭后应恢复背景滚动");
   await adminPage.locator("tbody tr").first().getByRole("button", { name: "编辑" }).click();
-  await adminPage.getByText("新建分类", { exact: true }).click();
-  await adminPage.getByPlaceholder("输入分类名称").fill("客户试用");
-  await adminPage.getByRole("button", { name: "创建分类" }).click();
-  await expectText(adminPage.getByRole("status"), "分类已创建");
   const articleForm = adminPage.locator(".content-form");
+  assert.equal(await articleForm.getByText("新建分类", { exact: true }).count(), 0, "文章表单不能临时新建分类");
+  await articleForm.getByLabel("文章分类").selectOption("article-general");
+  await expectText(articleForm, "时间不是分类");
   await articleForm.getByLabel("标题").fill("后台发布闭环测试文章");
   await articleForm.getByLabel("摘要").fill("用于确认管理后台发布和下架真实生效");
   await articleForm.getByLabel("正文", { exact: true }).fill("这是由管理后台保存的客户试用内容。");
@@ -958,11 +955,13 @@ try {
   await adminPage.getByRole("button", { name: "新增视频" }).click();
   const videoForm = adminPage.locator(".content-form");
   await videoForm.getByText("上传视频文件", { exact: true }).waitFor({ state: "visible" });
-  await adminPage.getByText("新建分类", { exact: true }).click();
-  await adminPage.getByPlaceholder("输入分类名称").fill("成人快速通窍");
-  await adminPage.getByRole("button", { name: "创建分类" }).click();
-  await expectText(adminPage.getByRole("status"), "分类已创建");
-  assert.equal(await videoForm.locator("select").first().inputValue(), "成人快速通窍");
+  assert.equal(await videoForm.getByText("新建分类", { exact: true }).count(), 0, "视频表单不能临时新建分类");
+  await videoForm.getByText("成人方案", { exact: true }).waitFor({ state: "visible" });
+  await videoForm.getByText("快速通窍方案", { exact: true }).first().waitFor({ state: "visible" });
+  await videoForm.getByLabel("成人方案 / 快速通窍方案 / 快速通窍方案").check();
+  await videoForm.getByLabel("成人方案 / 调体方案 / 肺气虚寒").check();
+  assert.equal(await videoForm.locator('.category-registry-select input[type="checkbox"]:checked').count(), 2, "视频分类应支持显式多选");
+  assert.equal(await videoForm.evaluate((form) => form.scrollWidth <= form.clientWidth), true, "窄屏视频分类选择器不应横向溢出");
   await videoForm.getByLabel("标题").fill("抗敏要穴之迎香穴（指腹擦迎香）");
   await videoForm.getByLabel("摘要").fill("客户试用版视频发布闭环");
   await videoForm.getByLabel("视频说明").fill("演示日常鼻腔护理步骤，实际操作请遵循专业人员指导。");
@@ -1043,7 +1042,7 @@ try {
       adminToken: planAdminToken,
       input: {
         title,
-        category: targetVideo.category,
+        categoryIds: targetVideo.categoryIds,
         idempotencyKey: `browser-video-page-filler-${index}`
       }
     }), "浏览器 E2E 应创建分页填充视频");
@@ -1105,7 +1104,7 @@ try {
   assert.equal(await adminPage.getByLabel("搜索视频").inputValue(), secondPageTitle, "重新发布后应保留搜索条件");
   await adminPage.getByLabel("搜索视频").fill("");
 
-  await adminPage.getByLabel("筛选视频分类").selectOption(targetVideo.category);
+  await adminPage.getByLabel("筛选视频分类").selectOption(targetVideo.categoryIds[0]);
   await expectText(videoPagination, "第 1 /");
   await adminPage.getByLabel("筛选视频状态").selectOption("published");
   await expectText(videoPagination, "第 1 /");

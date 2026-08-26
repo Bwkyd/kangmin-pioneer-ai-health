@@ -9,6 +9,7 @@ import type {
   CarePlanSummary,
   PatientMessage,
   PublicContent,
+  PublicContentCategory,
   PublicContentKind
 } from "../modules/browse/contracts.js";
 import { likePatternOf } from "../modules/browse/domain.js";
@@ -40,6 +41,7 @@ interface ContentRow {
   kind: PublicContentKind;
   title: string;
   category: string;
+  category_ids_json: string;
   summary: string;
   body: string | null;
   source: string;
@@ -49,6 +51,30 @@ interface ContentRow {
   updated_at: string;
   instructions: string | null;
   precautions: string | null;
+}
+
+interface CategoryRegistryRow {
+  id: string;
+  kind: PublicContentKind;
+  parent_id: string | null;
+  name: string;
+  audience: PublicContentCategory["audience"];
+  node_type: PublicContentCategory["nodeType"];
+  selectable: number;
+  display_order: number;
+}
+
+function toPublicContentCategory(row: CategoryRegistryRow): PublicContentCategory {
+  return {
+    id: row.id,
+    kind: row.kind,
+    parentId: row.parent_id,
+    name: row.name,
+    audience: row.audience,
+    nodeType: row.node_type,
+    selectable: row.selectable === 1,
+    displayOrder: row.display_order
+  };
 }
 
 interface PlanRow {
@@ -89,6 +115,7 @@ function toPublicContent(row: ContentRow): PublicContent {
     kind: row.kind,
     title: row.title,
     category: row.category,
+    categoryIds: JSON.parse(row.category_ids_json) as string[],
     summary: row.summary,
     body: row.body,
     source: row.source,
@@ -192,7 +219,11 @@ export class SqliteContentReadRepository implements ContentReadRepository {
     return this.guard(() => {
       const rows = this.database.connection
         .prepare(`
-          SELECT id, kind, title, category, summary, body, source,
+          SELECT id, kind, title, category,
+                 COALESCE((SELECT json_group_array(category_id) FROM
+                   (SELECT category_id FROM content_item_category_links
+                    WHERE content_id = content_items.id ORDER BY category_id)), '[]') AS category_ids_json,
+                 summary, body, source,
                  cover_url, media_url, published_at, updated_at,
                  instructions, precautions
           FROM content_items
@@ -200,7 +231,7 @@ export class SqliteContentReadRepository implements ContentReadRepository {
           ORDER BY updated_at DESC, id ASC
         `)
         .all(kind) as unknown as ContentRow[];
-      return rows.map(toPublicContent);
+      return rows.map((row) => this.withCategoryDisplay(toPublicContent(row)));
     });
   }
 
@@ -212,7 +243,11 @@ export class SqliteContentReadRepository implements ContentReadRepository {
     return this.guard(() => {
       const rows = this.database.connection
         .prepare(`
-          SELECT id, kind, title, category, summary, body, source,
+          SELECT id, kind, title, category,
+                 COALESCE((SELECT json_group_array(category_id) FROM
+                   (SELECT category_id FROM content_item_category_links
+                    WHERE content_id = content_items.id ORDER BY category_id)), '[]') AS category_ids_json,
+                 summary, body, source,
                  cover_url, media_url, published_at, updated_at,
                  instructions, precautions
           FROM content_items
@@ -221,7 +256,7 @@ export class SqliteContentReadRepository implements ContentReadRepository {
           LIMIT ? OFFSET ?
         `)
         .all(kind, limit, offset) as unknown as ContentRow[];
-      return rows.map(toPublicContent);
+      return rows.map((row) => this.withCategoryDisplay(toPublicContent(row)));
     });
   }
 
@@ -232,14 +267,18 @@ export class SqliteContentReadRepository implements ContentReadRepository {
     return this.guard(() => {
       const row = this.database.connection
         .prepare(`
-          SELECT id, kind, title, category, summary, body, source,
+          SELECT id, kind, title, category,
+                 COALESCE((SELECT json_group_array(category_id) FROM
+                   (SELECT category_id FROM content_item_category_links
+                    WHERE content_id = content_items.id ORDER BY category_id)), '[]') AS category_ids_json,
+                 summary, body, source,
                  cover_url, media_url, published_at, updated_at,
                  instructions, precautions
           FROM content_items
           WHERE kind = ? AND id = ? AND ${PUBLIC_PREDICATE}
         `)
         .get(kind, id) as unknown as ContentRow | undefined;
-      return row === undefined ? null : toPublicContent(row);
+      return row === undefined ? null : this.withCategoryDisplay(toPublicContent(row));
     });
   }
 
@@ -251,7 +290,11 @@ export class SqliteContentReadRepository implements ContentReadRepository {
       const pattern = likePatternOf(query);
       const rows = this.database.connection
         .prepare(`
-          SELECT id, kind, title, category, summary, body, source,
+          SELECT id, kind, title, category,
+                 COALESCE((SELECT json_group_array(category_id) FROM
+                   (SELECT category_id FROM content_item_category_links
+                    WHERE content_id = content_items.id ORDER BY category_id)), '[]') AS category_ids_json,
+                 summary, body, source,
                  cover_url, media_url, published_at, updated_at,
                  instructions, precautions
           FROM content_items
@@ -262,7 +305,7 @@ export class SqliteContentReadRepository implements ContentReadRepository {
           ORDER BY updated_at DESC, id ASC
         `)
         .all(kind, pattern, pattern, pattern) as unknown as ContentRow[];
-      return rows.map(toPublicContent);
+      return rows.map((row) => this.withCategoryDisplay(toPublicContent(row)));
     });
   }
 
@@ -281,6 +324,37 @@ export class SqliteContentReadRepository implements ContentReadRepository {
         .all(kind) as unknown as Array<{ name: string }>;
       return rows.map((row) => row.name);
     });
+  }
+
+  async categoryRegistry(kind: PublicContentKind): Promise<PublicContentCategory[]> {
+    return this.guard(() => {
+      const rows = this.database.connection.prepare(`
+        SELECT id, kind, parent_id, name, audience, node_type,
+               selectable, display_order
+        FROM content_category_registry
+        WHERE kind = ? AND status = 'active'
+        ORDER BY display_order ASC, id ASC
+      `).all(kind) as unknown as CategoryRegistryRow[];
+      return rows.map(toPublicContentCategory);
+    });
+  }
+
+  private withCategoryDisplay(item: PublicContent): PublicContent {
+    if (item.categoryIds.length === 0) return item;
+    const path = this.database.connection.prepare(`
+      WITH RECURSIVE ancestors(id, parent_id, name, depth) AS (
+        SELECT id, parent_id, name, 0 FROM content_category_registry WHERE id = ?
+        UNION ALL
+        SELECT parent.id, parent.parent_id, parent.name, ancestors.depth + 1
+        FROM content_category_registry AS parent
+        JOIN ancestors ON ancestors.parent_id = parent.id
+      )
+      SELECT name FROM ancestors ORDER BY depth DESC
+    `);
+    const category = item.categoryIds.map((id) =>
+      (path.all(id) as unknown as Array<{ name: string }>).map((row) => row.name).join(" / ")
+    ).join("；");
+    return { ...item, category };
   }
 
   async listPlans(): Promise<CarePlanSummary[]> {

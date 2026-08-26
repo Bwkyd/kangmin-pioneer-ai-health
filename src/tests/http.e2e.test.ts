@@ -696,7 +696,7 @@ test("GET /v1/media/:id：已发布引用发字节流，未发布/不存在/非�
   // 发布带封面的文章与带素材的视频；另一篇引用第三张图的文章保持草稿。
   const article = await adminCommand("content article create", {
     title: "封面文章",
-    category: "日常防护",
+    categoryIds: ["article-general"],
     idempotencyKey: "media-e2e-article"
   });
   await adminCommand("content article update", {
@@ -714,7 +714,7 @@ test("GET /v1/media/:id：已发布引用发字节流，未发布/不存在/非�
   });
   const video = await adminCommand("content video create", {
     title: "护理视频",
-    category: "居家护理",
+    categoryIds: ["video-adult-quick-content"],
     idempotencyKey: "media-e2e-video"
   });
   await adminCommand("content video update", {
@@ -734,7 +734,7 @@ test("GET /v1/media/:id：已发布引用发字节流，未发布/不存在/非�
   });
   const draft = await adminCommand("content article create", {
     title: "草稿文章",
-    category: "日常防护",
+    categoryIds: ["article-general"],
     idempotencyKey: "media-e2e-draft"
   });
   await adminCommand("content article update", {

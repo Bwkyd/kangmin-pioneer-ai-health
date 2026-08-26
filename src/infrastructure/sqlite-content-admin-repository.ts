@@ -46,6 +46,7 @@ function map(row: Row): AdminContentItem {
     kind: row.kind,
     title: row.title,
     category: row.category,
+    categoryIds: [],
     summary: row.summary,
     body: row.body,
     source: row.source,
@@ -79,6 +80,24 @@ function methodTagsJson(tags: readonly string[]): string {
  */
 export class SqliteContentAdminRepository implements ContentAdminRepository {
   constructor(private readonly database: KangminDatabase) {}
+
+  async listCategoryRegistry(kind: ContentItemKind) {
+    return this.database.connection.prepare(`
+      SELECT id, name, kind, parent_id, audience, node_type, status, selectable, display_order
+      FROM content_category_registry
+      WHERE kind = ?
+      ORDER BY display_order ASC, id ASC
+    `).all(kind).map((raw) => {
+      const row = raw as {
+        id: string; name: string; kind: ContentItemKind; parent_id: string | null;
+        audience: "adult" | "child" | "all"; node_type: "audience" | "group" | "leaf";
+        status: "active" | "disabled"; selectable: number; display_order: number;
+      };
+      const { parent_id, node_type, display_order, selectable, ...rest } = row;
+      return { ...rest, parentId: parent_id, nodeType: node_type,
+        selectable: selectable === 1, displayOrder: display_order };
+    });
+  }
 
   async create(
     adminId: string,
@@ -134,6 +153,7 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
             methodTagsJson(item.methodTags),
             item.displayOrder
           );
+          this.syncCategoryLinks(item);
         }
       });
       switch (outcome.kind) {
@@ -147,7 +167,7 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
           // 重放返回存储的原内容（原始 id），与患者侧语义一致。
           return {
             kind: "replayed" as const,
-            item: JSON.parse(outcome.resultJson) as AdminContentItem
+            item: this.findStored(item.kind, (JSON.parse(outcome.resultJson) as AdminContentItem).id) ?? item
           };
         case "date_conflict":
           // 管理端未启用 uniqueConflictAsDateConflict，结构上不可达；
@@ -166,7 +186,7 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
       WHERE kind = ? ${status === undefined ? "" : "AND status = ?"}
       ORDER BY updated_at DESC, id ASC
     `).all(...(status === undefined ? [kind] : [kind, status])) as unknown as Row[];
-    return rows.map(map);
+    return rows.map((row) => this.withCategoryIds(map(row)));
   }
 
   async find(
@@ -176,7 +196,7 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
     const row = this.database.connection.prepare(`
       SELECT ${COLUMNS} FROM content_items WHERE kind = ? AND id = ?
     `).get(kind, id) as unknown as Row | undefined;
-    return row === undefined ? null : map(row);
+    return row === undefined ? null : this.withCategoryIds(map(row));
   }
 
   async update(
@@ -228,6 +248,7 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
       if (result.changes !== 1) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
+      this.syncCategoryLinks(item);
       return { kind: "updated" as const, item };
     });
   }
@@ -291,6 +312,7 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
       if (result.changes !== 1) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
+      this.syncCategoryLinks(item);
       return { kind: "updated" as const, item };
     });
   }
@@ -323,10 +345,72 @@ export class SqliteContentAdminRepository implements ContentAdminRepository {
     ).filter((media): media is PublishMediaState => media !== null);
     return {
       category: categoryRow ?? null,
+      categories: item.categoryIds.map((categoryId) => {
+        const row = this.database.connection.prepare(`
+          SELECT id, status, kind, selectable
+          FROM content_category_registry WHERE id = ?
+        `).get(categoryId) as unknown as {
+          id: string; status: "active" | "disabled";
+          kind: ContentItemKind; selectable: number;
+        } | undefined;
+        return row === undefined ? null : { ...row, selectable: row.selectable === 1 };
+      }).filter((row): row is NonNullable<typeof row> => row !== null),
       coverMedia: mediaState(item.coverMediaId),
       media: mediaState(item.mediaId),
       bodyMedia
     };
+  }
+
+  private categoryIdsOf(contentId: string): string[] {
+    return (this.database.connection.prepare(`
+      SELECT category_id FROM content_item_category_links
+      WHERE content_id = ? ORDER BY category_id ASC
+    `).all(contentId) as unknown as Array<{ category_id: string }>).map((row) => row.category_id);
+  }
+
+  private withCategoryIds(item: AdminContentItem): AdminContentItem {
+    const categoryIds = this.categoryIdsOf(item.id);
+    return {
+      ...item,
+      categoryIds,
+      category: categoryIds.length === 0 ? item.category : this.categoryPathsOf(categoryIds).join("；")
+    };
+  }
+
+  private categoryPathsOf(categoryIds: readonly string[]): string[] {
+    const path = this.database.connection.prepare(`
+      WITH RECURSIVE ancestors(id, parent_id, name, depth) AS (
+        SELECT id, parent_id, name, 0 FROM content_category_registry WHERE id = ?
+        UNION ALL
+        SELECT parent.id, parent.parent_id, parent.name, ancestors.depth + 1
+        FROM content_category_registry AS parent
+        JOIN ancestors ON ancestors.parent_id = parent.id
+      )
+      SELECT name FROM ancestors ORDER BY depth DESC
+    `);
+    return categoryIds.map((id) =>
+      (path.all(id) as unknown as Array<{ name: string }>).map((row) => row.name).join(" / ")
+    );
+  }
+
+  private findStored(kind: ContentItemKind, id: string): AdminContentItem | null {
+    const row = this.database.connection.prepare(`
+      SELECT ${COLUMNS} FROM content_items WHERE kind = ? AND id = ?
+    `).get(kind, id) as unknown as Row | undefined;
+    return row === undefined ? null : this.withCategoryIds(map(row));
+  }
+
+  private syncCategoryLinks(item: AdminContentItem): void {
+    this.database.connection.prepare(
+      "DELETE FROM content_item_category_links WHERE content_id = ?"
+    ).run(item.id);
+    const insert = this.database.connection.prepare(`
+      INSERT INTO content_item_category_links(content_id, category_id, created_at)
+      VALUES (?, ?, ?)
+    `);
+    for (const categoryId of [...new Set(item.categoryIds)]) {
+      insert.run(item.id, categoryId, item.updatedAt);
+    }
   }
 
   private scopeOf(kind: ContentItemKind): string {

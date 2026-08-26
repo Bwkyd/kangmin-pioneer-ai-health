@@ -402,7 +402,7 @@ contractTest("管理端：owner 引导→分类/文章发布→患者可见→us
       adminToken,
       input: {
         title: "换季鼻健康",
-        category: "鼻健康",
+        categoryIds: ["article-general"],
         idempotencyKey: "pg-article-1"
       }
     })

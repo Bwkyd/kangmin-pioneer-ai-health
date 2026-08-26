@@ -3,11 +3,25 @@ import type { EnvironmentSnapshot } from "../environment/environment-ports.js";
 
 export type PublicContentKind = "article" | "video";
 
+/** 由 truth 驱动的稳定分类节点；客户端只使用 id 建立选择与关联。 */
+export interface PublicContentCategory {
+  id: string;
+  kind: PublicContentKind;
+  parentId: string | null;
+  name: string;
+  audience: "adult" | "child" | "all";
+  nodeType: "audience" | "group" | "leaf";
+  selectable: boolean;
+  displayOrder: number;
+}
+
 export interface PublicContent {
   id: string;
   kind: PublicContentKind;
   title: string;
   category: string;
+  /** 稳定分类 ID；旧 category 仅作展示兼容。 */
+  categoryIds: string[];
   summary: string;
   body: string | null;
   source: string;

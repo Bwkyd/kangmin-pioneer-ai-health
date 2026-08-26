@@ -17,6 +17,7 @@ export interface PublicContent {
   kind: PublicContentKind;
   title: string;
   category: string;
+  categoryIds: string[];
   summary: string;
   body: string | null;
   source: string;
@@ -27,6 +28,17 @@ export interface PublicContent {
   instructions: string;
   precautions: string;
   disclaimer: string;
+}
+
+export interface PublicContentCategory {
+  id: string;
+  kind: PublicContentKind;
+  parentId: string | null;
+  name: string;
+  audience: "adult" | "child" | "all";
+  nodeType: "audience" | "group" | "leaf";
+  selectable: boolean;
+  displayOrder: number;
 }
 
 export interface CarePlanSummary {
@@ -96,6 +108,15 @@ export async function listContentCategories(
 ): Promise<string[]> {
   const { items } = await command<{ items: string[] }>(
     `browse ${kind} categories`
+  );
+  return items;
+}
+
+export async function listContentCategoryRegistry(
+  kind: PublicContentKind
+): Promise<PublicContentCategory[]> {
+  const { items } = await command<{ items: PublicContentCategory[] }>(
+    `browse ${kind} category-registry`
   );
   return items;
 }

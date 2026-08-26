@@ -6,6 +6,8 @@ export interface AdminContentItem {
   kind: ContentItemKind;
   title: string;
   category: string;
+  /** 权威分类关联；category 仅保留为旧客户端展示兼容字段。 */
+  categoryIds: string[];
   summary: string;
   body: string;
   source: string;
@@ -55,6 +57,12 @@ export type PublishMediaState =
  */
 export interface PublishGuardState {
   category: { status: "active" | "disabled"; kind: string } | null;
+  categories: Array<{
+    id: string;
+    status: "active" | "disabled";
+    kind: ContentItemKind;
+    selectable: boolean;
+  }>;
   coverMedia: PublishMediaState | null;
   media: PublishMediaState | null;
   bodyMedia: PublishMediaState[];
@@ -67,6 +75,17 @@ export type UpdateGuardedResult =
   | { kind: "validation_failed"; missing: string[] };
 
 export interface ContentAdminRepository {
+  listCategoryRegistry(kind: ContentItemKind): Promise<Array<{
+    id: string;
+    name: string;
+    kind: ContentItemKind;
+    parentId: string | null;
+    audience: "adult" | "child" | "all";
+    nodeType: "audience" | "group" | "leaf";
+    status: "active" | "disabled";
+    selectable: boolean;
+    displayOrder: number;
+  }>>;
   create(
     adminId: string,
     item: AdminContentItem,
