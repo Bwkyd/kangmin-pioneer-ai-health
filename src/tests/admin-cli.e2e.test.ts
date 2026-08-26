@@ -249,14 +249,51 @@ test("CLI 用户敏感详情权限与知识状态机走真实进程", async () =
   );
   assert.equal(addAdmin.status, 0, addAdmin.stderr);
 
+  // 四段目录命令必须经真实 argv 解析器可达；同时覆盖目录选项映射。
+  const rootFolderResult = run([
+    "agent", "knowledge", "folder", "create",
+    "--name", "CLI 根目录",
+    "--sort-order", "3",
+    "--json"
+  ], environment);
+  assert.equal(rootFolderResult.status, 0, rootFolderResult.stderr);
+  const rootFolder = JSON.parse(rootFolderResult.stdout) as { data: { id: string } };
+  const childFolderResult = run([
+    "agent", "knowledge", "folder", "create",
+    "--name", "CLI 子目录",
+    "--parent-id", rootFolder.data.id,
+    "--json"
+  ], environment);
+  assert.equal(childFolderResult.status, 0, childFolderResult.stderr);
+  const childFolder = JSON.parse(childFolderResult.stdout) as { data: { id: string } };
+  const renameFolder = run([
+    "agent", "knowledge", "folder", "update", childFolder.data.id,
+    "--name", "CLI 已改名子目录",
+    "--json"
+  ], environment);
+  assert.equal(renameFolder.status, 0, renameFolder.stderr);
+  const folderList = run([
+    "agent", "knowledge", "folder", "list", "--json"
+  ], environment);
+  assert.equal(folderList.status, 0, folderList.stderr);
+  const folderItems = JSON.parse(folderList.stdout) as { data: { items: Array<{ id: string; name: string }> } };
+  assert.ok(folderItems.data.items.some((folder) =>
+    folder.id === childFolder.data.id && folder.name === "CLI 已改名子目录"
+  ));
+
   // 知识文件状态机
   const knowledgeFile = join(dirname(databasePath), "知识.md");
   const { writeFileSync } = await import("node:fs");
   writeFileSync(knowledgeFile, "# 知识标题\n\n知识正文段落内容。");
-  const add = run(["agent", "knowledge", "add", knowledgeFile, "--json"], environment);
+  const add = run([
+    "agent", "knowledge", "add", knowledgeFile,
+    "--folder-id", childFolder.data.id,
+    "--json"
+  ], environment);
   assert.equal(add.status, 0, add.stderr);
-  const knowledge = JSON.parse(add.stdout) as { data: { id: string; status: string } };
+  const knowledge = JSON.parse(add.stdout) as { data: { id: string; status: string; folderId: string | null } };
   assert.equal(knowledge.data.status, "processing");
+  assert.equal(knowledge.data.folderId, childFolder.data.id);
 
   const index = run(["agent", "knowledge", "index", knowledge.data.id, "--json"], environment);
   assert.equal(index.status, 0, index.stderr);
@@ -272,6 +309,25 @@ test("CLI 用户敏感详情权限与知识状态机走真实进程", async () =
   assert.equal(search.status, 0, search.stderr);
   const hits = JSON.parse(search.stdout) as { data: { items: unknown[] } };
   assert.equal(hits.data.items.length, 1);
+
+  const moveToRoot = run([
+    "agent", "knowledge", "move", knowledge.data.id,
+    "--folder-id", rootFolder.data.id,
+    "--json"
+  ], environment);
+  assert.equal(moveToRoot.status, 0, moveToRoot.stderr);
+  assert.equal((JSON.parse(moveToRoot.stdout) as { data: { folderId: string | null } }).data.folderId, rootFolder.data.id);
+  const moveToUnfiled = run([
+    "agent", "knowledge", "move", knowledge.data.id, "--json"
+  ], environment);
+  assert.equal(moveToUnfiled.status, 0, moveToUnfiled.stderr);
+  assert.equal((JSON.parse(moveToUnfiled.stdout) as { data: { folderId: string | null } }).data.folderId, null);
+  for (const folderId of [childFolder.data.id, rootFolder.data.id]) {
+    const deleted = run([
+      "agent", "knowledge", "folder", "delete", folderId, "--yes", "--json"
+    ], environment);
+    assert.equal(deleted.status, 0, deleted.stderr);
+  }
 
   // 用户列表只读投影走真实进程（普通管理员权限边界在应用层测试覆盖）
   const list = run(["users", "list", "--limit", "10", "--json"], environment);
