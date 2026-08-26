@@ -1057,6 +1057,16 @@ try {
 
   await adminPage.getByTestId("admin-nav-knowledge").click();
   await adminPage.getByText("内容运营 / 受控知识生效", { exact: true }).waitFor({ state: "visible" });
+  await adminPage.getByRole("button", { name: "新建目录" }).click();
+  await adminPage.getByLabel("目录名称").fill("鼻炎基础");
+  await adminPage.locator(".folder-form").getByRole("button", { name: "保存" }).click();
+  await expectText(adminPage.getByRole("status"), "目录已创建");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /鼻炎基础/u }).click();
+  await adminPage.getByRole("button", { name: "新建子目录" }).click();
+  await adminPage.getByLabel("目录名称").fill("日常防护");
+  await adminPage.locator(".folder-form").getByRole("button", { name: "保存" }).click();
+  await expectText(adminPage.getByRole("status"), "目录已创建");
+  await adminPage.getByLabel("上传到目录").selectOption({ label: "鼻炎基础 / 日常防护" });
   await adminPage.getByLabel("知识来源").fill("客户试用资料");
   await adminPage.getByLabel("选择知识文件").setInputFiles({
     name: "browser-guide.md",
@@ -1064,6 +1074,8 @@ try {
     buffer: Buffer.from("# 鼻健康清洁指南\n\n换季时保持室内清洁并按医嘱处理症状。")
   });
   await adminPage.getByRole("button", { name: "上传知识" }).click();
+  assert.equal(await adminPage.locator("tbody tr", { hasText: "browser-guide.md" }).count(), 0, "父目录只显示本层知识，不应混入子目录资料");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /全部知识/u }).click();
   const knowledgeRow = adminPage.locator("tbody tr", { hasText: "browser-guide.md" });
   await knowledgeRow.waitFor({ state: "visible" });
   await expectText(knowledgeRow, "待建索引");
@@ -1082,14 +1094,15 @@ try {
   await reopenedKnowledgeEditForm.getByRole("button", { name: "保存修改" }).click();
   await expectText(reopenedKnowledgeEditForm.getByRole("alert"), "知识名称不能为空");
   await reopenedKnowledgeEditForm.getByLabel("知识名称").fill("鼻健康清洁指南");
-  await reopenedKnowledgeEditForm.getByLabel("知识分类（可留空）").fill("日常防护");
   await reopenedKnowledgeEditForm.getByLabel("来源说明（可留空）").fill("客户试用资料·已复核");
   await reopenedKnowledgeEditForm.getByRole("button", { name: "保存修改" }).click();
   await expectText(adminPage.getByRole("status"), "知识资料已更新");
   assert.equal(await adminPage.getByTestId("knowledge-edit-form").count(), 0);
   const updatedKnowledgeRow = adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南" });
-  await expectText(updatedKnowledgeRow, "日常防护");
+  assert.equal(await updatedKnowledgeRow.getByLabel("移动知识 鼻健康清洁指南").locator("option:checked").innerText(), "鼻炎基础 / 日常防护");
   await expectText(updatedKnowledgeRow, "客户试用资料·已复核");
+  await updatedKnowledgeRow.getByLabel("移动知识 鼻健康清洁指南").selectOption({ label: "鼻炎基础" });
+  await expectText(adminPage.getByRole("status"), "知识已移动到目标目录");
   await updatedKnowledgeRow.getByRole("button", { name: "建立索引" }).click();
   await expectText(adminPage.getByRole("status"), "索引已建立");
   await expectText(updatedKnowledgeRow, "已建索引");
@@ -1112,6 +1125,14 @@ try {
   await updatedKnowledgeRow.getByRole("button", { name: "删除" }).click();
   await expectText(adminPage.getByRole("status"), "知识资料已删除");
   assert.equal(await adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南" }).count(), 0);
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /日常防护/u }).click();
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await adminPage.getByRole("button", { name: "删除空目录" }).click();
+  await expectText(adminPage.getByRole("status"), "空目录已删除");
+  await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /鼻炎基础/u }).click();
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await adminPage.getByRole("button", { name: "删除空目录" }).click();
+  await expectText(adminPage.getByRole("status"), "空目录已删除");
   await adminPage.reload();
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
   await adminPage.close();

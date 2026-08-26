@@ -34,6 +34,7 @@ export interface KnowledgeSourceMediaRow {
 export interface KnowledgeRow {
   id: string;
   name: string;
+  folderId: string | null;
   category?: string | null;
   source: string | null;
   description: string | null;
@@ -48,6 +49,21 @@ export interface KnowledgeRow {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface KnowledgeFolderRow {
+  id: string;
+  parentId: string | null;
+  name: string;
+  sortOrder: number;
+  createdBy: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type KnowledgeFolderWriteResult =
+  | { kind: "updated"; folder: KnowledgeFolderRow }
+  | { kind: "not_found" }
+  | { kind: "duplicate" };
 
 export interface PlanRow {
   id: string;
@@ -136,6 +152,18 @@ export type IdempotentCreateResult<T> =
 
 export interface AgentAdminRepository {
   // ---- 知识 ----
+  listKnowledgeFolders(): Promise<KnowledgeFolderRow[]>;
+  createKnowledgeFolder(input: KnowledgeFolderRow): Promise<"created" | "duplicate">;
+  updateKnowledgeFolder(
+    id: string,
+    input: { parentId: string | null; name: string; sortOrder: number; updatedAt: string }
+  ): Promise<KnowledgeFolderWriteResult>;
+  deleteKnowledgeFolder(id: string): Promise<"deleted" | "not_found" | "not_empty">;
+  moveKnowledge(
+    id: string,
+    folderId: string | null,
+    updatedAt: string
+  ): Promise<"updated" | "not_found">;
   createKnowledge(
     input: KnowledgeRow & { chunks: ChunkInput[] }
   ): Promise<void>;
@@ -169,7 +197,7 @@ export interface AgentAdminRepository {
   findKnowledge(id: string): Promise<KnowledgeRow | null>;
   updateKnowledgeMetadata(
     id: string,
-    input: { name: string; category: string | null; source: string | null; description: string | null; updatedAt: string }
+    input: { name: string; source: string | null; description: string | null; updatedAt: string }
   ): Promise<"updated" | "not_found">;
   deleteKnowledge(id: string): Promise<"deleted" | "not_found">;
   /**

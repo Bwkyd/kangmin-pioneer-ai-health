@@ -1,5 +1,6 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
+import { createHash } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { DomainError } from "../kernel/errors.js";
@@ -1320,6 +1321,64 @@ const MIGRATIONS: Migration[] = [
         ) STRICT;
         CREATE INDEX IF NOT EXISTS agent_knowledge_embeddings_model
           ON agent_knowledge_embeddings(model_name, dimensions);
+      `);
+    }
+  },
+  {
+    // 知识目录只负责运营整理。旧 category 逐项迁成一级目录，知识正文、
+    // 状态、分块和向量均不改动；category 保留为迁移来源兼容列，运行时
+    // 展示路径由 folder_id 指向的目录树实时派生。
+    version: "0021_knowledge_folders",
+    apply: (connection) => {
+      connection.exec(`
+        CREATE TABLE IF NOT EXISTS agent_knowledge_folders (
+          id TEXT PRIMARY KEY,
+          parent_id TEXT REFERENCES agent_knowledge_folders(id) ON DELETE RESTRICT,
+          name TEXT NOT NULL CHECK(length(trim(name)) > 0),
+          sort_order INTEGER NOT NULL DEFAULT 0 CHECK(sort_order >= 0),
+          created_by TEXT,
+          created_at TEXT NOT NULL,
+          updated_at TEXT NOT NULL
+        ) STRICT;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS agent_knowledge_folders_root_name
+        ON agent_knowledge_folders(name) WHERE parent_id IS NULL;
+
+        CREATE UNIQUE INDEX IF NOT EXISTS agent_knowledge_folders_sibling_name
+        ON agent_knowledge_folders(parent_id, name) WHERE parent_id IS NOT NULL;
+      `);
+      const hasKnowledgeItems = connection.prepare(
+        "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'agent_knowledge_items'"
+      ).get() !== undefined;
+      if (!hasKnowledgeItems) return;
+      const columns = connection.prepare("PRAGMA table_info(agent_knowledge_items)").all() as unknown as Array<{ name: string }>;
+      if (!columns.some((column) => column.name === "folder_id")) {
+        connection.exec("ALTER TABLE agent_knowledge_items ADD COLUMN folder_id TEXT REFERENCES agent_knowledge_folders(id) ON DELETE RESTRICT");
+      }
+      const categories = connection.prepare(`
+        SELECT category, MIN(created_at) AS created_at, MAX(updated_at) AS updated_at
+        FROM agent_knowledge_items
+        WHERE category IS NOT NULL AND trim(category) <> ''
+        GROUP BY category
+        ORDER BY category ASC
+      `).all() as unknown as Array<{ category: string; created_at: string; updated_at: string }>;
+      const insert = connection.prepare(`
+        INSERT OR IGNORE INTO agent_knowledge_folders(
+          id, parent_id, name, sort_order, created_by, created_at, updated_at
+        ) VALUES (?, NULL, ?, ?, NULL, ?, ?)
+      `);
+      const assign = connection.prepare(`
+        UPDATE agent_knowledge_items SET folder_id = ?
+        WHERE folder_id IS NULL AND category = ?
+      `);
+      categories.forEach((row, index) => {
+        const id = `kfd_legacy_${createHash("sha256").update(row.category).digest("hex").slice(0, 12)}`;
+        insert.run(id, row.category, index, row.created_at, row.updated_at);
+        assign.run(id, row.category);
+      });
+      connection.exec(`
+        CREATE INDEX IF NOT EXISTS agent_knowledge_items_folder
+        ON agent_knowledge_items(folder_id, updated_at DESC);
       `);
     }
   }

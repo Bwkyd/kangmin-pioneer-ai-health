@@ -19,7 +19,7 @@ import { DomainError } from "../kernel/errors.js";
 import type { CommandResult } from "../kernel/result.js";
 import { AgentAdminService } from "../modules/agent-admin/agent-admin-service.js";
 import type { AgentAdminRepository } from "../modules/agent-admin/agent-admin-ports.js";
-import type { KnowledgeItem, AgentPlan, ModelConfigView } from "../modules/agent-admin/contracts.js";
+import type { KnowledgeItem, KnowledgeFolder, AgentPlan, ModelConfigView } from "../modules/agent-admin/contracts.js";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 function dataOf<T>(result: CommandResult): T {
@@ -198,7 +198,7 @@ test("知识状态机：add→index→enable→search-test→disable", async () 
   }
 });
 
-test("知识资料支持分类、更新和停用后删除", async () => {
+test("知识资料支持更新和停用后删除", async () => {
   const { app, mediaDirectory, token } = await fixture();
   try {
     const file = join(mediaDirectory, "知识维护.md");
@@ -207,10 +207,10 @@ test("知识资料支持分类、更新和停用后删除", async () => {
     const updated = dataOf<KnowledgeItem>(await app.execute({
       command: "agent knowledge update",
       adminToken: token,
-      input: { id: added.id, name: "鼻腔护理指南", category: "居家护理", source: "专业审核材料" }
+      input: { id: added.id, name: "鼻腔护理指南", source: "专业审核材料" }
     }));
     assert.equal(updated.name, "鼻腔护理指南");
-    assert.equal(updated.category, "居家护理");
+    assert.equal(updated.category, null);
     assert.equal(updated.source, "专业审核材料");
 
     const missingConfirm = await app.execute({ command: "agent knowledge delete", adminToken: token, input: { id: added.id } });
@@ -221,6 +221,117 @@ test("知识资料支持分类、更新和停用后删除", async () => {
     const shown = await app.execute({ command: "agent knowledge show", adminToken: token, input: { id: added.id } });
     assert.equal(shown.ok, false);
     if (!shown.ok) assert.equal(shown.error.code, "resource_not_found");
+  } finally {
+    app.close();
+  }
+});
+
+test("知识目录支持三级创建、本层归档、移动与安全删除", async () => {
+  const { app, databasePath, mediaDirectory, token } = await fixture();
+  try {
+    const root = dataOf<KnowledgeFolder>(await app.execute({
+      command: "agent knowledge folder create",
+      adminToken: token,
+      input: { name: "鼻炎基础" }
+    }));
+    const child = dataOf<KnowledgeFolder>(await app.execute({
+      command: "agent knowledge folder create",
+      adminToken: token,
+      input: { name: "症状机制", parentId: root.id }
+    }));
+    const grandchild = dataOf<KnowledgeFolder>(await app.execute({
+      command: "agent knowledge folder create",
+      adminToken: token,
+      input: { name: "换季诱因", parentId: child.id }
+    }));
+    assert.deepEqual([root.depth, child.depth, grandchild.depth], [1, 2, 3]);
+
+    const fourthLevel = await app.execute({
+      command: "agent knowledge folder create",
+      adminToken: token,
+      input: { name: "禁止第四级", parentId: grandchild.id }
+    });
+    assert.equal(fourthLevel.ok, false);
+    if (!fourthLevel.ok) assert.equal(fourthLevel.error.code, "validation_failed");
+
+    const duplicate = await app.execute({
+      command: "agent knowledge folder create",
+      adminToken: token,
+      input: { name: "鼻炎基础" }
+    });
+    assert.equal(duplicate.ok, false);
+    if (!duplicate.ok) assert.equal(duplicate.error.code, "validation_failed");
+
+    const file = join(mediaDirectory, "目录知识.md");
+    writeFileSync(file, "# 换季诱因\n\n花粉和冷空气可能诱发症状。");
+    const added = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge add",
+      adminToken: token,
+      input: { file, folderId: grandchild.id }
+    }));
+    assert.equal(added.folderId, grandchild.id);
+    const listed = dataOf<{ items: KnowledgeItem[] }>(await app.execute({
+      command: "agent knowledge list",
+      adminToken: token
+    }));
+    const listedItem = listed.items.find((item) => item.id === added.id);
+    assert.equal(listedItem?.category, "鼻炎基础 / 症状机制 / 换季诱因");
+
+    const renamed = dataOf<KnowledgeFolder>(await app.execute({
+      command: "agent knowledge folder update",
+      adminToken: token,
+      input: { id: root.id, name: "鼻敏感基础", parentId: null }
+    }));
+    assert.equal(renamed.name, "鼻敏感基础");
+    const afterRename = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge show",
+      adminToken: token,
+      input: { id: added.id }
+    }));
+    assert.equal(afterRename.category, "鼻敏感基础 / 症状机制 / 换季诱因");
+
+    await app.execute({
+      command: "agent knowledge update",
+      adminToken: token,
+      input: { id: added.id, source: "目录内更新来源" }
+    });
+
+    const cycle = await app.execute({
+      command: "agent knowledge folder update",
+      adminToken: token,
+      input: { id: root.id, parentId: grandchild.id }
+    });
+    assert.equal(cycle.ok, false);
+    if (!cycle.ok) assert.equal(cycle.error.code, "validation_failed");
+
+    const nonEmptyDelete = await app.execute({
+      command: "agent knowledge folder delete",
+      adminToken: token,
+      input: { id: grandchild.id, yes: true }
+    });
+    assert.equal(nonEmptyDelete.ok, false);
+    if (!nonEmptyDelete.ok) assert.equal(nonEmptyDelete.error.code, "validation_failed");
+
+    const moved = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge move",
+      adminToken: token,
+      input: { id: added.id, folderId: null }
+    }));
+    assert.equal(moved.folderId, null);
+    assert.equal(moved.category, null);
+
+    for (const id of [grandchild.id, child.id, root.id]) {
+      const deleted = dataOf<{ id: string; deleted: true }>(await app.execute({
+        command: "agent knowledge folder delete",
+        adminToken: token,
+        input: { id, yes: true }
+      }));
+      assert.equal(deleted.deleted, true);
+    }
+    assert.equal(auditRowsOf(databasePath, "agent.knowledge-folder.create").length, 3);
+    assert.equal(auditRowsOf(databasePath, "agent.knowledge-folder.update").length, 1);
+    assert.equal(auditRowsOf(databasePath, "agent.knowledge-folder.delete").length, 3);
+    assert.equal(auditRowsOf(databasePath, "agent.knowledge.move").length, 1);
   } finally {
     app.close();
   }

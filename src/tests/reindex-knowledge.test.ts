@@ -15,6 +15,7 @@ function item(id: string, status: KnowledgeRow["status"]): KnowledgeRow & {
   return {
     id,
     name: id,
+    folderId: null,
     category: "测试",
     source: "测试来源",
     description: null,

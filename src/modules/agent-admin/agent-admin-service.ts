@@ -26,6 +26,7 @@ import type {
   AgentAdminRepository,
   ChunkInput,
   KnowledgeRow,
+  KnowledgeFolderRow,
   ModelConfigRow,
   PlanRow,
   UpdatePlanResult
@@ -34,6 +35,7 @@ import type {
   AgentPlan,
   AgentStatusSummary,
   KnowledgeHit,
+  KnowledgeFolder,
   KnowledgeItem,
   ModelConfigView,
   PlanMapping,
@@ -150,6 +152,106 @@ export class AgentAdminService {
 
   // ==== 知识库 ====
 
+  async listKnowledgeFolders(): Promise<KnowledgeFolder[]> {
+    const [folders, knowledge] = await Promise.all([
+      this.repository.listKnowledgeFolders(),
+      this.repository.listKnowledge()
+    ]);
+    return this.folderViews(folders, knowledge);
+  }
+
+  async createKnowledgeFolder(
+    adminId: string,
+    input: { name: string; parentId?: string | null | undefined; sortOrder?: number | undefined },
+    requestId?: string
+  ): Promise<KnowledgeFolder> {
+    const name = input.name.trim();
+    if (name === "") throw new DomainError("validation_failed", "目录名称不能为空");
+    const folders = await this.repository.listKnowledgeFolders();
+    const parentId = input.parentId?.trim() || null;
+    if (parentId !== null) {
+      const parentDepth = this.folderDepth(folders, parentId);
+      if (parentDepth === null) throw new DomainError("resource_not_found", "上级目录不存在");
+      if (parentDepth >= 3) throw new DomainError("validation_failed", "知识目录最多三级");
+    }
+    const timestamp = now();
+    const row: KnowledgeFolderRow = {
+      id: newId("kfd"),
+      parentId,
+      name,
+      sortOrder: input.sortOrder ?? folders.filter((folder) => folder.parentId === parentId).length,
+      createdBy: adminId,
+      createdAt: timestamp,
+      updatedAt: timestamp
+    };
+    const result = await this.repository.createKnowledgeFolder(row);
+    if (result === "duplicate") throw new DomainError("validation_failed", "同级目录名称不能重复");
+    await this.audit.record({ actorKind: "admin", actorId: adminId, action: "agent.knowledge-folder.create", entityType: "agent_knowledge_folder", entityId: row.id, requestId, details: { name, parentId } });
+    return (await this.listKnowledgeFolders()).find((folder) => folder.id === row.id)!;
+  }
+
+  async updateKnowledgeFolder(
+    adminId: string,
+    id: string,
+    changes: { name?: string | undefined; parentId?: string | null | undefined; sortOrder?: number | undefined },
+    requestId?: string
+  ): Promise<KnowledgeFolder> {
+    const folders = await this.repository.listKnowledgeFolders();
+    const current = folders.find((folder) => folder.id === id);
+    if (current === undefined) throw new DomainError("resource_not_found", "目录不存在");
+    const name = changes.name === undefined ? current.name : changes.name.trim();
+    if (name === "") throw new DomainError("validation_failed", "目录名称不能为空");
+    const parentId = changes.parentId === undefined ? current.parentId : changes.parentId?.trim() || null;
+    if (parentId === id) throw new DomainError("validation_failed", "目录不能移动到自身下面");
+    if (parentId !== null && !folders.some((folder) => folder.id === parentId)) {
+      throw new DomainError("resource_not_found", "目标上级目录不存在");
+    }
+    const descendants = this.folderDescendants(folders, id);
+    if (parentId !== null && descendants.has(parentId)) {
+      throw new DomainError("validation_failed", "目录不能移动到自己的子目录下面");
+    }
+    const parentDepth = parentId === null ? 0 : this.folderDepth(folders, parentId);
+    if (parentDepth === null) throw new DomainError("resource_not_found", "目标上级目录不存在");
+    const currentDepth = this.folderDepth(folders, id)!;
+    const subtreeDepth = Math.max(
+      ...[id, ...descendants].map((folderId) => this.folderDepth(folders, folderId)! - currentDepth + 1)
+    );
+    if (parentDepth + subtreeDepth > 3) {
+      throw new DomainError("validation_failed", "移动后目录会超过三级");
+    }
+    const result = await this.repository.updateKnowledgeFolder(id, {
+      parentId,
+      name,
+      sortOrder: changes.sortOrder ?? current.sortOrder,
+      updatedAt: now()
+    });
+    if (result.kind === "not_found") throw new DomainError("resource_not_found", "目录不存在");
+    if (result.kind === "duplicate") throw new DomainError("validation_failed", "同级目录名称不能重复");
+    await this.audit.record({ actorKind: "admin", actorId: adminId, action: "agent.knowledge-folder.update", entityType: "agent_knowledge_folder", entityId: id, requestId, details: { name, parentId, sortOrder: result.folder.sortOrder } });
+    return (await this.listKnowledgeFolders()).find((folder) => folder.id === id)!;
+  }
+
+  async deleteKnowledgeFolder(adminId: string, id: string, requestId?: string): Promise<{ id: string; deleted: true }> {
+    const current = (await this.repository.listKnowledgeFolders()).find((folder) => folder.id === id);
+    if (current === undefined) throw new DomainError("resource_not_found", "目录不存在");
+    const result = await this.repository.deleteKnowledgeFolder(id);
+    if (result === "not_found") throw new DomainError("resource_not_found", "目录不存在");
+    if (result === "not_empty") throw new DomainError("validation_failed", "目录中仍有知识或子目录，不能删除");
+    await this.audit.record({ actorKind: "admin", actorId: adminId, action: "agent.knowledge-folder.delete", entityType: "agent_knowledge_folder", entityId: id, requestId, details: { name: current.name } });
+    return { id, deleted: true };
+  }
+
+  async moveKnowledge(adminId: string, id: string, folderId: string | null, requestId?: string): Promise<KnowledgeItem> {
+    const current = await this.getKnowledge(id);
+    if (folderId !== null && !(await this.repository.listKnowledgeFolders()).some((folder) => folder.id === folderId)) {
+      throw new DomainError("resource_not_found", "目标目录不存在");
+    }
+    const result = await this.repository.moveKnowledge(id, folderId, now());
+    if (result === "not_found") throw new DomainError("resource_not_found", "知识不存在");
+    await this.audit.record({ actorKind: "admin", actorId: adminId, action: "agent.knowledge.move", entityType: "agent_knowledge_item", entityId: id, requestId, details: { name: current.name, fromFolderId: current.folderId, toFolderId: folderId } });
+    return this.getKnowledge(id);
+  }
+
   /**
    * 添加知识源文件：注册元数据 + 源文件写入对象存储 + 骨架解析分块。
    * 解析失败（PDF/Word 无解析器）如实标记 index_failed，不伪装成功。
@@ -162,8 +264,9 @@ export class AgentAdminService {
   async addKnowledge(
     adminId: string,
     filePath: string,
-    input: { source?: string | undefined; description?: string | undefined } = {}
+    input: { source?: string | undefined; description?: string | undefined; folderId?: string | null | undefined } = {}
   ): Promise<KnowledgeItem> {
+    await this.assertFolderExists(input.folderId ?? null);
     let stats;
     try {
       stats = statSync(filePath);
@@ -209,6 +312,7 @@ export class AgentAdminService {
     const row: KnowledgeRow = {
       id,
       name: filename,
+      folderId: input.folderId ?? null,
       source: input.source?.trim() || null,
       description: input.description?.trim() || null,
       sourceMediaId,
@@ -299,8 +403,9 @@ export class AgentAdminService {
   async addKnowledgeFromMedia(
     adminId: string,
     mediaId: string,
-    input: { source?: string | undefined; description?: string | undefined } = {}
+    input: { source?: string | undefined; description?: string | undefined; folderId?: string | null | undefined } = {}
   ): Promise<KnowledgeItem> {
+    await this.assertFolderExists(input.folderId ?? null);
     const media = await this.repository.findMedia(mediaId);
     if (media === null) {
       throw new DomainError("resource_not_found", "素材不存在");
@@ -330,6 +435,7 @@ export class AgentAdminService {
     const row: KnowledgeRow = {
       id: newId("kno"),
       name: media.filename,
+      folderId: input.folderId ?? null,
       source: input.source?.trim() || null,
       description: input.description?.trim() || null,
       sourceMediaId: media.id,
@@ -364,6 +470,58 @@ export class AgentAdminService {
     return this.repository.listKnowledge(this.knowledgeStatusOf(status));
   }
 
+  private async assertFolderExists(folderId: string | null): Promise<void> {
+    if (folderId === null) return;
+    if (!(await this.repository.listKnowledgeFolders()).some((folder) => folder.id === folderId)) {
+      throw new DomainError("resource_not_found", "目标目录不存在");
+    }
+  }
+
+  private folderDepth(folders: readonly KnowledgeFolderRow[], id: string): number | null {
+    let current = folders.find((folder) => folder.id === id);
+    if (current === undefined) return null;
+    let depth = 1;
+    const visited = new Set([id]);
+    while (current.parentId !== null) {
+      if (visited.has(current.parentId)) throw new DomainError("storage_unavailable", "知识目录存在循环关系");
+      visited.add(current.parentId);
+      const parent = folders.find((folder) => folder.id === current!.parentId);
+      if (parent === undefined) throw new DomainError("storage_unavailable", "知识目录上级不存在");
+      current = parent;
+      depth += 1;
+      if (depth > 3) throw new DomainError("storage_unavailable", "知识目录超过三级限制");
+    }
+    return depth;
+  }
+
+  private folderDescendants(folders: readonly KnowledgeFolderRow[], id: string): Set<string> {
+    const found = new Set<string>();
+    const queue = [id];
+    while (queue.length > 0) {
+      const parentId = queue.shift()!;
+      for (const child of folders.filter((folder) => folder.parentId === parentId)) {
+        if (found.has(child.id)) throw new DomainError("storage_unavailable", "知识目录存在循环关系");
+        found.add(child.id);
+        queue.push(child.id);
+      }
+    }
+    return found;
+  }
+
+  private folderViews(folders: readonly KnowledgeFolderRow[], knowledge: readonly KnowledgeItem[]): KnowledgeFolder[] {
+    return folders.map((folder) => ({
+      id: folder.id,
+      parentId: folder.parentId,
+      name: folder.name,
+      sortOrder: folder.sortOrder,
+      depth: this.folderDepth(folders, folder.id) as 1 | 2 | 3,
+      knowledgeCount: knowledge.filter((item) => item.folderId === folder.id).length,
+      childCount: folders.filter((child) => child.parentId === folder.id).length,
+      createdAt: folder.createdAt,
+      updatedAt: folder.updatedAt
+    }));
+  }
+
   async getKnowledge(id: string): Promise<KnowledgeItem> {
     const item = await this.repository.findKnowledge(id);
     if (item === null) {
@@ -375,7 +533,7 @@ export class AgentAdminService {
   async updateKnowledge(
     adminId: string,
     id: string,
-    changes: { name?: string | undefined; category?: string | undefined; source?: string | undefined; description?: string | undefined },
+    changes: { name?: string | undefined; source?: string | undefined; description?: string | undefined },
     requestId?: string
   ): Promise<KnowledgeItem> {
     const current = await this.getKnowledge(id);
@@ -383,7 +541,6 @@ export class AgentAdminService {
     if (name === "") throw new DomainError("validation_failed", "知识名称不能为空");
     const result = await this.repository.updateKnowledgeMetadata(id, {
       name,
-      category: changes.category === undefined ? current.category ?? null : changes.category.trim() || null,
       source: changes.source === undefined ? current.source : changes.source.trim() || null,
       description: changes.description === undefined ? current.description : changes.description.trim() || null,
       updatedAt: now()

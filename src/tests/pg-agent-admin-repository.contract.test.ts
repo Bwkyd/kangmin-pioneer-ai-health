@@ -12,6 +12,7 @@ import {
 } from "./pg-test-database.js";
 import type {
   ChunkInput,
+  KnowledgeFolderRow,
   KnowledgeRow,
   ModelConfigRow,
   PlanRow
@@ -127,6 +128,7 @@ function makeKnowledge(
     createdAt: "2026-01-01T00:00:00.000Z",
     updatedAt: "2026-01-01T00:00:00.000Z",
     ...overrides,
+    folderId: overrides.folderId ?? null,
     chunks
   };
 }
@@ -355,6 +357,34 @@ test(
     const enabledOnly = await agentAdmin().listKnowledge("enabled");
     assert.ok(enabledOnly.some((row) => row.id === older.id));
     assert.ok(!enabledOnly.some((row) => row.id === newer.id));
+  }
+);
+
+test(
+  "知识目录：父子目录、知识移动与非空删除保护",
+  { skip: SKIP },
+  async () => {
+    const timestamp = "2026-08-26T00:00:00.000Z";
+    const root: KnowledgeFolderRow = {
+      id: uid("folder"), parentId: null, name: `根目录-${randomUUID()}`,
+      sortOrder: 0, createdBy: null, createdAt: timestamp, updatedAt: timestamp
+    };
+    const child: KnowledgeFolderRow = {
+      id: uid("folder"), parentId: root.id, name: "子目录",
+      sortOrder: 0, createdBy: null, createdAt: timestamp, updatedAt: timestamp
+    };
+    assert.equal(await agentAdmin().createKnowledgeFolder(root), "created");
+    assert.equal(await agentAdmin().createKnowledgeFolder(root), "duplicate");
+    assert.equal(await agentAdmin().createKnowledgeFolder(child), "created");
+    const knowledge = makeKnowledge(uid("kn"), { folderId: root.id, category: null });
+    await agentAdmin().createKnowledge(knowledge);
+    assert.equal((await agentAdmin().findKnowledge(knowledge.id))?.category, root.name);
+    assert.equal(await agentAdmin().moveKnowledge(knowledge.id, child.id, timestamp), "updated");
+    assert.equal((await agentAdmin().findKnowledge(knowledge.id))?.category, `${root.name} / ${child.name}`);
+    assert.equal(await agentAdmin().deleteKnowledgeFolder(child.id), "not_empty");
+    assert.equal(await agentAdmin().moveKnowledge(knowledge.id, null, timestamp), "updated");
+    assert.equal(await agentAdmin().deleteKnowledgeFolder(child.id), "deleted");
+    assert.equal(await agentAdmin().deleteKnowledgeFolder(root.id), "deleted");
   }
 );
 

@@ -71,6 +71,10 @@ function opt(input: Record<string, unknown>, key: string): string | undefined {
   return optionalString(input, key) ?? undefined;
 }
 
+function nullableOpt(input: Record<string, unknown>, key: string): string | null | undefined {
+  return optionalString(input, key);
+}
+
 /** 期别入参收窄（智能体设计 v4）：仅 'acute' 有效，其他值按未设置。 */
 function phaseCodeOf(
   input: Record<string, unknown>
@@ -613,6 +617,39 @@ export class KangminAdminApplication {
           return success(command, await this.agent.status(), request.requestId);
 
         // ---- agent knowledge ----
+        case "agent knowledge folder list":
+          return success(
+            command,
+            { items: await this.agent.listKnowledgeFolders() },
+            request.requestId
+          );
+        case "agent knowledge folder create":
+          return success(
+            command,
+            await this.agent.createKnowledgeFolder(adminId, {
+              name: requiredString(input, "name"),
+              parentId: nullableOpt(input, "parentId"),
+              sortOrder: optionalIntegerInRange(input, "sortOrder", 0, 1_000_000)
+            }, request.requestId),
+            request.requestId
+          );
+        case "agent knowledge folder update":
+          return success(
+            command,
+            await this.agent.updateKnowledgeFolder(adminId, requiredString(input, "id"), {
+              name: opt(input, "name"),
+              parentId: nullableOpt(input, "parentId"),
+              sortOrder: optionalIntegerInRange(input, "sortOrder", 0, 1_000_000)
+            }, request.requestId),
+            request.requestId
+          );
+        case "agent knowledge folder delete":
+          requireConfirmation(input);
+          return success(
+            command,
+            await this.agent.deleteKnowledgeFolder(adminId, requiredString(input, "id"), request.requestId),
+            request.requestId
+          );
         case "agent knowledge list":
           return success(
             command,
@@ -630,7 +667,6 @@ export class KangminAdminApplication {
             command,
             await this.agent.updateKnowledge(adminId, requiredString(input, "id"), {
               name: opt(input, "name"),
-              category: opt(input, "category"),
               source: opt(input, "source"),
               description: opt(input, "description")
             }, request.requestId),
@@ -648,7 +684,8 @@ export class KangminAdminApplication {
             command,
             await this.agent.addKnowledge(adminId, requiredString(input, "file"), {
               source: opt(input, "source"),
-              description: opt(input, "description")
+              description: opt(input, "description"),
+              folderId: nullableOpt(input, "folderId")
             }),
             request.requestId
           );
@@ -660,7 +697,8 @@ export class KangminAdminApplication {
               requiredString(input, "mediaId"),
               {
                 source: opt(input, "source"),
-                description: opt(input, "description")
+                description: opt(input, "description"),
+                folderId: nullableOpt(input, "folderId")
               }
             ),
             request.requestId
@@ -697,6 +735,17 @@ export class KangminAdminApplication {
           return success(
             command,
             { items: await this.agent.searchKnowledge(requiredString(input, "query")) },
+            request.requestId
+          );
+        case "agent knowledge move":
+          return success(
+            command,
+            await this.agent.moveKnowledge(
+              adminId,
+              requiredString(input, "id"),
+              nullableOpt(input, "folderId") ?? null,
+              request.requestId
+            ),
             request.requestId
           );
 
