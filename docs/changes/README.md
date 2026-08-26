@@ -26,8 +26,9 @@
 | [004](ops/004_miniprogram-local-experience-upload.md) | 2026-08-26 | 小程序本机健康记录体验版上传与收口 |
 | [005](ops/005_admin-knowledge-folder-deploy.md) | 2026-08-26 | 管理后台知识目录树部署 |
 | [006](ops/006_admin-knowledge-ui-deploy.md) | 2026-08-26 | 管理后台知识库界面精简部署 |
+| [007](ops/007_admin-video-preview-deploy.md) | 2026-08-26 | 管理后台视频预览尺寸与文案修复部署 |
 
-下一份生产操作编号从 `007` 开始。
+下一份生产操作编号从 `008` 开始。
 
 ## 故障复盘
 
