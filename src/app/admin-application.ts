@@ -672,6 +672,17 @@ export class KangminAdminApplication {
             }, request.requestId),
             request.requestId
           );
+        case "agent knowledge update-file":
+          return success(
+            command,
+            await this.agent.updateKnowledgeFileFromMedia(
+              adminId,
+              requiredString(input, "id"),
+              requiredString(input, "mediaId"),
+              request.requestId
+            ),
+            request.requestId
+          );
         case "agent knowledge delete":
           requireConfirmation(input);
           return success(
@@ -696,6 +707,7 @@ export class KangminAdminApplication {
               adminId,
               requiredString(input, "mediaId"),
               {
+                name: opt(input, "name"),
                 source: opt(input, "source"),
                 description: opt(input, "description"),
                 folderId: nullableOpt(input, "folderId")
@@ -734,7 +746,12 @@ export class KangminAdminApplication {
         case "agent knowledge search-test":
           return success(
             command,
-            { items: await this.agent.searchKnowledge(requiredString(input, "query")) },
+            {
+              items: await this.agent.searchKnowledge(
+                requiredString(input, "query"),
+                opt(input, "id")
+              )
+            },
             request.requestId
           );
         case "agent knowledge move":

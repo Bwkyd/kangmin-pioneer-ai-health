@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🔄 AI 知识资料改为连续生命周期任务（2026-08-26 第215轮 · 基线 `main@5264455`，待提交）
+> 按 Issue #276 只处理服务/API 原子换文件、连续知识任务、唯一生命周期主操作与 20 条分页、双端回归四个实体。新增知识一次填写名称、来源、目录和文件，自动建索引后只测试当前资料，再由运营明确启用；列表每条仅突出当前唯一下一步，修改信息、换文件、移动与删除收进更多操作。换文件保留知识 ID，事务替换素材元数据、正文分块和向量，旧启用状态必重置；缺失素材保持旧知识不变，解析失败安全停用。
+> `$km-review` 首轮发现全库旧命中可串入新增/换文件任务这一 P1，已在两个任务边界清空查询证据，并补两种先全库命中后的禁用断言；sequential-thinking 六步复核原子性、证据作用域、患者 enabled 门禁与旧功能变式后 P0–P2 清零，详见 `docs/reviews/028_admin-knowledge-lifecycle-review.md`。Node 22.23.1 下完整 `src` 门禁 430 项中 352 通过、78 项因未配置 PostgreSQL/S3 按约定跳过、0 失败；真实浏览器 E2E 贯通 25 条分页、创建、自动索引、隔离测试、显式启用、换文件上传失败同文件重试、移动、停用、删除和患者/内容旧闭环；清单、结构、差异格式和敏感信息扫描通过。尚待 PR CI、合并、生产预演与部署后验证。
+
 > ## 🚀 文章与视频表单内上传已合并并部署（2026-08-26 第214轮 · `main@7c19bcb`）
 > Issue #279 的首个有界子轮实现 PR #290 经 `quality`、`image` CI 全绿后 squash 合并为 `7c19bcb`，源提交与合并提交文件树一致。一级素材库入口已隐藏，文章正文图片/附件、文章封面、视频文件和视频封面改由业务表单直接上传；完整 `src` 门禁、真实浏览器 E2E、sequential-thinking 与 `km-review` 已验证失败重试、附件兼容、患者预览和旧闭环，P0–P2 为 0。
 > 候选 release 在 8788 使用正式库副本贯通管理命令和新资源后，生成备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-171400-before-inline-uploads-7c19bcb.sqlite`，原子切换到 `/srv/kangmin-cli/releases/inline-uploads-7c19bcb`。上线后应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，23 项迁移和数据计数 `22/11/21/136/136/51/15/26` 不变；公网首页、后台、`/live` 为 200，线上管理 JS/CSS 与本地合并构建逐字节一致，8788 与临时件已清理。`/ready=503` 仍只因既有加密密钥未配置；#279 保持开启，后续继续文件管理与引用闭环。部署记录见 `docs/changes/ops/010_admin-inline-uploads-deploy.md`。

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 
 // 测试进程以本地开发模式启动：组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为
 // PlaintextEncryption（keyVersion=plaintext-dev），并随子进程环境传播到 CLI 测试。
@@ -46,6 +47,43 @@ function auditRowsOf(
       entity_id: string;
       entity_revision: number | null;
     }>;
+  } finally {
+    database.close();
+  }
+}
+
+function registerReadyMedia(
+  databasePath: string,
+  mediaDirectory: string,
+  id: string,
+  filename: string,
+  body: Buffer
+): void {
+  const objectDirectory = join(mediaDirectory, id);
+  mkdirSync(objectDirectory, { recursive: true });
+  writeFileSync(join(objectDirectory, filename), body);
+  const timestamp = new Date().toISOString();
+  const extension = filename.toLowerCase().split(".").pop();
+  const kind = extension === "pdf" ? "pdf" : extension === "docx" ? "word" : "markdown";
+  const mime = extension === "pdf" ? "application/pdf" : "text/markdown";
+  const database = new KangminDatabase(databasePath);
+  try {
+    database.connection.prepare(`
+      INSERT INTO content_resource_media(
+        id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+        status, failure_reason, created_by, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'ready', NULL, NULL, ?, ?)
+    `).run(
+      id,
+      kind,
+      filename,
+      `${id}/${filename}`,
+      body.length,
+      mime,
+      createHash("sha256").update(body).digest("hex"),
+      timestamp,
+      timestamp
+    );
   } finally {
     database.close();
   }
@@ -221,6 +259,125 @@ test("知识资料支持更新和停用后删除", async () => {
     const shown = await app.execute({ command: "agent knowledge show", adminToken: token, input: { id: added.id } });
     assert.equal(shown.ok, false);
     if (!shown.ok) assert.equal(shown.error.code, "resource_not_found");
+  } finally {
+    app.close();
+  }
+});
+
+test("更新文件原子重置启用状态，单资料测试不进入患者全库", async () => {
+  const { app, databasePath, mediaDirectory, token } = await fixture();
+  try {
+    const originalFile = join(mediaDirectory, "原知识.md");
+    writeFileSync(originalFile, "# 旧内容\n\n旧版鼻塞护理说明。");
+    const added = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge add",
+      adminToken: token,
+      input: { file: originalFile, source: "保留来源" }
+    }));
+    await app.execute({ command: "agent knowledge index", adminToken: token, input: { id: added.id } });
+    await app.execute({ command: "agent knowledge enable", adminToken: token, input: { id: added.id, yes: true } });
+
+    const before = new KangminDatabase(databasePath);
+    const beforeCounts = before.connection.prepare(`
+      SELECT
+        (SELECT COUNT(*) FROM agent_knowledge_chunks WHERE knowledge_id = ?) AS chunks,
+        (SELECT COUNT(*) FROM agent_knowledge_embeddings WHERE knowledge_id = ?) AS embeddings
+    `).get(added.id, added.id) as { chunks: number; embeddings: number };
+    before.close();
+    assert.ok(beforeCounts.chunks > 0);
+    assert.equal(beforeCounts.embeddings, beforeCounts.chunks);
+
+    const missing = await app.execute({
+      command: "agent knowledge update-file",
+      adminToken: token,
+      input: { id: added.id, mediaId: "med_missing" }
+    });
+    assert.equal(missing.ok, false);
+    const unchanged = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge show", adminToken: token, input: { id: added.id }
+    }));
+    assert.equal(unchanged.status, "enabled");
+    assert.equal(unchanged.sourceMediaId, added.sourceMediaId);
+
+    const replacementBody = Buffer.from("# 新内容\n\n更新后的鼻塞护理资料，包含冷空气防护。", "utf8");
+    registerReadyMedia(databasePath, mediaDirectory, "med_replacement", "新版知识.md", replacementBody);
+    const replaced = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge update-file",
+      adminToken: token,
+      input: { id: added.id, mediaId: "med_replacement" },
+      requestId: "replace-knowledge-file"
+    }));
+    assert.equal(replaced.id, added.id);
+    assert.equal(replaced.name, added.name, "更新文件不覆盖运营填写的知识名称");
+    assert.equal(replaced.source, "保留来源");
+    assert.equal(replaced.sourceMediaId, "med_replacement");
+    assert.equal(replaced.status, "processing");
+
+    const after = new KangminDatabase(databasePath);
+    try {
+      const counts = after.connection.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM agent_knowledge_chunks WHERE knowledge_id = ?) AS chunks,
+          (SELECT COUNT(*) FROM agent_knowledge_embeddings WHERE knowledge_id = ?) AS embeddings
+      `).get(added.id, added.id) as { chunks: number; embeddings: number };
+      assert.ok(counts.chunks > 0);
+      assert.equal(counts.embeddings, 0, "替换内容后旧向量必须清空");
+      assert.equal(
+        (after.connection.prepare("SELECT chunk_text FROM agent_knowledge_chunks WHERE knowledge_id = ? LIMIT 1").get(added.id) as { chunk_text: string }).chunk_text.includes("更新后"),
+        true
+      );
+    } finally {
+      after.close();
+    }
+
+    const fullBeforeIndex = dataOf<{ items: unknown[] }>(await app.execute({
+      command: "agent knowledge search-test", adminToken: token, input: { query: "冷空气" }
+    }));
+    assert.equal(fullBeforeIndex.items.length, 0);
+    await app.execute({ command: "agent knowledge index", adminToken: token, input: { id: added.id } });
+    const scoped = dataOf<{ items: Array<{ knowledgeId: string; enabled: boolean }> }>(await app.execute({
+      command: "agent knowledge search-test",
+      adminToken: token,
+      input: { id: added.id, query: "冷空气" }
+    }));
+    assert.equal(scoped.items[0]?.knowledgeId, added.id);
+    assert.equal(scoped.items[0]?.enabled, false);
+    const fullWhileIndexed = dataOf<{ items: unknown[] }>(await app.execute({
+      command: "agent knowledge search-test", adminToken: token, input: { query: "冷空气" }
+    }));
+    assert.equal(fullWhileIndexed.items.length, 0, "单资料测试不得让未启用资料进入全库");
+    await app.execute({ command: "agent knowledge enable", adminToken: token, input: { id: added.id, yes: true } });
+    const fullAfterEnable = dataOf<{ items: Array<{ knowledgeId: string }> }>(await app.execute({
+      command: "agent knowledge search-test", adminToken: token, input: { query: "冷空气" }
+    }));
+    assert.equal(fullAfterEnable.items[0]?.knowledgeId, added.id);
+    assert.equal(auditRowsOf(databasePath, "agent.knowledge.update-file").length, 1);
+  } finally {
+    app.close();
+  }
+});
+
+test("更新为不可解析文件时保持同一记录并安全停用", async () => {
+  const { app, databasePath, mediaDirectory, token } = await fixture();
+  try {
+    const originalFile = join(mediaDirectory, "可用知识.md");
+    writeFileSync(originalFile, "# 可用内容\n\n鼻敏感日常护理。");
+    const added = dataOf<KnowledgeItem>(await app.execute({ command: "agent knowledge add", adminToken: token, input: { file: originalFile } }));
+    await app.execute({ command: "agent knowledge index", adminToken: token, input: { id: added.id } });
+    await app.execute({ command: "agent knowledge enable", adminToken: token, input: { id: added.id, yes: true } });
+    registerReadyMedia(databasePath, mediaDirectory, "med_bad_pdf", "替换资料.pdf", Buffer.from("%PDF fake"));
+    const replaced = dataOf<KnowledgeItem>(await app.execute({
+      command: "agent knowledge update-file",
+      adminToken: token,
+      input: { id: added.id, mediaId: "med_bad_pdf" }
+    }));
+    assert.equal(replaced.id, added.id);
+    assert.equal(replaced.status, "index_failed");
+    assert.ok(replaced.parseError);
+    const full = dataOf<{ items: unknown[] }>(await app.execute({
+      command: "agent knowledge search-test", adminToken: token, input: { query: "鼻敏感" }
+    }));
+    assert.equal(full.items.length, 0);
   } finally {
     app.close();
   }

@@ -27,6 +27,12 @@ export class SqliteKnowledgeRetrieval implements KnowledgeRetrievalPort {
     private readonly embeddings: KnowledgeEmbeddingPort
   ) {}
   async searchEnabled(query: string, limit: number): Promise<KnowledgeSource[]> {
+    return this.search(query, limit);
+  }
+  async searchOne(query: string, knowledgeId: string, limit: number): Promise<KnowledgeSource[]> {
+    return this.search(query, limit, knowledgeId);
+  }
+  private async search(query: string, limit: number, knowledgeId?: string): Promise<KnowledgeSource[]> {
     const rows = this.database.connection.prepare(`
       SELECT items.id AS knowledge_id, items.name, items.category, items.source,
              chunks.chunk_index, chunks.chunk_text,
@@ -37,14 +43,16 @@ export class SqliteKnowledgeRetrieval implements KnowledgeRetrievalPort {
         ON vectors.knowledge_id = chunks.knowledge_id
        AND vectors.chunk_index = chunks.chunk_index
        AND vectors.model_name = ?
-      WHERE items.status = 'enabled'
+      WHERE ${knowledgeId === undefined ? "items.status = 'enabled'" : "items.id = ?"}
       ORDER BY items.id ASC, chunks.chunk_index ASC
-    `).all(this.embeddings.modelName) as unknown as SemanticRow[];
+    `).all(...(knowledgeId === undefined ? [this.embeddings.modelName] : [this.embeddings.modelName, knowledgeId])) as unknown as SemanticRow[];
     if (rows.length === 0) return [];
     if (rows.some((row) => row.embedding === null || row.dimensions === null)) {
       throw new DomainError(
         "capability_unavailable",
-        "已启用知识的语义索引尚未完成，请先重新建立索引"
+        knowledgeId === undefined
+          ? "已启用知识的语义索引尚未完成，请先重新建立索引"
+          : "当前资料的语义索引尚未完成，请先建立索引"
       );
     }
     const [queryVector] = await this.embeddings.embed([query]);
@@ -55,7 +63,10 @@ export class SqliteKnowledgeRetrieval implements KnowledgeRetrievalPort {
     const dimensions = normalizedEmbeddingDimensions(queryBytes);
     const scored = rows.map((row): KnowledgeSource => {
       if (row.embedding === null || row.dimensions === null || row.dimensions !== dimensions) {
-        throw new DomainError("capability_unavailable", "已启用知识的语义索引维度不一致");
+        throw new DomainError(
+          "capability_unavailable",
+          knowledgeId === undefined ? "已启用知识的语义索引维度不一致" : "当前资料的语义索引维度不一致"
+        );
       }
       return {
         knowledgeId: row.knowledge_id,

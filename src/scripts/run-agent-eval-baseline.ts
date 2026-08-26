@@ -55,6 +55,12 @@ class RecordingRetrieval implements KnowledgeRetrievalPort {
     this.calls.push(sources);
     return sources;
   }
+
+  async searchOne(query: string, knowledgeId: string, limit: number): Promise<KnowledgeSource[]> {
+    return this.delegate.searchOne === undefined
+      ? []
+      : this.delegate.searchOne(query, knowledgeId, limit);
+  }
 }
 
 class RecordingPlanDialogue implements PlanDialoguePort {

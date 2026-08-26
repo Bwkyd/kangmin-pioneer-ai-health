@@ -43,7 +43,7 @@ export interface KnowledgeHit {
   source: string | null;
   category: string | null;
   score: number;
-  enabled: true;
+  enabled: boolean;
 }
 
 export interface AgentPlan {

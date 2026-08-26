@@ -18,6 +18,8 @@ export interface KnowledgeSource {
 
 export interface KnowledgeRetrievalPort {
   searchEnabled(query: string, limit: number): Promise<KnowledgeSource[]>;
+  /** 运营预检专用：只检索指定资料，不改变或绕过患者全库的 enabled 门禁。 */
+  searchOne?(query: string, knowledgeId: string, limit: number): Promise<KnowledgeSource[]>;
 }
 
 export interface KnowledgeAnswerPort {

@@ -7,6 +7,7 @@ import type {
   AgentAdminRepository,
   ChunkInput,
   IdempotentCreateResult,
+  KnowledgeFileReplaceResult,
   KnowledgeGuardedUpdateResult,
   KnowledgeFolderRow,
   KnowledgeFolderWriteResult,
@@ -437,6 +438,64 @@ export class SqliteAgentAdminRepository implements AgentAdminRepository {
       WHERE id = ?
     `).run(input.name, input.source, input.description, input.updatedAt, id);
     return result.changes === 1 ? "updated" : "not_found";
+  }
+
+  async replaceKnowledgeFromMedia(
+    id: string,
+    input: {
+      mediaId: string;
+      sizeBytes: number;
+      mimeType: string | null;
+      sha256: string | null;
+      status: "processing" | "index_failed";
+      parseError: string | null;
+      chunks: ChunkInput[];
+      expectedUpdatedAt: string;
+      updatedAt: string;
+    }
+  ): Promise<KnowledgeFileReplaceResult> {
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT updated_at FROM agent_knowledge_items WHERE id = ?"
+      ).get(id) as { updated_at: string } | undefined;
+      if (current === undefined) return { kind: "not_found" as const };
+      if (current.updated_at !== input.expectedUpdatedAt) return { kind: "version_conflict" as const };
+      const media = this.database.connection.prepare(
+        "SELECT status FROM content_resource_media WHERE id = ?"
+      ).get(input.mediaId) as { status: string } | undefined;
+      if (media?.status !== "ready") return { kind: "media_not_ready" as const };
+      const updated = this.database.connection.prepare(`
+        UPDATE agent_knowledge_items
+        SET source_media_id = ?, size_bytes = ?, mime_type = ?, sha256 = ?,
+            status = ?, parse_error = ?, chunk_count = ?, updated_at = ?
+        WHERE id = ? AND updated_at = ?
+      `).run(
+        input.mediaId,
+        input.sizeBytes,
+        input.mimeType,
+        input.sha256,
+        input.status,
+        input.parseError,
+        input.chunks.length,
+        input.updatedAt,
+        id,
+        input.expectedUpdatedAt
+      );
+      if (updated.changes !== 1) return { kind: "version_conflict" as const };
+      this.database.connection.prepare(
+        "DELETE FROM agent_knowledge_embeddings WHERE knowledge_id = ?"
+      ).run(id);
+      this.database.connection.prepare(
+        "DELETE FROM agent_knowledge_chunks WHERE knowledge_id = ?"
+      ).run(id);
+      const insert = this.database.connection.prepare(
+        "INSERT INTO agent_knowledge_chunks(knowledge_id, chunk_index, chunk_text) VALUES (?, ?, ?)"
+      );
+      for (const chunk of input.chunks) insert.run(id, chunk.index, chunk.text);
+      const knowledge = this.findKnowledgeSync(id);
+      if (knowledge === undefined) return { kind: "not_found" as const };
+      return { kind: "updated" as const, knowledge: toKnowledge(knowledge) };
+    });
   }
 
   async deleteKnowledge(id: string): Promise<"deleted" | "not_found"> {
