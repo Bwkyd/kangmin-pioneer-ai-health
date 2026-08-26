@@ -1135,8 +1135,21 @@ try {
   await adminPage.locator("tbody tr", { hasText: "抗敏要穴之迎香穴" }).getByRole("button", { name: "下架" }).click();
 
   await adminPage.getByTestId("admin-nav-knowledge").click();
-  await adminPage.getByText("只有已建立索引并启用的资料才参与智能体检索。", { exact: true }).waitFor({ state: "visible" });
-  assert.equal(await adminPage.getByRole("heading", { name: "智能体知识库" }).count(), 1, "知识库标题只应在页头出现一次");
+  await adminPage.getByText("素材库保存原始文件；只有登记到 AI 知识库、建立索引并启用的资料才参与 AI 问答。", { exact: true }).waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByRole("heading", { name: "AI知识库" }).count(), 1, "AI 知识库标题只应在页头出现一次");
+  await adminPage.getByText("抗敏先锋 / AI知识库", { exact: true }).waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByText("智能体知识库", { exact: true }).count(), 0, "运营界面不应残留旧知识库名称");
+  const knowledgeNavigation = adminPage.getByTestId("admin-nav-knowledge");
+  const knowledgeNavigationGeometry = await knowledgeNavigation.evaluate((element) => ({
+    clientWidth: element.clientWidth,
+    scrollWidth: element.scrollWidth,
+    height: element.getBoundingClientRect().height,
+    iconVisible: element.querySelector("i")?.getBoundingClientRect().width !== 0
+  }));
+  assert.ok(knowledgeNavigationGeometry.scrollWidth <= knowledgeNavigationGeometry.clientWidth, "390px 下 AI 知识库导航文字不应被截断或换行挤压");
+  assert.ok(knowledgeNavigationGeometry.height <= 50, "390px 下 AI 知识库导航不应换行增高");
+  assert.equal(knowledgeNavigationGeometry.iconVisible, true, "390px 下 AI 知识库图标应保持可见");
+  assert.match(await adminPage.getByTestId("admin-nav-media").innerText(), /素材库/u, "素材库名称和独立入口应保留");
   assert.equal(await adminPage.getByRole("columnheader", { name: "分块" }).count(), 0, "技术分块数不应占用日常运营列表");
   assert.equal(await adminPage.getByRole("dialog", { name: "上传知识" }).count(), 0, "上传表单默认应收起");
   const browserScreenshotDirectory = process.env.KANGMIN_E2E_SCREENSHOT_DIR?.trim();

@@ -2,7 +2,7 @@
 
 <meta>
   <document-id>km-real</document-id>
-  <version>1.1.19</version>
+  <version>1.1.20</version>
   <project>kangmin · 抗敏先锋 AI 鼻健康管理系统</project>
   <type>Reality Constraints</type>
   <created>2026-08-13</created>
@@ -31,7 +31,7 @@
   患者/管理 CLI 和 HTTP 接口是试用与实现入口，不改变最终交付边界。
 - 谁在等这个东西：客户方是一名参加学校创业项目的大学生及其导师；当前由二人确认
   功能方向和智能体体验。最终使用者是过敏性鼻炎患者和维护文章、应用内内容推送、视频
-  及智能体知识库的运营人员。
+  及 AI 知识库的运营人员。
 - 范围与价格：功能范围、所属端、价格和工期只由
   `vault/truth/抗敏先锋AI小程序报价表.md` 裁决；这是总价 2,800 元的小程序创业验证项目，
   当前验收以客户及其导师认可功能、方向和智能体效果为准，不按医疗级产品扩大流程；未列

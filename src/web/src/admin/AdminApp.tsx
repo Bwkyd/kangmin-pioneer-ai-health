@@ -107,7 +107,7 @@ const navigation: Array<{ key: Section; label: string; icon: string }> = [
   { key: "article", label: "科普文章", icon: "文" },
   { key: "video", label: "视频内容", icon: "播" },
   { key: "message", label: "站内消息", icon: "信" },
-  { key: "knowledge", label: "智能体知识库", icon: "知" },
+  { key: "knowledge", label: "AI知识库", icon: "知" },
   { key: "media", label: "素材库", icon: "图" }
 ];
 
@@ -236,7 +236,7 @@ function Login({ onSuccess }: { onSuccess: (session: AdminSession) => void }) {
     catch (reason) { setError(messageOf(reason)); }
     finally { setBusy(false); }
   }
-  return <main className="admin-login"><section><div className="login-mark">抗</div><small>抗敏先锋 · 鼻健康内容中心</small><h1>管理后台</h1><p>登录后管理客户可见的文章、视频和智能体知识资料。</p><form onSubmit={(event) => void submit(event)}><label>管理员账号<input data-testid="admin-username" autoComplete="username" required value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>密码<input data-testid="admin-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error !== "" && <div className="form-error" role="alert">{error}</div>}<button data-testid="admin-login" disabled={busy}>{busy ? "正在登录…" : "登录"}</button></form><footer>管理操作会记录审计；医疗内容发布前请完成专业审核。</footer></section></main>;
+  return <main className="admin-login"><section><div className="login-mark">抗</div><small>抗敏先锋 · 鼻健康内容中心</small><h1>管理后台</h1><p>登录后管理客户可见的文章、视频和 AI 知识资料。</p><form onSubmit={(event) => void submit(event)}><label>管理员账号<input data-testid="admin-username" autoComplete="username" required value={username} onChange={(event) => setUsername(event.target.value)} /></label><label>密码<input data-testid="admin-password" type="password" autoComplete="current-password" required value={password} onChange={(event) => setPassword(event.target.value)} /></label>{error !== "" && <div className="form-error" role="alert">{error}</div>}<button data-testid="admin-login" disabled={busy}>{busy ? "正在登录…" : "登录"}</button></form><footer>管理操作会记录审计；医疗内容发布前请完成专业审核。</footer></section></main>;
 }
 
 function Overview({ articles, videos, messages, knowledge, media, onNavigate }: { articles: ContentItem[]; videos: ContentItem[]; messages: MessageItem[]; knowledge: KnowledgeItem[]; media: MediaItem[]; onNavigate: (section: Section, focus?: SectionFocus) => void }) {
@@ -273,7 +273,7 @@ function Overview({ articles, videos, messages, knowledge, media, onNavigate }: 
   const deliveryCards: Array<{ section: Section; icon: string; title: string; detail: string; count: string }> = [
     { section: "article", icon: "文", title: "文章与推送", detail: "编辑、预览、上架；需要通知时进入站内消息。", count: `${articles.length} 条文章` },
     { section: "video", icon: "播", title: "视频内容", detail: "先上传素材，再编辑说明、预览和上架。", count: `${videos.length} 条视频` },
-    { section: "knowledge", icon: "知", title: "智能体知识库", detail: "资料只有建立索引并启用后才参与检索。", count: `${knowledge.filter((item) => item.status === "enabled").length} 条已启用` }
+    { section: "knowledge", icon: "知", title: "AI知识库", detail: "资料只有建立索引并启用后才参与 AI 问答。", count: `${knowledge.filter((item) => item.status === "enabled").length} 条已启用` }
   ];
   return <div className="admin-overview">
     <section className="welcome-card">
@@ -282,10 +282,10 @@ function Overview({ articles, videos, messages, knowledge, media, onNavigate }: 
     </section>
     <section className="stat-grid"><Stat icon="待" label="待处理任务" value={attentionTotal} tone={attentionTotal > 0 ? "amber" : "green"}/><Stat icon="发" label="已发布内容" value={published} tone="green"/><Stat icon="信" label="已发布消息" value={messages.filter((item) => item.status === "published").length} tone="green"/><Stat icon="知" label="启用知识" value={knowledge.filter((item) => item.status === "enabled").length} tone="blue"/><Stat icon="材" label="可用素材" value={media.filter((item) => item.status === "ready").length} tone="blue"/></section>
     <section className="workbench-grid">
-      <article className="queue-card"><div className="card-heading"><div><h2>今天先处理</h2><p>只显示需要操作者继续动作的状态。</p></div><span className={`queue-count ${attentionTotal > 0 ? "attention" : "clear"}`}>{attentionTotal}</span></div>{activeTasks.length === 0 ? <div className="queue-empty"><strong>当前没有待处理任务</strong><span>文章、视频和知识库都处于可继续工作的状态。</span></div> : <div className="task-list">{activeTasks.map((task) => <button className="task-row" key={task.section} onClick={() => onNavigate(task.section, task.focus)}><span className={`task-mark ${task.tone}`}>{task.icon}</span><span className="task-copy"><strong>{task.title}<em>{task.count}</em></strong><small>{task.detail}</small></span><span className="task-action">{task.action} →</span></button>)}</div>}</article>
-      <article className="delivery-card"><div className="card-heading"><div><h2>从内容开始</h2><p>文章、视频和知识库，从这里进入处理。</p></div><span className="sync-badge"><i></i> 服务端同步</span></div><div className="delivery-links">{deliveryCards.map((card) => <button className="delivery-link" key={card.section} onClick={() => onNavigate(card.section)}><span className="task-mark blue">{card.icon}</span><span><strong>{card.title}</strong><small>{card.detail}</small><em>{card.count} · 进入处理 →</em></span></button>)}</div></article>
+      <article className="queue-card"><div className="card-heading"><div><h2>今天先处理</h2><p>只显示需要操作者继续动作的状态。</p></div><span className={`queue-count ${attentionTotal > 0 ? "attention" : "clear"}`}>{attentionTotal}</span></div>{activeTasks.length === 0 ? <div className="queue-empty"><strong>当前没有待处理任务</strong><span>文章、视频和 AI 知识库都处于可继续工作的状态。</span></div> : <div className="task-list">{activeTasks.map((task) => <button className="task-row" key={task.section} onClick={() => onNavigate(task.section, task.focus)}><span className={`task-mark ${task.tone}`}>{task.icon}</span><span className="task-copy"><strong>{task.title}<em>{task.count}</em></strong><small>{task.detail}</small></span><span className="task-action">{task.action} →</span></button>)}</div>}</article>
+      <article className="delivery-card"><div className="card-heading"><div><h2>从内容开始</h2><p>文章、视频和 AI 知识库，从这里进入处理。</p></div><span className="sync-badge"><i></i> 服务端同步</span></div><div className="delivery-links">{deliveryCards.map((card) => <button className="delivery-link" key={card.section} onClick={() => onNavigate(card.section)}><span className="task-mark blue">{card.icon}</span><span><strong>{card.title}</strong><small>{card.detail}</small><em>{card.count} · 进入处理 →</em></span></button>)}</div></article>
     </section>
-    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 边界清晰</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与预览</strong><p>文章、视频和站内消息在后台完成内容准备；素材与知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，站内消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>知识资料建立索引并启用后，才会参与智能体检索；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
+    <section className="recent-card"><div className="card-heading"><div><h2>内容如何到达小程序</h2><p>从后台操作到用户端展示，状态和边界保持清晰。</p></div><span className="sync-badge"><i></i> 边界清晰</span></div><div className="workflow-list"><div className="workflow-item"><span>01</span><div><strong>编辑与预览</strong><p>文章、视频和站内消息在后台完成内容准备；素材与 AI 知识资料单独维护。</p></div><em>后台完成</em></div><div className="workflow-item"><span>02</span><div><strong>发布与同步</strong><p>发布后的文章和视频进入小程序科普内容，站内消息进入登录用户的消息中心。</p></div><em>状态同步</em></div><div className="workflow-item"><span>03</span><div><strong>知识参与问答</strong><p>AI 知识资料建立索引并启用后，才会参与 AI 问答；停用后不再命中。</p></div><em>受控生效</em></div></div></section>
   </div>;
 }
 
@@ -929,7 +929,7 @@ function MediaManager({ items, busy, run }: { items: MediaItem[]; busy: boolean;
           <button className="primary" disabled={busy || file === null}>上传素材</button>
         </form>
       </div>
-      {items.length === 0 ? <Empty icon="图" title="还没有素材" text="上传后可在文章、视频或知识库中引用。" /> : (
+      {items.length === 0 ? <Empty icon="图" title="还没有素材" text="上传后可在文章、视频或 AI 知识库中引用。" /> : (
         <div className="media-grid">
           {items.map((item) => (
             <article key={item.id}>
@@ -1033,7 +1033,7 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
     setUploadFolderId("");
   }
   async function action(item: KnowledgeItem, command: "index" | "enable" | "disable") {
-    if (command === "disable" && !window.confirm(`停用“${item.name}”后，它将不再参与智能体检索。确认停用？`)) return;
+    if (command === "disable" && !window.confirm(`停用“${item.name}”后，它将不再参与 AI 问答。确认停用？`)) return;
     const succeeded = await run(() => adminCommand(`agent knowledge ${command}`, { id: item.id, yes: true }).then(() => undefined), command === "index" ? "索引已建立" : command === "enable" ? "知识已启用" : "知识已停用");
     if (succeeded) setStatusFilter("all");
   }
@@ -1115,7 +1115,7 @@ function KnowledgeFolderManager({ items, folders, busy, run, initialStatusFilter
   return (
     <section className="manager-card knowledge-manager">
       <div className="knowledge-primary-actions">
-        <p>只有已建立索引并启用的资料才参与智能体检索。</p>
+        <p>素材库保存原始文件；只有登记到 AI 知识库、建立索引并启用的资料才参与 AI 问答。</p>
         <button className="primary" disabled={busy} onClick={() => setUploadOpen(true)}>上传知识</button>
       </div>
       {uploadOpen && (
