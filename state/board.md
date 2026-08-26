@@ -3,6 +3,9 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 小程序本机体验任务结束前归档（2026-08-26 第198轮 · 基线 `main@0c7167d`，待提交）
+> 结束前重新 fetch 并核验：`main` 与 `origin/main` 同为 `0c7167d`，本任务实现/状态分支均已清除，GitHub 无开放 Issue；仅有两个既有 Dependabot PR。CNB 无本项目可见仓库，没有可清理分支；既有 `feat/admin-console` worktree 属于另一任务，未越权删除。补建 `docs/changes/ops/004_miniprogram-local-experience-upload.md`，归档 `0.1.11` 的实现、测试、两轮 CI、隔离预览、上传和交付边界；相关长期记忆补充“同步临时项目必须排除项目身份配置并回读 AppID”，避免仓库空配置再次覆盖体验身份。作者原件 `hi.md` 继续保持未跟踪、未修改。
+
 > ## 🚀 本机健康记录体验版已合并并上传（2026-08-26 第197轮 · `main@e1e7d80`）
 > 实现 PR #265 的 `quality`（3 分 06 秒）与 `image`（38 秒）均成功，squash 合并为 `e1e7d80`。合并后的 `main` 重新同步到唯一临时项目 `/tmp/kangmin-miniprogram-avatar.EnY69S`，仅在该临时项目保留作者确认的 AppID；微信 CLI 已上传开发版 `0.1.11`（“客户体验版：开放本机记录并精简问助手”），包体 `823,467` 字节。开发版可在微信公众平台设为体验版供已授权成员扫码；它不等于审核、正式发布或客户验收。
 > 本轮只发布小程序，没有服务端产物变化，故未创建或切换 Web release。发布后公网首页、`/admin`、`/live` 实测为 200，`/ready` 仍为既有 503。实现分支已从本地和 GitHub 远端清除；仓库仍只有 GitHub `origin`，CNB CLI 查询不到本项目仓库，因此没有 CNB 任务分支可清理。作者原件 `hi.md` 未跟踪、未修改；另一个既有 `feat/admin-console` worktree/分支不属于本任务，未触碰。

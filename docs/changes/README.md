@@ -23,8 +23,9 @@
 | [001](ops/001_native-miniprogram-cli-upload.md) | 2026-08-18 | 原生小程序 CLI 上传验证与关闭服务端口 |
 | [002](ops/002_miniprogram-home-parity-upload.md) | 2026-08-24 | 小程序同构首页开发版上传与服务复核 |
 | [003](ops/003_miniprogram-assistant-upload.md) | 2026-08-24 | 小程序问助手开发版上传与交付收尾 |
+| [004](ops/004_miniprogram-local-experience-upload.md) | 2026-08-26 | 小程序本机健康记录体验版上传与收口 |
 
-下一份生产操作编号从 `004` 开始。
+下一份生产操作编号从 `005` 开始。
 
 ## 故障复盘
 
