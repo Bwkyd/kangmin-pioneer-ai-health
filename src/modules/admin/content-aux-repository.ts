@@ -51,9 +51,20 @@ export interface ContentMessageRow {
 }
 
 export interface MediaReferenceCounts {
+  contentResources: number;
+  knowledgeItems: number;
   publishedResources: number;
   enabledKnowledge: number;
   enabledPlans: number;
+}
+
+export interface MediaReferenceRow {
+  mediaId: string;
+  entityType: "article" | "video" | "knowledge";
+  entityId: string;
+  name: string;
+  status: string;
+  role: "file" | "cover" | "body" | "knowledge_source";
 }
 
 export type UpdateMessageResult =
@@ -137,6 +148,8 @@ export interface ContentAuxRepository {
   ): Promise<IdempotentCreateResult<ContentMediaRow>>;
   findMedia(id: string): Promise<ContentMediaRow | null>;
   listMedia(): Promise<ContentMediaRow[]>;
+  /** 一次查询返回全部文件的业务引用，供文件管理页展示，避免逐文件查询。 */
+  listMediaReferences(): Promise<MediaReferenceRow[]>;
   /**
    * 引用检查与停用写入同一事务（BEGIN IMMEDIATE）：
    * guard 在事务内用同一连接读取引用计数，返回缺失项；缺省为空即更新。
@@ -150,13 +163,13 @@ export interface ContentAuxRepository {
   ): Promise<GuardedMediaUpdateResult>;
   /**
    * 引用检查与删除同一事务（BEGIN IMMEDIATE）：删除前检查 +
-   * 清草稿引用 + 置 deleted 一次提交；guard 语义同 disableMediaGuarded。
+   * 删除写入一次提交；guard 语义同 disableMediaGuarded。
    */
   deleteMediaGuarded(
     id: string,
     guard: (counts: MediaReferenceCounts) => string[]
   ): Promise<GuardedMediaDeleteResult>;
-  /** 被已发布内容（含正文附件）/ 已启用知识 / 已启用方案引用的素材不可停用或删除。 */
+  /** 返回全部状态及生效状态的引用计数；调用方按动作选择保护边界。 */
   countMediaReferences(mediaId: string): Promise<MediaReferenceCounts>;
 
   // ---- 远程上传会话（预签名直传） ----

@@ -1150,6 +1150,14 @@ try {
       const timestamp = new Date(Date.UTC(2026, 7, 26, 8, 0, index)).toISOString();
       insertKnowledgeFiller.run(`kno_browser_page_${index}`, `分页知识${String(index).padStart(2, "0")}`, timestamp, timestamp);
     }
+    browserDatabase.connection.prepare(`
+      INSERT INTO content_resource_media(
+        id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+        status, failure_reason, created_by, created_at, updated_at
+      ) VALUES ('med_ffffffffffff', 'pdf', '待清理未使用文件.pdf',
+                'e2e/orphan.pdf', 128, 'application/pdf', NULL,
+                'ready', NULL, NULL, ?, ?)
+    `).run(new Date().toISOString(), new Date().toISOString());
   } finally {
     browserDatabase.close();
   }
@@ -1366,15 +1374,48 @@ try {
   await adminPage.getByPlaceholder("输入客户可能询问的问题").fill("冷空气季节");
   await adminPage.getByRole("button", { name: "复核已启用资料" }).click();
   await expectText(adminPage.locator(".knowledge-search-test .search-results"), "冷空气季节");
+  // 文件管理是文章、视频、AI 知识任务的二级入口，不出现在一级侧栏。
+  await adminPage.getByRole("button", { name: "文件管理" }).click();
+  await adminPage.getByRole("heading", { name: "文件管理", level: 2 }).waitFor({ state: "visible" });
+  assert.equal(await adminPage.getByTestId("admin-nav-media").count(), 0, "文件管理不应回到一级导航");
+  for (const group of ["图片", "视频", "知识文件与附件"]) {
+    await adminPage.getByRole("button", { name: group, exact: true }).waitFor({ state: "visible" });
+  }
+  const articleCoverFile = adminPage.locator(".media-grid article", { hasText: "article-cover.png" });
+  await expectText(articleCoverFile, "文章：后台发布闭环测试文章");
+  await expectText(articleCoverFile, "封面 · 已下架");
+  assert.equal(await articleCoverFile.getByRole("button", { name: "使用中，不能删除" }).isDisabled(), true);
+  const articleBodyFile = adminPage.locator(".media-grid article", { hasText: "nose-care.png" });
+  await expectText(articleBodyFile, "正文附件 · 已下架");
+  const videoFile = adminPage.locator(".media-grid article", { hasText: "nasal-care.mp4" });
+  await expectText(videoFile, "视频：抗敏要穴之迎香穴");
+  await expectText(videoFile, "内容文件 · 已下架");
+  const knowledgeFile = adminPage.locator(".media-grid article", { hasText: "browser-guide-updated.md" });
+  await expectText(knowledgeFile, "AI 知识：鼻健康清洁指南·已复核");
+  await expectText(knowledgeFile, "知识源文件 · 已启用");
+  const orphanFile = adminPage.locator(".media-grid article", { hasText: "待清理未使用文件.pdf" });
+  await expectText(orphanFile, "未被业务使用");
+  adminPage.once("dialog", (dialog) => void dialog.accept());
+  await orphanFile.getByRole("button", { name: "删除文件" }).click();
+  await expectText(adminPage.getByRole("status"), "未使用文件已删除");
+  assert.equal(await orphanFile.count(), 0, "删除后未使用文件应离开列表");
+  if (browserScreenshotDirectory) {
+    await adminPage.screenshot({ path: join(browserScreenshotDirectory, "file-management-mobile.png"), fullPage: true });
+    await adminPage.setViewportSize({ width: 1440, height: 1000 });
+    await adminPage.screenshot({ path: join(browserScreenshotDirectory, "file-management-desktop.png"), fullPage: true });
+    await adminPage.setViewportSize({ width: 390, height: 844 });
+  }
+  await adminPage.getByTestId("admin-nav-knowledge").click();
+  const updatedKnowledgeRowAfterFiles = adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南·已复核" });
   adminPage.once("dialog", (dialog) => void dialog.dismiss());
-  await updatedKnowledgeRow.getByRole("button", { name: "停用" }).click();
-  await expectText(updatedKnowledgeRow, "已启用");
+  await updatedKnowledgeRowAfterFiles.getByRole("button", { name: "停用" }).click();
+  await expectText(updatedKnowledgeRowAfterFiles, "已启用");
   adminPage.once("dialog", (dialog) => void dialog.accept());
-  await updatedKnowledgeRow.getByRole("button", { name: "停用" }).click();
+  await updatedKnowledgeRowAfterFiles.getByRole("button", { name: "停用" }).click();
   await expectText(adminPage.getByRole("status"), "知识已停用");
-  await expectText(updatedKnowledgeRow, "已停用");
+  await expectText(updatedKnowledgeRowAfterFiles, "已停用");
   adminPage.once("dialog", (dialog) => void dialog.accept());
-  await clickKnowledgeMoreAction(updatedKnowledgeRow, "删除");
+  await clickKnowledgeMoreAction(updatedKnowledgeRowAfterFiles, "删除");
   await expectText(adminPage.getByRole("status"), "知识资料已删除");
   assert.equal(await adminPage.locator("tbody tr", { hasText: "鼻健康清洁指南" }).count(), 0);
   await adminPage.locator(".knowledge-folders nav").getByRole("button", { name: /换季护理/u }).click();
@@ -1397,7 +1438,7 @@ try {
   await adminPage.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
   await adminPage.close();
   process.stdout.write(
-    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication calendar-trend reload restart discover overview-stats chat-exec plan-dialogue-follow-up admin-cookie article-edit-publish-unpublish message-edit-publish-read-unpublish video-upload-edit-publish-unpublish knowledge-folder-create-rename-reparent-depth-direct-view-move-upload-update-index-search-disable-delete\n"
+    "web-browser-e2e: PASS fresh-consent isolation save reflect-update health-profile exposure medication calendar-trend reload restart discover overview-stats chat-exec plan-dialogue-follow-up admin-cookie article-edit-publish-unpublish message-edit-publish-read-unpublish video-upload-edit-publish-unpublish knowledge-folder-create-rename-reparent-depth-direct-view-move-upload-update-index-search-disable-delete file-management-reference-guard-delete\n"
   );
 } finally {
   if (isolatedContext !== undefined) {

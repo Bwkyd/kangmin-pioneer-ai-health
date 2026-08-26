@@ -373,7 +373,18 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
     assert.equal(deleteRef.ok, false);
     if (!deleteRef.ok) assert.equal(deleteRef.error.code, "validation_failed");
 
-    // 下架后可以停用与删除
+    const listed = dataOf<{ items: Array<ContentMediaRow & { references: Array<{ entityType: string; name: string; status: string; role: string }> }> }>(
+      await app.execute({ command: "content media list", adminToken: token })
+    );
+    assert.deepEqual(listed.items[0]?.references, [{
+      entityType: "video",
+      entityId: video.id,
+      name: "鼻腔护理基础视频",
+      status: "published",
+      role: "file"
+    }]);
+
+    // 下架后可以停用，但仍被下架视频引用时不能删除。
     dataOf(
       await app.execute({
         command: "content video unpublish",
@@ -386,6 +397,24 @@ test("视频发布需要可用素材；素材引用保护与删除", async () =>
         command: "content media disable",
         adminToken: token,
         input: { id: media.id, yes: true }
+      })
+    );
+    const deleteUnpublishedRef = await app.execute({
+      command: "content media delete",
+      adminToken: token,
+      input: { id: media.id, yes: true }
+    });
+    assert.equal(deleteUnpublishedRef.ok, false);
+    if (!deleteUnpublishedRef.ok) {
+      assert.equal(deleteUnpublishedRef.error.code, "validation_failed");
+      assert.match(deleteUnpublishedRef.error.message, /仍被文章、视频或 AI 知识使用/u);
+    }
+    // 先回到视频任务显式移除引用，再允许删除文件。
+    dataOf(
+      await app.execute({
+        command: "content video update",
+        adminToken: token,
+        input: { id: video.id, expectedRevision: 4, mediaId: null }
       })
     );
     const deleted = dataOf<{ deleted: boolean }>(

@@ -560,12 +560,18 @@ if (databaseUrl === undefined) {
     assert.deepEqual(stale, { kind: "stale_replay" });
   });
 
-  test("aux.countMediaReferences：只统计已发布内容与已启用知识", async () => {
+  test("aux.countMediaReferences/listMediaReferences：同时返回全状态计数与引用去向", async () => {
     await auxRepo.createMedia(makeMedia("m-r1"));
     // 已发布内容引用（计入）。
     await insertBrowseItem({ id: "pub-1", mediaId: "m-r1" });
     // 草稿内容引用（不计入）。
     await insertBrowseItem({ id: "draft-1", status: "draft", mediaId: "m-r1" });
+    // 封面与正文附件引用也必须进入同一权威读模型与删除保护。
+    await insertBrowseItem({ id: "cover-1", coverMediaId: "m-r1" });
+    await insertBrowseItem({ id: "body-1" });
+    await db.query(
+      "UPDATE content_items SET body = '/v1/media/m-r1' WHERE id = 'body-1'"
+    );
     // 已启用知识引用（计入）。
     await db.query(
       `INSERT INTO agent_knowledge_items(
@@ -582,11 +588,21 @@ if (databaseUrl === undefined) {
     );
 
     assert.deepEqual(await auxRepo.countMediaReferences("m-r1"), {
-      publishedResources: 1,
+      contentResources: 4,
+      knowledgeItems: 2,
+      publishedResources: 3,
       enabledKnowledge: 1,
       // 方案引用视频内容（content_items），不直接引用素材。
       enabledPlans: 0
     });
+    assert.deepEqual(await auxRepo.listMediaReferences(), [
+      { mediaId: "m-r1", entityType: "article", entityId: "body-1", name: "公开文章", status: "published", role: "body" },
+      { mediaId: "m-r1", entityType: "article", entityId: "cover-1", name: "公开文章", status: "published", role: "cover" },
+      { mediaId: "m-r1", entityType: "article", entityId: "draft-1", name: "公开文章", status: "draft", role: "file" },
+      { mediaId: "m-r1", entityType: "article", entityId: "pub-1", name: "公开文章", status: "published", role: "file" },
+      { mediaId: "m-r1", entityType: "knowledge", entityId: "k-1", name: "知识1", status: "enabled", role: "knowledge_source" },
+      { mediaId: "m-r1", entityType: "knowledge", entityId: "k-2", name: "知识2", status: "disabled", role: "knowledge_source" }
+    ]);
   });
 
   test("aux.disableMediaGuarded：not_found / validation_failed / updated 清失败原因", async () => {
@@ -625,9 +641,9 @@ if (databaseUrl === undefined) {
     assert.equal(after?.failureReason, null);
   });
 
-  test("aux.deleteMediaGuarded：清草稿/知识引用后删除，已发布引用被 guard 拦截", async () => {
+  test("aux.deleteMediaGuarded：任一状态的业务引用都拦截删除", async () => {
     const noReferences = (counts: MediaReferenceCounts): string[] =>
-      counts.publishedResources + counts.enabledKnowledge + counts.enabledPlans > 0
+      counts.contentResources + counts.knowledgeItems > 0
         ? ["referenced"]
         : [];
 
@@ -643,7 +659,7 @@ if (databaseUrl === undefined) {
     });
     assert.notEqual(await auxRepo.findMedia("m-x1"), null);
 
-    // 草稿内容与知识引用：删除只断引用不断内容。
+    // 草稿内容与停用知识也必须先由业务任务显式解除引用。
     await auxRepo.createMedia(makeMedia("m-x2"));
     await insertBrowseItem({
       id: "draft-x2",
@@ -654,27 +670,32 @@ if (databaseUrl === undefined) {
     await db.query(
       `INSERT INTO agent_knowledge_items(
         id, name, source_media_id, size_bytes, status, created_at, updated_at
-      ) VALUES ('k-x2', '知识', 'm-x2', 10, 'draft', $1, $1)`,
+      ) VALUES ('k-x2', '知识', 'm-x2', 10, 'disabled', $1, $1)`,
       [T0]
     );
     assert.deepEqual(await auxRepo.deleteMediaGuarded("m-x2", noReferences), {
-      kind: "deleted"
+      kind: "validation_failed",
+      missing: ["referenced"]
     });
-    assert.equal(await auxRepo.findMedia("m-x2"), null);
+    assert.notEqual(await auxRepo.findMedia("m-x2"), null);
     const { rows: itemRows } = await db.query<{
       media_id: string | null;
       cover_media_id: string | null;
       status: string;
     }>("SELECT media_id, cover_media_id, status FROM content_items WHERE id = 'draft-x2'");
     assert.deepEqual(itemRows[0], {
-      media_id: null,
-      cover_media_id: null,
+      media_id: "m-x2",
+      cover_media_id: "m-x2",
       status: "draft"
     });
     const { rows: knowledgeRows } = await db.query<{
       source_media_id: string | null;
     }>("SELECT source_media_id FROM agent_knowledge_items WHERE id = 'k-x2'");
-    assert.equal(knowledgeRows[0]?.source_media_id, null);
+    assert.equal(knowledgeRows[0]?.source_media_id, "m-x2");
+    await db.query("UPDATE content_items SET media_id = NULL, cover_media_id = NULL WHERE id = 'draft-x2'");
+    await db.query("UPDATE agent_knowledge_items SET source_media_id = NULL WHERE id = 'k-x2'");
+    assert.deepEqual(await auxRepo.deleteMediaGuarded("m-x2", noReferences), { kind: "deleted" });
+    assert.equal(await auxRepo.findMedia("m-x2"), null);
   });
 
   // ================= ContentAuxRepository：公告 =================

@@ -10,6 +10,7 @@ import type {
   IdempotentCreateResult,
   MediaKind,
   MediaReferenceCounts,
+  MediaReferenceRow,
   MediaStatus,
   UpdateMessageResult
 } from "../modules/admin/content-aux-repository.js";
@@ -357,6 +358,26 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
     return rows.map(toMedia);
   }
 
+  async listMediaReferences(): Promise<MediaReferenceRow[]> {
+    return this.database.connection.prepare(`
+      SELECT media_id AS mediaId, kind AS entityType, id AS entityId,
+             title AS name, status, 'file' AS role
+      FROM content_items WHERE media_id IS NOT NULL
+      UNION ALL
+      SELECT cover_media_id, kind, id, title, status, 'cover'
+      FROM content_items WHERE cover_media_id IS NOT NULL
+      UNION ALL
+      SELECT media.id, item.kind, item.id, item.title, item.status, 'body'
+      FROM content_resource_media media
+      JOIN content_items item
+        ON instr(COALESCE(item.body, ''), '/v1/media/' || media.id) > 0
+      UNION ALL
+      SELECT source_media_id, 'knowledge', id, name, status, 'knowledge_source'
+      FROM agent_knowledge_items WHERE source_media_id IS NOT NULL
+      ORDER BY mediaId ASC, entityType ASC, entityId ASC, role ASC
+    `).all() as unknown as MediaReferenceRow[];
+  }
+
   /**
    * 引用检查与停用写入同一事务（评审 C 事务变式）：
    * BEGIN IMMEDIATE 持写锁期间，并发进程不能创建新的已发布引用
@@ -390,9 +411,8 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
   }
 
   /**
-   * 引用检查与删除同一事务（评审 C 事务变式）：删除前检查 + 清除
-   * 草稿/下架内容与非启用知识的引用 + 置 deleted 一次提交；已发布
-   * 内容的引用由事务内 guard 判定（引用>0 → validation_failed 回滚）。
+   * 引用检查与删除同一事务：任一状态的引用由 guard 拦截；无引用时
+   * 直接删除文件行，不静默修改文章、视频或知识实体。
    */
   async deleteMediaGuarded(
     id: string,
@@ -407,17 +427,6 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
       if (missing.length > 0) {
         return { kind: "validation_failed" as const, missing };
       }
-      // 这里清除草稿/下架内容与非启用知识的引用，避免外键约束阻断删除
-      // （删除只断引用不断内容）。
-      this.database.connection.prepare(`
-        UPDATE content_items
-        SET media_id = NULL, cover_media_id = NULL
-        WHERE (media_id = ? OR cover_media_id = ?) AND status != 'published'
-      `).run(id, id);
-      this.database.connection.prepare(`
-        UPDATE agent_knowledge_items SET source_media_id = NULL
-        WHERE source_media_id = ?
-      `).run(id);
       this.database.connection.prepare(
         "DELETE FROM content_resource_media WHERE id = ?"
       ).run(id);
@@ -525,22 +534,25 @@ export class SqliteContentAuxRepository implements ContentAuxRepository {
 
   /** 事务内引用计数（含正文 Markdown 附件，与事务外读取共用同一 SQL）。 */
   private countMediaReferencesSync(mediaId: string): MediaReferenceCounts {
-    const published = this.database.connection.prepare(`
-      SELECT COUNT(*) AS count FROM content_items
-      WHERE status = 'published'
-        AND (
+    const content = this.database.connection.prepare(`
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN status = 'published' THEN 1 ELSE 0 END) AS active
+      FROM content_items WHERE (
           media_id = ?
           OR cover_media_id = ?
           OR instr(COALESCE(body, ''), '/v1/media/' || ?) > 0
         )
-    `).get(mediaId, mediaId, mediaId) as unknown as { count: number };
+    `).get(mediaId, mediaId, mediaId) as unknown as { total: number; active: number | null };
     const knowledge = this.database.connection.prepare(`
-      SELECT COUNT(*) AS count FROM agent_knowledge_items
-      WHERE status = 'enabled' AND source_media_id = ?
-    `).get(mediaId) as unknown as { count: number };
+      SELECT COUNT(*) AS total,
+             SUM(CASE WHEN status = 'enabled' THEN 1 ELSE 0 END) AS active
+      FROM agent_knowledge_items WHERE source_media_id = ?
+    `).get(mediaId) as unknown as { total: number; active: number | null };
     return {
-      publishedResources: published.count,
-      enabledKnowledge: knowledge.count,
+      contentResources: content.total,
+      knowledgeItems: knowledge.total,
+      publishedResources: content.active ?? 0,
+      enabledKnowledge: knowledge.active ?? 0,
       // 方案引用的是视频内容（content_items），不直接引用素材。
       enabledPlans: 0
     };
