@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 📄 管理后台视频列表增加每页 20 条分页（2026-08-26 第209轮 · 基线 `main@4deeb10`，待提交）
+> 按 Issue #282 只处理视频筛选结果、分页状态、双端分页交互和回归四个实体：后台视频列表在搜索、分类、状态筛选后每页最多 20 条，显示页码、上下页、当前页、总页数和总数；筛选变化回到第一页，编辑、预览和上下架刷新保留当前页，结果减少时回到最近有效页。文章列表不启用分页并保留原有发布后筛选行为，未改服务端排序、患者端或内容数据。
+> sequential-thinking 六步元反思与 `km-review` 三视角发现并修复文章筛选行为被误改、测试锁死排序后行位置、分类选项修剪后不能精确匹配三项 P2，复核后 P0/P1/P2 为 0，详见 `docs/reviews/025_admin-video-pagination-review.md`。Node 22.23.1 下 `cd src && npm run check` 全绿，新增纯函数覆盖 0/1/20/21/40/41 条和失效页回退，真实浏览器 E2E 创建 50 条视频并贯通首尾页、第二页预览/上下架、组合筛选、窄屏几何与患者端旧闭环；清单、结构、差异格式和密钥扫描通过。尚未提交、推送、创建 PR、合并或部署；独立 worktree 未触碰主工作区的作者改动与 `hi.md`。
+
 > ## ✅ 管理后台视频预览任务关闭前审计（2026-08-26 第208轮 · 基线 `main@cecafae`，待提交）
 > 按作者关闭要求重新核验 Git、GitHub、CNB、腾讯云、文档和运行事实：代码 PR #275、部署记录 PR #277 均已合并，源提交与 squash 合并文件树等价；本地与 `origin/main` 同为 `cecafae`，仅有根 worktree，GitHub 任务分支已清除。CNB 登录有效但按 `kangmin`、`pioneer` 均查不到本项目仓库，因此没有本项目 CNB 分支可删。线上仍指向 `/srv/kangmin-cli/releases/admin-video-preview-b0b18a3`，服务 active、`NRestarts=0`、正式库 `quick_check=ok`；旧 release 与正式备份按回滚要求保留，不视为待清垃圾。作者原件 `hi.md` 继续保持未跟踪、未修改。
 > sequential-thinking 八步审计确认实现、双视口 E2E、发布前校验保留、部署预演、公网哈希、ops/007、review/024 与 `.42cog/real.md` 已闭环，没有新增代码、部署或医学规则缺口。`km-review` 的患者可懂性、工程事实和医学安全三视角 P0–P2 为 0。将本轮已复现并修复的假绿模式沉淀为“响应式界面必须验证实际几何”：CSS 字符串断言须升级为代表性视口下的 computed style、bounding box 和旧功能正负回归；PATH、`jq` 与 zsh 特殊变量等一次性部署坑已由 ops/007 追溯，不重复写入长期记忆。待本轮记忆 PR 通过 CI、合并并清理分支后，使用 `save-codex-chat` 将当前对话保存到 Git 忽略的 `chats/codex/`。

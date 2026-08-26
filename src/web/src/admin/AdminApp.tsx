@@ -9,6 +9,12 @@ import {
   type AdminSession
 } from "./client";
 import { ContentBody } from "../content-body";
+import {
+  ADMIN_CONTENT_PAGE_SIZE,
+  clampPage,
+  itemsForPage,
+  pageCountFor
+} from "../../../admin-pagination";
 
 type Section = "overview" | "article" | "video" | "message" | "knowledge" | "media";
 type ContentKind = "article" | "video";
@@ -382,6 +388,8 @@ function ContentManager({
   const [newCategory, setNewCategory] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<ContentStatusFilter>(initialStatusFilter);
+  const [categoryFilter, setCategoryFilter] = useState("all");
+  const [currentPage, setCurrentPage] = useState(1);
   const [previewItem, setPreviewItem] = useState<ContentPreview | null>(null);
   const [recovery, setRecovery] = useState<DraftRecovery | null>(null);
   const [recoveryNotice, setRecoveryNotice] = useState("");
@@ -389,14 +397,21 @@ function ContentManager({
   const label = kind === "article" ? "文章" : "视频";
   const readyMedia = media.filter((item) => item.status === "ready");
   const availableCategories = categories.filter((item) => item.status === "active" && (item.kind === kind || item.kind === "general"));
+  const filterCategories = useMemo(() => Array.from(new Set(items
+    .map((item) => item.category)
+    .filter((category) => category.trim() !== ""))).sort((left, right) => left.localeCompare(right, "zh-CN")), [items]);
   const filteredItems = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase();
     return items.filter((item) => {
       const matchesStatus = statusFilter === "all" || item.status === statusFilter;
+      const matchesCategory = categoryFilter === "all" || item.category === categoryFilter;
       const matchesQuery = normalized === "" || [item.title, item.summary, item.category].join(" ").toLocaleLowerCase().includes(normalized);
-      return matchesStatus && matchesQuery;
+      return matchesStatus && matchesCategory && matchesQuery;
     });
-  }, [items, query, statusFilter]);
+  }, [categoryFilter, items, query, statusFilter]);
+  const pageCount = kind === "video" ? pageCountFor(filteredItems.length) : 1;
+  const safePage = kind === "video" ? clampPage(currentPage, filteredItems.length) : 1;
+  const visibleItems = kind === "video" ? itemsForPage(filteredItems, safePage) : filteredItems;
   const draftCount = items.filter((item) => item.status === "draft").length;
   const publishedCount = items.filter((item) => item.status === "published").length;
   const selectedVideo = draft.mediaId === null
@@ -411,7 +426,13 @@ function ContentManager({
   useEffect(() => {
     setStatusFilter(initialStatusFilter);
     setQuery("");
+    setCategoryFilter("all");
+    setCurrentPage(1);
   }, [initialStatusFilter]);
+
+  useEffect(() => {
+    if (currentPage !== safePage) setCurrentPage(safePage);
+  }, [currentPage, safePage]);
 
   useEffect(() => {
     try {
@@ -601,7 +622,7 @@ function ContentManager({
       () => adminCommand("content " + kind + " " + action, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined),
       action === "publish" ? label + "已发布，用户端现在可见" : label + "已下架，用户端已不可见"
     );
-    if (succeeded) setStatusFilter("all");
+    if (succeeded && kind !== "video") setStatusFilter("all");
   }
 
   return (
@@ -623,9 +644,10 @@ function ContentManager({
       )}
       {recoveryNotice !== "" && <p className="form-hint recovery-hint">{recoveryNotice}</p>}
       <div className="manager-toolbar">
-        <label className="filter-field">搜索{label}<input aria-label={"搜索" + label} placeholder="按标题、摘要或分类搜索" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
-        <label className="filter-field filter-status">状态筛选<select aria-label={"筛选" + label + "状态"} value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as ContentStatusFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label>
-        <div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{draftCount} 条草稿 · {publishedCount} 条已发布</small></div>
+        <label className="filter-field">搜索{label}<input aria-label={"搜索" + label} placeholder="按标题、摘要或分类搜索" value={query} onChange={(event) => { setQuery(event.target.value); setCurrentPage(1); }} /></label>
+        {kind === "video" && <label className="filter-field filter-category">分类筛选<select aria-label="筛选视频分类" value={categoryFilter} onChange={(event) => { setCategoryFilter(event.target.value); setCurrentPage(1); }}><option value="all">全部分类</option>{filterCategories.map((category) => <option key={category} value={category}>{category}</option>)}</select></label>}
+        <label className="filter-field filter-status">状态筛选<select aria-label={"筛选" + label + "状态"} value={statusFilter} onChange={(event) => { setStatusFilter(event.target.value as ContentStatusFilter); setCurrentPage(1); }}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label>
+        <div className="status-summary"><strong>{filteredItems.length}</strong><span>筛选结果</span><small>{draftCount} 条草稿 · {publishedCount} 条已发布</small></div>
       </div>
       {showForm && (
         <div className="content-editor-backdrop" data-testid="content-editor-backdrop">
@@ -688,9 +710,27 @@ function ContentManager({
           </form>
         </div>
       )}
-      <ContentTable items={filteredItems} emptyText={query.trim() !== "" || statusFilter !== "all" ? "没有匹配内容" : "还没有内容"} busy={busy} onEdit={open} onPreview={previewContent} onToggle={toggle} />
+      <ContentTable items={visibleItems} emptyText={query.trim() !== "" || statusFilter !== "all" || categoryFilter !== "all" ? "没有匹配内容" : "还没有内容"} busy={busy} onEdit={open} onPreview={previewContent} onToggle={toggle} />
+      {kind === "video" && filteredItems.length > ADMIN_CONTENT_PAGE_SIZE && (
+        <Pagination currentPage={safePage} pageCount={pageCount} totalItems={filteredItems.length} onChange={setCurrentPage} />
+      )}
       {previewItem !== null && <PatientContentPreview item={previewItem} onClose={() => setPreviewItem(null)} />}
     </section>
+  );
+}
+
+function Pagination({ currentPage, pageCount, totalItems, onChange }: { currentPage: number; pageCount: number; totalItems: number; onChange: (page: number) => void }) {
+  return (
+    <nav className="content-pagination" aria-label="视频列表分页">
+      <span>第 {currentPage} / {pageCount} 页 · 共 {totalItems} 条</span>
+      <div>
+        <button type="button" aria-label="上一页" disabled={currentPage === 1} onClick={() => onChange(currentPage - 1)}>上一页</button>
+        {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+          <button type="button" key={page} aria-label={`第 ${page} 页`} aria-current={page === currentPage ? "page" : undefined} className={page === currentPage ? "active" : ""} onClick={() => onChange(page)}>{page}</button>
+        ))}
+        <button type="button" aria-label="下一页" disabled={currentPage === pageCount} onClick={() => onChange(currentPage + 1)}>下一页</button>
+      </div>
+    </nav>
   );
 }
 
