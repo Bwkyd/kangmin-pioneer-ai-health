@@ -54,21 +54,27 @@ Page({
     qaAnswer: null,
     qaLoading: false,
     knowledgeAvailable: api.wechatLoginEnabled !== false,
+    knowledgeNotice: "",
     loading: true,
     error: ""
   },
 
   onLoad: function (options) {
     var kind = options && ["article", "video", "plan", "qa"].indexOf(options.kind) >= 0 ? options.kind : "video";
-    if (kind === "qa" && !this.data.knowledgeAvailable) kind = "video";
-    this.setData({ kind: kind });
+    wx.setNavigationBarTitle({ title: "学一学" });
+    this.setData({ kind: kind, knowledgeNotice: kind === "qa" && !this.data.knowledgeAvailable ? "知识问答暂不可用，其他科普内容仍可正常查看。" : "" });
     this.load();
+  },
+
+  onShow: function () {
+    wx.setNavigationBarTitle({ title: this.data.detail ? (this.data.detail.title || this.data.detail.name || "学一学") : "学一学" });
   },
 
   switchKind: function (event) {
     var kind = event.currentTarget.dataset.kind;
     if (kind === this.data.kind) return;
-    this.setData({ kind: kind, detail: null, detailKind: "", query: "", qaAnswer: null });
+    this.setData({ kind: kind, detail: null, detailKind: "", query: "", qaAnswer: null, knowledgeNotice: kind === "qa" && !this.data.knowledgeAvailable ? "知识问答暂不可用，其他科普内容仍可正常查看。" : "" });
+    wx.setNavigationBarTitle({ title: "学一学" });
     this.load();
   },
 
@@ -164,7 +170,13 @@ Page({
 
   closeDetail: function () {
     this.setData({ detail: null, detailKind: "", error: "" });
-    wx.setNavigationBarTitle({ title: "鼻健康科普" });
+    wx.setNavigationBarTitle({ title: "学一学" });
+  },
+
+  switchPrimary: function (event) {
+    var item = event.currentTarget.dataset;
+    if (item.mode === "navigate") wx.navigateTo({ url: item.url });
+    else wx.switchTab({ url: item.url });
   },
 
   onQuestionInput: function (event) { this.setData({ qaQuestion: event.detail.value }); },

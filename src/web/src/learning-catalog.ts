@@ -1,4 +1,5 @@
 import type { PublicContent } from "./discover";
+import { belongsToLearningCategory } from "../../modules/browse/learning-category-match";
 
 export type LearningAudience = "adult" | "child";
 
@@ -128,16 +129,13 @@ export const LEARNING_CATALOGS: LearningAudienceCatalog[] = [
   }
 ];
 
-function normalized(value: string): string {
-  return value.replace(/[\s·——、，,()（）+]/gu, "").toLocaleLowerCase("zh-CN");
-}
+const ALL_CATEGORIES = LEARNING_CATALOGS.flatMap((catalog) =>
+  catalog.sections.flatMap((section) => section.categories)
+);
 
 export function belongsToCategory(
   item: PublicContent,
   category: LearningCategory
 ): boolean {
-  const categoryText = normalized(item.category);
-  const titleText = normalized(item.title);
-  return category.aliases.some((alias) => categoryText.includes(normalized(alias))) ||
-    category.titles.some((title) => titleText.includes(normalized(title)));
+  return belongsToLearningCategory(item, category, ALL_CATEGORIES);
 }

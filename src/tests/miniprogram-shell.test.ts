@@ -785,6 +785,77 @@ test("小程序科普中心支持已发布方案详情和知识库问答入口",
   assert.deepEqual(calls, ["browse plan list", "browse plan show", "agent knowledge ask"]);
 });
 
+test("小程序学一学对明确人群分类排他，歧义标题不跨人群兜底", () => {
+  const catalog = loadModule("utils/learning-catalog.js") as {
+    catalogs: Array<{ sections: Array<{ categories: Array<Record<string, unknown>> }> }>;
+    belongsToCategory(item: Record<string, unknown>, category: Record<string, unknown>): boolean;
+  };
+  const adultQuick = catalog.catalogs[0]!.sections[0]!.categories[0]!;
+  const childQuick = catalog.catalogs[1]!.sections[0]!.categories[0]!;
+  const shared = { category: "儿童快速通窍", title: "鼻三线姜刮" };
+  assert.equal(catalog.belongsToCategory(shared, adultQuick), false);
+  assert.equal(catalog.belongsToCategory(shared, childQuick), true);
+  assert.equal(catalog.belongsToCategory({ category: "", title: "鼻三线姜刮" }, adultQuick), false);
+  assert.equal(catalog.belongsToCategory({ category: "", title: "鼻三线姜刮" }, childQuick), false);
+});
+
+test("小程序学一学固定四入口、目录内视频列表和五项主导航", async () => {
+  const titles: string[] = [];
+  const navigations: string[] = [];
+  const api = {
+    wechatLoginEnabled: false,
+    mediaUrl: (value: string) => value,
+    command: async (name: string) => {
+      if (name === "browse video list") {
+        return { items: [
+          { id: "adult-1", category: "成人快速通窍", title: "迎香穴" },
+          { id: "child-1", category: "儿童快速通窍", title: "鼻三线姜刮" }
+        ] };
+      }
+      throw new Error(`unexpected command: ${name}`);
+    }
+  };
+  const page = loadPage("pages/learn/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { errorMessage: () => "加载失败" },
+    "../../utils/content-body": { parseContentBody: () => [] },
+    "../../utils/learning-catalog": loadModule("utils/learning-catalog.js")
+  }, {
+    setNavigationBarTitle: ({ title }: { title: string }) => titles.push(title),
+    navigateTo: ({ url }: { url: string }) => navigations.push(`navigate:${url}`),
+    switchTab: ({ url }: { url: string }) => navigations.push(`tab:${url}`)
+  });
+  page.setData = (changes, callback) => {
+    page.data = { ...page.data, ...changes };
+    if (typeof callback === "function") callback();
+  };
+
+  page.onLoad({ kind: "video" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(titles.at(-1), "学一学");
+  assert.deepEqual(page.data.items.map((item: { id: string }) => item.id), ["adult-1"]);
+  page.switchKind({ currentTarget: { dataset: { kind: "qa" } } });
+  assert.equal(page.data.kind, "qa");
+  assert.match(page.data.knowledgeNotice, /暂不可用/u);
+  page.switchPrimary({ currentTarget: { dataset: { mode: "navigate", url: "/pages/symptom-edit/index" } } });
+  page.switchPrimary({ currentTarget: { dataset: { mode: "tab", url: "/pages/home/index" } } });
+  assert.deepEqual(navigations, ["navigate:/pages/symptom-edit/index", "tab:/pages/home/index"]);
+
+  const template = readFileSync(resolve("miniprogram/pages/learn/index.wxml"), "utf8");
+  const config = JSON.parse(readFileSync(resolve("miniprogram/pages/learn/index.json"), "utf8"));
+  assert.equal(config.navigationBarTitleText, "学一学");
+  for (const label of ["操作视频", "科普文章", "调理方案", "知识问答"]) {
+    assert.ok(template.includes(`>${label}</view>`), `缺少固定入口：${label}`);
+  }
+  const catalogMainStart = template.indexOf('<view class="catalog-main">');
+  const videoListStart = template.indexOf('<view wx:else class="video-list">');
+  const catalogMainEnd = template.indexOf("</view>\n      </view>\n    </view>", videoListStart);
+  assert.ok(catalogMainStart >= 0 && videoListStart > catalogMainStart && catalogMainEnd > videoListStart, "视频列表必须位于目录主容器内");
+  for (const label of ["首页", "问助手", "记录", "日历", "我的"]) {
+    assert.ok(template.includes(`<text>${label}</text>`), `缺少主导航项：${label}`);
+  }
+});
+
 test("小程序问助手删除页面内重复摘要和对话按钮，保留抽屉、结果卡和发送入口", () => {
   const web = readFileSync(resolve("web/src/App.tsx"), "utf8");
   const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");

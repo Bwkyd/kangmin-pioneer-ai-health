@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 📚 学一学按明确人群排他并补齐小程序稳定页面壳（2026-08-26 第221轮 · 基线 `main@60d1197`，待提交）
+> 按 Issue #283 只处理人群分类、四入口标题、视频目录容器、五项导航四个实体。Web 与小程序均改为显式分类优先；只有分类缺失或未知时才允许全目录唯一标题兜底，成人/儿童共享标题、同人群多证型共享标题和重复别名均 fail-closed。小程序固定“学一学”标题与四入口，视频加载/错误/空态/紧凑列表都留在目录容器内，底部固定首页、问助手、记录、日历、我的五项导航并预留安全区。
+> sequential-thinking 五步与 `$km-review` 三视角复核了分类冲突、歧义变式、知识问答降级、详情标题和旧链路，P0–P2 为 0，详见 `docs/reviews/031_learning-audience-parity-review.md`。`cd src && npm run check` 全绿，包含 432 项 Node 测试集及真实浏览器 E2E；既有加密篡改测试的随机假红改为确定性翻转并连续 100 次通过。微信开发者工具 CLI 已读取项目，但占位 AppID 被官方工具拒绝，未冒充真机编译通过。尚待提交、PR CI、合并、部署后只读复核和关闭 #283；#284 仍单独保持开启。
+
 > ## 🚀 三层管理工作台已合并、部署并关闭 Issue（2026-08-26 第220轮 · `main@3dc46cf`）
 > Issue #281 实现 PR #296 的 `quality`（3 分 15 秒）与 `image`（39 秒）CI 全绿后 squash 合并为 `3dc46cf`，源提交与合并提交文件树一致，Issue 自动关闭。完整门禁、开启截图的双视口 E2E、sequential-thinking 与 `$km-review` 已验证服务端权威待办、三条直接新建、四类内容概览和旧业务闭环，修复同步前伪零这一项 P1 后 P0–P2 为 0。
 > 候选 release 在 8788 使用正式库与媒体副本真实回读文章、视频、消息和 AI 知识列表后，生成正式备份 `/srv/kangmin-cli/backups/kangmin-mvp-20260826-183848-before-workbench-3dc46cf.sqlite`，原子切换到 `/srv/kangmin-cli/releases/workbench-3dc46cf`。应用/Nginx active、`NRestarts=0`，正式库与备份 `quick_check=ok`，23 项迁移及 `22/11/21/136/136/51/15/26` 计数不变；公网 HTTPS 首页、后台、`/live` 为 200，JS/CSS 哈希与合并构建一致并命中新文案。`/ready=503` 仍只因既有加密密钥未配置；8788、候选数据、媒体副本和服务器传输包已清理，详细记录见 `docs/changes/ops/013_admin-workbench-deploy.md`。
