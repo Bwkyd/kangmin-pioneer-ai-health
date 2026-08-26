@@ -23,3 +23,11 @@ squash 合并后的源分支已经成为主分支祖先。尤其 `state/board.md
 5. 清理后再次 `fetch --prune`，核对只剩预期 worktree、分支与作者原件；旧 release 和数据库备份
    属于回滚材料，不随任务临时物一起删除。
 6. 不借状态收尾顺带提交作者原件或无关改动；未获授权不删除 worktree 或分支。
+
+## CI 与保护规则收尾
+
+- `workflow_dispatch` 可以验证同一 head SHA，但手动 run 不一定进入 PR 的 required-check 汇总；不得把
+  “同 SHA 手动 CI 全绿”冒充“分支保护已满足”。
+- PR 事件延迟时先核对 Actions App、check suite 的 `head_sha` 与 `pull_requests` 关联，保留手动 run
+  作为恢复证据，同时等待或重新投递真实 `pull_request` 事件。
+- required check 正式挂载并成功后再合并；不伪造 check、不关闭保护规则、不用管理员权限绕过。
