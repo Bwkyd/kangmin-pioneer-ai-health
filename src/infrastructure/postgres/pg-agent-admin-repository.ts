@@ -7,6 +7,7 @@ import type {
   AgentAdminRepository,
   ChunkInput,
   IdempotentCreateResult,
+  KnowledgeFileReplaceResult,
   KnowledgeGuardedUpdateResult,
   KnowledgeFolderRow,
   KnowledgeFolderWriteResult,
@@ -452,6 +453,70 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       WHERE id = $5
     `, [input.name, input.source, input.description, input.updatedAt, id]);
     return rowCount === 1 ? "updated" : "not_found";
+  }
+
+  async replaceKnowledgeFromMedia(
+    id: string,
+    input: {
+      mediaId: string;
+      sizeBytes: number;
+      mimeType: string | null;
+      sha256: string | null;
+      status: "processing" | "index_failed";
+      parseError: string | null;
+      chunks: ChunkInput[];
+      expectedUpdatedAt: string;
+      updatedAt: string;
+    }
+  ): Promise<KnowledgeFileReplaceResult> {
+    return this.database.transaction(async (client) => {
+      const current = await this.database.queryIn<{ updated_at: string }>(
+        client,
+        "SELECT updated_at FROM agent_knowledge_items WHERE id = $1 FOR UPDATE",
+        [id]
+      );
+      const updatedAt = current.rows[0]?.updated_at;
+      if (updatedAt === undefined) return { kind: "not_found" as const };
+      if (updatedAt !== input.expectedUpdatedAt) return { kind: "version_conflict" as const };
+      const media = await this.database.queryIn<{ status: string }>(
+        client,
+        "SELECT status FROM content_resource_media WHERE id = $1 FOR UPDATE",
+        [input.mediaId]
+      );
+      if (media.rows[0]?.status !== "ready") return { kind: "media_not_ready" as const };
+      const result = await this.database.queryIn(
+        client,
+        `UPDATE agent_knowledge_items
+         SET source_media_id = $1, size_bytes = $2, mime_type = $3, sha256 = $4,
+             status = $5, parse_error = $6, chunk_count = $7, updated_at = $8
+         WHERE id = $9 AND updated_at = $10`,
+        [
+          input.mediaId,
+          input.sizeBytes,
+          input.mimeType,
+          input.sha256,
+          input.status,
+          input.parseError,
+          input.chunks.length,
+          input.updatedAt,
+          id,
+          input.expectedUpdatedAt
+        ]
+      );
+      if (result.rowCount !== 1) return { kind: "version_conflict" as const };
+      await this.database.queryIn(client, "DELETE FROM agent_knowledge_embeddings WHERE knowledge_id = $1", [id]);
+      await this.database.queryIn(client, "DELETE FROM agent_knowledge_chunks WHERE knowledge_id = $1", [id]);
+      for (const chunk of input.chunks) {
+        await this.database.queryIn(
+          client,
+          "INSERT INTO agent_knowledge_chunks(knowledge_id, chunk_index, chunk_text) VALUES ($1, $2, $3)",
+          [id, chunk.index, chunk.text]
+        );
+      }
+      const knowledge = await this.findKnowledgeIn(client, id);
+      if (knowledge === undefined) return { kind: "not_found" as const };
+      return { kind: "updated" as const, knowledge: toKnowledge(knowledge) };
+    });
   }
 
   async deleteKnowledge(id: string): Promise<"deleted" | "not_found"> {

@@ -143,6 +143,12 @@ export type KnowledgeGuardedUpdateResult =
   | { kind: "not_found" }
   | { kind: "validation_failed"; missing: string[] };
 
+export type KnowledgeFileReplaceResult =
+  | { kind: "updated"; knowledge: KnowledgeRow }
+  | { kind: "not_found" }
+  | { kind: "media_not_ready" }
+  | { kind: "version_conflict" };
+
 /** 管理端幂等创建（admin_idempotency 归一语义，与内容创建一致）。 */
 export type IdempotentCreateResult<T> =
   | { kind: "created"; item: T }
@@ -199,6 +205,25 @@ export interface AgentAdminRepository {
     id: string,
     input: { name: string; source: string | null; description: string | null; updatedAt: string }
   ): Promise<"updated" | "not_found">;
+  /**
+   * 保留知识 ID，事务内替换来源素材、文件元数据和正文分块，同时清空
+   * 旧向量并把状态重置为 processing/index_failed。expectedUpdatedAt 是
+   * 知识行的并发令牌；素材状态在同一事务内重读。
+   */
+  replaceKnowledgeFromMedia(
+    id: string,
+    input: {
+      mediaId: string;
+      sizeBytes: number;
+      mimeType: string | null;
+      sha256: string | null;
+      status: "processing" | "index_failed";
+      parseError: string | null;
+      chunks: ChunkInput[];
+      expectedUpdatedAt: string;
+      updatedAt: string;
+    }
+  ): Promise<KnowledgeFileReplaceResult>;
   deleteKnowledge(id: string): Promise<"deleted" | "not_found">;
   /**
    * 素材读取（agent knowledge add-from-media）：校验媒体行存在且

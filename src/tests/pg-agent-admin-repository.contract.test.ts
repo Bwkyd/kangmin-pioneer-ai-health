@@ -596,6 +596,72 @@ test(
   }
 );
 
+test(
+  "知识：replaceKnowledgeFromMedia 原子替换文件、正文和索引，并拒绝过期版本",
+  { skip: SKIP },
+  async () => {
+    const repo = agentAdmin();
+    const original = makeKnowledge(uid("kn"), { status: "enabled" }, [
+      { index: 0, text: "旧正文" }
+    ]);
+    await repo.createKnowledge(original);
+    await repo.replaceKnowledgeEmbeddings(
+      original.id,
+      "test-embedding-v1",
+      1,
+      [{ chunkIndex: 0, embedding: new Uint8Array([0, 0, 128, 63]) }],
+      "2026-01-02T00:00:00.000Z"
+    );
+    const before = await repo.findKnowledge(original.id);
+    assert.ok(before !== null);
+    const media = makeMedia(uid("media"));
+    await repo.registerMedia(media);
+
+    const replaced = await repo.replaceKnowledgeFromMedia(original.id, {
+      mediaId: media.id,
+      sizeBytes: 321,
+      mimeType: "text/markdown",
+      sha256: "replacement-sha",
+      status: "processing",
+      parseError: null,
+      chunks: [{ index: 0, text: "新正文" }, { index: 1, text: "第二块" }],
+      expectedUpdatedAt: before.updatedAt,
+      updatedAt: "2026-01-03T00:00:00.000Z"
+    });
+    assert.equal(replaced.kind, "updated");
+    const stored = await repo.findKnowledge(original.id);
+    assert.equal(stored?.sourceMediaId, media.id);
+    assert.equal(stored?.status, "processing");
+    assert.equal(stored?.chunkCount, 2);
+    assert.deepEqual(await repo.listKnowledgeChunks(original.id), [
+      { index: 0, text: "新正文" },
+      { index: 1, text: "第二块" }
+    ]);
+    const { rows: embeddings } = await database().query<{ n: number }>(
+      "SELECT COUNT(*)::int AS n FROM agent_knowledge_embeddings WHERE knowledge_id = $1",
+      [original.id]
+    );
+    assert.equal(embeddings[0]?.n, 0);
+
+    const stale = await repo.replaceKnowledgeFromMedia(original.id, {
+      mediaId: media.id,
+      sizeBytes: 1,
+      mimeType: "text/plain",
+      sha256: "stale-sha",
+      status: "processing",
+      parseError: null,
+      chunks: [{ index: 0, text: "不应写入" }],
+      expectedUpdatedAt: before.updatedAt,
+      updatedAt: "2026-01-04T00:00:00.000Z"
+    });
+    assert.equal(stale.kind, "version_conflict");
+    assert.deepEqual(await repo.listKnowledgeChunks(original.id), [
+      { index: 0, text: "新正文" },
+      { index: 1, text: "第二块" }
+    ]);
+  }
+);
+
 // ==================== 调理方案 ====================
 
 test(

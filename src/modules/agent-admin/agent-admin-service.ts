@@ -403,7 +403,7 @@ export class AgentAdminService {
   async addKnowledgeFromMedia(
     adminId: string,
     mediaId: string,
-    input: { source?: string | undefined; description?: string | undefined; folderId?: string | null | undefined } = {}
+    input: { name?: string | undefined; source?: string | undefined; description?: string | undefined; folderId?: string | null | undefined } = {}
   ): Promise<KnowledgeItem> {
     await this.assertFolderExists(input.folderId ?? null);
     const media = await this.repository.findMedia(mediaId);
@@ -431,10 +431,12 @@ export class AgentAdminService {
     const sha256 =
       media.sha256 ?? createHash("sha256").update(buffer).digest("hex");
     const parsed = this.parseSource(extension, buffer, media.filename);
+    const name = input.name === undefined ? media.filename : input.name.trim();
+    if (name === "") throw new DomainError("validation_failed", "知识名称不能为空");
     const timestamp = now();
     const row: KnowledgeRow = {
       id: newId("kno"),
-      name: media.filename,
+      name,
       folderId: input.folderId ?? null,
       source: input.source?.trim() || null,
       description: input.description?.trim() || null,
@@ -549,6 +551,57 @@ export class AgentAdminService {
     const updated = await this.getKnowledge(id);
     await this.audit.record({ actorKind: "admin", actorId: adminId, action: "agent.knowledge.update", entityType: "agent_knowledge_item", entityId: id, requestId, details: { name: updated.name, category: updated.category ?? null } });
     return updated;
+  }
+
+  async updateKnowledgeFileFromMedia(
+    adminId: string,
+    id: string,
+    mediaId: string,
+    requestId?: string
+  ): Promise<KnowledgeItem> {
+    const current = await this.getKnowledge(id);
+    const media = await this.repository.findMedia(mediaId);
+    if (media === null) throw new DomainError("resource_not_found", "素材不存在");
+    if (media.status !== "ready") throw new DomainError("validation_failed", "素材未完成上传");
+    assertKnowledgeExtension(media.filename);
+    assertSizeWithinLimit(
+      media.sizeBytes,
+      envBytesLimit(process.env.KANGMIN_KNOWLEDGE_MAX_BYTES, DEFAULT_KNOWLEDGE_MAX_BYTES),
+      "知识文件"
+    );
+    const buffer = await this.storage.getObject(media.storedPath);
+    const parsed = this.parseSource(extensionOf(media.filename), buffer, media.filename);
+    const updatedAt = now();
+    const outcome = await this.repository.replaceKnowledgeFromMedia(id, {
+      mediaId: media.id,
+      sizeBytes: media.sizeBytes,
+      mimeType: media.mimeType,
+      sha256: media.sha256 ?? createHash("sha256").update(buffer).digest("hex"),
+      status: parsed.kind === "parsed" ? "processing" : "index_failed",
+      parseError: parsed.kind === "parsed" ? null : parsed.error,
+      chunks: parsed.kind === "parsed" ? parsed.chunks : [],
+      expectedUpdatedAt: current.updatedAt,
+      updatedAt
+    });
+    if (outcome.kind === "not_found") throw new DomainError("resource_not_found", "知识不存在");
+    if (outcome.kind === "media_not_ready") throw new DomainError("validation_failed", "素材状态已变化，请重新上传");
+    if (outcome.kind === "version_conflict") throw new DomainError("version_conflict", "知识资料已被更新，请重新读取");
+    await this.audit.record({
+      actorKind: "admin",
+      actorId: adminId,
+      action: "agent.knowledge.update-file",
+      entityType: "agent_knowledge_item",
+      entityId: id,
+      requestId,
+      details: {
+        name: outcome.knowledge.name,
+        fromMediaId: current.sourceMediaId,
+        toMediaId: media.id,
+        previousStatus: current.status,
+        status: outcome.knowledge.status
+      }
+    });
+    return outcome.knowledge;
   }
 
   async deleteKnowledge(adminId: string, id: string, requestId?: string): Promise<{ id: string; deleted: true }> {
@@ -686,12 +739,26 @@ export class AgentAdminService {
     return updated;
   }
 
-  /** 检索测试只命中已启用知识（未启用知识不能被 Agent 检索）。 */
-  async searchKnowledge(query: string): Promise<KnowledgeHit[]> {
+  /** 全库测试沿用患者 enabled 门禁；传 id 时只做运营侧单资料隔离预检。 */
+  async searchKnowledge(query: string, id?: string): Promise<KnowledgeHit[]> {
     if (this.retrieval === undefined) {
       throw new DomainError("capability_unavailable", "知识语义检索尚未配置");
     }
-    const rows = await this.retrieval.searchEnabled(query, 3);
+    let enabled = true;
+    let rows;
+    if (id === undefined) {
+      rows = await this.retrieval.searchEnabled(query, 3);
+    } else {
+      const item = await this.getKnowledge(id);
+      if (item.status !== "indexed" && item.status !== "disabled" && item.status !== "enabled") {
+        throw new DomainError("validation_failed", "当前资料尚未建立可测试的索引");
+      }
+      if (this.retrieval.searchOne === undefined) {
+        throw new DomainError("capability_unavailable", "单资料检索测试尚未配置");
+      }
+      enabled = item.status === "enabled";
+      rows = await this.retrieval.searchOne(query, id, 3);
+    }
     return rows.map((row) => ({
       knowledgeId: row.knowledgeId,
       name: row.name,
@@ -700,7 +767,7 @@ export class AgentAdminService {
       source: row.source,
       category: row.category,
       score: row.score,
-      enabled: true
+      enabled
     }));
   }
 

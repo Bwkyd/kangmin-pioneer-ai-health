@@ -161,6 +161,7 @@ class EmptyKnowledgeRetrieval implements KnowledgeRetrievalPort {
     this.calls.push({ query, limit });
     return [];
   }
+  async searchOne(): Promise<KnowledgeSource[]> { return []; }
 }
 
 class FixedKnowledgeRetrieval implements KnowledgeRetrievalPort {
@@ -177,6 +178,9 @@ class FixedKnowledgeRetrieval implements KnowledgeRetrievalPort {
       text: "迎香位于鼻翼外缘附近。当前方案采用指腹擦迎香。",
       score: 0.92
     }];
+  }
+  async searchOne(query: string, _knowledgeId: string, limit: number): Promise<KnowledgeSource[]> {
+    return this.searchEnabled(query, limit);
   }
 }
 
