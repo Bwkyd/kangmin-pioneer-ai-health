@@ -6,7 +6,7 @@
 > ## 🚪 runtime、CLI 与 API 入口完成收口（2026-08-27 第256轮 · 基线 `origin/main@8ba6e18`，待提交）
 > 本轮对应 #349，正好处理 runtime 组合根、CLI app、API app、真实进程与传输 E2E 四个实体。先新增 `check-runtime-entrypoints.mjs` 并在旧结构确认失败，再把患者/管理/远程组合根迁入 `@kangmin/runtime`，患者/管理 CLI 与开发入口迁入 `@kangmin/cli`，HTTP 迁入 `@kangmin/api`；CLI/API 只依赖 core/runtime，门禁拒绝直连 database/integrations。评测逻辑归 runtime、冻结任务集归 tests fixture；旧 app/cli/dev/evals/http 清空，迁移白名单变为空。
 > 有界实验真实捕获 API 搬家后仍按旧编译位置寻找后台静态文件，首页 503；修复新 workspace 到根 `dist/web` 的明确路径后 HTTP 10/10 和浏览器复测通过。同步修复 CLI 版本 manifest 与后台检查器旧 HTTP 源路径两种变式。四组冒烟 2/2、2/2、3/3、6/6；完整本地门禁 358 通过、78 条 PostgreSQL/S3 外部资源测试跳过、0 失败，后台 2 条与真实 Chromium E2E 通过。命令、退出码、stdin/stdout、Cookie、JSON、NDJSON、SQL、truth、医学规则和生产数据未修改。
-> sequential-thinking 六步元反思与 `km-review` 三视角 P0–P2 为 0。演化复诊显示代码文件 306、p50 121、超 600 行占比 14.4%、用例密度 6.3 不变；`src` 顶层 9→4，已低于通用上限并删除专用豁免，导航成本因三个 workspace 小壳 14.18→14.23。真实 PostgreSQL、S3 与 OCI 镜像仍须 PR CI 放行；详见实验 036、评审 040。待 commit、PR、CI、合并与 #349 收尾。
+> sequential-thinking 六步元反思与 `km-review` 三视角 P0–P2 为 0。演化复诊显示代码文件 306、p50 121、超 600 行占比 14.4%、用例密度 6.3 不变；`src` 顶层 9→4，已低于通用上限并删除专用豁免，导航成本因三个 workspace 小壳 14.18→14.23。首轮 PR 质量 CI 3 分 32 秒通过，镜像 CI 发现工作流仍调用旧 `dist/cli`；已改为新 CLI workspace，并把 CI/Docker/package 旧入口扫描固化进门禁，经 sequential-thinking 两步增量复核仍无 P0–P2。详见实验 036、评审 040；待第二次镜像 CI、合并与 #349 收尾。
 
 > ## 🔌 外部适配器收进失败关闭集成包（2026-08-27 第255轮 · 基线 `origin/main@069bb1a`，待提交）
 > 本轮对应 #348，正好处理 AI/对象存储、身份/安全、环境/临床/观测、导出与集成契约四个实体。先新增 `check-integrations-package.mjs` 并在旧结构确认非零失败，再将 12 个既有适配器迁入 `src/packages/kangmin-integrations/src/{ai,storage,identity,security,environment,clinical,operations}`；外围统一经 `@kangmin/integrations/*` 访问，旧 `infrastructure/` 清空并退出迁移白名单。提示词、端口、错误映射、SQL、truth、医学规则和生产数据未修改。

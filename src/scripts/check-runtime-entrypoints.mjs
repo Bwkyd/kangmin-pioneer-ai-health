@@ -3,6 +3,7 @@ import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const repositoryRoot = resolve(workspaceRoot, "..");
 const workspaces = [
   ["packages/kangmin-runtime", "@kangmin/runtime"],
   ["apps/kangmin-cli", "@kangmin/cli"],
@@ -53,6 +54,22 @@ for (const [directory, name] of workspaces.slice(1)) {
 const cli = JSON.parse(readFileSync(join(workspaceRoot, "apps/kangmin-cli/package.json"), "utf8"));
 if (cli.bin?.kangmin !== "./dist/kangmin.js" || cli.bin?.["kangmin-admin"] !== "./dist/kangmin-admin.js") {
   throw new Error("CLI app 必须保留 kangmin 与 kangmin-admin 两个稳定命令名");
+}
+
+const deliveryFiles = [
+  join(repositoryRoot, ".github/workflows/ci.yml"),
+  join(workspaceRoot, "Dockerfile"),
+  join(workspaceRoot, "package.json")
+];
+for (const file of deliveryFiles) {
+  const source = readFileSync(file, "utf8");
+  if (/(?:^|[\s"'=,(])dist\/(?:app|cli|dev|http)\//mu.test(source)) {
+    throw new Error(`交付链仍引用旧编译入口：${relative(repositoryRoot, file)}`);
+  }
+}
+const ci = readFileSync(deliveryFiles[0], "utf8");
+if (!ci.includes("apps/kangmin-cli/dist/kangmin.js")) {
+  throw new Error("镜像 CI 必须从新的 CLI workspace 执行容器冒烟");
 }
 
 console.log("check-runtime-entrypoints: PASS");

@@ -17,6 +17,7 @@
 - `kangmin` 与 `kangmin-admin` 两个命令名、版本和路径由 CLI manifest 明确声明；根入口仍保留相同 bin 名。
 - 入口门禁验证 CLI/API 只依赖 core/runtime，禁止直接导入 database/integrations；五个旧顶层目录已清空，迁移白名单为空。
 - 首轮真实 HTTP 窄测发现 API 搬家后仍按旧编译位置寻找 `dist/web`，首页返回 503；修复为新 workspace 到根后台产物的明确路径后，HTTP 10/10 与真实浏览器复测通过。后台检查器硬编码旧 HTTP 源路径、CLI 版本 manifest 相对路径也同步修复。
+- 首轮 PR 质量 CI 3 分 32 秒通过，镜像 CI 则真实发现容器内 CLI 已搬家、工作流仍调用 `dist/cli/kangmin.js`；将冒烟入口改为 `apps/kangmin-cli/dist/kangmin.js`，并把 CI/Docker/package 的旧编译入口扫描固化进结构检查，待第二次镜像 CI 复验。
 - 四组冒烟 2/2、2/2、3/3、6/6；完整本地门禁 358 通过、78 条外部资源测试跳过、0 失败，后台 2 条与真实 Chromium E2E 通过。
 
 ## 成本与限制

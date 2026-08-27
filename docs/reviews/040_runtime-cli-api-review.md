@@ -13,9 +13,9 @@
 
 - P0–P2：未发现。
 - runtime 是唯一可以同时依赖 core、database、integrations 的 workspace；CLI/API 门禁拒绝绕过 runtime。
-- 有界实验实际发现并修复三种位置变式：API 静态资源根、CLI 版本 manifest、后台检查器的 HTTP 源路径。
+- 有界实验与首轮 CI 实际发现并修复四种位置变式：API 静态资源根、CLI 版本 manifest、后台检查器的 HTTP 源路径、镜像 CI 的旧 CLI 冒烟路径。结构检查现同时扫描 CI、Docker 和根 package，防止旧编译入口复活。
 - 根构建顺序与 Docker builder/runner 已覆盖三份新 workspace；CLI 两个版本入口、完整测试和真实浏览器通过。
-- 限制：本机未配置真实 PostgreSQL/S3；它们和 OCI 只能以 PR CI 绿灯放行。
+- 首轮质量 CI 已验证 PostgreSQL/S3 并通过；镜像因 CI 旧路径失败后已修复，仍须第二次 OCI/容器冒烟绿灯放行。
 
 ## 医学安全视角
 
