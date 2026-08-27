@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteAccountRepository } from "../infrastructure/sqlite-account-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteAccountRepository } from "@kangmin/database/sqlite/account-repository";
 import type {
   ConsentDecision,
   ConsentType

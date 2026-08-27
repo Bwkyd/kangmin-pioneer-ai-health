@@ -254,8 +254,9 @@ kangmin-admin CLI ──────────┤                         ↓
 | 路径 | 职责 |
 | --- | --- |
 | `packages/kangmin-core/` | 结果、错误、协议、四组业务领域、纯应用服务和端口；不得依赖外层适配器 |
+| `packages/kangmin-database/` | SQLite、PostgreSQL、迁移、幂等与加密字段适配；只实现核心端口 |
 | `app/` | 组合根与基础设施装配 |
-| `infrastructure/` | SQLite、PostgreSQL、S3、模型、环境和日志适配器 |
+| `infrastructure/` | S3、模型、环境、身份、远程调用和日志等外部集成适配器 |
 | `cli/` | 两个命令行入口和参数/输出适配 |
 | `http/` | HTTP、静态资源、探针、限流和请求日志 |
 | `apps/kangmin-miniprogram/` | 患者微信小程序壳 |
@@ -365,7 +366,8 @@ kangmin-admin CLI ──────────┤                         ↓
 - 两种实现共享端口契约，覆盖身份隔离、幂等、revision/CAS、软删除、加密和
   审计语义；
 - 不在 README 固定迁移数量或测试数量；需要现状时读取
-  `infrastructure/database.ts`、`infrastructure/postgres/pg-migrations.ts`
+  `packages/kangmin-database/src/sqlite/database.ts`、
+  `packages/kangmin-database/src/postgres/migrations.ts`
   和当前测试输出；
 - 配置 PostgreSQL 不会自动迁移已有 SQLite 数据，生产数据迁移需独立方案。
 

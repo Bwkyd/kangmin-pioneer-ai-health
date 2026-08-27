@@ -10,7 +10,7 @@ import type {
   ConsentType,
   CreateAccountInput
 } from "@kangmin/core/patient/account/account-repository";
-import { KangminPgDatabase, isUniqueViolation } from "./pg-database.js";
+import { KangminPgDatabase, isUniqueViolation } from "./database.js";
 
 interface AccountRow {
   patient_id: string;

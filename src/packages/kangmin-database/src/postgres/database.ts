@@ -13,7 +13,7 @@
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
 
 import { DomainError } from "@kangmin/core/kernel/errors";
-import { PG_MIGRATIONS } from "./pg-migrations.js";
+import { PG_MIGRATIONS } from "./migrations.js";
 
 /** 迁移互斥锁 key（任意稳定常量，全实例共享）。 */
 const MIGRATION_LOCK_KEY = 834_927_101;

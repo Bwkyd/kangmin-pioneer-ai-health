@@ -7,7 +7,7 @@ import test from "node:test";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
-import { KangminDatabase } from "../infrastructure/database.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type { ConversationTurnResult } from "@kangmin/core/intelligence/agent/conversation-contracts";
 import type { PlanDialoguePort } from "@kangmin/core/intelligence/agent/model-ports";

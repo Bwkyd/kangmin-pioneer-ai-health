@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import type { AuditEntry, AuditPort } from "@kangmin/core/operations/system/audit-ports";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 /**
  * audit_events 的 PostgreSQL 实现：只追加，独立事务。

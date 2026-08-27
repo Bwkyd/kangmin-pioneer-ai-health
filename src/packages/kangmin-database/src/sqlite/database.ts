@@ -9,7 +9,7 @@ import {
   CONTENT_CATEGORY_REGISTRY,
   VIDEO_TRUTH_ASSIGNMENTS
 } from "@kangmin/core/operations/admin/content-category-registry";
-import { encryptStoredField } from "./encrypted-fields.js";
+import { encryptStoredField } from "../shared/encrypted-fields.js";
 
 /**
  * 一个版本化迁移：version 单调递增，apply 在同一事务内执行。

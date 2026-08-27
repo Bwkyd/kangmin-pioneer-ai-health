@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { appliedMigrationVersions, KangminDatabase } from "../infrastructure/database.js";
+import { appliedMigrationVersions, KangminDatabase } from "@kangmin/database/sqlite/database";
 
 test("旧分类迁移为一级目录且不改知识状态与分块计数", () => {
   const current = new KangminDatabase(":memory:");

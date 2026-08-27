@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
-import { decryptStoredField } from "../infrastructure/encrypted-fields.js";
-import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
-import { PgRecordRepository } from "../infrastructure/postgres/pg-record-repository.js";
+import { decryptStoredField } from "@kangmin/database/shared/encrypted-fields";
+import { KangminPgDatabase } from "@kangmin/database/postgres/database";
+import { PgRecordRepository } from "@kangmin/database/postgres/record-repository";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   createPgTestDatabase,

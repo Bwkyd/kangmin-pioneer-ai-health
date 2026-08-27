@@ -1,8 +1,8 @@
 import type { PoolClient } from "pg";
 
 import { DomainError } from "@kangmin/core/kernel/errors";
-import type { IdempotentCreateOutcome } from "../idempotency.js";
-import { isUniqueViolation, KangminPgDatabase } from "./pg-database.js";
+import type { IdempotentCreateOutcome } from "../shared/idempotency.js";
+import { isUniqueViolation, KangminPgDatabase } from "./database.js";
 
 /**
  * runIdempotentCreate（../idempotency.ts，node:sqlite 同步版）的

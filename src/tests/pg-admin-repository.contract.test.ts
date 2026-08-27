@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test, { before, beforeEach, after } from "node:test";
 
-import { PgAdminAccountRepository } from "../infrastructure/postgres/pg-admin-account-repository.js";
-import { PgAdminSessionRepository } from "../infrastructure/postgres/pg-admin-session-repository.js";
-import { PgAuditRepository } from "../infrastructure/postgres/pg-audit-repository.js";
-import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
-import { PgUserAdminRepository } from "../infrastructure/postgres/pg-user-admin-repository.js";
+import { PgAdminAccountRepository } from "@kangmin/database/postgres/admin-account-repository";
+import { PgAdminSessionRepository } from "@kangmin/database/postgres/admin-session-repository";
+import { PgAuditRepository } from "@kangmin/database/postgres/audit-repository";
+import { KangminPgDatabase } from "@kangmin/database/postgres/database";
+import { PgUserAdminRepository } from "@kangmin/database/postgres/user-admin-repository";
 import {
   createPgTestDatabase,
   type PgTestDatabase

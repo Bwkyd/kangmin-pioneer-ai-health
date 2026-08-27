@@ -2,8 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteAgentAdminRepository } from "@kangmin/database/sqlite/agent-admin-repository";
 import { reindexExistingKnowledge } from "../scripts/reindex-knowledge.js";
 import type { KnowledgeRow } from "@kangmin/core/operations/agent-admin/agent-admin-ports";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";

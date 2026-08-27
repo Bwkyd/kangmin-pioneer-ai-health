@@ -12,32 +12,32 @@ import {
   resolveObjectStorage,
   type ReadinessProbe
 } from "./composition-root.js";
-import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
+import { KangminDatabase, appliedMigrationVersions } from "@kangmin/database/sqlite/database";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type { ObjectStoragePort } from "@kangmin/core/operations/system/object-storage-ports";
 import {
   KangminPgDatabase,
   appliedPgMigrationVersions
-} from "../infrastructure/postgres/pg-database.js";
-import { PgAdminAccountRepository } from "../infrastructure/postgres/pg-admin-account-repository.js";
-import { PgAdminSessionRepository } from "../infrastructure/postgres/pg-admin-session-repository.js";
-import { PgAgentAdminRepository } from "../infrastructure/postgres/pg-agent-admin-repository.js";
-import { PgAuditRepository } from "../infrastructure/postgres/pg-audit-repository.js";
-import { PgContentAdminRepository } from "../infrastructure/postgres/pg-content-admin-repository.js";
-import { PgContentAuxRepository } from "../infrastructure/postgres/pg-content-aux-repository.js";
-import { PgUserAdminRepository } from "../infrastructure/postgres/pg-user-admin-repository.js";
-import { SqliteAdminAccountRepository } from "../infrastructure/sqlite-admin-account-repository.js";
-import { SqliteAdminSessionRepository } from "../infrastructure/sqlite-admin-session-repository.js";
-import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
-import { SqliteContentAdminRepository } from "../infrastructure/sqlite-content-admin-repository.js";
-import { SqliteContentAuxRepository } from "../infrastructure/sqlite-content-aux-repository.js";
-import { SqliteAuditRepository } from "../infrastructure/sqlite-audit-repository.js";
-import { SqliteUserAdminRepository } from "../infrastructure/sqlite-user-admin-repository.js";
+} from "@kangmin/database/postgres/database";
+import { PgAdminAccountRepository } from "@kangmin/database/postgres/admin-account-repository";
+import { PgAdminSessionRepository } from "@kangmin/database/postgres/admin-session-repository";
+import { PgAgentAdminRepository } from "@kangmin/database/postgres/agent-admin-repository";
+import { PgAuditRepository } from "@kangmin/database/postgres/audit-repository";
+import { PgContentAdminRepository } from "@kangmin/database/postgres/content-admin-repository";
+import { PgContentAuxRepository } from "@kangmin/database/postgres/content-aux-repository";
+import { PgUserAdminRepository } from "@kangmin/database/postgres/user-admin-repository";
+import { SqliteAdminAccountRepository } from "@kangmin/database/sqlite/admin-account-repository";
+import { SqliteAdminSessionRepository } from "@kangmin/database/sqlite/admin-session-repository";
+import { SqliteAgentAdminRepository } from "@kangmin/database/sqlite/agent-admin-repository";
+import { SqliteContentAdminRepository } from "@kangmin/database/sqlite/content-admin-repository";
+import { SqliteContentAuxRepository } from "@kangmin/database/sqlite/content-aux-repository";
+import { SqliteAuditRepository } from "@kangmin/database/sqlite/audit-repository";
+import { SqliteUserAdminRepository } from "@kangmin/database/sqlite/user-admin-repository";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
 import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
-import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
-import { PgKnowledgeRetrieval } from "../infrastructure/postgres/pg-knowledge-retrieval.js";
+import { SqliteKnowledgeRetrieval } from "@kangmin/database/sqlite/knowledge-retrieval";
+import { PgKnowledgeRetrieval } from "@kangmin/database/postgres/knowledge-retrieval";
 import type { KnowledgeEmbeddingPort } from "@kangmin/core/intelligence/agent/knowledge-ports";
 import type { KnowledgeRetrievalPort } from "@kangmin/core/intelligence/agent/knowledge-ports";
 

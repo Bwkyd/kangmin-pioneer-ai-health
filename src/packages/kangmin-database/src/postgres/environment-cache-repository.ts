@@ -6,7 +6,7 @@ import type {
   EnvironmentCacheRepository,
   EnvironmentSnapshot
 } from "@kangmin/core/content/environment/environment-ports";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 interface SnapshotRow {
   city: string;

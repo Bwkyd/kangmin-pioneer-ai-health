@@ -1,5 +1,5 @@
 import { KangminDatabase } from "./database.js";
-import { runIdempotentCreate } from "./idempotency.js";
+import { runIdempotentCreate } from "../shared/idempotency.js";
 import type {
   AdminContentItem,
   ContentAdminRepository,

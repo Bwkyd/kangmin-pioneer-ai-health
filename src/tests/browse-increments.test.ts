@@ -9,8 +9,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteContentReadRepository } from "@kangmin/database/sqlite/content-read-repository";
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {

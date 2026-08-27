@@ -3,7 +3,7 @@ import type {
   UpdateAgentSessionOutcome
 } from "@kangmin/core/intelligence/agent/agent-repository";
 import type { AgentSession } from "@kangmin/core/intelligence/agent/contracts";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 interface AgentSessionRow {
   revision: number;

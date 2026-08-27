@@ -12,7 +12,7 @@ import type {
   PublicContentKind
 } from "@kangmin/core/content/browse/contracts";
 import { likePatternOf } from "@kangmin/core/content/browse/domain";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 const DISCLAIMER = "本内容仅作健康科普和居家管理参考，不代替门诊诊断和专业医疗建议。";
 

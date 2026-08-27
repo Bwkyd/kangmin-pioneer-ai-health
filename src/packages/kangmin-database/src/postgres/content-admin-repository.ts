@@ -12,8 +12,8 @@ import type {
   UpdateGuardedResult
 } from "@kangmin/core/operations/admin/content-admin-repository";
 import { mediaIdsInContentBody } from "@kangmin/core/content/content-body-references";
-import { KangminPgDatabase } from "./pg-database.js";
-import { runPgIdempotentCreate } from "./pg-idempotency.js";
+import { KangminPgDatabase } from "./database.js";
+import { runPgIdempotentCreate } from "./idempotency.js";
 
 interface Row {
   id: string;

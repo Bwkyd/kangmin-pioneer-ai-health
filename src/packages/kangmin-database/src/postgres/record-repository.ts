@@ -1,15 +1,11 @@
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
-import { KangminDatabase } from "./database.js";
+import type { PoolClient, QueryResultRow } from "pg";
 import {
   decryptStoredField,
   encryptOptionalFields,
   encryptStoredField
-} from "./encrypted-fields.js";
-import {
-  runIdempotentCreate,
-  type IdempotentCreateOutcome
-} from "./idempotency.js";
+} from "../shared/encrypted-fields.js";
 import type {
   ExposureRecord,
   HealthProfile,
@@ -39,6 +35,9 @@ import type {
   UpdateSymptomRecordInput,
   UpdateSymptomRecordOutcome
 } from "@kangmin/core/patient/record/record-repository";
+import { isUniqueViolation, KangminPgDatabase } from "./database.js";
+import { runPgIdempotentCreate } from "./idempotency.js";
+import type { IdempotentCreateOutcome } from "../shared/idempotency.js";
 
 interface SymptomRow {
   id: string;
@@ -106,6 +105,15 @@ interface ProjectionRow {
   local_date: string;
   tnss_total: number;
 }
+
+/**
+ * 查询执行器：事务内为 db.queryIn(client, …)，事务外为 db.query(…)，
+ * 让共享辅助（findOwned/commitOwnedUpdate 等）在两种上下文复用同一实现。
+ */
+type Querier = <T extends QueryResultRow>(
+  sql: string,
+  params: readonly unknown[]
+) => Promise<{ rows: T[]; rowCount: number }>;
 
 function toSymptom(
   encryption: EncryptionPort,
@@ -237,8 +245,12 @@ function toProfile(
   };
 }
 
-function isUniqueConstraint(error: unknown): boolean {
-  return String(error).includes("UNIQUE constraint failed");
+function toMonthSymptom(row: ProjectionRow): MonthSymptomRow {
+  return {
+    id: row.id,
+    localDate: row.local_date,
+    tnssTotal: row.tnss_total
+  };
 }
 
 type CreateOutcome<T> =
@@ -248,17 +260,18 @@ type CreateOutcome<T> =
   | { kind: "stale_replay" }
   | { kind: "date_conflict" };
 
-export class SqliteRecordRepository implements RecordRepository {
+export class PgRecordRepository implements RecordRepository {
   constructor(
-    private readonly database: KangminDatabase,
+    private readonly database: KangminPgDatabase,
     private readonly encryption: EncryptionPort
   ) {}
 
   async createSymptom(
     input: CreateSymptomRecordInput
   ): Promise<CreateSymptomRecordOutcome> {
-    return this.database.transaction(() => {
-      const outcome = runIdempotentCreate(this.database.connection, {
+    return this.database.transaction(async (client) => {
+      const query = this.inTransaction(client);
+      const outcome = await runPgIdempotentCreate(this.database, client, {
         table: "idempotency_records",
         actorColumn: "patient_id",
         scopeColumn: "command_scope",
@@ -270,27 +283,26 @@ export class SqliteRecordRepository implements RecordRepository {
         resultJson: JSON.stringify(input.record),
         createdAt: input.record.createdAt,
         uniqueConflictAsDateConflict: true,
-        verifyExists: (json) =>
-          this.findOwned(
+        verifyExists: async (json) =>
+          (await this.findOwned(
+            query,
             "symptom_records",
             input.patientId,
             (JSON.parse(json) as SymptomRecord).id,
             (row: SymptomRow) => toSymptom(this.encryption, row)
-          ) !== null,
-        insert: () => {
+          )) !== null,
+        insert: async () => {
           const notes = encryptOptionalFields(this.encryption, [
             input.record.notes
           ]);
-          this.database.connection
-            .prepare(`
-              INSERT INTO symptom_records(
-                id, patient_id, local_date,
-                nasal_congestion, nasal_itching, sneezing, runny_nose,
-                tnss_total, notes_encrypted, encryption_key_version,
-                revision, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `)
-            .run(
+          await query(
+            `INSERT INTO symptom_records(
+              id, patient_id, local_date,
+              nasal_congestion, nasal_itching, sneezing, runny_nose,
+              tnss_total, notes_encrypted, encryption_key_version,
+              revision, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+            [
               input.record.id,
               input.patientId,
               input.record.localDate,
@@ -304,11 +316,12 @@ export class SqliteRecordRepository implements RecordRepository {
               input.record.revision,
               input.record.createdAt,
               input.record.updatedAt
-            );
+            ]
+          );
         }
       });
       if (outcome.kind === "created") {
-        this.appendVersion({
+        await this.appendVersion(query, {
           recordType: "symptom",
           recordId: input.record.id,
           revision: input.record.revision,
@@ -323,15 +336,14 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   async listSymptoms(patientId: string): Promise<SymptomRecord[]> {
-    return this.guardRead(() => {
-      const rows = this.database.connection
-        .prepare(`
-          SELECT *
-          FROM symptom_records
-          WHERE patient_id = ? AND deleted_at IS NULL
-          ORDER BY local_date DESC, created_at DESC
-        `)
-        .all(patientId) as unknown as SymptomRow[];
+    return this.guardRead(async () => {
+      const { rows } = await this.database.query<SymptomRow>(
+        `SELECT *
+         FROM symptom_records
+         WHERE patient_id = $1 AND deleted_at IS NULL
+         ORDER BY local_date DESC, created_at DESC`,
+        [patientId]
+      );
       return rows.map((row: SymptomRow) =>
         toSymptom(this.encryption, row)
       );
@@ -343,6 +355,7 @@ export class SqliteRecordRepository implements RecordRepository {
     id: string
   ): Promise<SymptomRecord | null> {
     return this.findOwned(
+      (sql, params) => this.database.query(sql, params),
       "symptom_records",
       patientId,
       id,
@@ -353,8 +366,10 @@ export class SqliteRecordRepository implements RecordRepository {
   async updateSymptom(
     input: UpdateSymptomRecordInput
   ): Promise<UpdateSymptomRecordOutcome> {
-    return this.database.transaction(() => {
-      const current = this.findOwned(
+    return this.database.transaction(async (client) => {
+      const query = this.inTransaction(client);
+      const current = await this.findOwned(
+        query,
         "symptom_records",
         input.patientId,
         input.id,
@@ -364,31 +379,30 @@ export class SqliteRecordRepository implements RecordRepository {
         return { kind: "not_found" };
       }
 
-      const outcome = this.commitOwnedUpdate({
+      const outcome = await this.commitOwnedUpdate({
+        query,
         table: "symptom_records",
         patientId: input.patientId,
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
         mapRow: (row: SymptomRow) => toSymptom(this.encryption, row),
-        applyUpdate: () => {
+        applyUpdate: async () => {
           const notes = encryptOptionalFields(this.encryption, [input.notes]);
-          return this.database.connection
-            .prepare(`
-              UPDATE symptom_records
-              SET nasal_congestion = ?,
-                  nasal_itching = ?,
-                  sneezing = ?,
-                  runny_nose = ?,
-                  tnss_total = ?,
-                  notes_encrypted = ?,
-                  encryption_key_version = ?,
-                  revision = revision + 1,
-                  updated_at = ?
-              WHERE id = ? AND patient_id = ? AND revision = ?
-                AND deleted_at IS NULL
-            `)
-            .run(
+          return query(
+            `UPDATE symptom_records
+             SET nasal_congestion = $1,
+                 nasal_itching = $2,
+                 sneezing = $3,
+                 runny_nose = $4,
+                 tnss_total = $5,
+                 notes_encrypted = $6,
+                 encryption_key_version = $7,
+                 revision = revision + 1,
+                 updated_at = $8
+             WHERE id = $9 AND patient_id = $10 AND revision = $11
+               AND deleted_at IS NULL`,
+            [
               input.nasalCongestion,
               input.nasalItching,
               input.sneezing,
@@ -400,11 +414,12 @@ export class SqliteRecordRepository implements RecordRepository {
               input.id,
               input.patientId,
               input.expectedRevision
-            );
+            ]
+          );
         }
       });
       if (outcome.kind === "updated") {
-        this.appendVersion({
+        await this.appendVersion(query, {
           recordType: "symptom",
           recordId: input.id,
           revision: outcome.record.revision,
@@ -424,8 +439,9 @@ export class SqliteRecordRepository implements RecordRepository {
     expectedRevision: number,
     requestId: string
   ): Promise<DeleteRecordOutcome> {
-    return this.database.transaction(() =>
+    return this.database.transaction(async (client) =>
       this.deleteOwned({
+        query: this.inTransaction(client),
         table: "symptom_records",
         patientId,
         id,
@@ -438,13 +454,13 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   async getProfile(patientId: string): Promise<HealthProfile | null> {
-    const row = this.database.connection
-      .prepare(`
-        SELECT *
-        FROM profiles
-        WHERE patient_id = ?
-      `)
-      .get(patientId) as unknown as ProfileRow | undefined;
+    const { rows } = await this.database.query<ProfileRow>(
+      `SELECT *
+       FROM profiles
+       WHERE patient_id = $1`,
+      [patientId]
+    );
+    const row = rows[0];
     return row === undefined
       ? null
       : toProfile(this.encryption, row);
@@ -453,14 +469,15 @@ export class SqliteRecordRepository implements RecordRepository {
   async updateProfile(
     input: UpdateProfileRecordInput
   ): Promise<UpdateProfileRecordOutcome> {
-    return this.database.transaction(() => {
-      const current = this.database.connection
-        .prepare(`
-          SELECT *
-          FROM profiles
-          WHERE patient_id = ?
-        `)
-        .get(input.patientId) as unknown as ProfileRow | undefined;
+    return this.database.transaction(async (client) => {
+      const query = this.inTransaction(client);
+      const { rows: currentRows } = await query<ProfileRow>(
+        `SELECT *
+         FROM profiles
+         WHERE patient_id = $1`,
+        [input.patientId]
+      );
+      const current = currentRows[0];
 
       if (current === undefined) {
         if (input.expectedRevision !== 0) {
@@ -474,17 +491,15 @@ export class SqliteRecordRepository implements RecordRepository {
           input.notes
         ]);
         try {
-          this.database.connection
-            .prepare(`
-              INSERT INTO profiles(
-                patient_id, display_name_encrypted, birth_date, sex,
-                allergy_history_encrypted, known_allergies_encrypted,
-                common_triggers_encrypted, notes_encrypted,
-                encryption_key_version,
-                revision, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?, ?)
-            `)
-            .run(
+          await query(
+            `INSERT INTO profiles(
+              patient_id, display_name_encrypted, birth_date, sex,
+              allergy_history_encrypted, known_allergies_encrypted,
+              common_triggers_encrypted, notes_encrypted,
+              encryption_key_version,
+              revision, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, 1, $10, $11)`,
+            [
               input.patientId,
               encrypted.stored[0],
               input.birthDate,
@@ -496,17 +511,18 @@ export class SqliteRecordRepository implements RecordRepository {
               encrypted.keyVersion,
               input.updatedAt,
               input.updatedAt
-            );
+            ]
+          );
         } catch (error) {
-          // 并发创建竞态：另一进程已建档案，裸 UNIQUE 映射为
+          // 并发创建竞态：另一进程已建档案，裸唯一冲突映射为
           // version_conflict（评审 B P2），不归为 internal_error。
-          if (isUniqueConstraint(error)) {
+          if (isUniqueViolation(error)) {
             return { kind: "version_conflict", currentRevision: 1 };
           }
           throw error;
         }
-        const record = this.readProfileSync(input.patientId);
-        this.appendVersion({
+        const record = await this.readProfileSync(query, input.patientId);
+        await this.appendVersion(query, {
           recordType: "profile",
           recordId: input.patientId,
           revision: record.revision,
@@ -525,22 +541,20 @@ export class SqliteRecordRepository implements RecordRepository {
         input.commonTriggers,
         input.notes
       ]);
-      const result = this.database.connection
-        .prepare(`
-          UPDATE profiles
-          SET display_name_encrypted = ?,
-              birth_date = ?,
-              sex = ?,
-              allergy_history_encrypted = ?,
-              known_allergies_encrypted = ?,
-              common_triggers_encrypted = ?,
-              notes_encrypted = ?,
-              encryption_key_version = ?,
-              revision = revision + 1,
-              updated_at = ?
-          WHERE patient_id = ? AND revision = ?
-        `)
-        .run(
+      const { rowCount } = await query(
+        `UPDATE profiles
+         SET display_name_encrypted = $1,
+             birth_date = $2,
+             sex = $3,
+             allergy_history_encrypted = $4,
+             known_allergies_encrypted = $5,
+             common_triggers_encrypted = $6,
+             notes_encrypted = $7,
+             encryption_key_version = $8,
+             revision = revision + 1,
+             updated_at = $9
+         WHERE patient_id = $10 AND revision = $11`,
+        [
           encrypted.stored[0],
           input.birthDate,
           input.sex,
@@ -552,24 +566,25 @@ export class SqliteRecordRepository implements RecordRepository {
           input.updatedAt,
           input.patientId,
           input.expectedRevision
-        );
+        ]
+      );
 
-      if (result.changes !== 1) {
-        const latest = this.database.connection
-          .prepare(`
-            SELECT revision
-            FROM profiles
-            WHERE patient_id = ?
-          `)
-          .get(input.patientId) as unknown as { revision: number } | undefined;
+      if (rowCount !== 1) {
+        const { rows: latestRows } = await query<{ revision: number }>(
+          `SELECT revision
+           FROM profiles
+           WHERE patient_id = $1`,
+          [input.patientId]
+        );
+        const latest = latestRows[0];
         return {
           kind: "version_conflict",
           currentRevision: latest?.revision ?? current.revision
         };
       }
 
-      const record = this.readProfileSync(input.patientId);
-      this.appendVersion({
+      const record = await this.readProfileSync(query, input.patientId);
+      await this.appendVersion(query, {
         recordType: "profile",
         recordId: input.patientId,
         revision: record.revision,
@@ -585,8 +600,9 @@ export class SqliteRecordRepository implements RecordRepository {
   async createExposure(
     input: CreateExposureRecordInput
   ): Promise<CreateExposureRecordOutcome> {
-    return this.database.transaction(() => {
-      const outcome = runIdempotentCreate(this.database.connection, {
+    return this.database.transaction(async (client) => {
+      const query = this.inTransaction(client);
+      const outcome = await runPgIdempotentCreate(this.database, client, {
         table: "idempotency_records",
         actorColumn: "patient_id",
         scopeColumn: "command_scope",
@@ -598,28 +614,27 @@ export class SqliteRecordRepository implements RecordRepository {
         resultJson: JSON.stringify(input.record),
         createdAt: input.record.createdAt,
         uniqueConflictAsDateConflict: true,
-        verifyExists: (json) =>
-          this.findOwned(
+        verifyExists: async (json) =>
+          (await this.findOwned(
+            query,
             "exposure_records",
             input.patientId,
             (JSON.parse(json) as ExposureRecord).id,
             (row: ExposureRow) => toExposure(this.encryption, row)
-          ) !== null,
-        insert: () => {
+          )) !== null,
+        insert: async () => {
           const encrypted = encryptOptionalFields(this.encryption, [
             input.record.otherDescription,
             input.record.notes
           ]);
-          this.database.connection
-            .prepare(`
-              INSERT INTO exposure_records(
-                id, patient_id, local_date,
-                factors_json, other_description_encrypted, notes_encrypted,
-                encryption_key_version,
-                revision, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `)
-            .run(
+          await query(
+            `INSERT INTO exposure_records(
+              id, patient_id, local_date,
+              factors_json, other_description_encrypted, notes_encrypted,
+              encryption_key_version,
+              revision, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+            [
               input.record.id,
               input.patientId,
               input.record.localDate,
@@ -630,11 +645,12 @@ export class SqliteRecordRepository implements RecordRepository {
               input.record.revision,
               input.record.createdAt,
               input.record.updatedAt
-            );
+            ]
+          );
         }
       });
       if (outcome.kind === "created") {
-        this.appendVersion({
+        await this.appendVersion(query, {
           recordType: "exposure",
           recordId: input.record.id,
           revision: input.record.revision,
@@ -649,15 +665,14 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   async listExposures(patientId: string): Promise<ExposureRecord[]> {
-    return this.guardRead(() => {
-      const rows = this.database.connection
-        .prepare(`
-          SELECT *
-          FROM exposure_records
-          WHERE patient_id = ? AND deleted_at IS NULL
-          ORDER BY local_date DESC, created_at DESC
-        `)
-        .all(patientId) as unknown as ExposureRow[];
+    return this.guardRead(async () => {
+      const { rows } = await this.database.query<ExposureRow>(
+        `SELECT *
+         FROM exposure_records
+         WHERE patient_id = $1 AND deleted_at IS NULL
+         ORDER BY local_date DESC, created_at DESC`,
+        [patientId]
+      );
       return rows.map((row: ExposureRow) =>
         toExposure(this.encryption, row)
       );
@@ -669,6 +684,7 @@ export class SqliteRecordRepository implements RecordRepository {
     id: string
   ): Promise<ExposureRecord | null> {
     return this.findOwned(
+      (sql, params) => this.database.query(sql, params),
       "exposure_records",
       patientId,
       id,
@@ -679,8 +695,10 @@ export class SqliteRecordRepository implements RecordRepository {
   async updateExposure(
     input: UpdateExposureRecordInput
   ): Promise<UpdateExposureRecordOutcome> {
-    return this.database.transaction(() => {
-      const current = this.findOwned(
+    return this.database.transaction(async (client) => {
+      const query = this.inTransaction(client);
+      const current = await this.findOwned(
+        query,
         "exposure_records",
         input.patientId,
         input.id,
@@ -690,31 +708,30 @@ export class SqliteRecordRepository implements RecordRepository {
         return { kind: "not_found" };
       }
 
-      const outcome = this.commitOwnedUpdate({
+      const outcome = await this.commitOwnedUpdate({
+        query,
         table: "exposure_records",
         patientId: input.patientId,
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
         mapRow: (row: ExposureRow) => toExposure(this.encryption, row),
-        applyUpdate: () => {
+        applyUpdate: async () => {
           const encrypted = encryptOptionalFields(this.encryption, [
             input.otherDescription,
             input.notes
           ]);
-          return this.database.connection
-            .prepare(`
-              UPDATE exposure_records
-              SET factors_json = ?,
-                  other_description_encrypted = ?,
-                  notes_encrypted = ?,
-                  encryption_key_version = ?,
-                  revision = revision + 1,
-                  updated_at = ?
-              WHERE id = ? AND patient_id = ? AND revision = ?
-                AND deleted_at IS NULL
-            `)
-            .run(
+          return query(
+            `UPDATE exposure_records
+             SET factors_json = $1,
+                 other_description_encrypted = $2,
+                 notes_encrypted = $3,
+                 encryption_key_version = $4,
+                 revision = revision + 1,
+                 updated_at = $5
+             WHERE id = $6 AND patient_id = $7 AND revision = $8
+               AND deleted_at IS NULL`,
+            [
               JSON.stringify(input.factors),
               encrypted.stored[0],
               encrypted.stored[1],
@@ -723,11 +740,12 @@ export class SqliteRecordRepository implements RecordRepository {
               input.id,
               input.patientId,
               input.expectedRevision
-            );
+            ]
+          );
         }
       });
       if (outcome.kind === "updated") {
-        this.appendVersion({
+        await this.appendVersion(query, {
           recordType: "exposure",
           recordId: input.id,
           revision: outcome.record.revision,
@@ -747,8 +765,9 @@ export class SqliteRecordRepository implements RecordRepository {
     expectedRevision: number,
     requestId: string
   ): Promise<DeleteRecordOutcome> {
-    return this.database.transaction(() =>
+    return this.database.transaction(async (client) =>
       this.deleteOwned({
+        query: this.inTransaction(client),
         table: "exposure_records",
         patientId,
         id,
@@ -763,8 +782,9 @@ export class SqliteRecordRepository implements RecordRepository {
   async createMedication(
     input: CreateMedicationRecordInput
   ): Promise<CreateMedicationRecordOutcome> {
-    return this.database.transaction(() => {
-      const outcome = runIdempotentCreate(this.database.connection, {
+    return this.database.transaction(async (client) => {
+      const query = this.inTransaction(client);
+      const outcome = await runPgIdempotentCreate(this.database, client, {
         table: "idempotency_records",
         actorColumn: "patient_id",
         scopeColumn: "command_scope",
@@ -775,31 +795,30 @@ export class SqliteRecordRepository implements RecordRepository {
         requestHash: input.requestHash,
         resultJson: JSON.stringify(input.record),
         createdAt: input.record.createdAt,
-        verifyExists: (json) =>
-          this.findOwned(
+        verifyExists: async (json) =>
+          (await this.findOwned(
+            query,
             "medication_records",
             input.patientId,
             (JSON.parse(json) as MedicationRecord).id,
             (row: MedicationRow) => toMedication(this.encryption, row)
-          ) !== null,
-        insert: () => {
+          )) !== null,
+        insert: async () => {
           const encrypted = encryptOptionalFields(this.encryption, [
             input.record.medicationName,
             input.record.dosage,
             input.record.actualUse,
             input.record.notes
           ]);
-          this.database.connection
-            .prepare(`
-              INSERT INTO medication_records(
-                id, patient_id, local_date,
-                medication_name_encrypted, dosage_encrypted,
-                actual_use_encrypted, notes_encrypted,
-                encryption_key_version,
-                revision, created_at, updated_at
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            `)
-            .run(
+          await query(
+            `INSERT INTO medication_records(
+              id, patient_id, local_date,
+              medication_name_encrypted, dosage_encrypted,
+              actual_use_encrypted, notes_encrypted,
+              encryption_key_version,
+              revision, created_at, updated_at
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [
               input.record.id,
               input.patientId,
               input.record.localDate,
@@ -811,11 +830,12 @@ export class SqliteRecordRepository implements RecordRepository {
               input.record.revision,
               input.record.createdAt,
               input.record.updatedAt
-            );
+            ]
+          );
         }
       });
       if (outcome.kind === "created") {
-        this.appendVersion({
+        await this.appendVersion(query, {
           recordType: "medication",
           recordId: input.record.id,
           revision: input.record.revision,
@@ -839,15 +859,14 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   async listMedications(patientId: string): Promise<MedicationRecord[]> {
-    return this.guardRead(() => {
-      const rows = this.database.connection
-        .prepare(`
-          SELECT *
-          FROM medication_records
-          WHERE patient_id = ? AND deleted_at IS NULL
-          ORDER BY local_date DESC, created_at DESC
-        `)
-        .all(patientId) as unknown as MedicationRow[];
+    return this.guardRead(async () => {
+      const { rows } = await this.database.query<MedicationRow>(
+        `SELECT *
+         FROM medication_records
+         WHERE patient_id = $1 AND deleted_at IS NULL
+         ORDER BY local_date DESC, created_at DESC`,
+        [patientId]
+      );
       return rows.map((row: MedicationRow) =>
         toMedication(this.encryption, row)
       );
@@ -859,6 +878,7 @@ export class SqliteRecordRepository implements RecordRepository {
     id: string
   ): Promise<MedicationRecord | null> {
     return this.findOwned(
+      (sql, params) => this.database.query(sql, params),
       "medication_records",
       patientId,
       id,
@@ -869,8 +889,10 @@ export class SqliteRecordRepository implements RecordRepository {
   async updateMedication(
     input: UpdateMedicationRecordInput
   ): Promise<UpdateMedicationRecordOutcome> {
-    return this.database.transaction(() => {
-      const current = this.findOwned(
+    return this.database.transaction(async (client) => {
+      const query = this.inTransaction(client);
+      const current = await this.findOwned(
+        query,
         "medication_records",
         input.patientId,
         input.id,
@@ -880,34 +902,33 @@ export class SqliteRecordRepository implements RecordRepository {
         return { kind: "not_found" };
       }
 
-      const outcome = this.commitOwnedUpdate({
+      const outcome = await this.commitOwnedUpdate({
+        query,
         table: "medication_records",
         patientId: input.patientId,
         id: input.id,
         expectedRevision: input.expectedRevision,
         currentRevision: current.revision,
         mapRow: (row: MedicationRow) => toMedication(this.encryption, row),
-        applyUpdate: () => {
+        applyUpdate: async () => {
           const encrypted = encryptOptionalFields(this.encryption, [
             input.medicationName,
             input.dosage,
             input.actualUse,
             input.notes
           ]);
-          return this.database.connection
-            .prepare(`
-              UPDATE medication_records
-              SET medication_name_encrypted = ?,
-                  dosage_encrypted = ?,
-                  actual_use_encrypted = ?,
-                  notes_encrypted = ?,
-                  encryption_key_version = ?,
-                  revision = revision + 1,
-                  updated_at = ?
-              WHERE id = ? AND patient_id = ? AND revision = ?
-                AND deleted_at IS NULL
-            `)
-            .run(
+          return query(
+            `UPDATE medication_records
+             SET medication_name_encrypted = $1,
+                 dosage_encrypted = $2,
+                 actual_use_encrypted = $3,
+                 notes_encrypted = $4,
+                 encryption_key_version = $5,
+                 revision = revision + 1,
+                 updated_at = $6
+             WHERE id = $7 AND patient_id = $8 AND revision = $9
+               AND deleted_at IS NULL`,
+            [
               encrypted.stored[0],
               encrypted.stored[1],
               encrypted.stored[2],
@@ -917,11 +938,12 @@ export class SqliteRecordRepository implements RecordRepository {
               input.id,
               input.patientId,
               input.expectedRevision
-            );
+            ]
+          );
         }
       });
       if (outcome.kind === "updated") {
-        this.appendVersion({
+        await this.appendVersion(query, {
           recordType: "medication",
           recordId: input.id,
           revision: outcome.record.revision,
@@ -941,8 +963,9 @@ export class SqliteRecordRepository implements RecordRepository {
     expectedRevision: number,
     requestId: string
   ): Promise<DeleteRecordOutcome> {
-    return this.database.transaction(() =>
+    return this.database.transaction(async (client) =>
       this.deleteOwned({
+        query: this.inTransaction(client),
         table: "medication_records",
         patientId,
         id,
@@ -958,32 +981,46 @@ export class SqliteRecordRepository implements RecordRepository {
     patientId: string,
     monthPrefix: string
   ): Promise<OverviewSourceData> {
-    return this.guardRead(() =>
-      this.database.readOnly(() => {
-        const symptomDates = (
-          this.database.connection
-            .prepare(`
-              SELECT local_date
-              FROM symptom_records
-              WHERE patient_id = ? AND deleted_at IS NULL
-              GROUP BY local_date
-              ORDER BY local_date DESC
-            `)
-            .all(patientId) as unknown as Array<{ local_date: string }>
-        ).map((row) => row.local_date);
+    return this.guardRead(async () =>
+      // 与 SQLite readOnly 只读事务一致：整个概览读取共享同一快照。
+      this.database.transaction(async (client) => {
+        const query = this.inTransaction(client);
+        const { rows: dateRows } = await query<{ local_date: string }>(
+          `SELECT local_date
+           FROM symptom_records
+           WHERE patient_id = $1 AND deleted_at IS NULL
+           GROUP BY local_date
+           ORDER BY local_date DESC`,
+          [patientId]
+        );
+        const symptomDates = dateRows.map((row) => row.local_date);
 
-        const monthRow = this.database.connection
-          .prepare(`
-            SELECT COUNT(*) AS count
-            FROM symptom_records
-            WHERE patient_id = ? AND local_date LIKE ?
-              AND deleted_at IS NULL
-          `)
-          .get(patientId, `${monthPrefix}%`) as unknown as { count: number };
+        // COUNT 在 PostgreSQL 返回 int8（pg 驱动反序列化为 string），
+        // 强转 int 保持与 SQLite number 语义一致。
+        const { rows: monthRows } = await query<{ count: number }>(
+          `SELECT COUNT(*)::int AS count
+           FROM symptom_records
+           WHERE patient_id = $1 AND local_date LIKE $2
+             AND deleted_at IS NULL`,
+          [patientId, `${monthPrefix}%`]
+        );
+        const monthRow = monthRows[0] ?? { count: 0 };
 
-        const lastSymptom = this.latestProjectionRow("symptom_records", patientId);
-        const lastExposure = this.latestDate("exposure_records", patientId);
-        const lastMedication = this.latestDate("medication_records", patientId);
+        const lastSymptom = await this.latestProjectionRow(
+          query,
+          "symptom_records",
+          patientId
+        );
+        const lastExposure = await this.latestDate(
+          query,
+          "exposure_records",
+          patientId
+        );
+        const lastMedication = await this.latestDate(
+          query,
+          "medication_records",
+          patientId
+        );
 
         return {
           symptomDates,
@@ -1000,19 +1037,23 @@ export class SqliteRecordRepository implements RecordRepository {
     patientId: string,
     month: string
   ): Promise<MonthSourceData> {
-    return this.guardRead(() =>
-      this.database.readOnly(() => {
-        const symptoms = this.projectionRowsInMonth(
+    return this.guardRead(async () =>
+      this.database.transaction(async (client) => {
+        const query = this.inTransaction(client);
+        const symptoms = await this.projectionRowsInMonth(
+          query,
           "symptom_records",
           patientId,
           month
         );
-        const exposureDates = this.datesInMonth(
+        const exposureDates = await this.datesInMonth(
+          query,
           "exposure_records",
           patientId,
           month
         );
-        const medicationDates = this.datesInMonth(
+        const medicationDates = await this.datesInMonth(
+          query,
           "medication_records",
           patientId,
           month
@@ -1027,19 +1068,31 @@ export class SqliteRecordRepository implements RecordRepository {
     from: string,
     to: string
   ): Promise<TrendSourceData> {
-    return this.guardRead(() =>
-      this.database.readOnly(() => {
+    return this.guardRead(async () =>
+      this.database.transaction(async (client) => {
+        const query = this.inTransaction(client);
         return {
-          items: this.projectionRows("symptom_records", patientId, from, to)
+          items: await this.projectionRows(
+            query,
+            "symptom_records",
+            patientId,
+            from,
+            to
+          )
         };
       })
     );
   }
 
+  /** 事务内查询执行器。 */
+  private inTransaction(client: PoolClient): Querier {
+    return (sql, params) => this.database.queryIn(client, sql, params);
+  }
+
   /** 读失败统一映射 storage_unavailable（retryable），绝不伪装成空数据。 */
-  private guardRead<T>(operation: () => T): T {
+  private async guardRead<T>(operation: () => Promise<T>): Promise<T> {
     try {
-      return operation();
+      return await operation();
     } catch (error) {
       if (error instanceof DomainError) {
         throw error;
@@ -1053,7 +1106,7 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   /**
-   * 把公共幂等辅助的归一化结果映射为患者侧领域结果。
+   * 把幂等辅助的归一化结果映射为患者侧领域结果。
    * 重放分支必须解析存储的原结果（原始记录 id），不能返回本次请求
    * 携带的新生成记录——与旧实现读取存储行的语义一致。
    */
@@ -1078,50 +1131,57 @@ export class SqliteRecordRepository implements RecordRepository {
     }
   }
 
-  private findOwned<T, R>(
+  private async findOwned<T, R extends QueryResultRow>(
+    query: Querier,
     table: string,
     patientId: string,
     id: string,
     mapRow: (row: R) => T
-  ): T | null {
-    const row = this.database.connection
-      .prepare(`
-        SELECT *
-        FROM ${table}
-        WHERE id = ? AND patient_id = ? AND deleted_at IS NULL
-      `)
-      .get(id, patientId) as unknown as R | undefined;
+  ): Promise<T | null> {
+    const { rows } = await query<R>(
+      `SELECT *
+       FROM ${table}
+       WHERE id = $1 AND patient_id = $2 AND deleted_at IS NULL`,
+      [id, patientId]
+    );
+    const row = rows[0];
     return row === undefined ? null : mapRow(row);
   }
 
-  /** 执行乐观锁 UPDATE 并统一处理 changes!==1 的版本冲突与事后丢失。 */
-  private commitOwnedUpdate<T, R>(options: {
+  /** 执行乐观锁 UPDATE 并统一处理 rowCount!==1 的版本冲突与事后丢失。 */
+  private async commitOwnedUpdate<T, R extends QueryResultRow>(options: {
+    query: Querier;
     table: string;
     patientId: string;
     id: string;
     expectedRevision: number;
     currentRevision: number;
     mapRow: (row: R) => T;
-    applyUpdate: () => { changes: number | bigint };
-  }):
+    applyUpdate: () => Promise<{ rows: unknown[]; rowCount: number }>;
+  }): Promise<
     | { kind: "updated"; record: T }
     | { kind: "not_found" }
-    | { kind: "version_conflict"; currentRevision: number } {
-    const result = options.applyUpdate();
-    if (Number(result.changes) !== 1) {
+    | { kind: "version_conflict"; currentRevision: number }
+  > {
+    const result = await options.applyUpdate();
+    if (result.rowCount !== 1) {
+      const latest = await this.findOwned(
+        options.query,
+        options.table,
+        options.patientId,
+        options.id,
+        options.mapRow
+      );
       return {
         kind: "version_conflict",
         currentRevision:
-          (this.findOwned(
-            options.table,
-            options.patientId,
-            options.id,
-            options.mapRow
-          ) as { revision: number } | null)?.revision ?? options.currentRevision
+          (latest as { revision: number } | null)?.revision ??
+          options.currentRevision
       };
     }
 
-    const updated = this.findOwned(
+    const updated = await this.findOwned(
+      options.query,
       options.table,
       options.patientId,
       options.id,
@@ -1133,7 +1193,8 @@ export class SqliteRecordRepository implements RecordRepository {
     return { kind: "updated", record: updated };
   }
 
-  private deleteOwned<T, R>(options: {
+  private async deleteOwned<T, R extends QueryResultRow>(options: {
+    query: Querier;
     table: string;
     patientId: string;
     id: string;
@@ -1141,8 +1202,9 @@ export class SqliteRecordRepository implements RecordRepository {
     mapRow: (row: R) => T;
     recordType: "symptom" | "exposure" | "medication";
     requestId: string;
-  }): DeleteRecordOutcome {
-    const current = this.findOwned(
+  }): Promise<DeleteRecordOutcome> {
+    const current = await this.findOwned(
+      options.query,
       options.table,
       options.patientId,
       options.id,
@@ -1154,30 +1216,27 @@ export class SqliteRecordRepository implements RecordRepository {
 
     // 软删除：只打时间戳不物理删除；同日唯一约束由部分唯一索引
     // （WHERE deleted_at IS NULL）保证，删除后同日可重建。
-    const result = this.database.connection
-      .prepare(`
-        UPDATE ${options.table}
-        SET deleted_at = ?
-        WHERE id = ? AND patient_id = ? AND revision = ?
-          AND deleted_at IS NULL
-      `)
-      .run(
+    const { rowCount } = await options.query(
+      `UPDATE ${options.table}
+       SET deleted_at = $1
+       WHERE id = $2 AND patient_id = $3 AND revision = $4
+         AND deleted_at IS NULL`,
+      [
         new Date().toISOString(),
         options.id,
         options.patientId,
         options.expectedRevision
-      );
+      ]
+    );
 
-    if (result.changes !== 1) {
-      const latest = this.database.connection
-        .prepare(`
-          SELECT revision
-          FROM ${options.table}
-          WHERE id = ? AND patient_id = ?
-        `)
-        .get(options.id, options.patientId) as unknown as
-        | { revision: number }
-        | undefined;
+    if (rowCount !== 1) {
+      const { rows: latestRows } = await options.query<{ revision: number }>(
+        `SELECT revision
+         FROM ${options.table}
+         WHERE id = $1 AND patient_id = $2`,
+        [options.id, options.patientId]
+      );
+      const latest = latestRows[0];
       const revision = (current as { revision: number }).revision;
       return {
         kind: "version_conflict",
@@ -1189,7 +1248,7 @@ export class SqliteRecordRepository implements RecordRepository {
     // 删除凭证 revision 取被删 revision + 1：PK(record_type, record_id,
     // revision) 不允许与同 revision 的 create/update 凭证重号，且
     // 账本按 revision 单调递增可完整回放。
-    this.appendVersion({
+    await this.appendVersion(options.query, {
       recordType: options.recordType,
       recordId: options.id,
       revision: revision + 1,
@@ -1202,28 +1261,29 @@ export class SqliteRecordRepository implements RecordRepository {
   }
 
   /** 追加一次写操作的患者记录版本凭证（与写操作同一事务）。 */
-  private appendVersion(options: {
-    recordType: "symptom" | "profile" | "exposure" | "medication";
-    recordId: string;
-    revision: number;
-    operation: "create" | "update" | "delete";
-    snapshot: unknown;
-    actorId: string;
-    requestId: string;
-  }): void {
+  private async appendVersion(
+    query: Querier,
+    options: {
+      recordType: "symptom" | "profile" | "exposure" | "medication";
+      recordId: string;
+      revision: number;
+      operation: "create" | "update" | "delete";
+      snapshot: unknown;
+      actorId: string;
+      requestId: string;
+    }
+  ): Promise<void> {
     const { stored, keyVersion } = encryptStoredField(
       this.encryption,
       JSON.stringify(options.snapshot)
     );
-    this.database.connection
-      .prepare(`
-        INSERT INTO patient_record_versions(
-          record_type, record_id, revision, operation,
-          encrypted_snapshot, encryption_key_version,
-          actor_kind, actor_id, request_id, created_at
-        ) VALUES (?, ?, ?, ?, ?, ?, 'patient', ?, ?, ?)
-      `)
-      .run(
+    await query(
+      `INSERT INTO patient_record_versions(
+        record_type, record_id, revision, operation,
+        encrypted_snapshot, encryption_key_version,
+        actor_kind, actor_id, request_id, created_at
+      ) VALUES ($1, $2, $3, $4, $5, $6, 'patient', $7, $8, $9)`,
+      [
         options.recordType,
         options.recordId,
         options.revision,
@@ -1233,111 +1293,108 @@ export class SqliteRecordRepository implements RecordRepository {
         options.actorId,
         options.requestId,
         new Date().toISOString()
-      );
+      ]
+    );
   }
 
-  private readProfileSync(patientId: string): HealthProfile {
-    const row = this.database.connection
-      .prepare(`
-        SELECT *
-        FROM profiles
-        WHERE patient_id = ?
-      `)
-      .get(patientId) as unknown as ProfileRow | undefined;
+  private async readProfileSync(
+    query: Querier,
+    patientId: string
+  ): Promise<HealthProfile> {
+    const { rows } = await query<ProfileRow>(
+      `SELECT *
+       FROM profiles
+       WHERE patient_id = $1`,
+      [patientId]
+    );
+    const row = rows[0];
     if (row === undefined) {
       throw new Error("profile row missing after write");
     }
     return toProfile(this.encryption, row);
   }
 
-  private latestProjectionRow(
+  private async latestProjectionRow(
+    query: Querier,
     table: string,
     patientId: string
-  ): MonthSymptomRow | null {
-    const row = this.database.connection
-      .prepare(`
-        SELECT id, local_date, tnss_total
-        FROM ${table}
-        WHERE patient_id = ? AND deleted_at IS NULL
-        ORDER BY local_date DESC, created_at DESC
-        LIMIT 1
-      `)
-      .get(patientId) as unknown as ProjectionRow | undefined;
+  ): Promise<MonthSymptomRow | null> {
+    const { rows } = await query<ProjectionRow>(
+      `SELECT id, local_date, tnss_total
+       FROM ${table}
+       WHERE patient_id = $1 AND deleted_at IS NULL
+       ORDER BY local_date DESC, created_at DESC
+       LIMIT 1`,
+      [patientId]
+    );
+    const row = rows[0];
     return row === undefined ? null : toMonthSymptom(row);
   }
 
-  private latestDate(table: string, patientId: string): string | null {
-    const row = this.database.connection
-      .prepare(`
-        SELECT local_date
-        FROM ${table}
-        WHERE patient_id = ? AND deleted_at IS NULL
-        ORDER BY local_date DESC, created_at DESC
-        LIMIT 1
-      `)
-      .get(patientId) as unknown as { local_date: string } | undefined;
-    return row?.local_date ?? null;
+  private async latestDate(
+    query: Querier,
+    table: string,
+    patientId: string
+  ): Promise<string | null> {
+    const { rows } = await query<{ local_date: string }>(
+      `SELECT local_date
+       FROM ${table}
+       WHERE patient_id = $1 AND deleted_at IS NULL
+       ORDER BY local_date DESC, created_at DESC
+       LIMIT 1`,
+      [patientId]
+    );
+    return rows[0]?.local_date ?? null;
   }
 
-  private datesInMonth(
+  private async datesInMonth(
+    query: Querier,
     table: string,
     patientId: string,
     month: string
-  ): string[] {
-    return (
-      this.database.connection
-        .prepare(`
-          SELECT DISTINCT local_date
-          FROM ${table}
-          WHERE patient_id = ? AND local_date LIKE ?
-            AND deleted_at IS NULL
-        `)
-        .all(patientId, `${month}%`) as unknown as Array<{
-        local_date: string;
-      }>
-    ).map((row) => row.local_date);
+  ): Promise<string[]> {
+    const { rows } = await query<{ local_date: string }>(
+      `SELECT DISTINCT local_date
+       FROM ${table}
+       WHERE patient_id = $1 AND local_date LIKE $2
+         AND deleted_at IS NULL`,
+      [patientId, `${month}%`]
+    );
+    return rows.map((row) => row.local_date);
   }
 
-  private projectionRowsInMonth(
+  private async projectionRowsInMonth(
+    query: Querier,
     table: string,
     patientId: string,
     month: string
-  ): MonthSymptomRow[] {
-    const rows = this.database.connection
-      .prepare(`
-        SELECT id, local_date, tnss_total
-        FROM ${table}
-        WHERE patient_id = ? AND local_date LIKE ?
-          AND deleted_at IS NULL
-        ORDER BY local_date ASC, created_at ASC
-      `)
-      .all(patientId, `${month}%`) as unknown as ProjectionRow[];
+  ): Promise<MonthSymptomRow[]> {
+    const { rows } = await query<ProjectionRow>(
+      `SELECT id, local_date, tnss_total
+       FROM ${table}
+       WHERE patient_id = $1 AND local_date LIKE $2
+         AND deleted_at IS NULL
+       ORDER BY local_date ASC, created_at ASC`,
+      [patientId, `${month}%`]
+    );
     return rows.map(toMonthSymptom);
   }
 
-  private projectionRows(
+  private async projectionRows(
+    query: Querier,
     table: string,
     patientId: string,
     from: string,
     to: string
-  ): MonthSymptomRow[] {
-    const rows = this.database.connection
-      .prepare(`
-        SELECT id, local_date, tnss_total
-        FROM ${table}
-        WHERE patient_id = ? AND local_date >= ? AND local_date <= ?
-          AND deleted_at IS NULL
-        ORDER BY local_date ASC, created_at ASC
-      `)
-      .all(patientId, from, to) as unknown as ProjectionRow[];
+  ): Promise<MonthSymptomRow[]> {
+    const { rows } = await query<ProjectionRow>(
+      `SELECT id, local_date, tnss_total
+       FROM ${table}
+       WHERE patient_id = $1 AND local_date >= $2 AND local_date <= $3
+         AND deleted_at IS NULL
+       ORDER BY local_date ASC, created_at ASC`,
+      [patientId, from, to]
+    );
     return rows.map(toMonthSymptom);
   }
-}
-
-function toMonthSymptom(row: ProjectionRow): MonthSymptomRow {
-  return {
-    id: row.id,
-    localDate: row.local_date,
-    tnssTotal: row.tnss_total
-  };
 }

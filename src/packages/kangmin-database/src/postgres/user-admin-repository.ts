@@ -7,7 +7,7 @@ import type {
   UserListRow,
   UserReadRepository
 } from "@kangmin/core/operations/user-admin/user-admin-ports";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 interface UserListShape {
   id: string;

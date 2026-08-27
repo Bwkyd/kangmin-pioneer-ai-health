@@ -11,10 +11,10 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
-import { KangminDatabase } from "../infrastructure/database.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
-import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
+import { SqliteAgentAdminRepository } from "@kangmin/database/sqlite/agent-admin-repository";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type { CommandResult } from "@kangmin/core/kernel/result";

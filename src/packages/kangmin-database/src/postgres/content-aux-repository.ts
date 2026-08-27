@@ -14,8 +14,8 @@ import type {
   MediaStatus,
   UpdateMessageResult
 } from "@kangmin/core/operations/admin/content-aux-repository";
-import { isUniqueViolation, KangminPgDatabase } from "./pg-database.js";
-import { runPgIdempotentCreate } from "./pg-idempotency.js";
+import { isUniqueViolation, KangminPgDatabase } from "./database.js";
+import { runPgIdempotentCreate } from "./idempotency.js";
 
 interface CategoryRow {
   id: string;

@@ -8,8 +8,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqlitePlanRegistry } from "../infrastructure/sqlite-plan-registry.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqlitePlanRegistry } from "@kangmin/database/sqlite/plan-registry";
 import { ClinicalRuleKernel } from "@kangmin/core/intelligence/clinical-rules/clinical-rule-kernel";
 import type {
   ClinicalVerdict,
