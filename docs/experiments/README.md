@@ -38,8 +38,14 @@
 | 030 | 2026-08-27 | 进行中（基础壳入口待完成正反验证） | [基础壳与环境门禁快速冒烟入口](030_shell-smoke-entry.md) |
 | 031 | 2026-08-27 | 通过可行性门（行为不退化，导航成本继续观察） | [小程序 workspace 最小分形样本](031_miniprogram-workspace-fractal-smoke.md) |
 | 032 | 2026-08-27 | 已通过（后台独立，旧患者 Web 退役） | [管理后台独立与患者 Web 退役](032_admin-app-patient-web-retirement.md) |
+| 033 | 2026-08-27 | 已完成（核心包四组边界） | [核心包最小分形边界](033_core-package-fractal-boundary.md) |
+| 034 | 2026-08-27 | 已完成（数据库双后端同构） | [数据库包双后端](034_database-package-dual-backend.md) |
+| 035 | 2026-08-27 | 已完成（外部适配器失败关闭） | [集成包失败关闭](035_integrations-package-fail-closed.md) |
+| 036 | 2026-08-27 | 已完成（runtime、CLI 与 API 收口） | [runtime、CLI 与 API 入口](036_runtime-cli-api-entrypoints.md) |
+| 037 | 2026-08-27 | 已完成（最终 workspace 交付链） | [workspace 交付链](037_workspace-delivery-chain.md) |
+| 038 | 2026-08-27 | 本地通过，待 PR CI | [四条业务链技术预验收](038_business-preacceptance.md) |
 
-下一份实验编号从 `033` 开始。
+下一份实验编号从 `039` 开始。
 
 新增实验必须写明：状态、日期、事实或代码基线、假设与变量、证据来源、成本与耗时、
 验证方式和已知限制；结论与推断分开，推断不得写成当前事实。

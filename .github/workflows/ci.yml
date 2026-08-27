@@ -91,6 +91,10 @@ jobs:
           KANGMIN_TEST_S3_ENDPOINT: http://127.0.0.1:9000
           KANGMIN_TEST_S3_BUCKET: kangmin-test
 
+      - name: Four business paths preacceptance
+        run: npm run test:acceptance
+        working-directory: src
+
   image:
     name: image
     runs-on: ubuntu-latest

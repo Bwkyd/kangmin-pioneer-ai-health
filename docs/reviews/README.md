@@ -40,8 +40,15 @@
 | 034 | 2026-08-27 | 元反思与交付前复核 | [模型端口测试拆分元反思与交付前复核](034_model-ports-test-split-review.md) |
 | 035 | 2026-08-27 | 三视角交付复核 | [内容供给闭环快速冒烟入口评审](035_content-smoke-entry-review.md) |
 | 036 | 2026-08-27 | 元反思与三视角交付复核 | [管理后台独立与患者 Web 退役评审](036_admin-app-retirement-review.md) |
+| 037 | 2026-08-27 | 元反思与交付前复核 | [核心包边界复核](037_core-package-boundary-review.md) |
+| 038 | 2026-08-27 | 元反思与交付前复核 | [数据库包复核](038_database-package-review.md) |
+| 039 | 2026-08-27 | 元反思与交付前复核 | [集成包复核](039_integrations-package-review.md) |
+| 040 | 2026-08-27 | 元反思与交付前复核 | [runtime、CLI 与 API 复核](040_runtime-cli-api-review.md) |
+| 041 | 2026-08-27 | 元反思与交付前复核 | [workspace 交付复核](041_workspace-delivery-review.md) |
+| 042 | 2026-08-27 | 部署后复核 | [workspace 部署复核](042_workspace-deployment-review.md) |
+| 043 | 2026-08-27 | 元反思与三视角交付复核 | [四条业务链技术预验收复核](043_business-preacceptance-review.md) |
 
-下一份评审编号从 `037` 开始。
+下一份评审编号从 `044` 开始。
 
 阅读顺序为 002 → 001 → 003。003 保留原始输出，因此其中旧工作区的绝对路径和
 当时行号不做重写；需要当前证据时回到现有代码重新定位。
