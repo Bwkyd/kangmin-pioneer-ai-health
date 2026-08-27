@@ -13,6 +13,7 @@
 
 - P2（已修）：首轮 shell 冒烟引用了已改名的首页测试，Node 报文件级 `ok` 但没有注册目标测试。冒烟入口按既有失败关闭规则拒绝通过；更新为当前逐字测试名后 6/6 通过。
 - P2（已修）：最初结构多套 `domains/` 空壳，演化体检显示导航成本 13.60→13.73。四组改为直接位于 core `src/`，纯应用编排再归 patient/operations，避免继续增加无业务含义的分类层。
+- P1（已修）：首次 PR 的 `quality` 全绿，但 OCI builder 在复制 workspace manifests 前执行 `npm ci`，没有安装从根 manifest 移出的文档解析依赖；即使侥幸构建，runner 也缺少 `@kangmin/core` 软链接目标。Dockerfile 现先复制三个 workspace manifest，再在运行镜像保留 core manifest 与 dist。本机没有 Docker，不能冒充本地镜像已验证；以第二次 CI 的真实构建、容器 CLI 冒烟和生产依赖审计放行。
 - 最终 P0–P2：0。核心包独立类型检查；外层依赖扫描通过；旧路径检索为空；类型、构建、四组冒烟、医学窄测、完整回归与真实浏览器 E2E 均通过。
 - 限制：本地 PostgreSQL/S3 资源未配置，78 条契约测试由 CI 强制补齐；通配子路径导出是私有 workspace 的迁移期稳定入口，后续不得把它宣称为公共 SDK。
 

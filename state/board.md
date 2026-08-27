@@ -6,7 +6,7 @@
 > ## 🧩 核心包按四组建立可执行边界（2026-08-27 第253轮 · 基线 `origin/main@2068478`，待提交）
 > 本轮对应 #346，只处理领域内核、患者能力、智能/内容/运营能力、包导出与门禁四类实体。纯 kernel、领域端口/服务与纯应用编排迁入私有 workspace 包 `@kangmin/core`；业务直接按 `patient / intelligence / content / operations` 四组归位，患者应用编排归 patient、管理应用编排归 operations，未保留无业务含义的 `domains/` 或 `application/` 壳层。外围代码统一通过包子路径访问；数据库、HTTP、CLI、界面、truth、医学规则、患者数据均未改变。
 > 执行前新增 `check-core-package.mjs` 并确认旧结构下非零失败；迁移后核心包独立 typecheck，门禁拒绝核心反向依赖 infrastructure/http/cli/apps/database/integrations，旧 `kernel/`、`modules/` 消失。四组冒烟 2/2、2/2、3/3、6/6；其中 shell 入口实际捕获旧测试名漂移产生的空测试假绿并已修复。医学规则/发布门禁 36/36，完整本地门禁 360 通过、78 条因未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium 后台链路通过。演化护栏正常树通过，临时新增第 11 个 `src` 子目录时明确拦截，删除负例后恢复通过；长文件基线只按新路径重键，没有扩大额度。
-> sequential-thinking 与 `km-review` 最终 P0–P2 清零。演化两线必须如实读：代码文件 306、p50 121、超 600 行 14.4%、用例密度 6.3 均不变；导航成本因 workspace 边界与包骨架从 13.60 暂升至 13.89。故本轮只宣称依赖范围被机械收紧，不冒充全仓复杂度已下降；#347–#349 继续收口 database/integrations/runtime，#350 对最终树复诊。详见实验 033 与评审 037；待 commit、PR、真实 PostgreSQL/S3 CI、合并与 #346 收尾。
+> sequential-thinking 与 `km-review` 最终 P0–P2 清零。首次 PR `quality` 2 分 57 秒全绿，但 OCI 构建暴露 Dockerfile 未在 `npm ci` 前复制 workspace manifests，且 runner 缺 core 包目标；已独立修复构建缓存层和运行层包装，待本地镜像与第二次 CI 复验。演化两线必须如实读：代码文件 306、p50 121、超 600 行 14.4%、用例密度 6.3 均不变；导航成本因 workspace 边界与包骨架从 13.60 暂升至 13.89。故本轮只宣称依赖范围被机械收紧，不冒充全仓复杂度已下降；#347–#349 继续收口 database/integrations/runtime，#350 对最终树复诊。详见实验 033 与评审 037；待合并与 #346 收尾。
 
 > ## 🧩 管理后台独立、旧患者 Web 退役（2026-08-27 第252轮 · 基线 `origin/main@628b55f`，待提交）
 > 本轮对应 #345，只处理管理后台小壳、旧患者 Web、HTTP 静态入口三个实体。作者已确认患者端只保留微信小程序，因此先写 `check-admin-app.mjs` 并验证它在旧结构上非零失败，再将后台迁入 `src/apps/kangmin-admin/{src,tests}`，删除旧患者 React 实现和专用资产；服务根路径 `/` 与既有 `/admin` 复用同一后台 `index.html`，不再维护两份入口文件。患者服务端命令、小程序、数据库、医学规则、truth、权限和生产数据未修改。
