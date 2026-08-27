@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 四条业务链技术预验收本地放行（2026-08-27 第260轮 · 基线 `origin/main@7594dc6`，待提交）
+> 本轮对应 #360，只处理内容运营、AI 知识、患者核心、持续管理与交付四个实体。新增 `npm run test:acceptance`：先做零命中/多命中反例自检，再严格编排 4 组既有冒烟、7 条真实管理 CLI/HTTP/SQLite 入口和桌面/390×844 Chromium；所有目标必须逐字且唯一命中，不能把筛选漂移当作通过。PR quality 门新增同一预验收步骤。
+> 干净安装发现传递开发依赖 `nanoid@3.3.16` 的高危告警，锁定到 `3.3.18` 后 `src` 全依赖审计为 0。`npm run test:acceptance` 全绿；完整 `src` 358 通过、78 条因本机未配置 PostgreSQL/S3 跳过、后台 2/2 与真实浏览器通过；`legacy` 127/127，保留 4 条既有图片 warning 和 2 条 moderate 生产依赖告警；manifest、结构和 diff 门禁通过。
+> 微信官方 CLI 使用当前完整小程序目录的干净隔离副本，仅注入本机已授权 AppID，真实预览编译成功，包体 779,701 字节；仓库 AppID 保持空，未上传开发版。sequential-thinking 六步和 `$km-review` 三视角最终 P0–P2 为 0；不扩大为真机、客户验收、医学批准或生产就绪。实验 038、评审 043 已归档，待 commit、PR PostgreSQL/MinIO/OCI CI、合并、线上只读复核和关闭 #360。
+
 > ## 🧹 机会型长文件 Issues 已退出活动队列（2026-08-27 第259轮 · `main@691c397`，待提交）
 > 重新读取 GitHub 全部开放项后确认，唯一 17 条 OPEN 为 #306–#312、#318–#327；每条正文均已明确标注“机会型候选，不单独排期”，不是当前缺陷、交付阻塞或承诺任务，且路径与基线多为 workspace 收口前状态。继续保持 OPEN 会把观察哨兵误导成待办。
 > 已逐条留言后以 `NOT_PLANNED` 关闭，说明未来只有真实功能或缺陷触及相应范围并出现定位、传播或隔离问题时，才按届时主线另开小 Issue；不因超 600 行或占比自动重开。回读 17 条均为 CLOSED/NOT_PLANNED，仓库 OPEN Issue 数为 0。此次只整理 GitHub 任务队列与状态记录，不改代码、truth、医学规则、生产环境或患者数据；根 worktree 的作者未提交内容保持不动。
