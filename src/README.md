@@ -431,6 +431,7 @@ HTTP 状态与 CLI 退出码分别映射；例如协议不兼容为 HTTP 426/CLI
 | `npm run build` | 清理 `dist/`，编译 TypeScript，构建 Web |
 | `npm test` | build + `dist/tests/*.test.js` + 浏览器 E2E |
 | `npm run check` | typecheck + lint + test |
+| `npm run test:smoke:record` | 构建后逐条确认症状保存/回读/日历趋势与缺失值边界 |
 | `npm run start:http` | build 后启动 HTTP/Web 服务 |
 | `npm run sbom` | 生成不入库的 CycloneDX SBOM |
 
@@ -440,6 +441,10 @@ HTTP 状态与 CLI 退出码分别映射；例如协议不兼容为 HTTP 426/CLI
 npm run build
 node --test dist/tests/<name>.test.js
 ```
+
+`test:smoke:record` 只复用现有高信号测试；每个目标独立进程运行并要求 TAP 中唯一、
+逐字命中的非跳过测试。目标名漂移、零/部分命中或断言失败都会退出非 0；它不替代
+PostgreSQL 契约、真实微信身份或客户验收。
 
 CI 的 `quality` job 还会提供 PostgreSQL 16、MinIO 和 Playwright，执行全部
 `src` 门禁；仓库级 CI 同时检查 `legacy`。后续 `image` job 构建 OCI 镜像、

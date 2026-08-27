@@ -17,6 +17,7 @@
     "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",
     "test:smoke:core": "npm run build --silent && node scripts/run-core-smoke.mjs",
     "test:smoke:content": "npm run build --silent && node scripts/run-content-smoke.mjs",
+    "test:smoke:record": "npm run build --silent && node scripts/run-record-smoke.mjs",
     "check": "npm run typecheck && npm run lint && npm test",
     "dev:session": "npm run build --silent && node dist/dev/create-session.js",
     "dev:admin-session": "npm run build --silent && node dist/dev/create-admin-session.js",

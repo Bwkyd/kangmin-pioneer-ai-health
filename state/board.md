@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧪 #334 症状管理快速冒烟入口完成候选验证（2026-08-27 第248轮 · 待提交，基线 `origin/main@226905d`）
+> 重新 fetch 并核对远端、Issue #334、分支和 worktree 后，按一条 Issue 一次交付只处理次要·症状管理一个实体；基础壳不混入本 PR。先写 `docs/experiments/029_record-smoke-entry.md` 的执行前标准，再新增 `npm run test:smoke:record` 与 `src/scripts/run-record-smoke.mjs`，逐个独立启动三条既有高信号测试，要求 TAP 唯一逐字命中非跳过 `ok`；不复制 fixture、不改记录服务、schema、患者界面、医学规则、truth 或患者数据。覆盖日历/趋势、解密失败不伪装空数据、体验版保存后日历与“我的”页回显。
+> 正向 3/3 通过（含构建约 4 秒）；故意改错目标名、故意改坏趋势断言均 exit 1，原生多文件零命中仍 exit 0 并被入口拒绝。覆盖账本、语法和 diff 检查通过；`cd src && npm run check` 退出 0，438 项中 360 通过、78 项因本机未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium E2E PASS（约 56.59 秒）。本轮按 sequential-thinking 完成元反思，按 `km-review` 三视角自检无 P0–P2；无运行时变化，不需要部署或重启。候选工作树尚未提交/推送/建 PR，#334 仍 OPEN；根工作区既有改动与 `hi.md` 保持不动。
+
 > ## 🧠 快速冒烟实际命中规则已沉淀（2026-08-27 第246轮 · 待提交，基线 `origin/main@b17d038`）
 > 基于核心与内容两轮真实正负实验，新增 `state/memory/20260827-smoke-selector-fail-closed.md` 并同步 MEMORY 索引：Node 多文件 `--test-name-pattern` 零命中可能出现文件级 `ok`，快速入口必须逐项独立进程、逐字唯一回读 TAP 实际命中，并用目标名漂移和断言失败两类反证验证失败关闭。该轮只写可复用规则，不改 `src/`、truth、数据库或生产；待文档 CI、合并与分支清理。
 
