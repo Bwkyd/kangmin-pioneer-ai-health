@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { clampPage, itemsForPage, pageCountFor } from "../src/admin-pagination.ts";
+import { clampPage, itemsForPage, pageCountFor } from "../src/admin-pagination.js";
 
 test("后台视频分页：0、1、20、21、40、41 条边界", () => {
   assert.equal(pageCountFor(0), 1);

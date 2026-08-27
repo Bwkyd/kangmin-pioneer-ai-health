@@ -14,6 +14,7 @@
 
 - P1（已修）：初版把“删除患者 Web”错误扩张为让既有 `/admin` 返回 404，会破坏线上书签、探测与运维入口。修复后 `/` 与 `/admin` 都读取唯一 `dist/web/index.html`，结构收敛但兼容网址不断；HTTP 窄测与真实 Chromium 均覆盖两条路径。
 - P2（已修）：第一次完整门禁发现 `http.e2e` 仍断言旧患者 DOM `id="root"`。已改为后台根节点，并保留该测试真正验证的开发预览会话恢复与客户端隔离，第二次完整门禁通过。
+- P1（已修）：首次 PR CI 的 497 条 PostgreSQL/MinIO 测试全过，但 Node 22.13 不能像本机 Node 24 一样直接执行 `.ts` 窄测。后台测试改为先用专用 `tsconfig.test.json` 编译，再由 Node 执行 JavaScript；不再依赖较新 Node 的类型剥离行为。
 - 最终 P0–P2：0。后台包独立 build/typecheck/test；真实浏览器以真实 SQLite、HTTP 和 HttpOnly Cookie 完成登录、文章保存发布、三类模块导航与双视口检查。完整根门禁 438 项中 360 通过、78 项因本地未配置 PostgreSQL/S3 跳过、0 失败。
 
 ## 医学安全视角

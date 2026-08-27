@@ -14,6 +14,7 @@ for (const relativePath of [
   "src/client.ts",
   "tests/README.md",
   "tsconfig.json",
+  "tsconfig.test.json",
   "vite.config.ts"
 ]) {
   if (!existsSync(join(appRoot, relativePath))) {
