@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧩 管理后台内容叶子视图形成稳定边界（2026-08-27 第264轮 · 基线 `origin/main@056df24`，待提交）
+> 本轮对应 #366，只处理 `AdminApp`、共享契约、共享 UI 和内容叶子视图四个实体。正文编辑、素材绑定、患者预览、内容表格迁入 `features/content-views.tsx`；通用分页进入 `admin-ui.tsx`，预览响应类型进入 `admin-contracts.ts`。内容草稿状态、保存/发布编排仍留在 `ContentManager`，没有借机重写业务或制造知识→内容的反向依赖。
+> `AdminApp.tsx` 1156→1004 行，演化护栏同步收紧；文章/视频文案、DOM、上传、预览、API 参数、CSS、权限和医学安全提示不变。后台 typecheck/build、真实 Chromium、`npm run test:acceptance` 与完整 `npm run check` 均退出 0；完整门禁 436 项中 358 通过、78 项因未配置 PostgreSQL/S3 跳过、0 失败。#365 已经 PR #371 两项 CI 全绿并合并关闭，根工作区作者改动仍未触碰。
+
 > ## 🧩 管理后台辅助功能形成首个分形单元（2026-08-27 第263轮 · 基线 `origin/main@dc506e9`，待提交）
 > 本轮对应 #365，严格处理 `AdminApp`、共享数据契约、共享 UI 词汇和辅助运营单元四个实体。消息与文件同属辅助功能且当前规模小，因此先收进 `features/support-managers.tsx`，没有为了文件数量制造两个单文件目录；跨功能 DTO 归 `admin-contracts.ts`，统一状态词与空状态归 `admin-ui.tsx`，依赖保持 `AdminApp → feature/UI → contracts/client` 单向。
 > `AdminApp.tsx` 1348→1156 行，不再包含消息和文件的状态与操作实现；产品文案、CSS、API、请求参数、权限和医学规则未改。后台 typecheck、真实 Chromium 五主入口加文件辅助入口、`npm run test:acceptance` 与完整 `npm run check` 均通过；完整门禁 436 项中 358 通过、78 项因未配置 PostgreSQL/S3 按约定跳过、0 失败。#364 已经 PR #370 两项 CI 全绿并合并关闭；本轮继续位于同一隔离 worktree 的新分支，根工作区作者改动未触碰。
