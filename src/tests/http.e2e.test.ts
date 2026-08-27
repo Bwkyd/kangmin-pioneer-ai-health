@@ -424,7 +424,7 @@ test("患者 Agent 流式药量前置分流：危险候选不进入分片、done
   }
 });
 
-test("客户预览从空库授权，刷新可恢复且两个浏览器互不串数据", async () => {
+test("开发预览会话从空库授权，可恢复且两个客户端互不串数据", async () => {
   const directory = mkdtempSync(join(tmpdir(), "kangmin-web-http-"));
   const databasePath = join(directory, "records.sqlite");
   const application = createApplication(databasePath);
@@ -439,7 +439,7 @@ test("客户预览从空库授权，刷新可恢复且两个浏览器互不串�
     assert.equal(page.status, 200);
     assert.match(
       await page.text(),
-      /id="root"/u
+      /id="admin-root"/u
     );
     assert.match(
       page.headers.get("content-security-policy") ?? "",

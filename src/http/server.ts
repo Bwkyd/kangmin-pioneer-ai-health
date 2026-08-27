@@ -729,7 +729,7 @@ export function createKangminHttpServer(
       await staticAsset(
         response,
         webRoot,
-        "admin.html",
+        "index.html",
         "text/html; charset=utf-8"
       );
       return;
@@ -858,13 +858,10 @@ export function createKangminHttpServer(
       return;
     }
 
-    // 公共静态资源（品牌横幅、站点图标与输入区动画助手）。
+    // 管理后台站点图标。
     if (
       request.method === "GET" &&
-      (requestUrl.pathname === "/brand-banner.jpg" ||
-        requestUrl.pathname === "/favicon.svg" ||
-        requestUrl.pathname === "/assistant-mascot.apng" ||
-        requestUrl.pathname === "/assistant-mascot-static.png")
+      requestUrl.pathname === "/favicon.svg"
     ) {
       const filename = requestUrl.pathname.slice(1);
       await staticAsset(

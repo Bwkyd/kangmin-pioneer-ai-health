@@ -30,7 +30,7 @@
       "docs/research": 12,
       "legacy": 8,
       "legacy/app/api/admin": 9,
-      "src": 12,
+      "src": 11,
       "src/apps/kangmin-miniprogram/src/pages": 9,
       "src/modules": 10
     },
@@ -42,7 +42,7 @@
       "src/app/composition-root.ts": 867,
       "src/cli/kangmin-admin.ts": 925,
       "src/cli/kangmin.ts": 1120,
-      "src/http/server.ts": 1291,
+      "src/http/server.ts": 1288,
       "src/infrastructure/database.ts": 1688,
       "src/infrastructure/postgres/pg-agent-admin-repository.ts": 1372,
       "src/infrastructure/postgres/pg-content-aux-repository.ts": 901,
@@ -70,7 +70,7 @@
       "src/tests/http-ops.e2e.test.ts": 706,
       "src/tests/http.e2e.test.ts": 811,
       "src/tests/legacy-upgrade.test.ts": 724,
-      "src/tests/miniprogram-shell.test.ts": 1263,
+      "src/tests/miniprogram-shell.test.ts": 1251,
       "src/tests/model-ports.test.ts": 766,
       "src/tests/pg-admin-repository.contract.test.ts": 675,
       "src/tests/pg-agent-admin-repository.contract.test.ts": 1255,
@@ -78,8 +78,7 @@
       "src/tests/pg-content-repository.contract.test.ts": 1171,
       "src/tests/pg-record-repository.contract.test.ts": 906,
       "src/tests/record-production.test.ts": 890,
-      "src/web/src/App.tsx": 1970,
-      "src/web/src/admin/AdminApp.tsx": 1348
+      "src/apps/kangmin-admin/src/AdminApp.tsx": 1348
     }
   }
 }
