@@ -75,8 +75,7 @@
       "src/tests/pg-agent-repository.contract.test.ts": 898,
       "src/tests/pg-content-repository.contract.test.ts": 1171,
       "src/tests/pg-record-repository.contract.test.ts": 906,
-      "src/tests/record-production.test.ts": 890,
-      "src/apps/kangmin-admin/src/AdminApp.tsx": 1004
+      "src/tests/record-production.test.ts": 890
     }
   }
 }
