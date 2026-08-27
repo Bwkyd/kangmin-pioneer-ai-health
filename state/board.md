@@ -3,6 +3,9 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧠 快速冒烟实际命中规则已沉淀（2026-08-27 第246轮 · 待提交，基线 `origin/main@b17d038`）
+> 基于核心与内容两轮真实正负实验，新增 `state/memory/20260827-smoke-selector-fail-closed.md` 并同步 MEMORY 索引：Node 多文件 `--test-name-pattern` 零命中可能出现文件级 `ok`，快速入口必须逐项独立进程、逐字唯一回读 TAP 实际命中，并用目标名漂移和断言失败两类反证验证失败关闭。该轮只写可复用规则，不改 `src/`、truth、数据库或生产；待文档 CI、合并与分支清理。
+
 > ## ✅ #333 内容供给闭环快速冒烟入口已合并并完成收尾（2026-08-27 第245轮 · `main@da742faf`）
 > PR #338 的真实 `pull_request` CI 全绿：`quality` 3 分 14 秒（含 PostgreSQL 16、MinIO/S3、完整回归与真实 Chromium E2E），`image` 41 秒（OCI、容器冒烟、生产依赖审计与 SBOM）；squash 合并为 `da742faf`，#333 自动关闭。合并树相对 `78c17db` 只有内容测试编排入口、文档和状态记录，无业务运行时、truth、数据库迁移或患者数据差异。
 > 合并后通过受控 SSH 对线上只读复核：`/srv/kangmin-cli/app` 仍指向 `releases/category-registry-bf44d26`，应用 active、`NRestarts=0`、仅监听 `127.0.0.1:8787`；正式 SQLite `quick_check=ok`，迁移最新 `0022_content_category_registry`，27 位患者/11 个启用方案/21 份启用知识/136 个分块/136 个向量/46 个对话/16 个评估/26 条已发布视频；公网 `/`、`/admin`、`/live` 为 200，`/ready=503` 仍只因既有加密密钥未配置。因没有运行时差异，本轮不重复切换 release、备份数据库或重启服务。
