@@ -15,10 +15,10 @@
     "kangmin-admin": "./dist/cli/kangmin-admin.js"
   },
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && vite build web",
-    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "lint": "node scripts/architecture-check.mjs --self-test && node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs",
-    "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",
+    "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && npm run build --workspace @kangmin/admin",
+    "typecheck": "tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @kangmin/admin",
+    "lint": "node scripts/architecture-check.mjs --self-test && node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs && node scripts/check-admin-app.mjs",
+    "test": "npm run build && node --test dist/tests/*.test.js && npm test --workspace @kangmin/admin && node scripts/web-browser-e2e.mjs",
     "test:smoke:core": "npm run build --silent && node scripts/run-core-smoke.mjs",
     "test:smoke:content": "npm run build --silent && node scripts/run-content-smoke.mjs",
     "test:smoke:record": "npm run build --silent && node scripts/run-record-smoke.mjs",

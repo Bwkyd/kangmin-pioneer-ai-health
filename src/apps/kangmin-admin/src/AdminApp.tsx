@@ -8,13 +8,13 @@ import {
   uploadFile,
   type AdminSession
 } from "./client";
-import { ContentBody } from "../content-body";
+import { ContentBody } from "./content-body";
 import {
   ADMIN_CONTENT_PAGE_SIZE,
   clampPage,
   itemsForPage,
   pageCountFor
-} from "../../../admin-pagination";
+} from "./admin-pagination";
 
 type Section = "overview" | "article" | "video" | "message" | "knowledge" | "media";
 type ContentKind = "article" | "video";

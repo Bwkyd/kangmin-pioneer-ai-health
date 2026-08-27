@@ -229,22 +229,21 @@ HTTP 服务同时托管 Vite 构建产物和命令接口：
 服务端校验 schema 与关联号，按登录/上传/普通命令分级限流，并返回同一
 `requestId`。结构化请求日志不记录请求体、令牌或健康正文。
 
-### 患者 Web 薄壳
+### 用户端与管理后台
 
-`web/` 是 Vite + React 静态工程，只通过患者命令协议访问业务能力。当前已
-连接症状记录、健康档案、暴露、用药、概览、文章/视频和自由对话等真实
-命令；无数据时显示空态，不伪造统计。它仍是 demo：部分安全评估分组保留
-本地 UI 状态，账户区尚未接完整账号命令，正式身份也未接入。
+患者端唯一界面位于 `apps/kangmin-miniprogram/`。旧患者 Web 已退役，不再由
+服务根路由提供。`apps/kangmin-admin/` 是独立 Vite + React 管理后台，服务根
+路由 `/` 只提供该后台；浏览器壳只通过同源管理接口访问业务能力。
 
 前端不得复制临床决策树、直接访问数据库或导入基础设施模块。
 
 ## 架构与依赖方向
 
 ```text
-kangmin CLI ───────────────┐
-患者 Web → HTTP 命令路由 ──┼→ Application Services → Modules / Ports
-kangmin-admin CLI ─────────┤                         ↓
-管理 HTTP 命令路由 ─────────┘                    Infrastructure
+患者小程序 → HTTP 命令路由 ─┐
+kangmin CLI ────────────────┼→ Application Services → Modules / Ports
+kangmin-admin CLI ──────────┤                         ↓
+管理后台 → 管理 HTTP 路由 ───┘                    Infrastructure
                                               SQLite / PostgreSQL
                                               Filesystem / S3
                                               DeepSeek / Provider
@@ -260,7 +259,8 @@ kangmin-admin CLI ─────────┤                         ↓
 | `infrastructure/` | SQLite、PostgreSQL、S3、模型、环境和日志适配器 |
 | `cli/` | 两个命令行入口和参数/输出适配 |
 | `http/` | HTTP、静态资源、探针、限流和请求日志 |
-| `web/` | 患者 Web 薄壳 |
+| `apps/kangmin-miniprogram/` | 患者微信小程序壳 |
+| `apps/kangmin-admin/` | 运营管理后台壳 |
 | `tests/` | TypeScript 单元、契约、集成与 E2E 测试 |
 | `scripts/` | 架构门禁、构建清理、浏览器 E2E 与 SBOM |
 

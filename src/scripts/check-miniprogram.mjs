@@ -62,12 +62,13 @@ for (const page of app.pages) {
   }
 }
 
-for (const asset of ["brand-banner.jpg", "assistant-mascot-static.png"]) {
-  const webAsset = readFileSync(join(workspaceRoot, "web/public", asset));
-  const miniAsset = readFileSync(join(root, "assets", asset));
-  if (!webAsset.equals(miniAsset)) {
-    throw new Error(`小程序视觉资产未与 Web 正本同步：${asset}`);
-  }
+const brandBanner = readFileSync(join(root, "assets/brand-banner.jpg"));
+if (brandBanner.length < 1_024 || brandBanner.subarray(0, 2).toString("hex") !== "ffd8") {
+  throw new Error("小程序品牌横幅必须是有效的 JPEG 资产");
+}
+const staticMascot = readFileSync(join(root, "assets/assistant-mascot-static.png"));
+if (staticMascot.length < 1_024 || staticMascot.subarray(1, 4).toString("ascii") !== "PNG") {
+  throw new Error("小程序静态吉祥物必须是有效的 PNG 资产");
 }
 
 const animatedMascot = readFileSync(join(root, "assets", "assistant-mascot-loop-v2.gif"));

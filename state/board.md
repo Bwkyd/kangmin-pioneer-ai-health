@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧩 管理后台独立、旧患者 Web 退役（2026-08-27 第252轮 · 基线 `origin/main@628b55f`，待提交）
+> 本轮对应 #345，只处理管理后台小壳、旧患者 Web、HTTP 静态入口三个实体。作者已确认患者端只保留微信小程序，因此先写 `check-admin-app.mjs` 并验证它在旧结构上非零失败，再将后台迁入 `src/apps/kangmin-admin/{src,tests}`，删除旧患者 React 实现和专用资产；服务根路径 `/` 与既有 `/admin` 复用同一后台 `index.html`，不再维护两份入口文件。患者服务端命令、小程序、数据库、医学规则、truth、权限和生产数据未修改。
+> 后台包已独立通过 build/typecheck/2 条分页测试；真实 Chromium 使用真实 SQLite、HTTP 和 HttpOnly Cookie 完成登录、文章保存发布、文章/视频/知识导航及 390×844、1440×900 两视口检查。后台 HTTP + 小程序窄测 30/30，工作区/小程序/后台护栏通过；完整根门禁 438 项中 360 通过、78 项因本机未配置 PostgreSQL/S3 跳过、0 失败。演化复诊显示代码文件 319→306、超 600 行绝对数 45→44，但占比因删除 13 个旧文件而 14.1%→14.4%；用例密度 6.0→6.3、导航成本 13.62→13.61、p50 120→121，故只宣称淘汰废弃实现和单一后台构建，不冒充整体复杂度已解决。sequential-thinking 与 `km-review` 发现并修复“误删既有 `/admin` 网址”和“旧 DOM 断言”两项变式；首次 PR CI 的 PostgreSQL/MinIO 497/497 全过，但 Node 22.13 不支持直接执行 `.ts` 窄测，现已改为专用 tsconfig 先编译再运行，待 CI 复验。最终 P0–P2 清零；部署与 #345/#305/#306 收尾待完成，详见实验 032、决策记录与评审 036。
+
 > ## 🧱 workspace 护栏与小程序分形样本完成（2026-08-27 第251轮 · 基线 `origin/main@783cb74`，待提交）
 > 本轮对应 #344，严格处理四类实体：根 workspace 配置、小程序 workspace、小程序测试/资产检查、演化基线与交付记录。根工作区落后主线且有作者既有改动，因此从最新 `origin/main` 创建隔离 worktree；`hi.md`、truth、患者数据和生产均未修改。小程序迁入 `src/apps/kangmin-miniprogram`，微信工程从统一小壳的 `src/` 加载，真实 AppID 仍为空；npm workspaces 保持单锁文件。
 > 先把 workspace 规则与 5 类负例自测并入既有 `architecture-check`：缺 manifest、非法内部依赖、跨 workspace 相对导入、空壳包、未登记旧目录均被拦截，真实 CLI 对违规 fixture 退出非零。护栏还在开发中发现“小程序综合测试若随 app 移动会跨 workspace 导入临床题面”，因此没有制造该耦合，测试暂留根测试区并由 package 测试说明指向唯一正本。小程序长文件与宽目录基线只做原值换路径，1263 行存量测试没有增长。

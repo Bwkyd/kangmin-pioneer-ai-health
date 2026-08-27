@@ -61,10 +61,14 @@ async function command(cookie: string, name: string, input: Record<string, unkno
   });
 }
 
-test("/admin 提供独立入口，登录令牌仅进入安全 Cookie", async () => {
-  const page = await fetch(`${origin}/admin`);
+test("/ 提供管理后台首页，既有 /admin 复用同一入口", async () => {
+  const page = await fetch(`${origin}/`);
   assert.equal(page.status, 200);
   assert.match(await page.text(), /admin-root/u);
+
+  const compatibleAdmin = await fetch(`${origin}/admin`);
+  assert.equal(compatibleAdmin.status, 200);
+  assert.match(await compatibleAdmin.text(), /admin-root/u);
 
   const anonymous = await fetch(`${origin}/v1/admin/session`);
   assert.equal(anonymous.status, 200);

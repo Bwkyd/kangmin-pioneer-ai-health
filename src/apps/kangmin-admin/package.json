@@ -1,0 +1,12 @@
+{
+  "name": "@kangmin/admin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build",
+    "typecheck": "tsc --noEmit",
+    "test": "tsc -p tsconfig.test.json && node --test ../../dist/admin-tests/tests/*.test.js",
+    "check": "npm run typecheck && npm test"
+  }
+}

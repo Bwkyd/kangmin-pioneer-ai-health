@@ -616,9 +616,7 @@ test("小程序健康档案读取并展示基础信息、过敏原与用药记�
   assert.deepEqual(calls, ["account consent show", "account privacy", "record profile show", "record exposure list", "record medication list"]);
 });
 
-test("小程序首页复用 Web 患者首页的信息结构、文案、比例和品牌资产", () => {
-  const webHome = readFileSync(resolve("web/src/App.tsx"), "utf8");
-  const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");
+test("小程序首页锁定患者信息结构、文案、比例和品牌资产", () => {
   const miniHome = readFileSync(resolve(`${miniprogramRoot}/pages/home/index.wxml`), "utf8");
   const miniStyles = readFileSync(resolve(`${miniprogramRoot}/pages/home/index.wxss`), "utf8");
   const sharedCopy = [
@@ -638,36 +636,30 @@ test("小程序首页复用 Web 患者首页的信息结构、文案、比例和
     "科普文章 · 操作视频 · 调理方案"
   ];
   for (const copy of sharedCopy) {
-    assert.ok(webHome.includes(copy), `Web 首页缺少基准文案：${copy}`);
-    assert.ok(miniHome.includes(copy), `小程序首页未复用 Web 文案：${copy}`);
+    assert.ok(miniHome.includes(copy), `小程序首页缺少基准文案：${copy}`);
   }
   for (const divergentCopy of ["今天，也照顾好自己", "今日健康", "消息中心"]) {
     assert.equal(miniHome.includes(divergentCopy), false, `小程序首页仍残留独立改版文案：${divergentCopy}`);
   }
-  assert.deepEqual(
-    readFileSync(resolve("web/public/brand-banner.jpg")),
-    readFileSync(resolve(`${miniprogramRoot}/assets/brand-banner.jpg`))
-  );
-  const proportionalStyles = [
-    ["min-height: 190px", "min-height: 380rpx"],
-    ["min-height: 126px", "min-height: 252rpx"],
-    ["grid-template-columns: 1fr 110px", "grid-template-columns: 1fr 220rpx"],
-    ["min-height: 105px", "min-height: 210rpx"]
-  ] as const;
-  for (const [webValue, miniValue] of proportionalStyles) {
-    assert.ok(webStyles.includes(webValue), `Web 当前比例基准已变化：${webValue}`);
-    assert.ok(miniStyles.includes(miniValue), `小程序未按 2rpx 映射当前 Web 比例：${miniValue}`);
+  const brand = readFileSync(resolve(`${miniprogramRoot}/assets/brand-banner.jpg`));
+  assert.equal(brand.subarray(0, 2).toString("hex"), "ffd8");
+  for (const expectedStyle of [
+    "min-height: 380rpx",
+    "min-height: 252rpx",
+    "grid-template-columns: 1fr 220rpx",
+    "min-height: 210rpx"
+  ]) {
+    assert.ok(miniStyles.includes(expectedStyle), `小程序首页比例基准已变化：${expectedStyle}`);
   }
-  for (const sharedColor of ["#daeadd", "#f5e8d7", "#8eb8a4", "#3d7c65", "#b8d6c9"]) {
-    assert.ok(webStyles.includes(sharedColor), `Web 当前配色基准已变化：${sharedColor}`);
-    assert.ok(miniStyles.includes(sharedColor), `小程序未复用当前 Web 配色：${sharedColor}`);
+  for (const expectedColor of ["#daeadd", "#f5e8d7", "#8eb8a4", "#3d7c65", "#b8d6c9"]) {
+    assert.ok(miniStyles.includes(expectedColor), `小程序首页配色基准已变化：${expectedColor}`);
   }
   for (const staleColor of ["#dbe9f8", "#7fa7d3", "#285f9f", "#b7cee8"]) {
     assert.equal(miniStyles.includes(staleColor), false, `小程序仍残留旧首页配色：${staleColor}`);
   }
 });
 
-test("小程序首页只读取记录概览，并保持与 Web 一致的四条入口", async () => {
+test("小程序首页只读取记录概览，并保持四条患者入口", async () => {
   const calls: string[] = [];
   const navigations: string[] = [];
   const api = {
@@ -869,18 +861,15 @@ test("小程序学一学固定四入口、目录内视频列表和五项主导�
   }
 });
 
-test("小程序问助手删除页面内重复摘要和对话按钮，保留抽屉、结果卡和发送入口", () => {
-  const web = readFileSync(resolve("web/src/App.tsx"), "utf8");
-  const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");
+test("小程序问助手保留抽屉、结果卡和发送入口", () => {
   const mini = readFileSync(resolve(`${miniprogramRoot}/pages/assistant/index.wxml`), "utf8");
   const miniStyles = readFileSync(resolve(`${miniprogramRoot}/pages/assistant/index.wxss`), "utf8");
   const miniConfig = JSON.parse(readFileSync(resolve(`${miniprogramRoot}/pages/assistant/index.json`), "utf8"));
   const tabBar = readFileSync(resolve(`${miniprogramRoot}/custom-tab-bar/index.wxml`), "utf8");
   const questionnaire = loadModule("utils/questionnaire.js") as { questions: unknown };
 
-  for (const sharedCopy of ["问问题或描述症状…"]) {
-    assert.ok(web.includes(sharedCopy), `Web 当前问助手基准已变化：${sharedCopy}`);
-    assert.ok(mini.includes(sharedCopy), `小程序问助手未复用 Web 当前文案：${sharedCopy}`);
+  for (const expectedCopy of ["问问题或描述症状…"]) {
+    assert.ok(mini.includes(expectedCopy), `小程序问助手缺少当前文案：${expectedCopy}`);
   }
   for (const patientCopy of ["测一测我的鼻敏感情况", "约 2 分钟，回答几个简单问题", "开始测评"]) {
     assert.ok(mini.includes(patientCopy), `小程序问卷入口缺少患者文案：${patientCopy}`);
@@ -928,7 +917,6 @@ test("小程序问助手删除页面内重复摘要和对话按钮，保留抽�
   assert.ok(readFileSync(resolve(`${miniprogramRoot}/custom-tab-bar/index.wxss`), "utf8").includes("translateY(-8rpx)"), "记录主按钮应留在底栏横线以内");
   assert.ok(readFileSync(resolve(`${miniprogramRoot}/custom-tab-bar/index.wxss`), "utf8").includes("translate(-50%,-50%)"), "记录按钮十字应按几何中心绘制");
   assert.equal(JSON.stringify(questionnaire.questions), JSON.stringify(ASSESSMENT_QUESTIONS));
-  assert.ok(webStyles.includes(".start-card"));
 });
 
 test("小程序聊天记录在微信能力未配置时降级为空态，不暴露环境配置错误", async () => {
