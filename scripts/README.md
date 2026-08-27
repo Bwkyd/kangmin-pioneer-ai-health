@@ -14,6 +14,7 @@
 | `structure-lint.py` | 检查项目目录、命名、导航和双入口同步 |
 | `check-manifests.py` | 校验 `plugin.json` 与 `42plugin.json` |
 | `check-tools.sh` | 只读检查本机工具，不自动安装 |
+| `check-test-coverage-ledger.py` | 检查四组行为账本的分组、证据、最窄命令和缺口是否可追溯 |
 | `evolution-guard.py` | 阻止新增超宽目录、超长文件和存量基线回退 |
 | `test-evolution-guard.py` | 在临时 Git 仓验证护栏的正常、违规、收紧与过期路径 |
 | `install-git-hooks.sh` | 安装项目 Git 防误推钩子 |
