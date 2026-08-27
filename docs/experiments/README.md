@@ -43,7 +43,7 @@
 | 035 | 2026-08-27 | 已完成（外部适配器失败关闭） | [集成包失败关闭](035_integrations-package-fail-closed.md) |
 | 036 | 2026-08-27 | 已完成（runtime、CLI 与 API 收口） | [runtime、CLI 与 API 入口](036_runtime-cli-api-entrypoints.md) |
 | 037 | 2026-08-27 | 已完成（最终 workspace 交付链） | [workspace 交付链](037_workspace-delivery-chain.md) |
-| 038 | 2026-08-27 | 本地通过，待 PR CI | [四条业务链技术预验收](038_business-preacceptance.md) |
+| 038 | 2026-08-27 | 已完成，PR CI 通过 | [四条业务链技术预验收](038_business-preacceptance.md) |
 
 下一份实验编号从 `039` 开始。
 
