@@ -6,7 +6,7 @@ import type {
   SessionRepository,
   SessionSnapshot
 } from "@kangmin/core/patient/account/session-repository";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 interface PatientRow {
   id: string;

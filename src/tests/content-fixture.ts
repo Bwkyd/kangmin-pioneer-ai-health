@@ -1,4 +1,4 @@
-import { KangminDatabase } from "../infrastructure/database.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
 
 interface FixtureContent {
   id: string;

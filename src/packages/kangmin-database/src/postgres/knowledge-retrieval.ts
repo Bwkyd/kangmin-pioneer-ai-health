@@ -8,7 +8,7 @@ import {
   type KnowledgeEmbeddingPort
 } from "@kangmin/core/intelligence/agent/knowledge-ports";
 import type { KnowledgeRetrievalPort, KnowledgeSource } from "@kangmin/core/intelligence/agent/knowledge-ports";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 interface SemanticRow {
   knowledge_id: string;

@@ -10,8 +10,8 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteSessionRepository } from "@kangmin/database/sqlite/session-repository";
 import { SessionService } from "@kangmin/core/patient/account/session-service";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 

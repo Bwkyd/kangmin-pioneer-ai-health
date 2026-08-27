@@ -1,11 +1,11 @@
 import { resolve } from "node:path";
 
 import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
-import { KangminDatabase } from "../infrastructure/database.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
-import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
-import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
-import { PgAgentAdminRepository } from "../infrastructure/postgres/pg-agent-admin-repository.js";
+import { SqliteAgentAdminRepository } from "@kangmin/database/sqlite/agent-admin-repository";
+import { KangminPgDatabase } from "@kangmin/database/postgres/database";
+import { PgAgentAdminRepository } from "@kangmin/database/postgres/agent-admin-repository";
 import {
   embedKnowledgeTexts,
   type KnowledgeEmbeddingPort

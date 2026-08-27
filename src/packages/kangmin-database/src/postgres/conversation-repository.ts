@@ -26,7 +26,7 @@ import type {
   ConversationRepository,
   UpdateSessionOutcome
 } from "@kangmin/core/intelligence/agent/conversation-repository";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 function parseEncrypted(value: string): EncryptedContent {
   return JSON.parse(value) as EncryptedContent;

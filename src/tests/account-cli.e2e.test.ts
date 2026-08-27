@@ -13,7 +13,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { KangminDatabase } from "../infrastructure/database.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, "../cli/kangmin.js");

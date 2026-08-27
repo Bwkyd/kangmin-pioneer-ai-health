@@ -3,7 +3,7 @@
  *
  * 说明：agent_sessions 表名已被 #131 确定性安全循环（结构化提问外壳）
  * 占用；本模块的消息驱动完整对话使用 agent_conversations 表（见
- * infrastructure/database.ts 0005 迁移）与 §4.5 的五个子表
+ * kangmin-database SQLite 0005 迁移）与 §4.5 的五个子表
  * （agent_messages/agent_confirmed_answers/agent_candidates/
  * agent_decisions/agent_feedback）。
  *

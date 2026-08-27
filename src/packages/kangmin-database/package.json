@@ -1,0 +1,26 @@
+{
+  "name": "@kangmin/database",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run typecheck"
+  },
+  "dependencies": {
+    "@kangmin/core": "*",
+    "pg": "^8.22.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/pg": "^8.20.3",
+    "typescript": "^5.9.3"
+  }
+}

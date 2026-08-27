@@ -3,9 +3,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
-import { PgAgentAdminRepository } from "../infrastructure/postgres/pg-agent-admin-repository.js";
-import { PgEnvironmentCacheRepository } from "../infrastructure/postgres/pg-environment-cache-repository.js";
-import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
+import { PgAgentAdminRepository } from "@kangmin/database/postgres/agent-admin-repository";
+import { PgEnvironmentCacheRepository } from "@kangmin/database/postgres/environment-cache-repository";
+import { KangminPgDatabase } from "@kangmin/database/postgres/database";
 import {
   createPgTestDatabase,
   type PgTestDatabase

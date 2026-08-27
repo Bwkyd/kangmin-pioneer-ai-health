@@ -7,7 +7,7 @@ import type {
   AdminRole,
   AdminStatus
 } from "@kangmin/core/operations/admin/admin-session-repository";
-import { isUniqueViolation, KangminPgDatabase } from "./pg-database.js";
+import { isUniqueViolation, KangminPgDatabase } from "./database.js";
 
 interface AccountRow {
   id: string;

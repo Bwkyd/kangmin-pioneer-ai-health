@@ -1,9 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
-import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteKnowledgeRetrieval } from "@kangmin/database/sqlite/knowledge-retrieval";
+import { SqliteAgentAdminRepository } from "@kangmin/database/sqlite/agent-admin-repository";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import {

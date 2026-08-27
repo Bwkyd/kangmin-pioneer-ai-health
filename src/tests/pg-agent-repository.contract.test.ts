@@ -31,10 +31,10 @@ import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import {
   isUniqueViolation,
   KangminPgDatabase
-} from "../infrastructure/postgres/pg-database.js";
-import { PgAgentRepository } from "../infrastructure/postgres/pg-agent-repository.js";
-import { PgConversationRepository } from "../infrastructure/postgres/pg-conversation-repository.js";
-import { PgPlanRegistry } from "../infrastructure/postgres/pg-plan-registry.js";
+} from "@kangmin/database/postgres/database";
+import { PgAgentRepository } from "@kangmin/database/postgres/agent-repository";
+import { PgConversationRepository } from "@kangmin/database/postgres/conversation-repository";
+import { PgPlanRegistry } from "@kangmin/database/postgres/plan-registry";
 import {
   createPgTestDatabase,
   type PgTestDatabase

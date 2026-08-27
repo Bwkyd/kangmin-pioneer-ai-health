@@ -11,10 +11,10 @@ import type {
   ContentMessageRow,
   MediaReferenceCounts
 } from "@kangmin/core/operations/admin/content-aux-repository";
-import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
-import { PgContentAdminRepository } from "../infrastructure/postgres/pg-content-admin-repository.js";
-import { PgContentAuxRepository } from "../infrastructure/postgres/pg-content-aux-repository.js";
-import { PgContentReadRepository } from "../infrastructure/postgres/pg-content-read-repository.js";
+import { KangminPgDatabase } from "@kangmin/database/postgres/database";
+import { PgContentAdminRepository } from "@kangmin/database/postgres/content-admin-repository";
+import { PgContentAuxRepository } from "@kangmin/database/postgres/content-aux-repository";
+import { PgContentReadRepository } from "@kangmin/database/postgres/content-read-repository";
 import {
   createPgTestDatabase,
   type PgTestDatabase

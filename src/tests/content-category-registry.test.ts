@@ -9,8 +9,8 @@ import {
   VIDEO_CATEGORY_REGISTRY,
   VIDEO_TRUTH_ASSIGNMENTS
 } from "@kangmin/core/operations/admin/content-category-registry";
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteContentReadRepository } from "@kangmin/database/sqlite/content-read-repository";
 
 test("视频分类注册表使用稳定树路径且只有叶节点可选择", () => {
   assert.equal(VIDEO_CATEGORY_REGISTRY.length, 19);

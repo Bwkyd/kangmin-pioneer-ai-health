@@ -6,7 +6,7 @@
 
 ## 一句话
 
-对比上一次（2026-08-27 16:25）：
+对比上一次（2026-08-27 16:44）：
 
 | 指标 | 上次 | 本次 | 方向 |
 |---|---|---|---|
@@ -14,7 +14,7 @@
 | 哨兵·冗余率 `.py` | 14.0% | 14.0% | → 没动 |
 | 哨兵·冗余率 `.ts` | 38.4% | 38.4% | → 没动 |
 | 哨兵·冗余率 `.tsx` | 13.2% | 13.2% | → 没动 |
-| 主尺·导航成本（bit/文件） | 13.89 | 13.89 | → 没动 |
+| 主尺·导航成本（bit/文件） | 14.06 | 14.06 | → 没动 |
 | 哨兵·行数中位数 | 121 | 121 | → 没动 |
 | 最宽目录 | 16 | 16 | → 没动 |
 | 超硬上限占比 | 14.4 | 14.4 | → 没动 |
@@ -44,7 +44,7 @@
 
 | | 值 |
 |---|---|
-| **主尺·导航成本** | **13.89 bit／文件**（平均定位一个文件要付的选择，等概率假设下的大致值） |
+| **主尺·导航成本** | **14.06 bit／文件**（平均定位一个文件要付的选择，等概率假设下的大致值） |
 | **哨兵·行数中位数 p50** | **121** |
 | 代码文件数 | 306 |
 | p90 | 784 |
@@ -66,14 +66,14 @@
 ### 最长的十个
 
 -  2012　`src/tests/agent-conversation.test.ts`
--  1688　`src/infrastructure/database.ts`
+-  1688　`src/packages/kangmin-database/src/sqlite/database.ts`
 -  1623　`legacy/app/page.tsx`
 -  1461　`src/packages/kangmin-core/src/operations/agent-admin/agent-admin-service.ts`
--  1400　`src/infrastructure/postgres/pg-record-repository.ts`
+-  1400　`src/packages/kangmin-database/src/postgres/record-repository.ts`
 -  1376　`src/tests/admin-agent.test.ts`
--  1372　`src/infrastructure/postgres/pg-agent-admin-repository.ts`
+-  1372　`src/packages/kangmin-database/src/postgres/agent-admin-repository.ts`
 -  1348　`src/apps/kangmin-admin/src/AdminApp.tsx`
--  1343　`src/infrastructure/sqlite-record-repository.ts`
+-  1343　`src/packages/kangmin-database/src/sqlite/record-repository.ts`
 -  1288　`src/http/server.ts`
 
 ### 宽度前五

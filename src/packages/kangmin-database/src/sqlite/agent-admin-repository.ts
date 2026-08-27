@@ -1,6 +1,6 @@
-import type { PoolClient } from "pg";
-
-import { decryptStoredField, encryptStoredField } from "../encrypted-fields.js";
+import { KangminDatabase } from "./database.js";
+import { decryptStoredField, encryptStoredField } from "../shared/encrypted-fields.js";
+import { runIdempotentCreate } from "../shared/idempotency.js";
 import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type {
@@ -21,8 +21,6 @@ import type {
 } from "@kangmin/core/operations/agent-admin/agent-admin-ports";
 import type { AgentPlan } from "@kangmin/core/operations/agent-admin/contracts";
 import type { KnowledgeStatus, PlanStatus } from "@kangmin/core/operations/agent-admin/domain";
-import { isUniqueViolation, KangminPgDatabase } from "./pg-database.js";
-import { runPgIdempotentCreate } from "./pg-idempotency.js";
 
 interface MediaRowShape {
   id: string;
@@ -38,11 +36,6 @@ interface MediaRowShape {
   created_at: string;
   updated_at: string;
 }
-
-const MEDIA_COLUMNS = `
-  id, kind, filename, stored_path, size_bytes, mime_type, sha256,
-  status, failure_reason, created_by, created_at, updated_at
-`;
 
 function toMediaRow(row: MediaRowShape): KnowledgeSourceMediaRow {
   return {
@@ -203,33 +196,33 @@ function toTestCase(row: TestCaseShape): TestCaseRow {
   };
 }
 
-export class PgAgentAdminRepository implements AgentAdminRepository {
+export class SqliteAgentAdminRepository implements AgentAdminRepository {
   constructor(
-    private readonly database: KangminPgDatabase,
+    private readonly database: KangminDatabase,
     private readonly encryption: EncryptionPort
   ) {}
 
   // ---- 知识 ----
 
   async listKnowledgeFolders(): Promise<KnowledgeFolderRow[]> {
-    const { rows } = await this.database.query<KnowledgeFolderRowShape>(`
+    const rows = this.database.connection.prepare(`
       SELECT id, parent_id, name, sort_order, created_by, created_at, updated_at
       FROM agent_knowledge_folders
       ORDER BY sort_order ASC, name ASC, id ASC
-    `);
+    `).all() as unknown as KnowledgeFolderRowShape[];
     return rows.map(toKnowledgeFolder);
   }
 
   async createKnowledgeFolder(input: KnowledgeFolderRow): Promise<"created" | "duplicate"> {
     try {
-      await this.database.query(`
+      this.database.connection.prepare(`
         INSERT INTO agent_knowledge_folders(
           id, parent_id, name, sort_order, created_by, created_at, updated_at
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7)
-      `, [input.id, input.parentId, input.name, input.sortOrder, input.createdBy, input.createdAt, input.updatedAt]);
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+      `).run(input.id, input.parentId, input.name, input.sortOrder, input.createdBy, input.createdAt, input.updatedAt);
       return "created";
     } catch (error) {
-      if (isUniqueViolation(error)) return "duplicate";
+      if (String(error).includes("UNIQUE constraint failed")) return "duplicate";
       throw error;
     }
   }
@@ -239,55 +232,56 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     input: { parentId: string | null; name: string; sortOrder: number; updatedAt: string }
   ): Promise<KnowledgeFolderWriteResult> {
     try {
-      const { rows } = await this.database.query<KnowledgeFolderRowShape>(`
+      const result = this.database.connection.prepare(`
         UPDATE agent_knowledge_folders
-        SET parent_id = $1, name = $2, sort_order = $3, updated_at = $4
-        WHERE id = $5
-        RETURNING id, parent_id, name, sort_order, created_by, created_at, updated_at
-      `, [input.parentId, input.name, input.sortOrder, input.updatedAt, id]);
-      const row = rows[0];
-      return row === undefined
-        ? { kind: "not_found" }
-        : { kind: "updated", folder: toKnowledgeFolder(row) };
+        SET parent_id = ?, name = ?, sort_order = ?, updated_at = ?
+        WHERE id = ?
+      `).run(input.parentId, input.name, input.sortOrder, input.updatedAt, id);
+      if (result.changes !== 1) return { kind: "not_found" };
+      const row = this.database.connection.prepare(`
+        SELECT id, parent_id, name, sort_order, created_by, created_at, updated_at
+        FROM agent_knowledge_folders WHERE id = ?
+      `).get(id) as unknown as KnowledgeFolderRowShape;
+      return { kind: "updated", folder: toKnowledgeFolder(row) };
     } catch (error) {
-      if (isUniqueViolation(error)) return { kind: "duplicate" };
+      if (String(error).includes("UNIQUE constraint failed")) return { kind: "duplicate" };
       throw error;
     }
   }
 
   async deleteKnowledgeFolder(id: string): Promise<"deleted" | "not_found" | "not_empty"> {
-    return this.database.transaction(async (client) => {
-      const existing = await this.database.queryIn(client,
-        "SELECT id FROM agent_knowledge_folders WHERE id = $1 FOR UPDATE", [id]);
-      if (existing.rows[0] === undefined) return "not_found" as const;
-      const usage = await this.database.queryIn<{ count: number }>(client, `
-        SELECT (
-          (SELECT COUNT(*) FROM agent_knowledge_folders WHERE parent_id = $1) +
-          (SELECT COUNT(*) FROM agent_knowledge_items WHERE folder_id = $1)
-        )::int AS count
-      `, [id]);
-      if ((usage.rows[0]?.count ?? 0) > 0) return "not_empty" as const;
-      await this.database.queryIn(client, "DELETE FROM agent_knowledge_folders WHERE id = $1", [id]);
+    return this.database.transaction(() => {
+      const exists = this.database.connection.prepare(
+        "SELECT id FROM agent_knowledge_folders WHERE id = ?"
+      ).get(id);
+      if (exists === undefined) return "not_found" as const;
+      const usage = this.database.connection.prepare(`
+        SELECT
+          (SELECT COUNT(*) FROM agent_knowledge_folders WHERE parent_id = ?) +
+          (SELECT COUNT(*) FROM agent_knowledge_items WHERE folder_id = ?) AS count
+      `).get(id, id) as unknown as { count: number };
+      if (usage.count > 0) return "not_empty" as const;
+      this.database.connection.prepare("DELETE FROM agent_knowledge_folders WHERE id = ?").run(id);
       return "deleted" as const;
     });
   }
 
   async moveKnowledge(id: string, folderId: string | null, updatedAt: string): Promise<"updated" | "not_found"> {
-    const { rowCount } = await this.database.query(`
-      UPDATE agent_knowledge_items SET folder_id = $1, updated_at = $2 WHERE id = $3
-    `, [folderId, updatedAt, id]);
-    return rowCount === 1 ? "updated" : "not_found";
+    const result = this.database.connection.prepare(`
+      UPDATE agent_knowledge_items SET folder_id = ?, updated_at = ? WHERE id = ?
+    `).run(folderId, updatedAt, id);
+    return result.changes === 1 ? "updated" : "not_found";
   }
 
   async createKnowledge(input: KnowledgeRow & { chunks: ChunkInput[] }): Promise<void> {
-    await this.database.transaction(async (client) => {
-      await this.insertKnowledge(client, input);
+    this.database.transaction(() => {
+      this.insertKnowledge(this.database.connection, input);
     });
   }
 
   /**
    * 素材登记 + 知识创建 + 幂等行同一事务（事务与卫生残留批 P1-4）：
-   * runPgIdempotentCreate 在事务内查重 → 同 hash 重放 /
+   * runIdempotentCreate 在 BEGIN IMMEDIATE 内查重 → 同 hash 重放 /
    * 异 hash 冲突 → 插入素材 + 知识 + 分块 + 幂等行，任一失败整体回滚，
    * 不留孤儿素材行。幂等键为文件 sha256（内容指纹）：同文件重试 → 重放
    * 返回原知识，绝不重复创建；重放前校验原知识仍存在（stale_replay）。
@@ -312,8 +306,8 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     idempotencyKey: string;
     requestHash: string;
   }): Promise<IdempotentCreateResult<KnowledgeRow>> {
-    return this.database.transaction(async (client) => {
-      const outcome = await runPgIdempotentCreate(this.database, client, {
+    return this.database.transaction(() => {
+      const outcome = runIdempotentCreate(this.database.connection, {
         table: "admin_idempotency",
         actorColumn: "admin_id",
         scopeColumn: "scope",
@@ -324,38 +318,33 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
         requestHash: input.requestHash,
         resultJson: JSON.stringify(input.knowledge),
         createdAt: input.knowledge.createdAt,
-        verifyExists: async (json) => {
+        verifyExists: (json) => {
           const knowledgeId = (JSON.parse(json) as KnowledgeRow).id;
-          const result = await this.database.queryIn(
-            client,
-            "SELECT id FROM agent_knowledge_items WHERE id = $1",
-            [knowledgeId]
-          );
-          return result.rows[0] !== undefined;
+          return this.database.connection.prepare(
+            "SELECT id FROM agent_knowledge_items WHERE id = ?"
+          ).get(knowledgeId) !== undefined;
         },
-        insert: async () => {
-          await this.database.queryIn(
-            client,
-            `INSERT INTO content_resource_media(
+        insert: () => {
+          this.database.connection.prepare(`
+            INSERT INTO content_resource_media(
               id, kind, filename, stored_path, size_bytes, mime_type, sha256,
               status, failure_reason, created_by, created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-            [
-              input.media.id,
-              input.media.kind,
-              input.media.filename,
-              input.media.storedPath,
-              input.media.sizeBytes,
-              input.media.mimeType,
-              input.media.sha256,
-              input.media.status,
-              input.media.failureReason,
-              input.media.createdBy,
-              input.media.createdAt,
-              input.media.updatedAt
-            ]
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            input.media.id,
+            input.media.kind,
+            input.media.filename,
+            input.media.storedPath,
+            input.media.sizeBytes,
+            input.media.mimeType,
+            input.media.sha256,
+            input.media.status,
+            input.media.failureReason,
+            input.media.createdBy,
+            input.media.createdAt,
+            input.media.updatedAt
           );
-          await this.insertKnowledge(client, input.knowledge);
+          this.insertKnowledge(this.database.connection, input.knowledge);
         }
       });
       switch (outcome.kind) {
@@ -378,48 +367,45 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   }
 
   /** 事务内共用：插入知识行与分块（调用方已持有事务）。 */
-  private async insertKnowledge(
-    client: PoolClient,
+  private insertKnowledge(
+    connection: KangminDatabase["connection"],
     input: KnowledgeRow & { chunks: ChunkInput[] }
-  ): Promise<void> {
-    await this.database.queryIn(
-      client,
-      `INSERT INTO agent_knowledge_items(
+  ): void {
+    connection.prepare(`
+      INSERT INTO agent_knowledge_items(
         id, name, folder_id, source, description, source_media_id, size_bytes,
         mime_type, sha256, status, parse_error, chunk_count,
         created_by, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
-      [
-        input.id,
-        input.name,
-        input.folderId ?? null,
-        input.source,
-        input.description,
-        input.sourceMediaId,
-        input.sizeBytes,
-        input.mimeType,
-        input.sha256,
-        input.status,
-        input.parseError,
-        input.chunkCount,
-        input.createdBy,
-        input.createdAt,
-        input.updatedAt
-      ]
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.id,
+      input.name,
+      input.folderId ?? null,
+      input.source,
+      input.description,
+      input.sourceMediaId,
+      input.sizeBytes,
+      input.mimeType,
+      input.sha256,
+      input.status,
+      input.parseError,
+      input.chunkCount,
+      input.createdBy,
+      input.createdAt,
+      input.updatedAt
     );
+    const statement = connection.prepare(`
+      INSERT INTO agent_knowledge_chunks(knowledge_id, chunk_index, chunk_text)
+      VALUES (?, ?, ?)
+    `);
     for (const chunk of input.chunks) {
-      await this.database.queryIn(
-        client,
-        `INSERT INTO agent_knowledge_chunks(knowledge_id, chunk_index, chunk_text)
-         VALUES ($1, $2, $3)`,
-        [input.id, chunk.index, chunk.text]
-      );
+      statement.run(input.id, chunk.index, chunk.text);
     }
   }
 
   async listKnowledge(status?: KnowledgeStatus): Promise<KnowledgeRow[]> {
-    const { rows } = await this.database.query<KnowledgeRowShape>(
-      `WITH RECURSIVE folder_paths(id, path, depth) AS (
+    const rows = this.database.connection.prepare(`
+      WITH RECURSIVE folder_paths(id, path, depth) AS (
         SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
         UNION ALL
         SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
@@ -434,25 +420,24 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
              items.created_by, items.created_at, items.updated_at
       FROM agent_knowledge_items AS items
       LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
-      ${status === undefined ? "" : "WHERE items.status = $1"}
-      ORDER BY items.updated_at DESC, items.id ASC`,
-      status === undefined ? [] : [status]
-    );
+      ${status === undefined ? "" : "WHERE items.status = ?"}
+      ORDER BY items.updated_at DESC, items.id ASC
+    `).all(...(status === undefined ? [] : [status])) as unknown as KnowledgeRowShape[];
     return rows.map(toKnowledge);
   }
 
   async findKnowledge(id: string): Promise<KnowledgeRow | null> {
-    const row = await this.findKnowledgeById(id);
+    const row = this.findKnowledgeSync(id);
     return row === undefined ? null : toKnowledge(row);
   }
 
   async updateKnowledgeMetadata(id: string, input: { name: string; source: string | null; description: string | null; updatedAt: string }): Promise<"updated" | "not_found"> {
-    const { rowCount } = await this.database.query(`
+    const result = this.database.connection.prepare(`
       UPDATE agent_knowledge_items
-      SET name = $1, source = $2, description = $3, updated_at = $4
-      WHERE id = $5
-    `, [input.name, input.source, input.description, input.updatedAt, id]);
-    return rowCount === 1 ? "updated" : "not_found";
+      SET name = ?, source = ?, description = ?, updated_at = ?
+      WHERE id = ?
+    `).run(input.name, input.source, input.description, input.updatedAt, id);
+    return result.changes === 1 ? "updated" : "not_found";
   }
 
   async replaceKnowledgeFromMedia(
@@ -469,121 +454,62 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       updatedAt: string;
     }
   ): Promise<KnowledgeFileReplaceResult> {
-    return this.database.transaction(async (client) => {
-      const current = await this.database.queryIn<{ updated_at: string }>(
-        client,
-        "SELECT updated_at FROM agent_knowledge_items WHERE id = $1 FOR UPDATE",
-        [id]
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT updated_at FROM agent_knowledge_items WHERE id = ?"
+      ).get(id) as { updated_at: string } | undefined;
+      if (current === undefined) return { kind: "not_found" as const };
+      if (current.updated_at !== input.expectedUpdatedAt) return { kind: "version_conflict" as const };
+      const media = this.database.connection.prepare(
+        "SELECT status FROM content_resource_media WHERE id = ?"
+      ).get(input.mediaId) as { status: string } | undefined;
+      if (media?.status !== "ready") return { kind: "media_not_ready" as const };
+      const updated = this.database.connection.prepare(`
+        UPDATE agent_knowledge_items
+        SET source_media_id = ?, size_bytes = ?, mime_type = ?, sha256 = ?,
+            status = ?, parse_error = ?, chunk_count = ?, updated_at = ?
+        WHERE id = ? AND updated_at = ?
+      `).run(
+        input.mediaId,
+        input.sizeBytes,
+        input.mimeType,
+        input.sha256,
+        input.status,
+        input.parseError,
+        input.chunks.length,
+        input.updatedAt,
+        id,
+        input.expectedUpdatedAt
       );
-      const updatedAt = current.rows[0]?.updated_at;
-      if (updatedAt === undefined) return { kind: "not_found" as const };
-      if (updatedAt !== input.expectedUpdatedAt) return { kind: "version_conflict" as const };
-      const media = await this.database.queryIn<{ status: string }>(
-        client,
-        "SELECT status FROM content_resource_media WHERE id = $1 FOR UPDATE",
-        [input.mediaId]
+      if (updated.changes !== 1) return { kind: "version_conflict" as const };
+      this.database.connection.prepare(
+        "DELETE FROM agent_knowledge_embeddings WHERE knowledge_id = ?"
+      ).run(id);
+      this.database.connection.prepare(
+        "DELETE FROM agent_knowledge_chunks WHERE knowledge_id = ?"
+      ).run(id);
+      const insert = this.database.connection.prepare(
+        "INSERT INTO agent_knowledge_chunks(knowledge_id, chunk_index, chunk_text) VALUES (?, ?, ?)"
       );
-      if (media.rows[0]?.status !== "ready") return { kind: "media_not_ready" as const };
-      const result = await this.database.queryIn(
-        client,
-        `UPDATE agent_knowledge_items
-         SET source_media_id = $1, size_bytes = $2, mime_type = $3, sha256 = $4,
-             status = $5, parse_error = $6, chunk_count = $7, updated_at = $8
-         WHERE id = $9 AND updated_at = $10`,
-        [
-          input.mediaId,
-          input.sizeBytes,
-          input.mimeType,
-          input.sha256,
-          input.status,
-          input.parseError,
-          input.chunks.length,
-          input.updatedAt,
-          id,
-          input.expectedUpdatedAt
-        ]
-      );
-      if (result.rowCount !== 1) return { kind: "version_conflict" as const };
-      await this.database.queryIn(client, "DELETE FROM agent_knowledge_embeddings WHERE knowledge_id = $1", [id]);
-      await this.database.queryIn(client, "DELETE FROM agent_knowledge_chunks WHERE knowledge_id = $1", [id]);
-      for (const chunk of input.chunks) {
-        await this.database.queryIn(
-          client,
-          "INSERT INTO agent_knowledge_chunks(knowledge_id, chunk_index, chunk_text) VALUES ($1, $2, $3)",
-          [id, chunk.index, chunk.text]
-        );
-      }
-      const knowledge = await this.findKnowledgeIn(client, id);
+      for (const chunk of input.chunks) insert.run(id, chunk.index, chunk.text);
+      const knowledge = this.findKnowledgeSync(id);
       if (knowledge === undefined) return { kind: "not_found" as const };
       return { kind: "updated" as const, knowledge: toKnowledge(knowledge) };
     });
   }
 
   async deleteKnowledge(id: string): Promise<"deleted" | "not_found"> {
-    const { rowCount } = await this.database.query("DELETE FROM agent_knowledge_items WHERE id = $1", [id]);
-    return rowCount === 1 ? "deleted" : "not_found";
-  }
-
-  /** 事务外知识读取（与 findKnowledge 同 SQL）。 */
-  private async findKnowledgeById(id: string): Promise<KnowledgeRowShape | undefined> {
-    const { rows } = await this.database.query<KnowledgeRowShape>(
-      `WITH RECURSIVE folder_paths(id, path, depth) AS (
-        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
-        UNION ALL
-        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
-        FROM agent_knowledge_folders AS child
-        JOIN folder_paths AS parent ON child.parent_id = parent.id
-        WHERE parent.depth < 3
-      )
-      SELECT items.id, items.name, items.folder_id,
-             folder_paths.path AS category,
-             items.source, items.description, items.source_media_id, items.size_bytes,
-             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
-             items.created_by, items.created_at, items.updated_at
-      FROM agent_knowledge_items AS items
-      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
-      WHERE items.id = $1`,
-      [id]
-    );
-    return rows[0];
-  }
-
-  /** 事务内知识读取（与 findKnowledge 同 SQL）。 */
-  private async findKnowledgeIn(
-    client: PoolClient,
-    id: string
-  ): Promise<KnowledgeRowShape | undefined> {
-    const { rows } = await this.database.queryIn<KnowledgeRowShape>(
-      client,
-      `WITH RECURSIVE folder_paths(id, path, depth) AS (
-        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
-        UNION ALL
-        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
-        FROM agent_knowledge_folders AS child
-        JOIN folder_paths AS parent ON child.parent_id = parent.id
-        WHERE parent.depth < 3
-      )
-      SELECT items.id, items.name, items.folder_id,
-             folder_paths.path AS category,
-             items.source, items.description, items.source_media_id, items.size_bytes,
-             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
-             items.created_by, items.created_at, items.updated_at
-      FROM agent_knowledge_items AS items
-      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
-      WHERE items.id = $1`,
-      [id]
-    );
-    return rows[0];
+    const result = this.database.connection.prepare("DELETE FROM agent_knowledge_items WHERE id = ?").run(id);
+    return result.changes === 1 ? "deleted" : "not_found";
   }
 
   /** 素材读取（add-from-media）：与 content-aux findMedia 同 SQL。 */
   async findMedia(id: string): Promise<KnowledgeSourceMediaRow | null> {
-    const { rows } = await this.database.query<MediaRowShape>(
-      `SELECT ${MEDIA_COLUMNS}
-       FROM content_resource_media WHERE id = $1`,
-      [id]
-    );
-    const row = rows[0];
+    const row = this.database.connection.prepare(`
+      SELECT id, kind, filename, stored_path, size_bytes, mime_type, sha256,
+             status, failure_reason, created_by, created_at, updated_at
+      FROM content_resource_media WHERE id = ?
+    `).get(id) as unknown as MediaRowShape | undefined;
     return row === undefined ? null : toMediaRow(row);
   }
 
@@ -600,8 +526,8 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     idempotencyKey: string,
     requestHash: string
   ): Promise<IdempotentCreateResult<KnowledgeRow>> {
-    return this.database.transaction(async (client) => {
-      const outcome = await runPgIdempotentCreate(this.database, client, {
+    return this.database.transaction(() => {
+      const outcome = runIdempotentCreate(this.database.connection, {
         table: "admin_idempotency",
         actorColumn: "admin_id",
         scopeColumn: "scope",
@@ -612,17 +538,14 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
         requestHash,
         resultJson: JSON.stringify(knowledge),
         createdAt: knowledge.createdAt,
-        verifyExists: async (json) => {
+        verifyExists: (json) => {
           const knowledgeId = (JSON.parse(json) as KnowledgeRow).id;
-          const result = await this.database.queryIn(
-            client,
-            "SELECT id FROM agent_knowledge_items WHERE id = $1",
-            [knowledgeId]
-          );
-          return result.rows[0] !== undefined;
+          return this.database.connection.prepare(
+            "SELECT id FROM agent_knowledge_items WHERE id = ?"
+          ).get(knowledgeId) !== undefined;
         },
-        insert: async () => {
-          await this.insertKnowledge(client, {
+        insert: () => {
+          this.insertKnowledge(this.database.connection, {
             ...knowledge,
             sourceMediaId: mediaId
           });
@@ -647,23 +570,44 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     });
   }
 
+  /** 事务内知识读取（与 findKnowledge 同 SQL）。 */
+  private findKnowledgeSync(id: string): KnowledgeRowShape | undefined {
+    return this.database.connection.prepare(`
+      WITH RECURSIVE folder_paths(id, path, depth) AS (
+        SELECT id, name, 1 FROM agent_knowledge_folders WHERE parent_id IS NULL
+        UNION ALL
+        SELECT child.id, parent.path || ' / ' || child.name, parent.depth + 1
+        FROM agent_knowledge_folders AS child
+        JOIN folder_paths AS parent ON child.parent_id = parent.id
+        WHERE parent.depth < 3
+      )
+      SELECT items.id, items.name, items.folder_id,
+             folder_paths.path AS category,
+             items.source, items.description, items.source_media_id, items.size_bytes,
+             items.mime_type, items.sha256, items.status, items.parse_error, items.chunk_count,
+             items.created_by, items.created_at, items.updated_at
+      FROM agent_knowledge_items AS items
+      LEFT JOIN folder_paths ON folder_paths.id = items.folder_id
+      WHERE items.id = ?
+    `).get(id) as unknown as KnowledgeRowShape | undefined;
+  }
+
   async setKnowledgeStatus(
     id: string,
     status: KnowledgeStatus,
     updatedAt: string,
     parseError: string | null = null
   ): Promise<"updated" | "not_found"> {
-    const { rowCount } = await this.database.query(
-      `UPDATE agent_knowledge_items
-      SET status = $1, parse_error = $2, updated_at = $3
-      WHERE id = $4`,
-      [status, parseError, updatedAt, id]
-    );
-    return rowCount === 1 ? "updated" : "not_found";
+    const result = this.database.connection.prepare(`
+      UPDATE agent_knowledge_items
+      SET status = ?, parse_error = ?, updated_at = ?
+      WHERE id = ?
+    `).run(status, parseError, updatedAt, id);
+    return result.changes === 1 ? "updated" : "not_found";
   }
 
   /**
-   * 启用/停用守卫（事务与卫生残留批 P1-3）：事务内重读知识
+   * 启用/停用守卫（事务与卫生残留批 P1-3）：BEGIN IMMEDIATE 内重读知识
    * 行与来源素材状态 → guard 校验 → 通过才更新状态。并发停用素材、
    * 并发改状态的窗口被关闭（素材状态是另一表的行，重读在事务内完成；
    * 状态谓词 WHERE status = <事务内重读值> 对并发状态变化作 CAS）。
@@ -677,44 +621,37 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       media: { id: string; status: string } | null
     ) => string[]
   ): Promise<KnowledgeGuardedUpdateResult> {
-    return this.database.transaction(async (client) => {
-      const current = await this.findKnowledgeIn(client, id);
+    return this.database.transaction(() => {
+      const current = this.findKnowledgeSync(id);
       if (current === undefined) {
         return { kind: "not_found" as const };
       }
-      let media: { id: string; status: string } | null = null;
-      if (current.source_media_id !== null) {
-        const mediaResult = await this.database.queryIn<{
-          id: string;
-          status: string;
-        }>(
-          client,
-          "SELECT id, status FROM content_resource_media WHERE id = $1",
-          [current.source_media_id]
-        );
-        media = mediaResult.rows[0] ?? null;
-      }
+      const media =
+        current.source_media_id === null
+          ? null
+          : (this.database.connection.prepare(
+              "SELECT id, status FROM content_resource_media WHERE id = ?"
+            ).get(current.source_media_id) as unknown as
+              | { id: string; status: string }
+              | undefined) ?? null;
       const missing = guard(toKnowledge(current), media);
       if (missing.length > 0) {
         return { kind: "validation_failed" as const, missing };
       }
-      const { rowCount } = await this.database.queryIn(
-        client,
-        `UPDATE agent_knowledge_items
-        SET status = $1, parse_error = $2, updated_at = $3
-        WHERE id = $4 AND status = $5`,
-        [status, null, updatedAt, id, current.status]
-      );
-      if (rowCount !== 1) {
-        // 事务内重读与更新之间状态被并发修改时的防御性兜底
-        // （PG 默认隔离级别下同事务内不可达，仅在其他会话并发
-        // 提交且谓词不命中时落入）。
+      const result = this.database.connection.prepare(`
+        UPDATE agent_knowledge_items
+        SET status = ?, parse_error = ?, updated_at = ?
+        WHERE id = ? AND status = ?
+      `).run(status, null, updatedAt, id, current.status);
+      if (result.changes !== 1) {
+        // 事务内重读与更新之间状态被并发修改（同连接内不可达，
+        // 跨连接因 BEGIN IMMEDIATE 持写锁同样不可达），防御性兜底。
         return {
           kind: "validation_failed" as const,
           missing: ["知识状态已变化，请重新读取"]
         };
       }
-      const updated = await this.findKnowledgeIn(client, id);
+      const updated = this.findKnowledgeSync(id);
       if (updated === undefined) {
         return { kind: "not_found" as const };
       }
@@ -723,15 +660,12 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   }
 
   async listKnowledgeChunks(id: string): Promise<ChunkInput[]> {
-    const { rows } = await this.database.query<{
-      chunk_index: number;
-      chunk_text: string;
-    }>(`
+    const rows = this.database.connection.prepare(`
       SELECT chunk_index, chunk_text
       FROM agent_knowledge_chunks
-      WHERE knowledge_id = $1
+      WHERE knowledge_id = ?
       ORDER BY chunk_index ASC
-    `, [id]);
+    `).all(id) as unknown as Array<{ chunk_index: number; chunk_text: string }>;
     return rows.map((row) => ({ index: row.chunk_index, text: row.chunk_text }));
   }
 
@@ -742,36 +676,35 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     embeddings: ReadonlyArray<{ chunkIndex: number; embedding: Uint8Array }>,
     updatedAt: string
   ): Promise<"updated" | "not_found"> {
-    return this.database.transaction(async (client) => {
-      const item = await this.database.queryIn<{ chunk_count: number }>(
-        client,
-        "SELECT chunk_count FROM agent_knowledge_items WHERE id = $1 FOR UPDATE",
-        [id]
-      );
-      const chunkCount = item.rows[0]?.chunk_count;
-      if (chunkCount === undefined) return "not_found" as const;
-      if (embeddings.length !== chunkCount) {
+    return this.database.transaction(() => {
+      const item = this.database.connection.prepare(
+        "SELECT chunk_count FROM agent_knowledge_items WHERE id = ?"
+      ).get(id) as { chunk_count: number } | undefined;
+      if (item === undefined) return "not_found" as const;
+      if (embeddings.length !== item.chunk_count) {
         throw new DomainError("storage_unavailable", "知识向量与正文分块数量不一致");
       }
-      await this.database.queryIn(
-        client,
-        "DELETE FROM agent_knowledge_embeddings WHERE knowledge_id = $1",
-        [id]
-      );
+      this.database.connection.prepare(
+        "DELETE FROM agent_knowledge_embeddings WHERE knowledge_id = ?"
+      ).run(id);
+      const insert = this.database.connection.prepare(`
+        INSERT INTO agent_knowledge_embeddings(
+          knowledge_id, chunk_index, model_name, dimensions, embedding, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?)
+      `);
       for (const entry of embeddings) {
-        await this.database.queryIn(
-          client,
-          `INSERT INTO agent_knowledge_embeddings(
-             knowledge_id, chunk_index, model_name, dimensions, embedding, updated_at
-           ) VALUES ($1, $2, $3, $4, $5, $6)`,
-          [id, entry.chunkIndex, model, dimensions, Buffer.from(entry.embedding), updatedAt]
+        insert.run(
+          id,
+          entry.chunkIndex,
+          model,
+          dimensions,
+          Buffer.from(entry.embedding),
+          updatedAt
         );
       }
-      await this.database.queryIn(
-        client,
-        "UPDATE agent_knowledge_items SET updated_at = $1 WHERE id = $2",
-        [updatedAt, id]
-      );
+      this.database.connection.prepare(
+        "UPDATE agent_knowledge_items SET updated_at = ? WHERE id = ?"
+      ).run(updatedAt, id);
       return "updated" as const;
     });
   }
@@ -792,64 +725,62 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     createdAt: string;
     updatedAt: string;
   }): Promise<void> {
-    await this.database.query(
-      `INSERT INTO content_resource_media(
+    this.database.connection.prepare(`
+      INSERT INTO content_resource_media(
         id, kind, filename, stored_path, size_bytes, mime_type, sha256,
         status, failure_reason, created_by, created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
-      [
-        input.id,
-        input.kind,
-        input.filename,
-        input.storedPath,
-        input.sizeBytes,
-        input.mimeType,
-        input.sha256,
-        input.status,
-        input.failureReason,
-        input.createdBy,
-        input.createdAt,
-        input.updatedAt
-      ]
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.id,
+      input.kind,
+      input.filename,
+      input.storedPath,
+      input.sizeBytes,
+      input.mimeType,
+      input.sha256,
+      input.status,
+      input.failureReason,
+      input.createdBy,
+      input.createdAt,
+      input.updatedAt
     );
   }
 
   // ---- 方案 ----
 
   async createPlan(input: PlanRow): Promise<void> {
-    await this.database.query(
-      `INSERT INTO agent_plans(
+    this.database.connection.prepare(`
+      INSERT INTO agent_plans(
         id, name, syndrome, phase_code, audience, method, steps_json,
         precautions, risks, contraindications, applicable_age,
         video_resource_id, display_order, status, revision, created_by,
         created_at, updated_at
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-      [
-        input.id,
-        input.name,
-        input.syndrome,
-        input.phaseCode,
-        input.audience,
-        input.method,
-        input.stepsJson,
-        input.precautions,
-        input.risks,
-        input.contraindications,
-        input.applicableAge,
-        input.videoResourceId,
-        input.displayOrder,
-        input.status,
-        input.revision,
-        input.createdBy,
-        input.createdAt,
-        input.updatedAt
-      ]
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `).run(
+      input.id,
+      input.name,
+      input.syndrome,
+      input.phaseCode,
+      input.audience,
+      input.method,
+      input.stepsJson,
+      input.precautions,
+      input.risks,
+      input.contraindications,
+      input.applicableAge,
+      input.videoResourceId,
+      input.displayOrder,
+      input.status,
+      input.revision,
+      input.createdBy,
+      input.createdAt,
+      input.updatedAt
     );
   }
 
   /**
    * 幂等创建方案（事务与卫生残留批 P2-7）：确定性幂等键 + 重放语义
-   * 与内容/公告创建共用 runPgIdempotentCreate（scope=agent.plan.create）。
+   * 与内容/公告创建共用 runIdempotentCreate（scope=agent.plan.create）。
    */
   async createPlanIdempotent(
     adminId: string,
@@ -857,8 +788,8 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     idempotencyKey: string,
     requestHash: string
   ): Promise<IdempotentCreateResult<AgentPlan>> {
-    return this.database.transaction(async (client) => {
-      const outcome = await runPgIdempotentCreate(this.database, client, {
+    return this.database.transaction(() => {
+      const outcome = runIdempotentCreate(this.database.connection, {
         table: "admin_idempotency",
         actorColumn: "admin_id",
         scopeColumn: "scope",
@@ -869,44 +800,39 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
         requestHash,
         resultJson: JSON.stringify(plan),
         createdAt: plan.createdAt,
-        verifyExists: async (json) => {
+        verifyExists: (json) => {
           const planId = (JSON.parse(json) as PlanRow).id;
-          const result = await this.database.queryIn(
-            client,
-            "SELECT id FROM agent_plans WHERE id = $1",
-            [planId]
-          );
-          return result.rows[0] !== undefined;
+          return this.database.connection.prepare(
+            "SELECT id FROM agent_plans WHERE id = ?"
+          ).get(planId) !== undefined;
         },
-        insert: async () => {
-          await this.database.queryIn(
-            client,
-            `INSERT INTO agent_plans(
+        insert: () => {
+          this.database.connection.prepare(`
+            INSERT INTO agent_plans(
               id, name, syndrome, phase_code, audience, method, steps_json,
               precautions, risks, contraindications, applicable_age,
               video_resource_id, display_order, status, revision, created_by,
               created_at, updated_at
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)`,
-            [
-              plan.id,
-              plan.name,
-              plan.syndrome,
-              plan.phaseCode,
-              plan.audience,
-              plan.method,
-              plan.stepsJson,
-              plan.precautions,
-              plan.risks,
-              plan.contraindications,
-              plan.applicableAge,
-              plan.videoResourceId,
-              plan.displayOrder,
-              plan.status,
-              plan.revision,
-              plan.createdBy,
-              plan.createdAt,
-              plan.updatedAt
-            ]
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            plan.id,
+            plan.name,
+            plan.syndrome,
+            plan.phaseCode,
+            plan.audience,
+            plan.method,
+            plan.stepsJson,
+            plan.precautions,
+            plan.risks,
+            plan.contraindications,
+            plan.applicableAge,
+            plan.videoResourceId,
+            plan.displayOrder,
+            plan.status,
+            plan.revision,
+            plan.createdBy,
+            plan.createdAt,
+            plan.updatedAt
           );
         }
       });
@@ -954,97 +880,72 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   }
 
   async listPlans(status?: PlanStatus): Promise<AgentPlan[]> {
-    const { rows } = await this.database.query<PlanRowShape>(
-      `SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+    const rows = this.database.connection.prepare(`
+      SELECT id, name, syndrome, phase_code, audience, method, steps_json,
              precautions, risks, contraindications, applicable_age,
              video_resource_id, display_order, status, revision, created_by,
              created_at, updated_at
       FROM agent_plans
-      ${status === undefined ? "" : "WHERE status = $1"}
-      ORDER BY display_order ASC, updated_at DESC, id ASC`,
-      status === undefined ? [] : [status]
-    );
+      ${status === undefined ? "" : "WHERE status = ?"}
+      ORDER BY display_order ASC, updated_at DESC, id ASC
+    `).all(...(status === undefined ? [] : [status])) as unknown as PlanRowShape[];
     return rows.map(toPlan);
   }
 
   async findPlan(id: string): Promise<AgentPlan | null> {
-    const row = await this.findPlanById(id);
+    const row = this.findPlanSync(id);
     return row === undefined ? null : toPlan(row);
   }
 
-  /** 事务外方案读取（与 findPlan 同 SQL）。 */
-  private async findPlanById(id: string): Promise<PlanRowShape | undefined> {
-    const { rows } = await this.database.query<PlanRowShape>(
-      `SELECT id, name, syndrome, phase_code, audience, method, steps_json,
-             precautions, risks, contraindications, applicable_age,
-             video_resource_id, display_order, status, revision, created_by,
-             created_at, updated_at
-      FROM agent_plans WHERE id = $1`,
-      [id]
-    );
-    return rows[0];
-  }
-
   /** 事务内方案读取（与 findPlan 同 SQL）。 */
-  private async findPlanIn(
-    client: PoolClient,
-    id: string
-  ): Promise<PlanRowShape | undefined> {
-    const { rows } = await this.database.queryIn<PlanRowShape>(
-      client,
-      `SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+  private findPlanSync(id: string): PlanRowShape | undefined {
+    return this.database.connection.prepare(`
+      SELECT id, name, syndrome, phase_code, audience, method, steps_json,
              precautions, risks, contraindications, applicable_age,
              video_resource_id, display_order, status, revision, created_by,
              created_at, updated_at
-      FROM agent_plans WHERE id = $1`,
-      [id]
-    );
-    return rows[0];
+      FROM agent_plans WHERE id = ?
+    `).get(id) as unknown as PlanRowShape | undefined;
   }
 
   async updatePlan(
     plan: AgentPlan,
     expectedRevision: number
   ): Promise<UpdatePlanResult> {
-    return this.database.transaction(async (client) => {
-      const currentResult = await this.database.queryIn<{ revision: number }>(
-        client,
-        "SELECT revision FROM agent_plans WHERE id = $1",
-        [plan.id]
-      );
-      const current = currentResult.rows[0];
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT revision FROM agent_plans WHERE id = ?"
+      ).get(plan.id) as unknown as { revision: number } | undefined;
       if (current === undefined) {
         return { kind: "not_found" as const };
       }
       if (current.revision !== expectedRevision) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
-      await this.database.queryIn(
-        client,
-        `UPDATE agent_plans SET
-          name = $1, syndrome = $2, phase_code = $3, audience = $4, method = $5,
-          steps_json = $6, precautions = $7, risks = $8, contraindications = $9,
-          applicable_age = $10, video_resource_id = $11, display_order = $12,
-          status = $13, updated_at = $14, revision = $15
-        WHERE id = $16`,
-        [
-          plan.name,
-          plan.syndrome,
-          plan.phaseCode,
-          plan.audience,
-          plan.method,
-          JSON.stringify(plan.steps),
-          plan.precautions,
-          plan.risks,
-          plan.contraindications,
-          plan.applicableAge,
-          plan.videoResourceId,
-          plan.displayOrder,
-          plan.status,
-          plan.updatedAt,
-          plan.revision,
-          plan.id
-        ]
+      this.database.connection.prepare(`
+        UPDATE agent_plans SET
+          name = ?, syndrome = ?, phase_code = ?, audience = ?, method = ?,
+          steps_json = ?, precautions = ?, risks = ?, contraindications = ?,
+          applicable_age = ?, video_resource_id = ?, display_order = ?,
+          status = ?, updated_at = ?, revision = ?
+        WHERE id = ?
+      `).run(
+        plan.name,
+        plan.syndrome,
+        plan.phaseCode,
+        plan.audience,
+        plan.method,
+        JSON.stringify(plan.steps),
+        plan.precautions,
+        plan.risks,
+        plan.contraindications,
+        plan.applicableAge,
+        plan.videoResourceId,
+        plan.displayOrder,
+        plan.status,
+        plan.updatedAt,
+        plan.revision,
+        plan.id
       );
       return { kind: "updated" as const, plan };
     });
@@ -1052,7 +953,7 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
 
   /**
    * 内容更新与启用等价校验同一事务（与 setPlanStatusGuarded 同类事务
-   * 变式）：guard 在事务内执行，视频发布状态按新内容的
+   * 变式）：guard 在 BEGIN IMMEDIATE 内执行，视频发布状态按新内容的
    * videoResourceId 在事务内重读——并发进程在另一事务下架视频时，本
    * 事务校验拒绝，内容更新不提交（与 updatePlan 共用 CAS）。
    */
@@ -1064,61 +965,52 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       video: { id: string; status: string } | null
     ) => string[]
   ): Promise<PlanGuardedUpdateResult> {
-    return this.database.transaction(async (client) => {
-      const currentResult = await this.database.queryIn<{ revision: number }>(
-        client,
-        "SELECT revision FROM agent_plans WHERE id = $1",
-        [plan.id]
-      );
-      const current = currentResult.rows[0];
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT revision FROM agent_plans WHERE id = ?"
+      ).get(plan.id) as unknown as { revision: number } | undefined;
       if (current === undefined) {
         return { kind: "not_found" as const };
       }
       if (current.revision !== expectedRevision) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
-      let video: { id: string; status: string } | null = null;
-      if (plan.videoResourceId !== null) {
-        const videoResult = await this.database.queryIn<{
-          id: string;
-          status: string;
-        }>(
-          client,
-          "SELECT id, status FROM content_items WHERE kind = 'video' AND id = $1",
-          [plan.videoResourceId]
-        );
-        video = videoResult.rows[0] ?? null;
-      }
+      const video =
+        plan.videoResourceId === null
+          ? null
+          : (this.database.connection.prepare(
+              "SELECT id, status FROM content_items WHERE kind = 'video' AND id = ?"
+            ).get(plan.videoResourceId) as unknown as
+              | { id: string; status: string }
+              | undefined) ?? null;
       const missing = guard(plan, video);
       if (missing.length > 0) {
         return { kind: "validation_failed" as const, missing };
       }
-      await this.database.queryIn(
-        client,
-        `UPDATE agent_plans SET
-          name = $1, syndrome = $2, phase_code = $3, audience = $4, method = $5,
-          steps_json = $6, precautions = $7, risks = $8, contraindications = $9,
-          applicable_age = $10, video_resource_id = $11, display_order = $12,
-          status = $13, updated_at = $14, revision = $15
-        WHERE id = $16`,
-        [
-          plan.name,
-          plan.syndrome,
-          plan.phaseCode,
-          plan.audience,
-          plan.method,
-          JSON.stringify(plan.steps),
-          plan.precautions,
-          plan.risks,
-          plan.contraindications,
-          plan.applicableAge,
-          plan.videoResourceId,
-          plan.displayOrder,
-          plan.status,
-          plan.updatedAt,
-          plan.revision,
-          plan.id
-        ]
+      this.database.connection.prepare(`
+        UPDATE agent_plans SET
+          name = ?, syndrome = ?, phase_code = ?, audience = ?, method = ?,
+          steps_json = ?, precautions = ?, risks = ?, contraindications = ?,
+          applicable_age = ?, video_resource_id = ?, display_order = ?,
+          status = ?, updated_at = ?, revision = ?
+        WHERE id = ?
+      `).run(
+        plan.name,
+        plan.syndrome,
+        plan.phaseCode,
+        plan.audience,
+        plan.method,
+        JSON.stringify(plan.steps),
+        plan.precautions,
+        plan.risks,
+        plan.contraindications,
+        plan.applicableAge,
+        plan.videoResourceId,
+        plan.displayOrder,
+        plan.status,
+        plan.updatedAt,
+        plan.revision,
+        plan.id
       );
       return { kind: "updated" as const, plan };
     });
@@ -1130,40 +1022,38 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
     status: PlanStatus,
     updatedAt: string
   ): Promise<UpdatePlanResult> {
-    return this.database.transaction(async (client) => {
-      const currentResult = await this.database.queryIn<{ revision: number }>(
-        client,
-        "SELECT revision FROM agent_plans WHERE id = $1",
-        [id]
-      );
-      const current = currentResult.rows[0];
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
+        "SELECT revision FROM agent_plans WHERE id = ?"
+      ).get(id) as unknown as { revision: number } | undefined;
       if (current === undefined) {
         return { kind: "not_found" as const };
       }
       if (current.revision !== expectedRevision) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
-      const { rowCount } = await this.database.queryIn(
-        client,
-        `UPDATE agent_plans
-        SET status = $1, updated_at = $2, revision = revision + 1
-        WHERE id = $3`,
-        [status, updatedAt, id]
-      );
-      if (rowCount !== 1) {
+      const result = this.database.connection.prepare(`
+        UPDATE agent_plans
+        SET status = ?, updated_at = ?, revision = revision + 1
+        WHERE id = ?
+      `).run(status, updatedAt, id);
+      if (result.changes !== 1) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
-      const updated = await this.findPlanIn(client, id);
-      if (updated === undefined) {
-        return { kind: "not_found" as const };
-      }
+      const updated = this.database.connection.prepare(`
+        SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+               precautions, risks, contraindications, applicable_age,
+               video_resource_id, display_order, status, revision, created_by,
+               created_at, updated_at
+        FROM agent_plans WHERE id = ?
+      `).get(id) as unknown as PlanRowShape;
       return { kind: "updated" as const, plan: toPlan(updated) };
     });
   }
 
   /**
    * 启用前校验与状态更新同一事务（评审 C 事务变式）：guard 在
-   * 事务内执行，方案与视频发布状态在事务内重读——
+   * BEGIN IMMEDIATE 内执行，方案与视频发布状态在事务内重读——
    * 并发进程在另一事务下架视频时，本事务校验拒绝，状态更新不提交；
    * 校验通过才在同一事务内置为 enabled（与 setPlanStatus 共用 CAS）。
    */
@@ -1177,8 +1067,8 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       video: { id: string; status: string } | null
     ) => string[]
   ): Promise<PlanGuardedUpdateResult> {
-    return this.database.transaction(async (client) => {
-      const current = await this.findPlanIn(client, id);
+    return this.database.transaction(() => {
+      const current = this.findPlanSync(id);
       if (current === undefined) {
         return { kind: "not_found" as const };
       }
@@ -1186,36 +1076,33 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
       const plan = toPlan(current);
-      let video: { id: string; status: string } | null = null;
-      if (plan.videoResourceId !== null) {
-        const videoResult = await this.database.queryIn<{
-          id: string;
-          status: string;
-        }>(
-          client,
-          "SELECT id, status FROM content_items WHERE kind = 'video' AND id = $1",
-          [plan.videoResourceId]
-        );
-        video = videoResult.rows[0] ?? null;
-      }
+      const video =
+        plan.videoResourceId === null
+          ? null
+          : (this.database.connection.prepare(
+              "SELECT id, status FROM content_items WHERE kind = 'video' AND id = ?"
+            ).get(plan.videoResourceId) as unknown as
+              | { id: string; status: string }
+              | undefined) ?? null;
       const missing = guard(plan, video);
       if (missing.length > 0) {
         return { kind: "validation_failed" as const, missing };
       }
-      const { rowCount } = await this.database.queryIn(
-        client,
-        `UPDATE agent_plans
-        SET status = $1, updated_at = $2, revision = revision + 1
-        WHERE id = $3`,
-        [status, updatedAt, id]
-      );
-      if (rowCount !== 1) {
+      const result = this.database.connection.prepare(`
+        UPDATE agent_plans
+        SET status = ?, updated_at = ?, revision = revision + 1
+        WHERE id = ?
+      `).run(status, updatedAt, id);
+      if (result.changes !== 1) {
         return { kind: "version_conflict" as const, currentRevision: current.revision };
       }
-      const updated = await this.findPlanIn(client, id);
-      if (updated === undefined) {
-        return { kind: "not_found" as const };
-      }
+      const updated = this.database.connection.prepare(`
+        SELECT id, name, syndrome, phase_code, audience, method, steps_json,
+               precautions, risks, contraindications, applicable_age,
+               video_resource_id, display_order, status, revision, created_by,
+               created_at, updated_at
+        FROM agent_plans WHERE id = ?
+      `).get(id) as unknown as PlanRowShape;
       return { kind: "updated" as const, plan: toPlan(updated) };
     });
   }
@@ -1223,14 +1110,13 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
   // ---- 模型设置 ----
 
   async getModelConfig(): Promise<ModelConfigRow | null> {
-    const { rows } = await this.database.query<ModelConfigShape>(
-      `SELECT provider, model_name, timeout_seconds, max_output_tokens,
+    const row = this.database.connection.prepare(`
+      SELECT provider, model_name, timeout_seconds, max_output_tokens,
              knowledge_retrieval_enabled, retrieval_count, explanation_enabled,
              api_key, encryption_key_version,
              updated_by, updated_at, last_test_status, last_test_at
-      FROM agent_model_config WHERE id = 1`
-    );
-    const row = rows[0];
+      FROM agent_model_config WHERE id = 1
+    `).get() as unknown as ModelConfigShape | undefined;
     if (row === undefined) {
       return null;
     }
@@ -1272,51 +1158,19 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
       row.apiKey === null
         ? { stored: null, keyVersion: null }
         : encryptStoredField(this.encryption, row.apiKey);
-    return this.database.transaction(async (client) => {
-      const currentResult = await this.database.queryIn<{
-        updated_at: string | null;
-      }>(
-        client,
+    return this.database.transaction(() => {
+      const current = this.database.connection.prepare(
         "SELECT updated_at FROM agent_model_config WHERE id = 1"
-      );
-      const current = currentResult.rows[0];
+      ).get() as unknown as { updated_at: string | null } | undefined;
       if (current === undefined) {
-        await this.database.queryIn(
-          client,
-          `INSERT INTO agent_model_config(
+        this.database.connection.prepare(`
+          INSERT INTO agent_model_config(
             id, provider, model_name, timeout_seconds, max_output_tokens,
             knowledge_retrieval_enabled, retrieval_count, explanation_enabled,
             api_key, encryption_key_version,
             updated_by, updated_at, last_test_status, last_test_at
-          ) VALUES (1, $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-          [
-            row.provider,
-            row.modelName,
-            row.timeoutSeconds,
-            row.maxOutputTokens,
-            row.knowledgeRetrievalEnabled,
-            row.retrievalCount,
-            row.explanationEnabled,
-            encrypted.stored,
-            encrypted.keyVersion,
-            row.updatedBy,
-            row.updatedAt,
-            row.lastTestStatus,
-            row.lastTestAt
-          ]
-        );
-        return "updated";
-      }
-      const { rowCount } = await this.database.queryIn(
-        client,
-        `UPDATE agent_model_config SET
-          provider = $1, model_name = $2, timeout_seconds = $3,
-          max_output_tokens = $4, knowledge_retrieval_enabled = $5,
-          retrieval_count = $6, explanation_enabled = $7,
-          api_key = $8, encryption_key_version = $9,
-          updated_by = $10, updated_at = $11, last_test_status = $12, last_test_at = $13
-        WHERE id = 1 AND (updated_at = $14 OR (updated_at IS NULL AND $15::text IS NULL))`,
-        [
+          ) VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        `).run(
           row.provider,
           row.modelName,
           row.timeoutSeconds,
@@ -1329,44 +1183,63 @@ export class PgAgentAdminRepository implements AgentAdminRepository {
           row.updatedBy,
           row.updatedAt,
           row.lastTestStatus,
-          row.lastTestAt,
-          expectedUpdatedAt,
-          expectedUpdatedAt
-        ]
+          row.lastTestAt
+        );
+        return "updated";
+      }
+      const result = this.database.connection.prepare(`
+        UPDATE agent_model_config SET
+          provider = ?, model_name = ?, timeout_seconds = ?,
+          max_output_tokens = ?, knowledge_retrieval_enabled = ?,
+          retrieval_count = ?, explanation_enabled = ?,
+          api_key = ?, encryption_key_version = ?,
+          updated_by = ?, updated_at = ?, last_test_status = ?, last_test_at = ?
+        WHERE id = 1 AND (updated_at = ? OR (updated_at IS NULL AND ? IS NULL))
+      `).run(
+        row.provider,
+        row.modelName,
+        row.timeoutSeconds,
+        row.maxOutputTokens,
+        row.knowledgeRetrievalEnabled,
+        row.retrievalCount,
+        row.explanationEnabled,
+        encrypted.stored,
+        encrypted.keyVersion,
+        row.updatedBy,
+        row.updatedAt,
+        row.lastTestStatus,
+        row.lastTestAt,
+        expectedUpdatedAt,
+        expectedUpdatedAt
       );
-      return rowCount === 1 ? "updated" : "conflict";
+      return result.changes === 1 ? "updated" : "conflict";
     });
   }
 
   // ---- 模拟测试 ----
 
   async findTestCase(id: string): Promise<TestCaseRow | null> {
-    const { rows } = await this.database.query<TestCaseShape>(
-      `SELECT id, input_text, status, result_json, created_by, created_at
-      FROM agent_test_cases WHERE id = $1`,
-      [id]
-    );
-    const row = rows[0];
+    const row = this.database.connection.prepare(`
+      SELECT id, input_text, status, result_json, created_by, created_at
+      FROM agent_test_cases WHERE id = ?
+    `).get(id) as unknown as TestCaseShape | undefined;
     return row === undefined ? null : toTestCase(row);
   }
 
   async listTestCases(limit: number): Promise<TestCaseRow[]> {
-    const { rows } = await this.database.query<TestCaseShape>(
-      `SELECT id, input_text, status, result_json, created_by, created_at
-      FROM agent_test_cases ORDER BY created_at DESC, id ASC LIMIT $1`,
-      [limit]
-    );
+    const rows = this.database.connection.prepare(`
+      SELECT id, input_text, status, result_json, created_by, created_at
+      FROM agent_test_cases ORDER BY created_at DESC, id ASC LIMIT ?
+    `).all(limit) as unknown as TestCaseShape[];
     return rows.map(toTestCase);
   }
 
   // ---- 内容集成 ----
 
   async findVideoResource(id: string): Promise<{ id: string; status: string } | null> {
-    const { rows } = await this.database.query<{ id: string; status: string }>(
-      `SELECT id, status FROM content_items WHERE kind = 'video' AND id = $1`,
-      [id]
-    );
-    const row = rows[0];
+    const row = this.database.connection.prepare(`
+      SELECT id, status FROM content_items WHERE kind = 'video' AND id = ?
+    `).get(id) as unknown as { id: string; status: string } | undefined;
     return row === undefined ? null : row;
   }
 }

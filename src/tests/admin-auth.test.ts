@@ -11,9 +11,9 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteAdminAccountRepository } from "../infrastructure/sqlite-admin-account-repository.js";
-import { SqliteAdminSessionRepository } from "../infrastructure/sqlite-admin-session-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteAdminAccountRepository } from "@kangmin/database/sqlite/admin-account-repository";
+import { SqliteAdminSessionRepository } from "@kangmin/database/sqlite/admin-session-repository";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type { AdminAccountView, LoginResult } from "@kangmin/core/operations/admin/admin-auth-service";
 

@@ -10,7 +10,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
-import { KangminDatabase } from "../infrastructure/database.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {

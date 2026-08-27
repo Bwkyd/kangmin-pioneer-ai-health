@@ -11,7 +11,7 @@ import type {
   PatientMessage,
   PublicContent
 } from "@kangmin/core/content/browse/contracts";
-import { KangminDatabase } from "../infrastructure/database.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { seedContent } from "./content-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，

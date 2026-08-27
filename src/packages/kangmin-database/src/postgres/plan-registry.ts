@@ -3,7 +3,7 @@ import type {
   PlanBundle,
   PlanRegistryPort
 } from "@kangmin/core/intelligence/clinical-rules/contracts";
-import { KangminPgDatabase } from "./pg-database.js";
+import { KangminPgDatabase } from "./database.js";
 
 interface PlanRow {
   id: string;

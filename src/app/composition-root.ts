@@ -37,7 +37,7 @@ import {
   type DoctorCheck,
   type DoctorReport
 } from "@kangmin/core/patient/application";
-import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
+import { KangminDatabase, appliedMigrationVersions } from "@kangmin/database/sqlite/database";
 import {
   AesGcmEncryption,
   parseEncryptionKeys,
@@ -46,24 +46,24 @@ import {
 import {
   KangminPgDatabase,
   appliedPgMigrationVersions
-} from "../infrastructure/postgres/pg-database.js";
-import { PG_MIGRATIONS } from "../infrastructure/postgres/pg-migrations.js";
-import { PgAccountRepository } from "../infrastructure/postgres/pg-account-repository.js";
-import { PgAgentRepository } from "../infrastructure/postgres/pg-agent-repository.js";
-import { PgContentReadRepository } from "../infrastructure/postgres/pg-content-read-repository.js";
-import { PgConversationRepository } from "../infrastructure/postgres/pg-conversation-repository.js";
-import { PgEnvironmentCacheRepository } from "../infrastructure/postgres/pg-environment-cache-repository.js";
-import { PgPlanRegistry } from "../infrastructure/postgres/pg-plan-registry.js";
-import { PgRecordRepository } from "../infrastructure/postgres/pg-record-repository.js";
-import { PgSessionRepository } from "../infrastructure/postgres/pg-session-repository.js";
-import { SqliteAccountRepository } from "../infrastructure/sqlite-account-repository.js";
-import { SqliteAgentRepository } from "../infrastructure/sqlite-agent-repository.js";
-import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
-import { SqliteConversationRepository } from "../infrastructure/sqlite-conversation-repository.js";
-import { SqliteEnvironmentCacheRepository } from "../infrastructure/sqlite-environment-cache-repository.js";
-import { SqlitePlanRegistry } from "../infrastructure/sqlite-plan-registry.js";
-import { SqliteRecordRepository } from "../infrastructure/sqlite-record-repository.js";
-import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
+} from "@kangmin/database/postgres/database";
+import { PG_MIGRATIONS } from "@kangmin/database/postgres/migrations";
+import { PgAccountRepository } from "@kangmin/database/postgres/account-repository";
+import { PgAgentRepository } from "@kangmin/database/postgres/agent-repository";
+import { PgContentReadRepository } from "@kangmin/database/postgres/content-read-repository";
+import { PgConversationRepository } from "@kangmin/database/postgres/conversation-repository";
+import { PgEnvironmentCacheRepository } from "@kangmin/database/postgres/environment-cache-repository";
+import { PgPlanRegistry } from "@kangmin/database/postgres/plan-registry";
+import { PgRecordRepository } from "@kangmin/database/postgres/record-repository";
+import { PgSessionRepository } from "@kangmin/database/postgres/session-repository";
+import { SqliteAccountRepository } from "@kangmin/database/sqlite/account-repository";
+import { SqliteAgentRepository } from "@kangmin/database/sqlite/agent-repository";
+import { SqliteContentReadRepository } from "@kangmin/database/sqlite/content-read-repository";
+import { SqliteConversationRepository } from "@kangmin/database/sqlite/conversation-repository";
+import { SqliteEnvironmentCacheRepository } from "@kangmin/database/sqlite/environment-cache-repository";
+import { SqlitePlanRegistry } from "@kangmin/database/sqlite/plan-registry";
+import { SqliteRecordRepository } from "@kangmin/database/sqlite/record-repository";
+import { SqliteSessionRepository } from "@kangmin/database/sqlite/session-repository";
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
 import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-environment-provider.js";
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
@@ -71,8 +71,8 @@ import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-ad
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
 import { WechatCodeLogin } from "../infrastructure/wechat-code-login.js";
-import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
-import { PgKnowledgeRetrieval } from "../infrastructure/postgres/pg-knowledge-retrieval.js";
+import { SqliteKnowledgeRetrieval } from "@kangmin/database/sqlite/knowledge-retrieval";
+import { PgKnowledgeRetrieval } from "@kangmin/database/postgres/knowledge-retrieval";
 import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
 import type {
   ObjectHead,

@@ -46,8 +46,8 @@ import {
   parseEncryptionKeys,
   PlaintextEncryption
 } from "../infrastructure/aes-gcm-encryption.js";
-import { KangminDatabase } from "../infrastructure/database.js";
-import { SqliteConversationRepository } from "../infrastructure/sqlite-conversation-repository.js";
+import { KangminDatabase } from "@kangmin/database/sqlite/database";
+import { SqliteConversationRepository } from "@kangmin/database/sqlite/conversation-repository";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 const KEY_V1 = Buffer.alloc(32, 1).toString("base64");

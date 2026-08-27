@@ -5,13 +5,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { appliedMigrationVersions, KangminDatabase } from "../infrastructure/database.js";
+import { appliedMigrationVersions, KangminDatabase } from "@kangmin/database/sqlite/database";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   AesGcmEncryption,
   parseEncryptionKeys
 } from "../infrastructure/aes-gcm-encryption.js";
-import { decryptStoredField } from "../infrastructure/encrypted-fields.js";
+import { decryptStoredField } from "@kangmin/database/shared/encrypted-fields";
 
 // 测试进程以本地开发模式启动（明文开发实现，避免密钥配置）。
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";

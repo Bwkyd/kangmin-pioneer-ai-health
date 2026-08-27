@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🗄️ 数据库双后端收进同构包（2026-08-27 第254轮 · 基线 `origin/main@cfec737`，待提交）
+> 本轮对应 #347，正好处理 SQLite、PostgreSQL、迁移/数据库运行时、双后端契约测试四个实体。先新增 `check-database-package.mjs` 并在旧结构上确认非零失败，再将数据库实现迁入 `src/packages/kangmin-database/src/{sqlite,postgres,shared}`；两个后端使用相同短文件名，类名仍保留 Sqlite/Pg，shared 只放加密字段转换和幂等结果。外围统一经 `@kangmin/database/*` 访问，旧 infrastructure 只剩外部集成适配器；SQL、schema、迁移、事务、truth、医学规则和生产数据未修改。
+> 数据库包独立 typecheck/build/依赖门禁通过，SQLite 源码仍为 24 个迁移条目。迁移与数据失败窄测 18 通过、13 条 PG 因本机未配 URL 跳过；四组冒烟 2/2、2/2、3/3、6/6；完整本地门禁 360 通过、78 条因未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium E2E 通过。演化护栏按新路径重键且未扩大额度；sequential-thinking 与 `km-review` 三视角 P0–P2 为 0。演化两线如实记录：代码文件 306、p50 121、超 600 行 14.4%、用例密度 6.3 不变，导航成本 13.89→14.06；旧顶层尚待 #348/#349 清空，故不宣称整体复杂度已下降。详见实验 034、评审 038；待 commit、PR、真实 PostgreSQL/MinIO/OCI CI、合并与 #347 收尾。
+
 > ## 🧩 核心包按四组建立可执行边界（2026-08-27 第253轮 · 基线 `origin/main@2068478`，待提交）
 > 本轮对应 #346，只处理领域内核、患者能力、智能/内容/运营能力、包导出与门禁四类实体。纯 kernel、领域端口/服务与纯应用编排迁入私有 workspace 包 `@kangmin/core`；业务直接按 `patient / intelligence / content / operations` 四组归位，患者应用编排归 patient、管理应用编排归 operations，未保留无业务含义的 `domains/` 或 `application/` 壳层。外围代码统一通过包子路径访问；数据库、HTTP、CLI、界面、truth、医学规则、患者数据均未改变。
 > 执行前新增 `check-core-package.mjs` 并确认旧结构下非零失败；迁移后核心包独立 typecheck，门禁拒绝核心反向依赖 infrastructure/http/cli/apps/database/integrations，旧 `kernel/`、`modules/` 消失。四组冒烟 2/2、2/2、3/3、6/6；其中 shell 入口实际捕获旧测试名漂移产生的空测试假绿并已修复。医学规则/发布门禁 36/36，完整本地门禁 360 通过、78 条因未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium 后台链路通过。演化护栏正常树通过，临时新增第 11 个 `src` 子目录时明确拦截，删除负例后恢复通过；长文件基线只按新路径重键，没有扩大额度。
