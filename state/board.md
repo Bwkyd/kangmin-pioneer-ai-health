@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧪 #342 基础壳与环境门禁快速冒烟入口完成候选验证（2026-08-27 第249轮 · 待提交，基线 `origin/main@6690e696b42419cfd299acfe5ad6f4901d36be68`）
+> 开工前重新 fetch 并核对远端主线、#334/#342、分支和 worktree；本轮只处理一个实体：次要·基础壳，未超过四个，无需拆子任务。先把验收标准写入 `docs/experiments/030_shell-smoke-entry.md`，再新增 `npm run test:smoke:shell` 与 `src/scripts/run-shell-smoke.mjs`，逐个独立启动五条小程序壳行为和一条环境门禁行为，要求 TAP 唯一逐字命中非跳过 `ok`；不复制 fixture、不改运行时、测试正文、schema、truth、医学规则、患者数据或微信身份配置。
+> 正向 6/6 通过（含构建约 3.33 秒）；故意改错目标名、故意改坏首页概览断言均 exit 1，原生多文件零命中仍 exit 0 并被入口拒绝。覆盖账本、语法和 diff 检查通过；`cd src && npm run check` 退出 0，438 项中 360 通过、78 项因本机未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium E2E PASS（约 44.84 秒）。本轮已调用 sequential-thinking 做元反思，按 `km-review` 三视角自检无 P0–P2；无运行时变化，不需要部署或重启。候选工作树尚未提交/推送/建 PR/合并，#342 仍 OPEN；根工作区既有改动与 `hi.md` 保持不动。
+
 > ## 🧪 #334 症状管理快速冒烟入口完成候选验证（2026-08-27 第248轮 · 待提交，基线 `origin/main@226905d`）
 > 重新 fetch 并核对远端、Issue #334、分支和 worktree 后，按一条 Issue 一次交付只处理次要·症状管理一个实体；基础壳不混入本 PR。先写 `docs/experiments/029_record-smoke-entry.md` 的执行前标准，再新增 `npm run test:smoke:record` 与 `src/scripts/run-record-smoke.mjs`，逐个独立启动三条既有高信号测试，要求 TAP 唯一逐字命中非跳过 `ok`；不复制 fixture、不改记录服务、schema、患者界面、医学规则、truth 或患者数据。覆盖日历/趋势、解密失败不伪装空数据、体验版保存后日历与“我的”页回显。
 > 正向 3/3 通过（含构建约 4 秒）；故意改错目标名、故意改坏趋势断言均 exit 1，原生多文件零命中仍 exit 0 并被入口拒绝。覆盖账本、语法和 diff 检查通过；`cd src && npm run check` 退出 0，438 项中 360 通过、78 项因本机未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium E2E PASS（约 56.59 秒）。本轮按 sequential-thinking 完成元反思，按 `km-review` 三视角自检无 P0–P2；无运行时变化，不需要部署或重启。候选工作树尚未提交/推送/建 PR，#334 仍 OPEN；根工作区既有改动与 `hi.md` 保持不动。
