@@ -3,6 +3,9 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧾 四条业务链技术预验收已合并收尾（2026-08-27 第261轮 · `main@5b9966d`，待提交状态记录）
+> PR #361 的 `quality` 4 分 43 秒、`image` 1 分钟全绿，分别覆盖 PostgreSQL 16、MinIO/S3、完整回归、新预验收、真实 Chromium、OCI、容器 CLI、生产依赖审计与 SBOM；squash 合并为 `5b9966d`，#360 自动关闭，GitHub 任务分支已删除。公网 `/`、`/admin`、`/live` 为 200，`/ready` 保持既有 503；本轮无运行时代码和生产依赖变化，不需要重新部署。SSH 公钥认证当前不可用，因此没有把数据库值冒充本轮实时复核；`.42cog/real.md` 仅按今日已归档的 ops/016 部署证据修正 release 与计数。#362 跟踪本状态小交付。
+
 > ## ✅ 四条业务链技术预验收本地放行（2026-08-27 第260轮 · 基线 `origin/main@7594dc6`，待提交）
 > 本轮对应 #360，只处理内容运营、AI 知识、患者核心、持续管理与交付四个实体。新增 `npm run test:acceptance`：先做零命中/多命中反例自检，再严格编排 4 组既有冒烟、7 条真实管理 CLI/HTTP/SQLite 入口和桌面/390×844 Chromium；所有目标必须逐字且唯一命中，不能把筛选漂移当作通过。PR quality 门新增同一预验收步骤。
 > 干净安装发现传递开发依赖 `nanoid@3.3.16` 的高危告警，锁定到 `3.3.18` 后 `src` 全依赖审计为 0。`npm run test:acceptance` 全绿；完整 `src` 358 通过、78 条因本机未配置 PostgreSQL/S3 跳过、后台 2/2 与真实浏览器通过；`legacy` 127/127，保留 4 条既有图片 warning 和 2 条 moderate 生产依赖告警；manifest、结构和 diff 门禁通过。

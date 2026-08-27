@@ -1,6 +1,6 @@
 # 四条业务链技术预验收复核
 
-- 状态：P0、P1、P2 清零；待 PR CI
+- 状态：P0、P1、P2 清零；PR CI 与合并完成
 - 日期：2026-08-27
 - 基线：`origin/main@7594dc6` 加 `codex/business-preacceptance` 候选
 - 对象：预验收脚本、CI、依赖锁、计划与实验记录

@@ -1,6 +1,6 @@
 # 四条业务链技术预验收有界实验
 
-- 状态：本地通过，待 PR CI
+- 状态：已完成，PR CI 通过
 - 日期：2026-08-27
 - 基线：`origin/main@7594dc6` 加 `codex/business-preacceptance` 候选
 - 跟踪：GitHub Issue #360
@@ -32,6 +32,13 @@
 报找不到根 `app.json`；改为只注入 AppID、保留当前 `miniprogramRoot: src/`。同一已污染
 副本随后两次等待无结果，因此按有界超时中止；从当前目录重建全新副本后约 24 秒成功，
 排除代码和 workspace 配置问题。4 个本轮一次性副本已移入废纸篓，可恢复。
+
+## PR 与收尾
+
+PR #361 的 `quality` 用时 4 分 43 秒，PostgreSQL 16、MinIO/S3、完整回归、真实 Chromium
+和新预验收通过；`image` 用时 1 分钟，OCI、容器 CLI、生产依赖审计和 SBOM 通过。PR
+squash 合并为 `5b9966d`，#360 自动关闭。公网 `/`、`/admin`、`/live` 为 200，`/ready`
+保持既有 503。本轮无运行时代码或生产依赖变化，因此无需重新部署。
 
 ## 成本、结论与限制
 
