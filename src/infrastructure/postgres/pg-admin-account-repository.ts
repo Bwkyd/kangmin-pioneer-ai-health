@@ -2,11 +2,11 @@ import type {
   AdminAccountRepository,
   AdminAccountRow,
   CreateAdminAccountOutcome
-} from "../../modules/admin/admin-account-repository.js";
+} from "@kangmin/core/operations/admin/admin-account-repository";
 import type {
   AdminRole,
   AdminStatus
-} from "../../modules/admin/admin-session-repository.js";
+} from "@kangmin/core/operations/admin/admin-session-repository";
 import { isUniqueViolation, KangminPgDatabase } from "./pg-database.js";
 
 interface AccountRow {

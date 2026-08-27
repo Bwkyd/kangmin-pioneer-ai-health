@@ -5,7 +5,7 @@ import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { decryptStoredField } from "../infrastructure/encrypted-fields.js";
 import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
 import { PgRecordRepository } from "../infrastructure/postgres/pg-record-repository.js";
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   createPgTestDatabase,
   type PgTestDatabase
@@ -14,7 +14,7 @@ import type {
   ExposureRecord,
   MedicationRecord,
   SymptomRecord
-} from "../modules/record/contracts.js";
+} from "@kangmin/core/patient/record/contracts";
 
 const databaseUrl = process.env.KANGMIN_TEST_DATABASE_URL;
 

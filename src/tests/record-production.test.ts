@@ -14,9 +14,9 @@ import {
   parseEncryptionKeys,
   PlaintextEncryption
 } from "../infrastructure/aes-gcm-encryption.js";
-import { DomainError } from "../kernel/errors.js";
-import type { EncryptionPort } from "../kernel/encryption.js";
-import type { CommandResult } from "../kernel/result.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {
   CalendarProjection,
   ExposureRecord,
@@ -25,7 +25,7 @@ import type {
   OverviewData,
   SymptomRecord,
   TrendProjection
-} from "../modules/record/contracts.js";
+} from "@kangmin/core/patient/record/contracts";
 
 const here = dirname(fileURLToPath(import.meta.url));
 const cli = join(here, "../cli/kangmin.js");

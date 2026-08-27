@@ -5,7 +5,7 @@ import { SqliteAccountRepository } from "../infrastructure/sqlite-account-reposi
 import type {
   ConsentDecision,
   ConsentType
-} from "../modules/account/account-repository.js";
+} from "@kangmin/core/patient/account/account-repository";
 
 /**
  * 测试辅助（issue-155 consent 前置）：直接经 SQLite 仓储追加 consent 决策。

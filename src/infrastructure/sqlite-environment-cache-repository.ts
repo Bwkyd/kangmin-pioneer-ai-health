@@ -1,12 +1,12 @@
 import { randomUUID } from "node:crypto";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import { KangminDatabase } from "./database.js";
 import type {
   CachedEnvironmentSnapshot,
   EnvironmentCacheRepository,
   EnvironmentSnapshot
-} from "../modules/environment/environment-ports.js";
+} from "@kangmin/core/content/environment/environment-ports";
 
 interface SnapshotRow {
   city: string;

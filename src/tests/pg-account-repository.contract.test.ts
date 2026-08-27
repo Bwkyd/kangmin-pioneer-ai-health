@@ -18,10 +18,10 @@ import { randomUUID } from "node:crypto";
 import { after, before, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
 import { PgAccountRepository } from "../infrastructure/postgres/pg-account-repository.js";
-import type { CreateAccountInput } from "../modules/account/account-repository.js";
+import type { CreateAccountInput } from "@kangmin/core/patient/account/account-repository";
 import {
   createPgTestDatabase,
   type PgTestDatabase

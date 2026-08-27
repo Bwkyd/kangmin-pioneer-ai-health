@@ -21,7 +21,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
 
 const ENDPOINT = process.env.KANGMIN_TEST_S3_ENDPOINT;

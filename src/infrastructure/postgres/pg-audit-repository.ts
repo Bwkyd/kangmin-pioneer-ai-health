@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import type { AuditEntry, AuditPort } from "../../modules/system/audit-ports.js";
+import type { AuditEntry, AuditPort } from "@kangmin/core/operations/system/audit-ports";
 import { KangminPgDatabase } from "./pg-database.js";
 
 /**

@@ -5,12 +5,12 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
-import type { CommandResult } from "../kernel/result.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {
   BrowseHome,
   PatientMessage,
   PublicContent
-} from "../modules/browse/contracts.js";
+} from "@kangmin/core/content/browse/contracts";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { seedContent } from "./content-fixture.js";
 

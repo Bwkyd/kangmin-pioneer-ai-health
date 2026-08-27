@@ -1,5 +1,5 @@
 {
- "date": "2026-08-27 15:57",
+ "date": "2026-08-27 16:27",
  "langs": {
   ".tsx": {
    "files": 7,
@@ -14,8 +14,8 @@
   },
   ".ts": {
    "files": 268,
-   "lines": 72977,
-   "sig_lines": 50955,
+   "lines": 72981,
+   "sig_lines": 50958,
    "dup": 38.4,
    "dup_alt": {
     "8": 41.2,
@@ -51,12 +51,12 @@
   "p50": 121,
   "p90": 784,
   "max": 2012,
-  "over_soft": 19.6,
+  "over_soft": 19.9,
   "over_hard": 14.4,
   "widest": 16,
   "widest_dir": "<顶层>",
   "tops": 16,
-  "nav": 13.6
+  "nav": 13.89
  },
  "behavior": {
   "tests": 503,

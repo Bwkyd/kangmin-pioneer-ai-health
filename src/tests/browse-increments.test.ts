@@ -12,15 +12,15 @@ import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
 import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
-import type { CommandResult } from "../kernel/result.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {
   BrowseSearchResults,
   CarePlanDetail,
   PublicContent
-} from "../modules/browse/contracts.js";
-import type { RulePackage } from "../modules/clinical-rules/domain.js";
-import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
-import type { EnvironmentSnapshot, ForecastDay } from "../modules/environment/environment-ports.js";
+} from "@kangmin/core/content/browse/contracts";
+import type { RulePackage } from "@kangmin/core/intelligence/clinical-rules/domain";
+import { DRAFT_RULE_PACKAGE } from "@kangmin/core/intelligence/clinical-rules/rule-package";
+import type { EnvironmentSnapshot, ForecastDay } from "@kangmin/core/content/environment/environment-ports";
 import { seedContent } from "./content-fixture.js";
 
 function dataOf<T>(result: CommandResult): T {

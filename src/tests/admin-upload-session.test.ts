@@ -11,13 +11,13 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
-import { DomainError } from "../kernel/errors.js";
-import type { CommandResult } from "../kernel/result.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {
   ObjectHead,
   ObjectStoragePort,
   ObjectUploadTicket
-} from "../modules/system/object-storage-ports.js";
+} from "@kangmin/core/operations/system/object-storage-ports";
 
 function dataOf<T>(result: CommandResult): T {
   if (!result.ok) {

@@ -253,9 +253,8 @@ kangmin-admin CLI ──────────┤                         ↓
 
 | 路径 | 职责 |
 | --- | --- |
-| `kernel/` | 结果、错误、协议、验证、凭据、加密端口 |
-| `modules/` | 业务领域、服务和端口；不得依赖外层适配器 |
-| `app/` | 应用服务、组合根与跨模块编排 |
+| `packages/kangmin-core/` | 结果、错误、协议、四组业务领域、纯应用服务和端口；不得依赖外层适配器 |
+| `app/` | 组合根与基础设施装配 |
 | `infrastructure/` | SQLite、PostgreSQL、S3、模型、环境和日志适配器 |
 | `cli/` | 两个命令行入口和参数/输出适配 |
 | `http/` | HTTP、静态资源、探针、限流和请求日志 |
@@ -267,9 +266,9 @@ kangmin-admin CLI ──────────┤                         ↓
 `npm run lint` 执行的架构门禁会阻止：
 
 - 任意新代码导入 `legacy/`；
-- `modules/` 依赖 infrastructure/CLI/HTTP/Web；
+- `packages/kangmin-core/` 依赖 infrastructure/CLI/HTTP/apps；
 - CLI、HTTP、dev 绕过组合根直连基础设施；
-- kernel 反向依赖应用层。
+- 核心包中的 kernel 反向依赖领域或应用层。
 
 ## 运行模式与配置
 
@@ -401,7 +400,7 @@ kangmin-admin CLI ──────────┤                         ↓
 
 ## 协议与退出码
 
-患者端与管理端共享 `kernel/errors.ts` 定义的错误码和退出码：
+患者端与管理端共享 `packages/kangmin-core/src/kernel/errors.ts` 定义的错误码和退出码：
 
 | 退出码 | 类别 | 示例 |
 | --- | --- | --- |
@@ -472,7 +471,7 @@ Dockerfile 使用多阶段构建，运行阶段只保留 `dist/` 与生产依赖
   staging/production 组合根检测到替身或不可用 Provider 时拒绝启动；
 - **正式身份未接入**：当前有本地账号/会话和开发会话，但没有完成生产身份
   提供方与患者 Web 登录闭环；
-- **患者 Web 仍是 demo**：部分安全评估和账户 UI 尚未完整映射命令；
+- **患者端只保留微信小程序**：旧患者 Web 已退役；患者体验与真实微信工具验收仍需持续补齐；
 - **方案浏览采用双门禁**：默认规则包已通过规则门禁，但后台方案仍须为 `enabled`
   才能在患者端显示；注入 `candidate` 包时仍关闭；
 - **部分账号能力未定义完成**：数据导出、删除请求状态、停用、提醒与通知返回
@@ -489,10 +488,10 @@ Dockerfile 使用多阶段构建，运行阶段只保留 `dist/` 与生产依赖
 - [`http/server.ts`](http/server.ts)：HTTP 路由、探针、限流与日志
 - [`app/composition-root.ts`](app/composition-root.ts)：患者组合根与生产门禁
 - [`app/admin-composition-root.ts`](app/admin-composition-root.ts)：管理组合根
-- [`kernel/protocol.ts`](kernel/protocol.ts)：远程命令协议
-- [`kernel/errors.ts`](kernel/errors.ts)：错误码、HTTP 状态和 CLI 退出码
-- [`modules/clinical-rules/rule-package.ts`](modules/clinical-rules/rule-package.ts)：规则包状态与来源
-- [`modules/agent/output-validation.ts`](modules/agent/output-validation.ts)：模型输出校验
+- [`packages/kangmin-core/src/kernel/protocol.ts`](packages/kangmin-core/src/kernel/protocol.ts)：远程命令协议
+- [`packages/kangmin-core/src/kernel/errors.ts`](packages/kangmin-core/src/kernel/errors.ts)：错误码、HTTP 状态和 CLI 退出码
+- [`packages/kangmin-core/src/intelligence/clinical-rules/rule-package.ts`](packages/kangmin-core/src/intelligence/clinical-rules/rule-package.ts)：规则包状态与来源
+- [`packages/kangmin-core/src/intelligence/agent/output-validation.ts`](packages/kangmin-core/src/intelligence/agent/output-validation.ts)：模型输出校验
 - [`scripts/architecture-check.mjs`](scripts/architecture-check.mjs)：依赖方向门禁
 - [`tests/`](tests/)：当前行为证据
 - [仓库 CI](../.github/workflows/ci.yml)

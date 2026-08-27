@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 
 test("向量适配器：未配置密钥时 fail-closed 且不发起请求", async () => {
   let calls = 0;

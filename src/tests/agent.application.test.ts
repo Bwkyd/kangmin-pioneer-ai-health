@@ -6,8 +6,8 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { AgentSession } from "../modules/agent/contracts.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { AgentSession } from "@kangmin/core/intelligence/agent/contracts";
 import { writeConsentForTest } from "./consent-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，

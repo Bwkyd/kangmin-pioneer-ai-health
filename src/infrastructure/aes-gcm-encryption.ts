@@ -4,12 +4,12 @@ import {
   randomBytes
 } from "node:crypto";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   EncryptionError,
   type EncryptedPayload,
   type EncryptionPort
-} from "../kernel/encryption.js";
+} from "@kangmin/core/kernel/encryption";
 
 const KEY_BYTES = 32; // AES-256
 const IV_BYTES = 12; // GCM 标准 IV

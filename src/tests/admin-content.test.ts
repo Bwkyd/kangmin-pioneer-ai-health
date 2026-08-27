@@ -13,18 +13,18 @@ import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
-import type { CommandResult } from "../kernel/result.js";
-import { ContentAuxService } from "../modules/admin/content-aux-service.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import { ContentAuxService } from "@kangmin/core/operations/admin/content-aux-service";
 import type {
   ContentAuxRepository,
   ContentCategoryRow,
   ContentMediaRow,
   ContentMessageRow
-} from "../modules/admin/content-aux-repository.js";
+} from "@kangmin/core/operations/admin/content-aux-repository";
 import type {
   AdminArticle,
   AdminContentItem
-} from "../modules/admin/content-admin-repository.js";
+} from "@kangmin/core/operations/admin/content-admin-repository";
 
 function dataOf<T>(result: CommandResult): T {
   if (!result.ok) {

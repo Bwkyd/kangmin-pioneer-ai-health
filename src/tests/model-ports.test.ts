@@ -7,9 +7,9 @@ import test from "node:test";
 
 import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
 import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
-import { DomainError } from "../kernel/errors.js";
-import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
-import type { ClinicalVerdict } from "../modules/clinical-rules/contracts.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import { KnowledgeQaService } from "@kangmin/core/intelligence/agent/knowledge-qa";
+import type { ClinicalVerdict } from "@kangmin/core/intelligence/clinical-rules/contracts";
 import {
   renderValidatedOutput,
   renderGeneratedFollowUpOutput,
@@ -19,7 +19,7 @@ import {
   validateGeneratedMedicalText,
   validateExplanationFields,
   CLINICAL_FREEZE_BLOCK
-} from "../modules/agent/output-validation.js";
+} from "@kangmin/core/intelligence/agent/output-validation";
 
 const BASE_URL = "http://model.test/v1";
 

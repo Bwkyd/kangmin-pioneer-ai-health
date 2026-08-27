@@ -10,8 +10,8 @@ import {
   createRemoteCommandClient,
   remoteCommandBaseUrl
 } from "../app/remote-command-composition-root.js";
-import { DomainError, exitCodeForCode } from "../kernel/errors.js";
-import { failure, success, type CommandResult } from "../kernel/result.js";
+import { DomainError, exitCodeForCode } from "@kangmin/core/kernel/errors";
+import { failure, success, type CommandResult } from "@kangmin/core/kernel/result";
 
 /** 与 package.json version 保持同步（主线程集成时统一）。 */
 const VERSION = (() => {

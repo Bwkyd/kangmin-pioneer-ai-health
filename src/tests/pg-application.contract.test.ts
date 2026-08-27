@@ -37,20 +37,20 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
-import type { CommandResult } from "../kernel/result.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {
   AdminAccountView,
   LoginResult
-} from "../modules/admin/admin-auth-service.js";
-import type { AdminArticle } from "../modules/admin/content-admin-repository.js";
-import type { AgentSession } from "../modules/agent/contracts.js";
+} from "@kangmin/core/operations/admin/admin-auth-service";
+import type { AdminArticle } from "@kangmin/core/operations/admin/content-admin-repository";
+import type { AgentSession } from "@kangmin/core/intelligence/agent/contracts";
 import type {
   ConversationSession,
   ConversationTurnResult
-} from "../modules/agent/conversation-contracts.js";
-import type { PublicContent } from "../modules/browse/contracts.js";
-import type { SymptomRecord } from "../modules/record/contracts.js";
-import type { UserSummary } from "../modules/user-admin/contracts.js";
+} from "@kangmin/core/intelligence/agent/conversation-contracts";
+import type { PublicContent } from "@kangmin/core/content/browse/contracts";
+import type { SymptomRecord } from "@kangmin/core/patient/record/contracts";
+import type { UserSummary } from "@kangmin/core/operations/user-admin/contracts";
 import {
   createPgTestDatabase,
   type PgTestDatabase

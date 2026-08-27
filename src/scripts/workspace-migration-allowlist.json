@@ -9,8 +9,6 @@
     "dev",
     "evals",
     "http",
-    "infrastructure",
-    "kernel",
-    "modules"
+    "infrastructure"
   ]
 }

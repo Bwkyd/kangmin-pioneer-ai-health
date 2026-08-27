@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { validateMedicalHardFacts } from "../modules/agent/medical-publication-gate.js";
-import type { ClinicalVerdict, ConfirmedFact } from "../modules/clinical-rules/contracts.js";
+import { validateMedicalHardFacts } from "@kangmin/core/intelligence/agent/medical-publication-gate";
+import type { ClinicalVerdict, ConfirmedFact } from "@kangmin/core/intelligence/clinical-rules/contracts";
 
 const plan = {
   planId: "plan-yingxiang",

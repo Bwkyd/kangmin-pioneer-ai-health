@@ -1,6 +1,6 @@
-import type { AgentRecordSnapshotReader } from "../modules/agent/record-snapshot-reader.js";
-import type { AgentRecordSnapshot } from "../modules/agent/contracts.js";
-import { RecordService } from "../modules/record/record-service.js";
+import type { AgentRecordSnapshotReader } from "../intelligence/agent/record-snapshot-reader.js";
+import type { AgentRecordSnapshot } from "../intelligence/agent/contracts.js";
+import { RecordService } from "./record/record-service.js";
 
 function localToday(): string {
   const now = new Date();

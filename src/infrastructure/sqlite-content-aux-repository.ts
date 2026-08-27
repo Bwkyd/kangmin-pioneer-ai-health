@@ -13,7 +13,7 @@ import type {
   MediaReferenceRow,
   MediaStatus,
   UpdateMessageResult
-} from "../modules/admin/content-aux-repository.js";
+} from "@kangmin/core/operations/admin/content-aux-repository";
 
 interface CategoryRow {
   id: string;

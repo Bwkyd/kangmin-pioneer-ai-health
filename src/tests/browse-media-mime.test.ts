@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { BrowseService } from "../modules/browse/browse-service.js";
+import { BrowseService } from "@kangmin/core/content/browse/browse-service";
 import type {
   ContentReadRepository,
   PublishedMediaRef
-} from "../modules/browse/content-read-repository.js";
-import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
+} from "@kangmin/core/content/browse/content-read-repository";
+import type { ObjectStoragePort } from "@kangmin/core/operations/system/object-storage-ports";
 
 /**
  * 媒体路由 Content-Type 决策（issue-160）：库存 mime 是上传白名单通配

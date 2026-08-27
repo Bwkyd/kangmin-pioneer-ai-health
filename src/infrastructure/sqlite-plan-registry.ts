@@ -3,7 +3,7 @@ import type {
   ApprovedPlan,
   PlanBundle,
   PlanRegistryPort
-} from "../modules/clinical-rules/contracts.js";
+} from "@kangmin/core/intelligence/clinical-rules/contracts";
 
 interface PlanRow {
   id: string;

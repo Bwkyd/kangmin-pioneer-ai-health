@@ -1,5 +1,5 @@
-import { DomainError } from "../kernel/errors.js";
-import type { EncryptionPort } from "../kernel/encryption.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
 import { KangminDatabase } from "./database.js";
 import {
   decryptStoredField,
@@ -15,8 +15,8 @@ import type {
   HealthProfile,
   MedicationRecord,
   SymptomRecord
-} from "../modules/record/contracts.js";
-import type { Sex } from "../modules/record/domain.js";
+} from "@kangmin/core/patient/record/contracts";
+import type { Sex } from "@kangmin/core/patient/record/domain";
 import type {
   CreateExposureRecordInput,
   CreateExposureRecordOutcome,
@@ -38,7 +38,7 @@ import type {
   UpdateProfileRecordOutcome,
   UpdateSymptomRecordInput,
   UpdateSymptomRecordOutcome
-} from "../modules/record/record-repository.js";
+} from "@kangmin/core/patient/record/record-repository";
 
 interface SymptomRow {
   id: string;

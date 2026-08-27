@@ -1,4 +1,4 @@
-import { DomainError } from "../../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   encodeNormalizedEmbedding,
   hybridKnowledgeScore,
@@ -6,8 +6,8 @@ import {
   normalizedEmbeddingScore,
   selectKnowledgeHits,
   type KnowledgeEmbeddingPort
-} from "../../modules/agent/knowledge-ports.js";
-import type { KnowledgeRetrievalPort, KnowledgeSource } from "../../modules/agent/knowledge-ports.js";
+} from "@kangmin/core/intelligence/agent/knowledge-ports";
+import type { KnowledgeRetrievalPort, KnowledgeSource } from "@kangmin/core/intelligence/agent/knowledge-ports";
 import { KangminPgDatabase } from "./pg-database.js";
 
 interface SemanticRow {

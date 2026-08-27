@@ -5,6 +5,11 @@
 FROM node:22-bookworm-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
+# npm workspaces 的依赖归属由各包 manifest 决定；先复制 manifest，才能让
+# 缓存层中的 npm ci 安装完整构建依赖，而不是只看根 package.json。
+COPY apps/kangmin-admin/package.json ./apps/kangmin-admin/package.json
+COPY apps/kangmin-miniprogram/package.json ./apps/kangmin-miniprogram/package.json
+COPY packages/kangmin-core/package.json ./packages/kangmin-core/package.json
 RUN npm ci
 COPY . .
 # 编译产物写入 dist/；随后按锁文件重装生产依赖，
@@ -21,6 +26,9 @@ WORKDIR /app
 COPY --from=builder --chown=node:node /app/package.json ./package.json
 COPY --from=builder --chown=node:node /app/node_modules ./node_modules
 COPY --from=builder --chown=node:node /app/dist ./dist
+# 根 dist 通过 @kangmin/core 子路径加载核心包；保留 workspace 软链接的目标。
+COPY --from=builder --chown=node:node /app/packages/kangmin-core/package.json ./packages/kangmin-core/package.json
+COPY --from=builder --chown=node:node /app/packages/kangmin-core/dist ./packages/kangmin-core/dist
 USER node
 EXPOSE 8787
 # node:22-bookworm-slim 不含 curl，健康检查用 node 内置 fetch 打 /live。

@@ -13,8 +13,8 @@ import type {
   PublishedMedia
 } from "./contracts.js";
 import type { EnvironmentSnapshot } from "../environment/environment-ports.js";
-import type { ObjectStoragePort } from "../system/object-storage-ports.js";
-import { servableMediaContentType } from "../admin/media-validation.js";
+import type { ObjectStoragePort } from "../../operations/system/object-storage-ports.js";
+import { servableMediaContentType } from "../../operations/admin/media-validation.js";
 
 /** browse 首页需要的最小环境能力（由应用层注入 EnvironmentService）。 */
 export interface BrowseEnvironmentPort {

@@ -17,7 +17,7 @@ import assert from "node:assert/strict";
 
 import type {
   AgentSession
-} from "../modules/agent/contracts.js";
+} from "@kangmin/core/intelligence/agent/contracts";
 import type {
   CandidateRow,
   ConfirmedAnswerRow,
@@ -25,8 +25,8 @@ import type {
   ConversationSession,
   DecisionRow,
   FeedbackRow
-} from "../modules/agent/conversation-contracts.js";
-import type { CommitTurnInput } from "../modules/agent/conversation-repository.js";
+} from "@kangmin/core/intelligence/agent/conversation-contracts";
+import type { CommitTurnInput } from "@kangmin/core/intelligence/agent/conversation-repository";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import {
   isUniqueViolation,

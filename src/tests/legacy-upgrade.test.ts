@@ -6,7 +6,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { appliedMigrationVersions, KangminDatabase } from "../infrastructure/database.js";
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   AesGcmEncryption,
   parseEncryptionKeys

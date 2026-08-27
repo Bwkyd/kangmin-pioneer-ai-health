@@ -15,7 +15,7 @@
 import {
   CONTENT_CATEGORY_REGISTRY,
   VIDEO_TRUTH_ASSIGNMENTS
-} from "../../modules/admin/content-category-registry.js";
+} from "@kangmin/core/operations/admin/content-category-registry";
 
 const sqlText = (value: string): string => `'${value.replaceAll("'", "''")}'`;
 const categorySeedValues = CONTENT_CATEGORY_REGISTRY.map((category) =>

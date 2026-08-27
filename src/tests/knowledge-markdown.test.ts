@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { chunkKnowledgeText } from "../modules/agent-admin/knowledge-markdown.js";
+import { chunkKnowledgeText } from "@kangmin/core/operations/agent-admin/knowledge-markdown";
 
 test("Markdown 分块保留标准章节层级，且每块不超过 1200 字符", () => {
   const text = [

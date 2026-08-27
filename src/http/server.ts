@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 
 import {
   type KangminApplication
-} from "../app/application.js";
+} from "@kangmin/core/patient/application";
 import {
   createApplicationWithOps,
   createWechatLogin,
@@ -17,22 +17,22 @@ import {
 } from "../app/composition-root.js";
 import {
   type KangminAdminApplication
-} from "../app/admin-application.js";
+} from "@kangmin/core/operations/admin-application";
 import { createAdminApplicationWithOps } from "../app/admin-composition-root.js";
 import {
   DomainError,
   exitCodeForCode,
   httpStatusForCode,
   type ErrorCode
-} from "../kernel/errors.js";
-import { failure, success, type FailureResult } from "../kernel/result.js";
+} from "@kangmin/core/kernel/errors";
+import { failure, success, type FailureResult } from "@kangmin/core/kernel/result";
 import {
   COMMAND_PROTOCOL_VERSION,
   COMMAND_SCHEMA_VERSION,
   type CommandServiceMeta
-} from "../kernel/protocol.js";
-import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
-import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
+} from "@kangmin/core/kernel/protocol";
+import type { ObjectStoragePort } from "@kangmin/core/operations/system/object-storage-ports";
+import type { WechatLoginPort } from "@kangmin/core/patient/account/wechat-login-port";
 
 /**
  * 请求体大小上限默认值：保持既有 64 KiB 契约（http.e2e 既有断言）。

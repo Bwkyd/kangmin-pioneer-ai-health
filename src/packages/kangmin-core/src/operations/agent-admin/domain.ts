@@ -1,4 +1,4 @@
-import { SYNDROME_LABELS } from "../clinical-rules/domain.js";
+import { SYNDROME_LABELS } from "../../intelligence/clinical-rules/domain.js";
 
 export type KnowledgeStatus =
   | "draft"

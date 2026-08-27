@@ -14,8 +14,8 @@ import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteAdminAccountRepository } from "../infrastructure/sqlite-admin-account-repository.js";
 import { SqliteAdminSessionRepository } from "../infrastructure/sqlite-admin-session-repository.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { AdminAccountView, LoginResult } from "../modules/admin/admin-auth-service.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { AdminAccountView, LoginResult } from "@kangmin/core/operations/admin/admin-auth-service";
 
 function dataOf<T>(result: CommandResult): T {
   if (!result.ok) {

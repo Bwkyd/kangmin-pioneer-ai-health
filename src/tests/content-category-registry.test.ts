@@ -8,7 +8,7 @@ import {
   ARTICLE_CATEGORY_REGISTRY,
   VIDEO_CATEGORY_REGISTRY,
   VIDEO_TRUTH_ASSIGNMENTS
-} from "../modules/admin/content-category-registry.js";
+} from "@kangmin/core/operations/admin/content-category-registry";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteContentReadRepository } from "../infrastructure/sqlite-content-read-repository.js";
 

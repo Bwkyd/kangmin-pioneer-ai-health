@@ -1,7 +1,7 @@
 import { resolve } from "node:path";
 
 import { createApplication } from "../app/composition-root.js";
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 
 function option(argv: string[], name: string): string | undefined {
   const index = argv.indexOf(name);

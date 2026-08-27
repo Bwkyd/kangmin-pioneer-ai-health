@@ -1,8 +1,8 @@
 import type {
   AgentRepository,
   UpdateAgentSessionOutcome
-} from "../../modules/agent/agent-repository.js";
-import type { AgentSession } from "../../modules/agent/contracts.js";
+} from "@kangmin/core/intelligence/agent/agent-repository";
+import type { AgentSession } from "@kangmin/core/intelligence/agent/contracts";
 import { KangminPgDatabase } from "./pg-database.js";
 
 interface AgentSessionRow {

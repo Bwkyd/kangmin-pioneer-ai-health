@@ -7,12 +7,12 @@ import test from "node:test";
 import { createApplication } from "../app/composition-root.js";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { KangminDatabase } from "../infrastructure/database.js";
-import { exitCodeForCode } from "../kernel/errors.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { BrowseHome } from "../modules/browse/contracts.js";
-import type { RulePackage } from "../modules/clinical-rules/domain.js";
-import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
-import type { EnvironmentSnapshot } from "../modules/environment/environment-ports.js";
+import { exitCodeForCode } from "@kangmin/core/kernel/errors";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { BrowseHome } from "@kangmin/core/content/browse/contracts";
+import type { RulePackage } from "@kangmin/core/intelligence/clinical-rules/domain";
+import { DRAFT_RULE_PACKAGE } from "@kangmin/core/intelligence/clinical-rules/rule-package";
+import type { EnvironmentSnapshot } from "@kangmin/core/content/environment/environment-ports";
 import { seedContent } from "./content-fixture.js";
 
 function dataOf<T>(result: CommandResult): T {

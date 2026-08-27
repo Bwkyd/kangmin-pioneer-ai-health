@@ -3,9 +3,9 @@ import type {
   ConsentDecision,
   ConsentRecord,
   ConsentType
-} from "../modules/account/account-repository.js";
-import { CURRENT_POLICY_VERSION } from "../modules/account/account-service.js";
-import type { ConsentGatePort } from "../modules/account/consent-ports.js";
+} from "./account/account-repository.js";
+import { CURRENT_POLICY_VERSION } from "./account/account-service.js";
+import type { ConsentGatePort } from "./account/consent-ports.js";
 
 /**
  * consent 门禁适配器（issue-155）：RecordService 写入前置校验与

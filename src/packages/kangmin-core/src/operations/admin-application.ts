@@ -11,22 +11,22 @@ import {
   requiredString,
   requiredStringArray
 } from "../kernel/validation.js";
-import type { AuditPort } from "../modules/system/audit-ports.js";
-import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
-import type { KnowledgeEmbeddingPort } from "../modules/agent/knowledge-ports.js";
-import type { KnowledgeRetrievalPort } from "../modules/agent/knowledge-ports.js";
-import { AdminAuthService } from "../modules/admin/admin-auth-service.js";
-import type { AdminAccountRepository } from "../modules/admin/admin-account-repository.js";
-import type { ContentAuxRepository } from "../modules/admin/content-aux-repository.js";
-import { ContentAuxService } from "../modules/admin/content-aux-service.js";
-import type { ContentAdminRepository } from "../modules/admin/content-admin-repository.js";
-import { ContentAdminService } from "../modules/admin/content-admin-service.js";
-import { AdminSessionService, type AdminIdentity } from "../modules/admin/admin-session-service.js";
-import type { AdminSessionRepository } from "../modules/admin/admin-session-repository.js";
-import { AgentAdminService } from "../modules/agent-admin/agent-admin-service.js";
-import type { AgentAdminRepository, SyndromeRegistryPort } from "../modules/agent-admin/agent-admin-ports.js";
-import { UserAdminService } from "../modules/user-admin/user-admin-service.js";
-import type { UserReadRepository } from "../modules/user-admin/user-admin-ports.js";
+import type { AuditPort } from "./system/audit-ports.js";
+import type { ObjectStoragePort } from "./system/object-storage-ports.js";
+import type { KnowledgeEmbeddingPort } from "../intelligence/agent/knowledge-ports.js";
+import type { KnowledgeRetrievalPort } from "../intelligence/agent/knowledge-ports.js";
+import { AdminAuthService } from "./admin/admin-auth-service.js";
+import type { AdminAccountRepository } from "./admin/admin-account-repository.js";
+import type { ContentAuxRepository } from "./admin/content-aux-repository.js";
+import { ContentAuxService } from "./admin/content-aux-service.js";
+import type { ContentAdminRepository } from "./admin/content-admin-repository.js";
+import { ContentAdminService } from "./admin/content-admin-service.js";
+import { AdminSessionService, type AdminIdentity } from "./admin/admin-session-service.js";
+import type { AdminSessionRepository } from "./admin/admin-session-repository.js";
+import { AgentAdminService } from "./agent-admin/agent-admin-service.js";
+import type { AgentAdminRepository, SyndromeRegistryPort } from "./agent-admin/agent-admin-ports.js";
+import { UserAdminService } from "./user-admin/user-admin-service.js";
+import type { UserReadRepository } from "./user-admin/user-admin-ports.js";
 
 export interface AdminCommandRequest {
   command: string;

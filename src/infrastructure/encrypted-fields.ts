@@ -1,8 +1,8 @@
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   EncryptionError,
   type EncryptionPort
-} from "../kernel/encryption.js";
+} from "@kangmin/core/kernel/encryption";
 
 /**
  * 密文字段的库内表示与加解密映射。

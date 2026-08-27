@@ -5,7 +5,7 @@ import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
 import { reindexExistingKnowledge } from "../scripts/reindex-knowledge.js";
-import type { KnowledgeRow } from "../modules/agent-admin/agent-admin-ports.js";
+import type { KnowledgeRow } from "@kangmin/core/operations/agent-admin/agent-admin-ports";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 function item(id: string, status: KnowledgeRow["status"]): KnowledgeRow & {

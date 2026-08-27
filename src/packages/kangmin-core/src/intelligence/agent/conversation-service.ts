@@ -25,7 +25,7 @@ import type {
 } from "../clinical-rules/contracts.js";
 import { DomainError } from "../../kernel/errors.js";
 import type { EncryptionPort } from "../../kernel/encryption.js";
-import type { ConsentGatePort } from "../account/consent-ports.js";
+import type { ConsentGatePort } from "../../patient/account/consent-ports.js";
 import { parseStructuredAnswers } from "./answer-parser.js";
 import { parseOptionPayload } from "./option-mapping.js";
 import { patientVisibleMessage } from "./patient-visible-message.js";

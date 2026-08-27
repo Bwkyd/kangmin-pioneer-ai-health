@@ -11,36 +11,36 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
-import { DomainError } from "../kernel/errors.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { RulePackage } from "../modules/clinical-rules/domain.js";
-import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { RulePackage } from "@kangmin/core/intelligence/clinical-rules/domain";
+import { DRAFT_RULE_PACKAGE } from "@kangmin/core/intelligence/clinical-rules/rule-package";
 import type {
   ExtractionCandidate,
   PlanDialogueContext,
   PlanDialoguePort,
   PlanDialogueSource
-} from "../modules/agent/model-ports.js";
+} from "@kangmin/core/intelligence/agent/model-ports";
 import type {
   KnowledgeRetrievalPort,
   KnowledgeSource
-} from "../modules/agent/knowledge-ports.js";
+} from "@kangmin/core/intelligence/agent/knowledge-ports";
 import type {
   ApprovedPlan,
   ClinicalVerdict,
   PlanRegistryPort
-} from "../modules/clinical-rules/contracts.js";
+} from "@kangmin/core/intelligence/clinical-rules/contracts";
 import { writeConsentForTest } from "./consent-fixture.js";
 import type {
   ConversationSession,
   ConversationTurnResult
-} from "../modules/agent/conversation-contracts.js";
+} from "@kangmin/core/intelligence/agent/conversation-contracts";
 import type {
   AgentPlan,
   KnowledgeItem
-} from "../modules/agent-admin/contracts.js";
-import type { CommitTurnInput } from "../modules/agent/conversation-repository.js";
-import { CLINICAL_FREEZE_BLOCK } from "../modules/agent/output-validation.js";
+} from "@kangmin/core/operations/agent-admin/contracts";
+import type { CommitTurnInput } from "@kangmin/core/intelligence/agent/conversation-repository";
+import { CLINICAL_FREEZE_BLOCK } from "@kangmin/core/intelligence/agent/output-validation";
 import {
   AesGcmEncryption,
   parseEncryptionKeys,

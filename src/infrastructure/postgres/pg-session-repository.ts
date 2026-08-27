@@ -5,7 +5,7 @@ import type {
   SessionClientKind,
   SessionRepository,
   SessionSnapshot
-} from "../../modules/account/session-repository.js";
+} from "@kangmin/core/patient/account/session-repository";
 import { KangminPgDatabase } from "./pg-database.js";
 
 interface PatientRow {

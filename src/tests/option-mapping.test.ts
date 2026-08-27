@@ -4,7 +4,7 @@ import test from "node:test";
 import {
   FIELD_TO_QUESTION,
   parseOptionPayload
-} from "../modules/agent/option-mapping.js";
+} from "@kangmin/core/intelligence/agent/option-mapping";
 
 test("证型选项按当前节点保存 A/B/C，不压成布尔值", () => {
   assert.deepEqual(parseOptionPayload("q10=A", [{ fieldCode: "step1_q10" }]), {

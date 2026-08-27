@@ -29,14 +29,14 @@
  * config_missing 拒绝启动；local/integration 不校验（本地零影响）。
  */
 
-import { DomainError } from "../kernel/errors.js";
-import type { EncryptionPort } from "../kernel/encryption.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
 import { dirname, join } from "node:path";
 import {
   KangminApplication,
   type DoctorCheck,
   type DoctorReport
-} from "./application.js";
+} from "@kangmin/core/patient/application";
 import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
 import {
   AesGcmEncryption,
@@ -78,7 +78,7 @@ import type {
   ObjectHead,
   ObjectStoragePort,
   ObjectUploadTicket
-} from "../modules/system/object-storage-ports.js";
+} from "@kangmin/core/operations/system/object-storage-ports";
 
 // 结构化请求日志的唯一实现在 infrastructure；经组合根再导出，
 // 供 http 适配层引用（架构约束：cli/http/dev 不直接依赖 infrastructure）。
@@ -89,28 +89,28 @@ export {
   type RequestLogger,
   type StructuredLogLevel
 } from "../infrastructure/structured-logger.js";
-import { AccountService } from "../modules/account/account-service.js";
-import { SessionService } from "../modules/account/session-service.js";
-import { ConsentGateAdapter } from "./consent-gate-adapter.js";
-import { ConversationService } from "../modules/agent/conversation-service.js";
-import type { ConversationRepository } from "../modules/agent/conversation-repository.js";
+import { AccountService } from "@kangmin/core/patient/account/account-service";
+import { SessionService } from "@kangmin/core/patient/account/session-service";
+import { ConsentGateAdapter } from "@kangmin/core/patient/consent-gate-adapter";
+import { ConversationService } from "@kangmin/core/intelligence/agent/conversation-service";
+import type { ConversationRepository } from "@kangmin/core/intelligence/agent/conversation-repository";
 import type {
   ModelExplanationPort,
   ModelExtractionPort,
   PlanDialoguePort
-} from "../modules/agent/model-ports.js";
-import { ClinicalRuleKernel } from "../modules/clinical-rules/clinical-rule-kernel.js";
-import type { PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
-import type { RulePackage } from "../modules/clinical-rules/domain.js";
-import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
-import type { EnvironmentProviderPort } from "../modules/environment/environment-ports.js";
-import type { WechatLoginPort } from "../modules/account/wechat-login-port.js";
-import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
+} from "@kangmin/core/intelligence/agent/model-ports";
+import { ClinicalRuleKernel } from "@kangmin/core/intelligence/clinical-rules/clinical-rule-kernel";
+import type { PlanRegistryPort } from "@kangmin/core/intelligence/clinical-rules/contracts";
+import type { RulePackage } from "@kangmin/core/intelligence/clinical-rules/domain";
+import { DRAFT_RULE_PACKAGE } from "@kangmin/core/intelligence/clinical-rules/rule-package";
+import type { EnvironmentProviderPort } from "@kangmin/core/content/environment/environment-ports";
+import type { WechatLoginPort } from "@kangmin/core/patient/account/wechat-login-port";
+import { KnowledgeQaService } from "@kangmin/core/intelligence/agent/knowledge-qa";
 import type {
   KnowledgeAnswerPort,
   KnowledgeEmbeddingPort,
   KnowledgeRetrievalPort
-} from "../modules/agent/knowledge-ports.js";
+} from "@kangmin/core/intelligence/agent/knowledge-ports";
 
 /** HTTP 入口使用的微信登录适配器工厂，保持基础设施依赖只出现在组合根。 */
 export function createWechatLogin(appId: string, appSecret: string): WechatLoginPort {

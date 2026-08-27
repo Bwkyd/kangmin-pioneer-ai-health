@@ -16,7 +16,7 @@ import { join } from "node:path";
 import { after, test } from "node:test";
 import assert from "node:assert/strict";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 
 const roots: string[] = [];

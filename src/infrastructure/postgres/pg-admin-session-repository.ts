@@ -1,7 +1,7 @@
 import type {
   AdminSessionRepository,
   AdminSessionWithAccount
-} from "../../modules/admin/admin-session-repository.js";
+} from "@kangmin/core/operations/admin/admin-session-repository";
 import { KangminPgDatabase } from "./pg-database.js";
 
 export class PgAdminSessionRepository implements AdminSessionRepository {

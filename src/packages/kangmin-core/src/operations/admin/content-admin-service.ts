@@ -9,7 +9,7 @@ import type {
   PublishGuardState,
   UpdateGuardedResult
 } from "./content-admin-repository.js";
-import { mediaIdsInContentBody } from "../content-body-references.js";
+import { mediaIdsInContentBody } from "../../content/content-body-references.js";
 
 const hash = (value: unknown): string =>
   createHash("sha256").update(JSON.stringify(value)).digest("hex");

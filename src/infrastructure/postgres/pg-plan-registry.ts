@@ -2,7 +2,7 @@ import type {
   ApprovedPlan,
   PlanBundle,
   PlanRegistryPort
-} from "../../modules/clinical-rules/contracts.js";
+} from "@kangmin/core/intelligence/clinical-rules/contracts";
 import { KangminPgDatabase } from "./pg-database.js";
 
 interface PlanRow {

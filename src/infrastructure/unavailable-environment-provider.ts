@@ -1,9 +1,9 @@
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import type {
   EnvironmentProviderPort,
   EnvironmentSnapshot,
   ForecastDay
-} from "../modules/environment/environment-ports.js";
+} from "@kangmin/core/content/environment/environment-ports";
 
 /**
  * 不可用环境 Provider（组合根环境门禁的 fail-closed 实现）。
