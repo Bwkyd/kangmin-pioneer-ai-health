@@ -1,6 +1,6 @@
 # 内容供给闭环快速冒烟入口
 
-- 状态：已完成（待 PR/CI/合并收尾）
+- 状态：已完成（PR #338 已合并，Issue #333 已关闭）
 - 日期：2026-08-27
 - 代码基线：`origin/main@78c17db`
 - 关联 Issue：[#333](https://github.com/Bwkyd/kangmin-pioneer-ai-health/issues/333)
@@ -34,12 +34,15 @@ fixture 或新增业务实现。
 | 故意把启用断言改坏 | 目标子进程与编排器均 exit 1；恢复生成产物后正向入口再次通过 |
 | 目标测试单独运行 | 两条均 exit 0，分别为 1/1 |
 | `cd src && npm run check` | 通过；Node 22.23.1 下 438 项中 360 通过、78 项按环境跳过、0 失败，真实 Chromium E2E PASS |
+| PR #338 `pull_request` CI | `quality` 3m14s、`image` 41s，均通过；squash 合并为 `da742faf` |
+| 合并后线上只读复核 | release 仍为 `category-registry-bf44d26`；服务 active、`NRestarts=0`、SQLite `quick_check=ok`；`/`、`/admin`、`/live` 为 200，`/ready` 为既有 503 |
 
 ## 结论与限制
 
 结论：单入口可以稳定证明两条内容行为真的被执行，且能拦截测试名漂移导致的空跑；
-运行时间明显小于完整门禁，符合 #333 的最小交付方向。
+运行时间明显小于完整门禁，符合 #333 的最小交付方向；PR 已通过真实 CI 并合并，Issue 已关闭。
 
 限制：本地未配置 PostgreSQL、S3/MinIO，因此本实验不替代 CI 的双后端契约；真实
-微信身份、客户验收和正式生产就绪也不由该命令证明。Node TAP 的零命中输出会出现
+微信身份、客户验收和正式生产就绪也不由该命令证明。由于合并树没有运行时差异，本轮不重复
+切换线上 release 或重启服务；只做线上只读复核。Node TAP 的零命中输出会出现
 文件级 `ok` 行，编排器将其视为非目标并拒绝通过，而不是把它当成测试命中。
