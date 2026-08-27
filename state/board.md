@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧱 最终 workspace 协议与交付链完成本地放行（2026-08-27 第257轮 · 基线 `origin/main@94ee1ce`，待提交）
+> 本轮对应 #350，严格处理根构建/CI/Docker、跨应用 E2E、文档/指标/Issue 审计、部署/验证/清理四个实体。先在删除迁移白名单前写 `check-final-workspace.mjs` 并确认非零失败，再把 `src` 顶层精确锁定为 `apps/packages/scripts/tests`、八个 workspace 统一要求 package/README/src/tests 小壳；旧编译入口由 package/CI/Docker 扫描拒绝。根构建会先删除根与所有 app/package 的 dist，陈旧 runtime 标记已在有界实验中被真实清除。
+> 四组冒烟 2/2、2/2、3/3、6/6；完整本地门禁 358 通过、78 条 PostgreSQL/S3 外部资源测试跳过、后台 2 条与真实 Chromium E2E 通过，legacy 127/127，生产依赖审计 0 漏洞且 SBOM 成功。本机无 Docker，OCI 不冒充通过，须 PR CI 放行。最终结构门禁拒绝第五顶层，演化护栏另以 8 子目录负例非零退出；探针均撤销。
+> sequential-thinking 七步元反思与 `km-review` 三视角 P0–P2 为 0。隔离结构校验首次因 zsh 特殊变量 `path` 覆盖 `PATH` 未执行，改为任务专用变量并临时只读链接私密 vault 正本后通过，链接已清理。演化复诊为代码文件 307、用例密度 6.3、导航成本 14.23、p50 121、超 600 行占比 14.4%，全部持平；说明协议收口但长文件债务仍在。架构记录 006、实验 037、评审 041 已建立。当前只能进入 PR/CI；合并后必须用生产 SQLite 在线备份副本跑新 API 候选，更新仍指向旧 `dist/http/server.js` 的 systemd 入口，完成正式备份、原子切换、回滚验证、线上浏览器/数据库复核后才关闭 #350。
+
 > ## 🚪 runtime、CLI 与 API 入口完成收口（2026-08-27 第256轮 · 基线 `origin/main@8ba6e18`，待提交）
 > 本轮对应 #349，正好处理 runtime 组合根、CLI app、API app、真实进程与传输 E2E 四个实体。先新增 `check-runtime-entrypoints.mjs` 并在旧结构确认失败，再把患者/管理/远程组合根迁入 `@kangmin/runtime`，患者/管理 CLI 与开发入口迁入 `@kangmin/cli`，HTTP 迁入 `@kangmin/api`；CLI/API 只依赖 core/runtime，门禁拒绝直连 database/integrations。评测逻辑归 runtime、冻结任务集归 tests fixture；旧 app/cli/dev/evals/http 清空，迁移白名单变为空。
 > 有界实验真实捕获 API 搬家后仍按旧编译位置寻找后台静态文件，首页 503；修复新 workspace 到根 `dist/web` 的明确路径后 HTTP 10/10 和浏览器复测通过。同步修复 CLI 版本 manifest 与后台检查器旧 HTTP 源路径两种变式。四组冒烟 2/2、2/2、3/3、6/6；完整本地门禁 358 通过、78 条 PostgreSQL/S3 外部资源测试跳过、0 失败，后台 2 条与真实 Chromium E2E 通过。命令、退出码、stdin/stdout、Cookie、JSON、NDJSON、SQL、truth、医学规则和生产数据未修改。
