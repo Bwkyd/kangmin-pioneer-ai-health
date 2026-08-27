@@ -8,11 +8,11 @@ import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding
 import { KangminDatabase } from "../infrastructure/database.js";
 import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
 import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { KnowledgeRetrievalPort, KnowledgeSource } from "../modules/agent/knowledge-ports.js";
-import type { PlanDialoguePort } from "../modules/agent/model-ports.js";
-import type { ConversationTurnResult } from "../modules/agent/conversation-contracts.js";
-import type { KnowledgeItem } from "../modules/agent-admin/contracts.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { KnowledgeRetrievalPort, KnowledgeSource } from "@kangmin/core/intelligence/agent/knowledge-ports";
+import type { PlanDialoguePort } from "@kangmin/core/intelligence/agent/model-ports";
+import type { ConversationTurnResult } from "@kangmin/core/intelligence/agent/conversation-contracts";
+import type { KnowledgeItem } from "@kangmin/core/operations/agent-admin/contracts";
 import { runEvaluationTasks } from "../evals/knowledge-qa/runner.js";
 import { loadEvaluationJsonl, type EvaluationAction, type EvaluationTask } from "../evals/knowledge-qa/task-schema.js";
 import type {

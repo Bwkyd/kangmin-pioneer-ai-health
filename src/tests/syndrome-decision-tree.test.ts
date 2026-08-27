@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import type { FactEntry, FactMap } from "../modules/clinical-rules/domain.js";
+import type { FactEntry, FactMap } from "@kangmin/core/intelligence/clinical-rules/domain";
 import {
   enumerateSyndromeTreePaths,
   evaluateSyndromeDecisionTree,
   type SyndromeNodeCode,
   type SyndromeOption
-} from "../modules/clinical-rules/syndrome-decision-tree.js";
+} from "@kangmin/core/intelligence/clinical-rules/syndrome-decision-tree";
 
 class TestFacts implements FactMap {
   constructor(private readonly values: ReadonlyMap<string, FactEntry>) {}

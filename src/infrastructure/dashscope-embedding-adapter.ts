@@ -1,5 +1,5 @@
-import { DomainError } from "../kernel/errors.js";
-import type { KnowledgeEmbeddingPort } from "../modules/agent/knowledge-ports.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { KnowledgeEmbeddingPort } from "@kangmin/core/intelligence/agent/knowledge-ports";
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_MODEL = "text-embedding-v4";

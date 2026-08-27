@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 import vm from "node:vm";
 
-import { ASSESSMENT_QUESTIONS } from "../modules/clinical-rules/assessment-questionnaire.js";
+import { ASSESSMENT_QUESTIONS } from "@kangmin/core/intelligence/clinical-rules/assessment-questionnaire";
 const miniprogramRoot = "apps/kangmin-miniprogram/src";
 interface CommonJsModule { exports: Record<string, unknown> }
 

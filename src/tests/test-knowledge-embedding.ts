@@ -1,4 +1,4 @@
-import type { KnowledgeEmbeddingPort } from "../modules/agent/knowledge-ports.js";
+import type { KnowledgeEmbeddingPort } from "@kangmin/core/intelligence/agent/knowledge-ports";
 
 /** 测试专用、无网络的稳定字符特征；只验证索引生命周期与排序契约。 */
 export class TestKnowledgeEmbedding implements KnowledgeEmbeddingPort {

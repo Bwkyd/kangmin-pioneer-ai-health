@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import { KangminDatabase } from "./database.js";
 import type {
   AccountRepository,
@@ -10,7 +10,7 @@ import type {
   ConsentRecord,
   ConsentType,
   CreateAccountInput
-} from "../modules/account/account-repository.js";
+} from "@kangmin/core/patient/account/account-repository";
 
 interface AccountRow {
   patient_id: string;

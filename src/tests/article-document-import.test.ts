@@ -3,7 +3,7 @@ import test from "node:test";
 
 import JSZip from "jszip";
 
-import { extractArticleDocument } from "../modules/admin/article-document-import.js";
+import { extractArticleDocument } from "@kangmin/core/operations/admin/article-document-import";
 
 async function docxWithParagraphs(paragraphs: string[]): Promise<Buffer> {
   const zip = new JSZip();

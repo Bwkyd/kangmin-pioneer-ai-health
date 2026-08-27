@@ -19,7 +19,7 @@ const expectedCases = [
   },
   {
     file: "miniprogram-shell.test.js",
-    name: "小程序首页只读取记录概览，并保持与 Web 一致的四条入口"
+    name: "小程序首页只读取记录概览，并保持四条患者入口"
   },
   {
     file: "miniprogram-shell.test.js",

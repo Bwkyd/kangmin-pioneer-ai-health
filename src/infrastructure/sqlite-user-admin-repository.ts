@@ -7,7 +7,7 @@ import type {
   SymptomProjectionRow,
   UserListRow,
   UserReadRepository
-} from "../modules/user-admin/user-admin-ports.js";
+} from "@kangmin/core/operations/user-admin/user-admin-ports";
 
 interface UserListShape {
   id: string;

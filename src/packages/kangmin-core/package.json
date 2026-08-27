@@ -1,0 +1,27 @@
+{
+  "name": "@kangmin/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run typecheck"
+  },
+  "dependencies": {
+    "mammoth": "^1.12.1",
+    "pdf-parse": "^2.4.5",
+    "turndown": "^7.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "@types/turndown": "^5.0.6",
+    "typescript": "^5.9.3"
+  }
+}

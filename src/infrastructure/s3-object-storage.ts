@@ -19,12 +19,12 @@ import {
 } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import type {
   ObjectHead,
   ObjectStoragePort,
   ObjectUploadTicket
-} from "../modules/system/object-storage-ports.js";
+} from "@kangmin/core/operations/system/object-storage-ports";
 
 /** 预签名直传票据有效期：15 分钟。 */
 const UPLOAD_TICKET_TTL_SECONDS = 15 * 60;

@@ -1,8 +1,8 @@
 import { KangminDatabase } from "./database.js";
 import { decryptStoredField, encryptStoredField } from "./encrypted-fields.js";
 import { runIdempotentCreate } from "./idempotency.js";
-import type { EncryptionPort } from "../kernel/encryption.js";
-import { DomainError } from "../kernel/errors.js";
+import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import type {
   AgentAdminRepository,
   ChunkInput,
@@ -18,9 +18,9 @@ import type {
   PlanRow,
   TestCaseRow,
   UpdatePlanResult
-} from "../modules/agent-admin/agent-admin-ports.js";
-import type { AgentPlan } from "../modules/agent-admin/contracts.js";
-import type { KnowledgeStatus, PlanStatus } from "../modules/agent-admin/domain.js";
+} from "@kangmin/core/operations/agent-admin/agent-admin-ports";
+import type { AgentPlan } from "@kangmin/core/operations/agent-admin/contracts";
+import type { KnowledgeStatus, PlanStatus } from "@kangmin/core/operations/agent-admin/domain";
 
 interface MediaRowShape {
   id: string;

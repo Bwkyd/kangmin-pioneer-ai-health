@@ -16,8 +16,8 @@ import type {
   KnowledgeRow,
   ModelConfigRow,
   PlanRow
-} from "../modules/agent-admin/agent-admin-ports.js";
-import type { EnvironmentSnapshot } from "../modules/environment/environment-ports.js";
+} from "@kangmin/core/operations/agent-admin/agent-admin-ports";
+import type { EnvironmentSnapshot } from "@kangmin/core/content/environment/environment-ports";
 
 const DATABASE_URL = process.env.KANGMIN_TEST_DATABASE_URL;
 const SKIP =

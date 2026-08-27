@@ -2,7 +2,7 @@ import { KangminDatabase } from "./database.js";
 import type {
   AdminSessionRepository,
   AdminSessionWithAccount
-} from "../modules/admin/admin-session-repository.js";
+} from "@kangmin/core/operations/admin/admin-session-repository";
 
 export class SqliteAdminSessionRepository implements AdminSessionRepository {
   constructor(private readonly database: KangminDatabase) {}

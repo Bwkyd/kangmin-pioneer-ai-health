@@ -1,6 +1,10 @@
 import { accessSync, constants } from "node:fs";
 
-import { KangminAdminApplication, type DoctorCheck, type DoctorReport } from "./admin-application.js";
+import {
+  KangminAdminApplication,
+  type DoctorCheck,
+  type DoctorReport
+} from "@kangmin/core/operations/admin-application";
 import {
   defaultMediaDirectory,
   resolveDatabaseUrl,
@@ -10,8 +14,8 @@ import {
 } from "./composition-root.js";
 import { KangminDatabase, appliedMigrationVersions } from "../infrastructure/database.js";
 import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
-import { DomainError } from "../kernel/errors.js";
-import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { ObjectStoragePort } from "@kangmin/core/operations/system/object-storage-ports";
 import {
   KangminPgDatabase,
   appliedPgMigrationVersions
@@ -34,8 +38,8 @@ import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js"
 import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
 import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
 import { PgKnowledgeRetrieval } from "../infrastructure/postgres/pg-knowledge-retrieval.js";
-import type { KnowledgeEmbeddingPort } from "../modules/agent/knowledge-ports.js";
-import type { KnowledgeRetrievalPort } from "../modules/agent/knowledge-ports.js";
+import type { KnowledgeEmbeddingPort } from "@kangmin/core/intelligence/agent/knowledge-ports";
+import type { KnowledgeRetrievalPort } from "@kangmin/core/intelligence/agent/knowledge-ports";
 
 /**
  * 管理端生产存储 fail-closed（与患者端 assertProductionStorage 同策略）：

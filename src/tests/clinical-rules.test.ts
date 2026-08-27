@@ -10,17 +10,17 @@ import test from "node:test";
 
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqlitePlanRegistry } from "../infrastructure/sqlite-plan-registry.js";
-import { ClinicalRuleKernel } from "../modules/clinical-rules/clinical-rule-kernel.js";
+import { ClinicalRuleKernel } from "@kangmin/core/intelligence/clinical-rules/clinical-rule-kernel";
 import type {
   ClinicalVerdict,
   ConfirmedFact,
   PlanBundle,
   PlanRegistryPort
-} from "../modules/clinical-rules/contracts.js";
-import type { ClinicalRule, RulePackage } from "../modules/clinical-rules/domain.js";
-import { DRAFT_RULE_PACKAGE } from "../modules/clinical-rules/rule-package.js";
-import { ASSESSMENT_QUESTIONS } from "../modules/clinical-rules/assessment-questionnaire.js";
-import { enumerateSyndromeTreePaths } from "../modules/clinical-rules/syndrome-decision-tree.js";
+} from "@kangmin/core/intelligence/clinical-rules/contracts";
+import type { ClinicalRule, RulePackage } from "@kangmin/core/intelligence/clinical-rules/domain";
+import { DRAFT_RULE_PACKAGE } from "@kangmin/core/intelligence/clinical-rules/rule-package";
+import { ASSESSMENT_QUESTIONS } from "@kangmin/core/intelligence/clinical-rules/assessment-questionnaire";
+import { enumerateSyndromeTreePaths } from "@kangmin/core/intelligence/clinical-rules/syndrome-decision-tree";
 
 function withoutQuestionnaireStrategy(rulePackage: RulePackage): RulePackage {
   const { questionnaireStrategy: _questionnaireStrategy, ...legacy } = rulePackage;

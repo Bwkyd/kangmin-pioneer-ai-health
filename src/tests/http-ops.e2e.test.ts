@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import type { KangminApplication } from "../app/application.js";
+import type { KangminApplication } from "@kangmin/core/patient/application";
 import {
   createAdminApplication,
   createAdminApplicationWithOps
@@ -16,14 +16,14 @@ import {
   type ReadinessProbe
 } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
-import { DomainError } from "../kernel/errors.js";
-import { COMMAND_SCHEMA_VERSION } from "../kernel/protocol.js";
-import { success } from "../kernel/result.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import { COMMAND_SCHEMA_VERSION } from "@kangmin/core/kernel/protocol";
+import { success } from "@kangmin/core/kernel/result";
 import type {
   EnvironmentProviderPort,
   EnvironmentSnapshot,
   ForecastDay
-} from "../modules/environment/environment-ports.js";
+} from "@kangmin/core/content/environment/environment-ports";
 
 // 与 http.e2e.test.ts 一致：本地开发模式允许明文加密降级；
 // 生产 fail-closed 用例在 withProductionEnv 内显式覆盖并恢复原值。

@@ -3,12 +3,12 @@ import { dirname } from "node:path";
 import { createHash } from "node:crypto";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
-import { DomainError } from "../kernel/errors.js";
-import type { EncryptionPort } from "../kernel/encryption.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
 import {
   CONTENT_CATEGORY_REGISTRY,
   VIDEO_TRUTH_ASSIGNMENTS
-} from "../modules/admin/content-category-registry.js";
+} from "@kangmin/core/operations/admin/content-category-registry";
 import { encryptStoredField } from "./encrypted-fields.js";
 
 /**

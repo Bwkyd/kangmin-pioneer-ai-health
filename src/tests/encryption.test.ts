@@ -6,8 +6,8 @@ import {
   parseEncryptionKeys,
   PlaintextEncryption
 } from "../infrastructure/aes-gcm-encryption.js";
-import { EncryptionError } from "../kernel/encryption.js";
-import { DomainError } from "../kernel/errors.js";
+import { EncryptionError } from "@kangmin/core/kernel/encryption";
+import { DomainError } from "@kangmin/core/kernel/errors";
 
 /** 固定的 32 字节测试密钥（base64），只用于测试，不进入任何生产数据。 */
 const KEY_V1 = Buffer.alloc(32, 1).toString("base64");

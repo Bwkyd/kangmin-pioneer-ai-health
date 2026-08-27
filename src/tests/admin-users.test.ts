@@ -10,9 +10,9 @@ import test from "node:test";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { LoginResult } from "../modules/admin/admin-auth-service.js";
-import type { UserSummary } from "../modules/user-admin/contracts.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { LoginResult } from "@kangmin/core/operations/admin/admin-auth-service";
+import type { UserSummary } from "@kangmin/core/operations/user-admin/contracts";
 import { writeConsentForTest } from "./consent-fixture.js";
 
 function dataOf<T>(result: CommandResult): T {

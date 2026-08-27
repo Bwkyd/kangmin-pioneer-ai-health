@@ -13,13 +13,13 @@ import type {
   EncryptedContent,
   FeedbackRow,
   PatientAssessmentRow
-} from "../modules/agent/conversation-contracts.js";
+} from "@kangmin/core/intelligence/agent/conversation-contracts";
 import type {
   CommitTurnInput,
   CommitTurnOutcome,
   ConversationRepository,
   UpdateSessionOutcome
-} from "../modules/agent/conversation-repository.js";
+} from "@kangmin/core/intelligence/agent/conversation-repository";
 
 function parseEncrypted(value: string): EncryptedContent {
   return JSON.parse(value) as EncryptedContent;

@@ -1,5 +1,5 @@
-import { DomainError } from "../kernel/errors.js";
-import type { WechatLoginIdentity, WechatLoginPort } from "../modules/account/wechat-login-port.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { WechatLoginIdentity, WechatLoginPort } from "@kangmin/core/patient/account/wechat-login-port";
 
 interface WechatCodeLoginOptions {
   appId: string;

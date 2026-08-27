@@ -4,13 +4,13 @@ import test, { after, before, beforeEach } from "node:test";
 import type {
   AdminContentItem,
   PublishGuardState
-} from "../modules/admin/content-admin-repository.js";
+} from "@kangmin/core/operations/admin/content-admin-repository";
 import type {
   ContentCategoryRow,
   ContentMediaRow,
   ContentMessageRow,
   MediaReferenceCounts
-} from "../modules/admin/content-aux-repository.js";
+} from "@kangmin/core/operations/admin/content-aux-repository";
 import { KangminPgDatabase } from "../infrastructure/postgres/pg-database.js";
 import { PgContentAdminRepository } from "../infrastructure/postgres/pg-content-admin-repository.js";
 import { PgContentAuxRepository } from "../infrastructure/postgres/pg-content-aux-repository.js";

@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
-import type { CommandResult } from "../kernel/result.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 import { writeConsentForTest } from "./consent-fixture.js";
 import type {
 
@@ -16,7 +16,7 @@ import type {
   OverviewData,
   SymptomRecord,
   TrendProjection
-} from "../modules/record/contracts.js";
+} from "@kangmin/core/patient/record/contracts";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
 // 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption

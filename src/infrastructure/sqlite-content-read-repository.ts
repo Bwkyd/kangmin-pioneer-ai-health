@@ -1,9 +1,9 @@
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import { KangminDatabase } from "./database.js";
 import type {
   ContentReadRepository,
   PublishedMediaRef
-} from "../modules/browse/content-read-repository.js";
+} from "@kangmin/core/content/browse/content-read-repository";
 import type {
   CarePlanDetail,
   CarePlanSummary,
@@ -11,8 +11,8 @@ import type {
   PublicContent,
   PublicContentCategory,
   PublicContentKind
-} from "../modules/browse/contracts.js";
-import { likePatternOf } from "../modules/browse/domain.js";
+} from "@kangmin/core/content/browse/contracts";
+import { likePatternOf } from "@kangmin/core/content/browse/domain";
 
 const DISCLAIMER = "本内容仅作健康科普和居家管理参考，不代替门诊诊断和专业医疗建议。";
 

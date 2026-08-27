@@ -12,8 +12,8 @@ import { DomainError } from "../../kernel/errors.js";
 import {
   embedKnowledgeTexts,
   type KnowledgeEmbeddingPort
-} from "../agent/knowledge-ports.js";
-import type { KnowledgeRetrievalPort } from "../agent/knowledge-ports.js";
+} from "../../intelligence/agent/knowledge-ports.js";
+import type { KnowledgeRetrievalPort } from "../../intelligence/agent/knowledge-ports.js";
 import {
   assertKnowledgeExtension,
   assertSizeWithinLimit,

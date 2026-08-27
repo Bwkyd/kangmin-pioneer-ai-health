@@ -1,14 +1,14 @@
 import { randomUUID } from "node:crypto";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   COMMAND_PROTOCOL_VERSION,
   COMMAND_SCHEMA_VERSION,
   isCommandResult,
   isCommandServiceMeta,
   type RemoteCommandRequest
-} from "../kernel/protocol.js";
-import type { CommandResult } from "../kernel/result.js";
+} from "@kangmin/core/kernel/protocol";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 
 export type CommandAudience = "patient" | "admin";
 

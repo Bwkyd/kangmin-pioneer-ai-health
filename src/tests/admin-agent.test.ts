@@ -16,11 +16,11 @@ import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
 import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
 import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
 import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
-import { DomainError } from "../kernel/errors.js";
-import type { CommandResult } from "../kernel/result.js";
-import { AgentAdminService } from "../modules/agent-admin/agent-admin-service.js";
-import type { AgentAdminRepository } from "../modules/agent-admin/agent-admin-ports.js";
-import type { KnowledgeItem, KnowledgeFolder, AgentPlan, ModelConfigView } from "../modules/agent-admin/contracts.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import { AgentAdminService } from "@kangmin/core/operations/agent-admin/agent-admin-service";
+import type { AgentAdminRepository } from "@kangmin/core/operations/agent-admin/agent-admin-ports";
+import type { KnowledgeItem, KnowledgeFolder, AgentPlan, ModelConfigView } from "@kangmin/core/operations/agent-admin/contracts";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 function dataOf<T>(result: CommandResult): T {

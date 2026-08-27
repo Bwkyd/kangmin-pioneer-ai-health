@@ -8,10 +8,10 @@ import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
 import { KangminDatabase } from "../infrastructure/database.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { ConversationTurnResult } from "../modules/agent/conversation-contracts.js";
-import type { PlanDialoguePort } from "../modules/agent/model-ports.js";
-import type { ApprovedPlan, PlanRegistryPort } from "../modules/clinical-rules/contracts.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { ConversationTurnResult } from "@kangmin/core/intelligence/agent/conversation-contracts";
+import type { PlanDialoguePort } from "@kangmin/core/intelligence/agent/model-ports";
+import type { ApprovedPlan, PlanRegistryPort } from "@kangmin/core/intelligence/clinical-rules/contracts";
 import { seedContent } from "./content-fixture.js";
 import { writeConsentForTest } from "./consent-fixture.js";
 

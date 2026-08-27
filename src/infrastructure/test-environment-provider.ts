@@ -1,9 +1,9 @@
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import type {
   EnvironmentProviderPort,
   EnvironmentSnapshot,
   ForecastDay
-} from "../modules/environment/environment-ports.js";
+} from "@kangmin/core/content/environment/environment-ports";
 
 /** 测试替身支持模拟的故障模式。 */
 export type TestProviderMode = "fixed" | "unavailable" | "timeout";

@@ -7,8 +7,8 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
-import type { CommandResult } from "../kernel/result.js";
-import type { AdminArticle } from "../modules/admin/content-admin-repository.js";
+import type { CommandResult } from "@kangmin/core/kernel/result";
+import type { AdminArticle } from "@kangmin/core/operations/admin/content-admin-repository";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
 // 组合根按 KANGMIN_ALLOW_DEV_SESSION=1 降级为 PlaintextEncryption

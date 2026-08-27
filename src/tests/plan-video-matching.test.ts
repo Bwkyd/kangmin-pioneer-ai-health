@@ -5,7 +5,7 @@ import {
   matchPlanVideo,
   planVideoMethodSlots,
   type PlanVideoCandidate
-} from "../modules/browse/plan-video-matching.js";
+} from "@kangmin/core/content/browse/plan-video-matching";
 
 const CASES = [
   ["鼻三线姜刮（抗敏要穴之姜行通窍）", "抗敏要穴之姜行通窍——鼻三线姜刮", "成人快速通窍"],

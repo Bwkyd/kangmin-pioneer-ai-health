@@ -16,12 +16,12 @@ import {
 } from "node:fs";
 import { dirname, join, normalize, resolve, sep } from "node:path";
 
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import type {
   ObjectHead,
   ObjectStoragePort,
   ObjectUploadTicket
-} from "../modules/system/object-storage-ports.js";
+} from "@kangmin/core/operations/system/object-storage-ports";
 
 export class LocalFilesystemObjectStorage implements ObjectStoragePort {
   private readonly root: string;

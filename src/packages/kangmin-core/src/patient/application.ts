@@ -17,36 +17,36 @@ import {
   requiredString,
   requiredStringArray
 } from "../kernel/validation.js";
-import { AccountService } from "../modules/account/account-service.js";
-import type { ConsentGatePort } from "../modules/account/consent-ports.js";
-import { SessionService } from "../modules/account/session-service.js";
-import type { ContentReadRepository } from "../modules/browse/content-read-repository.js";
-import { BrowseService } from "../modules/browse/browse-service.js";
-import type { PublishedMedia } from "../modules/browse/contracts.js";
+import { AccountService } from "./account/account-service.js";
+import type { ConsentGatePort } from "./account/consent-ports.js";
+import { SessionService } from "./account/session-service.js";
+import type { ContentReadRepository } from "../content/browse/content-read-repository.js";
+import { BrowseService } from "../content/browse/browse-service.js";
+import type { PublishedMedia } from "../content/browse/contracts.js";
 import {
   listLimitOf,
   listOffsetOf,
   optionalLocationOf,
   resourceIdOf,
   searchQueryOf
-} from "../modules/browse/domain.js";
-import type { ObjectStoragePort } from "../modules/system/object-storage-ports.js";
-import type { AgentRepository } from "../modules/agent/agent-repository.js";
-import { AgentService } from "../modules/agent/agent-service.js";
-import type { AgentQuestion, TriStateAnswer } from "../modules/agent/contracts.js";
-import { KnowledgeQaService } from "../modules/agent/knowledge-qa.js";
-import { ConversationService } from "../modules/agent/conversation-service.js";
-import type { ConversationTurnResult, ConversationTestRunResult } from "../modules/agent/conversation-contracts.js";
-import type { ConfirmedFact } from "../modules/clinical-rules/contracts.js";
-import { cityOf, forecastDaysOf } from "../modules/environment/domain.js";
+} from "../content/browse/domain.js";
+import type { ObjectStoragePort } from "../operations/system/object-storage-ports.js";
+import type { AgentRepository } from "../intelligence/agent/agent-repository.js";
+import { AgentService } from "../intelligence/agent/agent-service.js";
+import type { AgentQuestion, TriStateAnswer } from "../intelligence/agent/contracts.js";
+import { KnowledgeQaService } from "../intelligence/agent/knowledge-qa.js";
+import { ConversationService } from "../intelligence/agent/conversation-service.js";
+import type { ConversationTurnResult, ConversationTestRunResult } from "../intelligence/agent/conversation-contracts.js";
+import type { ConfirmedFact } from "../intelligence/clinical-rules/contracts.js";
+import { cityOf, forecastDaysOf } from "../content/environment/domain.js";
 import type {
   EnvironmentCacheRepository,
   EnvironmentProviderPort
-} from "../modules/environment/environment-ports.js";
-import { EnvironmentService } from "../modules/environment/environment-service.js";
-import { sexOf } from "../modules/record/domain.js";
-import type { RecordRepository } from "../modules/record/record-repository.js";
-import { RecordService } from "../modules/record/record-service.js";
+} from "../content/environment/environment-ports.js";
+import { EnvironmentService } from "../content/environment/environment-service.js";
+import { sexOf } from "./record/domain.js";
+import type { RecordRepository } from "./record/record-repository.js";
+import { RecordService } from "./record/record-service.js";
 import { RecordSnapshotAdapter } from "./record-snapshot-adapter.js";
 
 export interface CommandRequest {

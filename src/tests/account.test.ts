@@ -12,8 +12,8 @@ import test from "node:test";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteSessionRepository } from "../infrastructure/sqlite-session-repository.js";
-import { SessionService } from "../modules/account/session-service.js";
-import type { CommandResult } from "../kernel/result.js";
+import { SessionService } from "@kangmin/core/patient/account/session-service";
+import type { CommandResult } from "@kangmin/core/kernel/result";
 
 const PASSWORD = "s3cret-pass-1";
 

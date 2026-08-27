@@ -3,8 +3,8 @@ import test from "node:test";
 
 import { createRemoteCommandClient } from "../app/remote-command-composition-root.js";
 import { RemoteCommandClient } from "../infrastructure/remote-command-client.js";
-import { DomainError } from "../kernel/errors.js";
-import { success } from "../kernel/result.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import { success } from "@kangmin/core/kernel/result";
 
 const meta = {
   service: "kangmin-command-service",

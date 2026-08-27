@@ -1,6 +1,6 @@
-import type { SyndromeRegistryPort } from "../modules/agent-admin/agent-admin-ports.js";
-import { FIXED_SYNDROMES } from "../modules/agent-admin/domain.js";
-import type { SyndromeMeta } from "../modules/agent-admin/domain.js";
+import type { SyndromeRegistryPort } from "@kangmin/core/operations/agent-admin/agent-admin-ports";
+import { FIXED_SYNDROMES } from "@kangmin/core/operations/agent-admin/domain";
+import type { SyndromeMeta } from "@kangmin/core/operations/agent-admin/domain";
 
 /**
  * 内置只读证型注册表（已由规则内核证型常量派生）。

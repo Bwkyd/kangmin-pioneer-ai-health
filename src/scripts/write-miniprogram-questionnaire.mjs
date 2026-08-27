@@ -1,8 +1,8 @@
 import { writeFileSync } from "node:fs";
 import { resolve } from "node:path";
 
-import { FIELD_TO_QUESTION } from "../dist/modules/agent/option-mapping.js";
-import { ASSESSMENT_QUESTIONS } from "../dist/modules/clinical-rules/assessment-questionnaire.js";
+import { FIELD_TO_QUESTION } from "@kangmin/core/intelligence/agent/option-mapping";
+import { ASSESSMENT_QUESTIONS } from "@kangmin/core/intelligence/clinical-rules/assessment-questionnaire";
 
 const output = `// 此文件由 scripts/write-miniprogram-questionnaire.mjs 生成；题面正本只在 assessment-questionnaire.ts。\n` +
   `var FIELD_TO_QUESTION = ${JSON.stringify(FIELD_TO_QUESTION, null, 2)};\n` +

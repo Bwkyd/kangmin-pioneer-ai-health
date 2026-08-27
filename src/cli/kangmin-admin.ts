@@ -10,13 +10,13 @@ import {
   remoteCommandBaseUrl,
   remoteTimeout
 } from "../app/remote-command-composition-root.js";
-import { DomainError, exitCodeForCode } from "../kernel/errors.js";
-import { failure, type CommandResult } from "../kernel/result.js";
+import { DomainError, exitCodeForCode } from "@kangmin/core/kernel/errors";
+import { failure, type CommandResult } from "@kangmin/core/kernel/result";
 import {
   assertKnowledgeExtension,
   assertSizeWithinLimit,
   DEFAULT_MEDIA_MAX_BYTES
-} from "../modules/admin/media-validation.js";
+} from "@kangmin/core/operations/admin/media-validation";
 
 /** 与 package.json version 保持同步（主线程集成时统一）。 */
 const VERSION = "0.1.0";

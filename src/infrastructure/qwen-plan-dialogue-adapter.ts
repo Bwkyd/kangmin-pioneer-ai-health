@@ -1,20 +1,20 @@
 /** 通义千问：规则结果通俗转译与方案后受约束追问。 */
 
-import { DomainError } from "../kernel/errors.js";
-import { SYNDROME_LABELS } from "../modules/clinical-rules/domain.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
+import { SYNDROME_LABELS } from "@kangmin/core/intelligence/clinical-rules/domain";
 import type {
   ApprovedPlan,
   ClinicalVerdict
-} from "../modules/clinical-rules/contracts.js";
+} from "@kangmin/core/intelligence/clinical-rules/contracts";
 import type {
   PlanDialoguePort,
   PlanDialogueSource
-} from "../modules/agent/model-ports.js";
+} from "@kangmin/core/intelligence/agent/model-ports";
 import type {
   KnowledgeAnswerPort,
   KnowledgeSource
-} from "../modules/agent/knowledge-ports.js";
-import { assessmentQuestion } from "../modules/clinical-rules/assessment-questionnaire.js";
+} from "@kangmin/core/intelligence/agent/knowledge-ports";
+import { assessmentQuestion } from "@kangmin/core/intelligence/clinical-rules/assessment-questionnaire";
 
 const DEFAULT_BASE_URL = "https://dashscope.aliyuncs.com/compatible-mode/v1";
 const DEFAULT_MODEL = "qwen3.7-flash";

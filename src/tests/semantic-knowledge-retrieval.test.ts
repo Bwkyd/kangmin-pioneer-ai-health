@@ -5,13 +5,13 @@ import { KangminDatabase } from "../infrastructure/database.js";
 import { SqliteKnowledgeRetrieval } from "../infrastructure/sqlite-knowledge-retrieval.js";
 import { SqliteAgentAdminRepository } from "../infrastructure/sqlite-agent-admin-repository.js";
 import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
-import { DomainError } from "../kernel/errors.js";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   encodeNormalizedEmbedding,
   selectKnowledgeHits,
   type KnowledgeSource,
   type KnowledgeEmbeddingPort
-} from "../modules/agent/knowledge-ports.js";
+} from "@kangmin/core/intelligence/agent/knowledge-ports";
 
 test("Top-K 优先保留来源多样性，语料不足时仍回填同源切块", () => {
   const source = (knowledgeId: string, chunkIndex: number, score: number): KnowledgeSource => ({

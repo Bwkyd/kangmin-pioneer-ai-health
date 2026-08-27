@@ -19,13 +19,13 @@ import type {
   EncryptedContent,
   FeedbackRow,
   PatientAssessmentRow
-} from "../../modules/agent/conversation-contracts.js";
+} from "@kangmin/core/intelligence/agent/conversation-contracts";
 import type {
   CommitTurnInput,
   CommitTurnOutcome,
   ConversationRepository,
   UpdateSessionOutcome
-} from "../../modules/agent/conversation-repository.js";
+} from "@kangmin/core/intelligence/agent/conversation-repository";
 import { KangminPgDatabase } from "./pg-database.js";
 
 function parseEncrypted(value: string): EncryptedContent {

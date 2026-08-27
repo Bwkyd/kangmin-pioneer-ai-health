@@ -10,8 +10,8 @@ import type {
   PublishMediaState,
   UpdateContentItemResult,
   UpdateGuardedResult
-} from "../../modules/admin/content-admin-repository.js";
-import { mediaIdsInContentBody } from "../../modules/content-body-references.js";
+} from "@kangmin/core/operations/admin/content-admin-repository";
+import { mediaIdsInContentBody } from "@kangmin/core/content/content-body-references";
 import { KangminPgDatabase } from "./pg-database.js";
 import { runPgIdempotentCreate } from "./pg-idempotency.js";
 

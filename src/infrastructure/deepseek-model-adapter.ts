@@ -11,20 +11,20 @@
  * （modules/agent/output-validation.ts），模型不写自由文本。
  */
 
-import { FIELD_LABELS } from "../modules/clinical-rules/domain.js";
+import { FIELD_LABELS } from "@kangmin/core/intelligence/clinical-rules/domain";
 import type {
   ClinicalVerdict,
   RulePackageStatus
-} from "../modules/clinical-rules/contracts.js";
-import { DomainError } from "../kernel/errors.js";
+} from "@kangmin/core/intelligence/clinical-rules/contracts";
+import { DomainError } from "@kangmin/core/kernel/errors";
 import type {
   ExplanationFields,
   ExtractionCandidate,
   ModelExplanationPort,
   ModelExtractionInput,
   ModelExtractionPort
-} from "../modules/agent/model-ports.js";
-import type { KnowledgeAnswerPort, KnowledgeSource } from "../modules/agent/knowledge-ports.js";
+} from "@kangmin/core/intelligence/agent/model-ports";
+import type { KnowledgeAnswerPort, KnowledgeSource } from "@kangmin/core/intelligence/agent/knowledge-ports";
 
 const DEFAULT_BASE_URL = "https://api.deepseek.com/v1";
 const DEFAULT_TIMEOUT_MS = 10_000;

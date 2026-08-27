@@ -9,8 +9,8 @@ import { PgAgentAdminRepository } from "../infrastructure/postgres/pg-agent-admi
 import {
   embedKnowledgeTexts,
   type KnowledgeEmbeddingPort
-} from "../modules/agent/knowledge-ports.js";
-import type { AgentAdminRepository } from "../modules/agent-admin/agent-admin-ports.js";
+} from "@kangmin/core/intelligence/agent/knowledge-ports";
+import type { AgentAdminRepository } from "@kangmin/core/operations/agent-admin/agent-admin-ports";
 
 export async function reindexExistingKnowledge(
   repository: AgentAdminRepository,

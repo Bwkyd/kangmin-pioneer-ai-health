@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 import { KangminDatabase } from "./database.js";
-import type { AuditEntry, AuditPort } from "../modules/system/audit-ports.js";
+import type { AuditEntry, AuditPort } from "@kangmin/core/operations/system/audit-ports";
 
 /**
  * audit_events 的 SQLite 实现：只追加，独立事务。
