@@ -81,21 +81,10 @@ function validateWorkspace(directory) {
     }
   }
 
-  const allowlistPath = join(directory, "scripts", "workspace-migration-allowlist.json");
-  const allowlist = existsSync(allowlistPath) ? readJson(allowlistPath) : { legacyDirectories: [] };
-  const legacyDirectories = new Set(allowlist.legacyDirectories ?? []);
-  if (legacyDirectories.size > 0 && (!allowlist.owner || !allowlist.expiresOn || !allowlist.reason)) {
-    failures.push("迁移白名单必须包含 owner、expiresOn 与 reason");
-  }
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (!entry.isDirectory() || entry.name.startsWith(".") || ["dist", "node_modules"].includes(entry.name)) continue;
-    if (!FINAL_DIRECTORIES.has(entry.name) && !legacyDirectories.has(entry.name)) {
+    if (!FINAL_DIRECTORIES.has(entry.name)) {
       failures.push(`未登记的 src 顶层目录：${entry.name}`);
-    }
-  }
-  for (const oldDirectory of legacyDirectories) {
-    if (!existsSync(join(directory, oldDirectory))) {
-      failures.push(`迁移白名单只能缩小：已不存在的目录仍被登记：${oldDirectory}`);
     }
   }
 
