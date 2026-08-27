@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧱 workspace 护栏与小程序分形样本完成（2026-08-27 第251轮 · 基线 `origin/main@783cb74`，待提交）
+> 本轮对应 #344，严格处理四类实体：根 workspace 配置、小程序 workspace、小程序测试/资产检查、演化基线与交付记录。根工作区落后主线且有作者既有改动，因此从最新 `origin/main` 创建隔离 worktree；`hi.md`、truth、患者数据和生产均未修改。小程序迁入 `src/apps/kangmin-miniprogram`，微信工程从统一小壳的 `src/` 加载，真实 AppID 仍为空；npm workspaces 保持单锁文件。
+> 先把 workspace 规则与 5 类负例自测并入既有 `architecture-check`：缺 manifest、非法内部依赖、跨 workspace 相对导入、空壳包、未登记旧目录均被拦截，真实 CLI 对违规 fixture 退出非零。护栏还在开发中发现“小程序综合测试若随 app 移动会跨 workspace 导入临床题面”，因此没有制造该耦合，测试暂留根测试区并由 package 测试说明指向唯一正本。小程序长文件与宽目录基线只做原值换路径，1263 行存量测试没有增长。
+> 四组 smoke 分别执行 2/2/3/6 条行为；完整 `npm run check` 为 438 项中 360 通过、78 项因本机未配置 PostgreSQL/S3 按约定跳过、0 失败，真实浏览器 E2E 通过；manifest、结构、演化护栏、生产依赖审计与差异格式检查通过。最新主线重算基线与候选均为 319 个代码文件、用例密度 6.0、超 600 行占比 14.1%；导航成本 13.45→13.62，故不冒充复杂度已经下降，只按新增可执行边界放行可行性样本，后续必须靠顶层收缩和典型变更范围复诊，详见实验 031。尚待 commit、PR、真实 PostgreSQL/S3 CI、合并与关闭 #344。
+
 > ## 🧪 #342 基础壳与环境门禁快速冒烟入口完成候选验证（2026-08-27 第249轮 · 待提交，基线 `origin/main@6690e696b42419cfd299acfe5ad6f4901d36be68`）
 > 开工前重新 fetch 并核对远端主线、#334/#342、分支和 worktree；本轮只处理一个实体：次要·基础壳，未超过四个，无需拆子任务。先把验收标准写入 `docs/experiments/030_shell-smoke-entry.md`，再新增 `npm run test:smoke:shell` 与 `src/scripts/run-shell-smoke.mjs`，逐个独立启动五条小程序壳行为和一条环境门禁行为，要求 TAP 唯一逐字命中非跳过 `ok`；不复制 fixture、不改运行时、测试正文、schema、truth、医学规则、患者数据或微信身份配置。
 > 正向 6/6 通过（含构建约 3.33 秒）；故意改错目标名、故意改坏首页概览断言均 exit 1，原生多文件零命中仍 exit 0 并被入口拒绝。覆盖账本、语法和 diff 检查通过；`cd src && npm run check` 退出 0，438 项中 360 通过、78 项因本机未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium E2E PASS（约 44.84 秒）。本轮已调用 sequential-thinking 做元反思，按 `km-review` 三视角自检无 P0–P2；无运行时变化，不需要部署或重启。候选工作树尚未提交/推送/建 PR/合并，#342 仍 OPEN；根工作区既有改动与 `hi.md` 保持不动。
