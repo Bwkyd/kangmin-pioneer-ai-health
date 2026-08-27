@@ -3,6 +3,9 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧪 四组功能—测试覆盖账本已建立（2026-08-27 第241轮 · 基线 `origin/main@9a38dd1`，待提交）
+> 按 Issue #331 只交付测试导航，未改 `src/`、truth 或生产环境。新增 `docs/plan/014_test-coverage-ledger.md`，把报价内行为归为核心·智能调理、辅助·内容供给、次要·症状管理、次要·基础壳四组，登记 18 个不重复行为的现有证据、层级、安全最窄命令和缺口；结论是当前首要缺口为稳定快速入口而非测试数量。新增 `scripts/check-test-coverage-ledger.py`，不仅检查四组、ID 与必填项，还验证证据文件真实存在、构建与测试命令完整且逐项对应；故意替换为不存在证据时如期 exit 1，恢复后通过 18 项/四组检查。Node 22.23.1 下本轮重新实测完整 `src` 门禁 46.20 秒，438 项中 360 通过、78 项因本机未配 PostgreSQL/S3 按约定跳过、0 失败，Chromium E2E PASS；构建 2.58 秒，四组后构建窄测为 1.97/1.64/1.32/1.50 秒。清单、账本检查、Python 编译与差异格式通过；sequential-thinking 与 `km-review` 三视角修复假证据和旧索引两项 P2 后 P0–P2 清零。根结构检查仍只被两个既有 `_work/` 中文目录名拦住，隔离 worktree 另因忽略的私有 vault 不存在而不能单独通过。下一条为 #332，只聚合一条代表问卷裁决与一条模型失败降级，不复制 fixture。
+
 > ## ✅ 两轮拆分实验证据已合并并完成收尾（2026-08-27 第237轮 · `main@6e7e7cf`）
 > PR #329 的真实 `pull_request` CI 全绿：`quality` 3 分 19 秒，覆盖 PostgreSQL 16、MinIO/S3 与完整回归；`image` 38 秒，覆盖 OCI 构建、容器冒烟、生产依赖审计和 SBOM。随后 squash 合并为 `6e7e7cf`，GitHub 远端与本地实现分支均已删除。#321 已补充实验 026/027 证据，但因三个长文件仍未全部降到 600 行以内而保持 open，没有把失败实验冒充完成。
 > 合并树相对线上 `category-registry-bf44d26` 的 `src/` 完全无差异，因此没有重复部署相同运行时制品。收尾实时核验生产 release 未切换，应用/Nginx active、`NRestarts=0`、仅 127.0.0.1:8787 监听；正式库 `quick_check=ok`、24 项迁移最新 `0022_content_category_registry`，公网真实 IP 的首页、后台和 `/live` 为 200，`/ready=503` 仍只因既有加密配置未完成。仓库只有 GitHub `origin`；CNB CLI 登录正常但搜索不到本项目仓库，因此不存在 CNB 任务分支可清理。根 worktree 只保留作者未跟踪原件 `hi.md`。
