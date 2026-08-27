@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 管理后台最小分形拆分已部署收口（2026-08-28 第268轮 · `main@f5dc36a`，待提交部署记录）
+> Issue #364–#369、PR #370–#375 已全部关闭并合并。精确合并构建发布为 `/srv/kangmin-cli/releases/admin-fractal-f5dc36a`，发布包 SHA-256 为 `698702ca3d97cbee324ee6d30511f93e16746ca216ec1fbe6f088efe87eb83fd`；8788 候选使用正式 SQLite/媒体副本启动，真实 Chromium 登录后贯通工作台、文章、视频、消息和 AI 知识入口，控制台错误与失败请求均为 0。
+> 切换前备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260828-001019-before-admin-fractal-f5dc36a.sqlite`，原子软链回滚演练通过后切换。应用/Nginx active、`NRestarts=0`、只监听 8787；正式库与备份 `quick_check=ok`，24 项迁移及 `28/11/21/136/136/47/17/26/20/38/26` 关键计数切换前后不变。公网 `/`、`/admin`、`/live` 为 200，公网 Chromium 0 控制台错误/失败请求，管理 JS 与 release 哈希一致；`/ready=503` 仍是既有加密配置缺口。sequential-thinking 元反思与 `km-review` 三视角 P0–P2 为 0；详见 `docs/changes/ops/017_admin-fractal-deploy.md`。
+
 > ## ✅ 管理后台最小分形样本完成复诊并停止（2026-08-27 第267轮 · 基线 `origin/main@5967e54`，待提交）
 > 本轮对应 #369，只处理演化趋势账本、分形评审和状态记录三个实体。`aias-meta-evolve` 重算显示用例密度 6.3 持平，TSX 冗余率 13.2%→12.8%、p50 121→120、超 600 行占比 14.4%→13.8%；导航成本 14.23→14.26 bit，明确记录新增 6 个文件的代价，没有只报好看的指标。管理后台自身 `AdminApp.tsx` 1348→212 行、`src` 文件 7→13，最大新功能文件 453 行，依赖为入口→功能→共享 UI/契约/客户端，无反向依赖和空转发层。
 > 护栏在正常树通过；临时增加第 19 个顶层目录时 exit 1 拦截，探针和暂存均已清除。#364–#368 均已独立 PR/CI/合并并关闭；每轮真实 Chromium、`test:acceptance` 与完整 `npm run check` 通过，远端 PostgreSQL/MinIO/OCI 门禁全绿。`km-review` 三视角未发现 P0–P2。结论是停止继续拆 Login/Overview、消息或文件；未来先观察两个真实后台变更的触达范围，再用证据决定是否调整。详见 `docs/reviews/044_admin-minimal-fractal-review.md`。
