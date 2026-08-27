@@ -40,4 +40,4 @@ const output = `// 此文件由 scripts/write-miniprogram-questionnaire.mjs 生�
   `  return "";\n` +
   `}\n\nmodule.exports = { view: view, visibleAnswer: visibleAnswer, questions: QUESTIONS };\n`;
 
-writeFileSync(resolve("miniprogram/utils/questionnaire.js"), output, "utf8");
+writeFileSync(resolve("apps/kangmin-miniprogram/src/utils/questionnaire.js"), output, "utf8");

@@ -5,7 +5,7 @@ import test from "node:test";
 import vm from "node:vm";
 
 import { ASSESSMENT_QUESTIONS } from "../modules/clinical-rules/assessment-questionnaire.js";
-
+const miniprogramRoot = "apps/kangmin-miniprogram/src";
 interface CommonJsModule { exports: Record<string, unknown> }
 
 function loadModule(
@@ -14,7 +14,7 @@ function loadModule(
   requireValue: Record<string, unknown> = {}
 ): Record<string, unknown> {
   const module: CommonJsModule = { exports: {} };
-  const source = readFileSync(resolve("miniprogram", relativePath), "utf8");
+  const source = readFileSync(resolve(miniprogramRoot, relativePath), "utf8");
   vm.runInNewContext(source, {
     module,
     exports: module.exports,
@@ -45,7 +45,7 @@ function loadPage(
   modules: Record<string, unknown>,
   wxValue: Record<string, unknown> = { setNavigationBarTitle: () => undefined }
 ): PageDefinition {
-  const source = readFileSync(resolve("miniprogram", relativePath), "utf8");
+  const source = readFileSync(resolve(miniprogramRoot, relativePath), "utf8");
   let definition: PageDefinition | null = null;
   vm.runInNewContext(source, {
     Page: (page: PageDefinition) => { definition = page; },
@@ -619,8 +619,8 @@ test("小程序健康档案读取并展示基础信息、过敏原与用药记�
 test("小程序首页复用 Web 患者首页的信息结构、文案、比例和品牌资产", () => {
   const webHome = readFileSync(resolve("web/src/App.tsx"), "utf8");
   const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");
-  const miniHome = readFileSync(resolve("miniprogram/pages/home/index.wxml"), "utf8");
-  const miniStyles = readFileSync(resolve("miniprogram/pages/home/index.wxss"), "utf8");
+  const miniHome = readFileSync(resolve(`${miniprogramRoot}/pages/home/index.wxml`), "utf8");
+  const miniStyles = readFileSync(resolve(`${miniprogramRoot}/pages/home/index.wxss`), "utf8");
   const sharedCopy = [
     "安全评估与方案建议",
     "诊一诊",
@@ -646,7 +646,7 @@ test("小程序首页复用 Web 患者首页的信息结构、文案、比例和
   }
   assert.deepEqual(
     readFileSync(resolve("web/public/brand-banner.jpg")),
-    readFileSync(resolve("miniprogram/assets/brand-banner.jpg"))
+    readFileSync(resolve(`${miniprogramRoot}/assets/brand-banner.jpg`))
   );
   const proportionalStyles = [
     ["min-height: 190px", "min-height: 380rpx"],
@@ -728,7 +728,7 @@ test("小程序首页过敏原入口在授权并加载后定位到当天记录�
   assert.equal(scrollCalls.length, 1);
   assert.equal(scrollCalls[0]?.selector, "#exposure-record");
   assert.equal(scrollCalls[0]?.duration, 300);
-  assert.match(readFileSync(resolve("miniprogram/pages/health-profile/index.wxml"), "utf8"), /id="exposure-record"[\s\S]*过敏原暴露记录/u);
+  assert.match(readFileSync(resolve(`${miniprogramRoot}/pages/health-profile/index.wxml`), "utf8"), /id="exposure-record"[\s\S]*过敏原暴露记录/u);
 });
 
 test("小程序我的页不把档案和概览读取失败伪装成空数据", async () => {
@@ -854,8 +854,8 @@ test("小程序学一学固定四入口、目录内视频列表和五项主导�
   page.switchPrimary({ currentTarget: { dataset: { mode: "tab", url: "/pages/home/index" } } });
   assert.deepEqual(navigations, ["navigate:/pages/symptom-edit/index", "tab:/pages/home/index"]);
 
-  const template = readFileSync(resolve("miniprogram/pages/learn/index.wxml"), "utf8");
-  const config = JSON.parse(readFileSync(resolve("miniprogram/pages/learn/index.json"), "utf8"));
+  const template = readFileSync(resolve(`${miniprogramRoot}/pages/learn/index.wxml`), "utf8");
+  const config = JSON.parse(readFileSync(resolve(`${miniprogramRoot}/pages/learn/index.json`), "utf8"));
   assert.equal(config.navigationBarTitleText, "学一学");
   for (const label of ["操作视频", "科普文章", "调理方案", "知识问答"]) {
     assert.ok(template.includes(`>${label}</view>`), `缺少固定入口：${label}`);
@@ -872,10 +872,10 @@ test("小程序学一学固定四入口、目录内视频列表和五项主导�
 test("小程序问助手删除页面内重复摘要和对话按钮，保留抽屉、结果卡和发送入口", () => {
   const web = readFileSync(resolve("web/src/App.tsx"), "utf8");
   const webStyles = readFileSync(resolve("web/src/styles.css"), "utf8");
-  const mini = readFileSync(resolve("miniprogram/pages/assistant/index.wxml"), "utf8");
-  const miniStyles = readFileSync(resolve("miniprogram/pages/assistant/index.wxss"), "utf8");
-  const miniConfig = JSON.parse(readFileSync(resolve("miniprogram/pages/assistant/index.json"), "utf8"));
-  const tabBar = readFileSync(resolve("miniprogram/custom-tab-bar/index.wxml"), "utf8");
+  const mini = readFileSync(resolve(`${miniprogramRoot}/pages/assistant/index.wxml`), "utf8");
+  const miniStyles = readFileSync(resolve(`${miniprogramRoot}/pages/assistant/index.wxss`), "utf8");
+  const miniConfig = JSON.parse(readFileSync(resolve(`${miniprogramRoot}/pages/assistant/index.json`), "utf8"));
+  const tabBar = readFileSync(resolve(`${miniprogramRoot}/custom-tab-bar/index.wxml`), "utf8");
   const questionnaire = loadModule("utils/questionnaire.js") as { questions: unknown };
 
   for (const sharedCopy of ["问问题或描述症状…"]) {
@@ -924,9 +924,9 @@ test("小程序问助手删除页面内重复摘要和对话按钮，保留抽�
   assert.equal(miniConfig.navigationStyle, "custom");
   assert.ok(tabBar.includes('wx:if="{{!hidden}}"'), "聊天抽屉打开时应能隐藏独立自定义底栏");
   assert.ok(tabBar.includes('class="icon-mark"'), "底栏图标应保留统一的细节绘制层");
-  assert.ok(readFileSync(resolve("miniprogram/custom-tab-bar/index.wxss"), "utf8").includes("selected:not(.action) .glyph"), "选中态应只突出图标，不铺满整块底栏入口");
-  assert.ok(readFileSync(resolve("miniprogram/custom-tab-bar/index.wxss"), "utf8").includes("translateY(-8rpx)"), "记录主按钮应留在底栏横线以内");
-  assert.ok(readFileSync(resolve("miniprogram/custom-tab-bar/index.wxss"), "utf8").includes("translate(-50%,-50%)"), "记录按钮十字应按几何中心绘制");
+  assert.ok(readFileSync(resolve(`${miniprogramRoot}/custom-tab-bar/index.wxss`), "utf8").includes("selected:not(.action) .glyph"), "选中态应只突出图标，不铺满整块底栏入口");
+  assert.ok(readFileSync(resolve(`${miniprogramRoot}/custom-tab-bar/index.wxss`), "utf8").includes("translateY(-8rpx)"), "记录主按钮应留在底栏横线以内");
+  assert.ok(readFileSync(resolve(`${miniprogramRoot}/custom-tab-bar/index.wxss`), "utf8").includes("translate(-50%,-50%)"), "记录按钮十字应按几何中心绘制");
   assert.equal(JSON.stringify(questionnaire.questions), JSON.stringify(ASSESSMENT_QUESTIONS));
   assert.ok(webStyles.includes(".start-card"));
 });

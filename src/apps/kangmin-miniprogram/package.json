@@ -1,0 +1,9 @@
+{
+  "name": "@kangmin/miniprogram",
+  "version": "0.1.0",
+  "private": true,
+  "type": "commonjs",
+  "scripts": {
+    "check": "node ../../scripts/check-miniprogram.mjs"
+  }
+}

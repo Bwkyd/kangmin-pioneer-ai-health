@@ -62,7 +62,7 @@ TypeScript 类型检查
 ### 打开原生微信小程序
 
 使用微信开发者工具导入绝对路径
-`/Users/chenqiqiang/work/kangmin/src/miniprogram`。仓库不保存真实 AppID 或
+`/Users/chenqiqiang/work/kangmin/src/apps/kangmin-miniprogram`。仓库不保存真实 AppID 或
 AppSecret：`project.config.json` 的 `appid` 保持为空，首次导入时由开发者工具在本机选择
 测试号或已获授权的 AppID；AppSecret 只允许留在服务端。
 

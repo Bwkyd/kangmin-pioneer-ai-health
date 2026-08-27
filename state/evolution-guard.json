@@ -31,7 +31,7 @@
       "legacy": 8,
       "legacy/app/api/admin": 9,
       "src": 12,
-      "src/miniprogram/pages": 9,
+      "src/apps/kangmin-miniprogram/src/pages": 9,
       "src/modules": 10
     },
     "file_lines": {
@@ -53,7 +53,7 @@
       "src/infrastructure/sqlite-content-aux-repository.ts": 762,
       "src/infrastructure/sqlite-conversation-repository.ts": 772,
       "src/infrastructure/sqlite-record-repository.ts": 1343,
-      "src/miniprogram/pages/assistant/index.js": 734,
+      "src/apps/kangmin-miniprogram/src/pages/assistant/index.js": 734,
       "src/modules/admin/content-aux-service.ts": 884,
       "src/modules/agent-admin/agent-admin-service.ts": 1461,
       "src/modules/agent/conversation-service.ts": 1250,

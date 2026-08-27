@@ -1,8 +1,12 @@
 {
-  "name": "@kangmin/patient-core",
+  "name": "@kangmin/workspace",
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "engines": {
     "node": ">=22.13.0"
   },
@@ -13,7 +17,7 @@
   "scripts": {
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && vite build web",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p web/tsconfig.json --noEmit",
-    "lint": "node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs",
+    "lint": "node scripts/architecture-check.mjs --self-test && node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs",
     "test": "npm run build && node --test dist/tests/*.test.js && node scripts/web-browser-e2e.mjs",
     "test:smoke:core": "npm run build --silent && node scripts/run-core-smoke.mjs",
     "test:smoke:content": "npm run build --silent && node scripts/run-content-smoke.mjs",

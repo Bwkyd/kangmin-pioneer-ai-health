@@ -1,8 +1,11 @@
 import { readFileSync, statSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import vm from "node:vm";
 
-const root = resolve("miniprogram");
+const workspaceRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+const projectRoot = join(workspaceRoot, "apps/kangmin-miniprogram");
+const root = join(projectRoot, "src");
 
 function read(relativePath) {
   return readFileSync(join(root, relativePath), "utf8");
@@ -13,7 +16,7 @@ function json(relativePath) {
 }
 
 const app = json("app.json");
-const project = json("project.config.json");
+const project = JSON.parse(readFileSync(join(projectRoot, "project.config.json"), "utf8"));
 const expectedTabs = [
   "pages/home/index",
   "pages/assistant/index",
@@ -32,6 +35,9 @@ if (project.appid !== "") {
 }
 if (JSON.stringify(project).toLowerCase().includes("secret")) {
   throw new Error("小程序项目配置不得包含 AppSecret");
+}
+if (project.miniprogramRoot !== "src/") {
+  throw new Error("微信工程必须从统一 workspace 小壳的 src/ 加载小程序源码");
 }
 if (app.tabBar?.custom !== true) {
   throw new Error("小程序必须使用自定义 tabBar 保留中央症状记录动作");
@@ -57,7 +63,7 @@ for (const page of app.pages) {
 }
 
 for (const asset of ["brand-banner.jpg", "assistant-mascot-static.png"]) {
-  const webAsset = readFileSync(resolve("web/public", asset));
+  const webAsset = readFileSync(join(workspaceRoot, "web/public", asset));
   const miniAsset = readFileSync(join(root, "assets", asset));
   if (!webAsset.equals(miniAsset)) {
     throw new Error(`小程序视觉资产未与 Web 正本同步：${asset}`);
