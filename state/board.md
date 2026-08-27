@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 两轮拆分实验证据已合并并完成收尾（2026-08-27 第237轮 · `main@6e7e7cf`）
+> PR #329 的真实 `pull_request` CI 全绿：`quality` 3 分 19 秒，覆盖 PostgreSQL 16、MinIO/S3 与完整回归；`image` 38 秒，覆盖 OCI 构建、容器冒烟、生产依赖审计和 SBOM。随后 squash 合并为 `6e7e7cf`，GitHub 远端与本地实现分支均已删除。#321 已补充实验 026/027 证据，但因三个长文件仍未全部降到 600 行以内而保持 open，没有把失败实验冒充完成。
+> 合并树相对线上 `category-registry-bf44d26` 的 `src/` 完全无差异，因此没有重复部署相同运行时制品。收尾实时核验生产 release 未切换，应用/Nginx active、`NRestarts=0`、仅 127.0.0.1:8787 监听；正式库 `quick_check=ok`、24 项迁移最新 `0022_content_category_registry`，公网真实 IP 的首页、后台和 `/live` 为 200，`/ready=503` 仍只因既有加密配置未完成。仓库只有 GitHub `origin`；CNB CLI 登录正常但搜索不到本项目仓库，因此不存在 CNB 任务分支可清理。根 worktree 只保留作者未跟踪原件 `hi.md`。
+
 > ## 🧪 模型端口测试拆分按双重停止线撤销（2026-08-27 第236轮 · 基线 `main@6704705`，待提交）
 > 本轮按作者要求先实时 fetch、回读 GitHub 与生产，再限定四个实体开工；生产仍指向 `category-registry-bf44d26`，应用/Nginx active、`NRestarts=0`、正式库 `quick_check=ok`，24 项迁移与 `27/11/21/136/136/46/16/26/20/38/26` 计数不变。实验 027 先写停止线，再把 766 行 `model-ports.test.ts` 按适配/降级与输出校验拆为 472/340 行两个入口，不改生产代码、模型调用、临床规则或患者文案。
 > 首候选 26 个测试名称逐字一致，窄测 26/26、`src` 全量门禁、独立真实浏览器 E2E 与 `legacy` 127/127 均通过，导航成本不变且超限占比 14.2%→13.8%；但回读 #321 验收发现裁决 fixture 被复制，判为 P2 并拒绝放行。次候选改为 40 行唯一 fixture，测试总代码只比原文件多 6 行且窄测仍全绿，但导航成本 13.45→13.46，再次触发停止线。仓内没有职责匹配的既有 fixture，故已撤销全部源码与演化基线改动，最终指标恢复 13.45 / 14.2%，生产代码始终未改。`km-review` 与 sequential-thinking 的首轮结论已据真实验收修正；最终 P0–P2 为 0 仅因为候选完全回退，详见 `docs/reviews/034_model-ports-test-split-review.md`。`structure-lint` 仍只被两个任务前存在且未入库的 `_work/` 中文目录名拦住；本轮只允许实验证据进入交付链，#321 继续保持开放。
