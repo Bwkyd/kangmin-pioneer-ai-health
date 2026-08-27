@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧩 文章与视频内容管理形成同构功能单元（2026-08-27 第265轮 · 基线 `origin/main@480fa56`，待提交）
+> 本轮对应 #367，只处理 `AdminApp` 与内容管理单元两个业务实体，连同既有机械护栏和状态记录。文章/视频共用的草稿模型、恢复保护、筛选分页、导入上传、预览和发布编排整体迁入 `features/content-manager.tsx`，继续由 `kind` 驱动同一实现，没有复制成两套，也没有修改 API、状态、文案、CSS 或权限。
+> `AdminApp.tsx` 1004→565 行，入口已低于 600 行并从长文件存量护栏移除；新内容单元 453 行。后台 typecheck/build、真实 Chromium 文章保存发布、五主一辅入口、`npm run test:acceptance` 与完整 `npm run check` 全部通过；完整门禁 436 项中 358 通过、78 项因未配置 PostgreSQL/S3 跳过、0 失败。#366 已经 PR #372 两项 CI 全绿并合并关闭；truth、医学规则、患者数据与生产环境均未触碰。
+
 > ## 🧩 管理后台内容叶子视图形成稳定边界（2026-08-27 第264轮 · 基线 `origin/main@056df24`，待提交）
 > 本轮对应 #366，只处理 `AdminApp`、共享契约、共享 UI 和内容叶子视图四个实体。正文编辑、素材绑定、患者预览、内容表格迁入 `features/content-views.tsx`；通用分页进入 `admin-ui.tsx`，预览响应类型进入 `admin-contracts.ts`。内容草稿状态、保存/发布编排仍留在 `ContentManager`，没有借机重写业务或制造知识→内容的反向依赖。
 > `AdminApp.tsx` 1156→1004 行，演化护栏同步收紧；文章/视频文案、DOM、上传、预览、API 参数、CSS、权限和医学安全提示不变。后台 typecheck/build、真实 Chromium、`npm run test:acceptance` 与完整 `npm run check` 均退出 0；完整门禁 436 项中 358 通过、78 项因未配置 PostgreSQL/S3 跳过、0 失败。#365 已经 PR #371 两项 CI 全绿并合并关闭，根工作区作者改动仍未触碰。
