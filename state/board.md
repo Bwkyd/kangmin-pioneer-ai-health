@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚀 最小分形 workspace 已合并并部署（2026-08-27 第258轮 · `main@ec60f59`，待提交收尾记录）
+> PR #357 的 quality 3 分21秒、image 59秒全绿后 squash 合并，#350 保持 OPEN 等部署收尾。开工重新核对生产为旧 release、旧 `dist/http/server.js`、服务与 Nginx active、NRestarts=0；正式库 quick_check=ok、24 项迁移，实时计数 `28/11/21/136/136/47/17/26/20/38/26`，没有沿用旧缓存的 27/46/16。
+> 首个候选真实抓到 macOS 安装的 `@napi-rs/canvas` 不能在 Linux 加载，8788 启动失败但正式 8787 未受影响；第二版只传 lockfile/manifests/dist，在服务器执行生产 `npm ci` 和审计，候选 200/200/200/503、数据库副本 quick_check 与 28/47/17 通过。切换前正式备份 quick_check 与 SHA-256 已验证，原子链接回滚探针完成旧→新→模拟失败→旧。
+> `/srv/kangmin-cli/app` 已切至 `workspace-fractal-ec60f59-r2`，systemd drop-in 把旧入口覆盖为 `apps/kangmin-api/dist/server.js`；服务/Nginx active、NRestarts=0，无 warning。正式库全部计数前后不变，本机与公网 `/`、`/admin`、`/live` 200，`/ready` 仅既有加密配置 503；生产 Chromium 两路管理后台的标题、正文、网络、console/pageerror 通过。sequential-thinking 五步增量反思与部署后 `km-review` 发现并修复文档编号少算一项的 P2，最终 P0–P2 为 0。待 ops/016 与本轮记录 PR/CI 合并后关闭 #350，清理失败候选、临时文件、任务 worktree 与本地/CNB 分支；旧 release 和正式备份保留回滚。
+
 > ## 🧱 最终 workspace 协议与交付链完成本地放行（2026-08-27 第257轮 · 基线 `origin/main@94ee1ce`，待提交）
 > 本轮对应 #350，严格处理根构建/CI/Docker、跨应用 E2E、文档/指标/Issue 审计、部署/验证/清理四个实体。先在删除迁移白名单前写 `check-final-workspace.mjs` 并确认非零失败，再把 `src` 顶层精确锁定为 `apps/packages/scripts/tests`、八个 workspace 统一要求 package/README/src/tests 小壳；旧编译入口由 package/CI/Docker 扫描拒绝。根构建会先删除根与所有 app/package 的 dist，陈旧 runtime 标记已在有界实验中被真实清除。
 > 四组冒烟 2/2、2/2、3/3、6/6；完整本地门禁 358 通过、78 条 PostgreSQL/S3 外部资源测试跳过、后台 2 条与真实 Chromium E2E 通过，legacy 127/127，生产依赖审计 0 漏洞且 SBOM 成功。本机无 Docker，OCI 不冒充通过，须 PR CI 放行。最终结构门禁拒绝第五顶层，演化护栏另以 8 子目录负例非零退出；探针均撤销。
