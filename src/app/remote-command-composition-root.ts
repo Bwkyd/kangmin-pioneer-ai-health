@@ -7,7 +7,7 @@ import {
   RemoteCommandClient,
   remoteTimeout,
   type CommandAudience
-} from "../infrastructure/remote-command-client.js";
+} from "@kangmin/integrations/operations/remote-command-client";
 import { DomainError } from "@kangmin/core/kernel/errors";
 
 // CLI 远程上传编排的 PUT 直传复用同一超时配置（cli 层不得直接导入

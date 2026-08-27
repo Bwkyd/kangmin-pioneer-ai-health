@@ -22,7 +22,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 
 import { DomainError } from "@kangmin/core/kernel/errors";
-import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import { S3ObjectStorage } from "@kangmin/integrations/storage/s3-object-storage";
 
 const ENDPOINT = process.env.KANGMIN_TEST_S3_ENDPOINT;
 const BUCKET = process.env.KANGMIN_TEST_S3_BUCKET;

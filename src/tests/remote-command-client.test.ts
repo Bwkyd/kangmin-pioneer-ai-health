@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createRemoteCommandClient } from "../app/remote-command-composition-root.js";
-import { RemoteCommandClient } from "../infrastructure/remote-command-client.js";
+import { RemoteCommandClient } from "@kangmin/integrations/operations/remote-command-client";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import { success } from "@kangmin/core/kernel/result";
 

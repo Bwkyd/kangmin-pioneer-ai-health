@@ -15,9 +15,9 @@
     "kangmin-admin": "./dist/cli/kangmin-admin.js"
   },
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && npm run build --workspace @kangmin/core && npm run build --workspace @kangmin/database && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && npm run build --workspace @kangmin/admin",
-    "typecheck": "npm run typecheck --workspace @kangmin/core && npm run typecheck --workspace @kangmin/database && tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @kangmin/admin",
-    "lint": "node scripts/architecture-check.mjs --self-test && node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs && node scripts/check-admin-app.mjs && node scripts/check-core-package.mjs && node scripts/check-database-package.mjs",
+    "build": "node scripts/clean-dist.mjs && npm run build --workspace @kangmin/core && npm run build --workspace @kangmin/database && npm run build --workspace @kangmin/integrations && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && npm run build --workspace @kangmin/admin",
+    "typecheck": "npm run typecheck --workspace @kangmin/core && npm run typecheck --workspace @kangmin/database && npm run typecheck --workspace @kangmin/integrations && tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @kangmin/admin",
+    "lint": "node scripts/architecture-check.mjs --self-test && node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs && node scripts/check-admin-app.mjs && node scripts/check-core-package.mjs && node scripts/check-database-package.mjs && node scripts/check-integrations-package.mjs",
     "test": "npm run build && node --test dist/tests/*.test.js && npm test --workspace @kangmin/admin && node scripts/web-browser-e2e.mjs",
     "test:smoke:core": "npm run build --silent && node scripts/run-core-smoke.mjs",
     "test:smoke:content": "npm run build --silent && node scripts/run-content-smoke.mjs",
@@ -49,8 +49,7 @@
   "dependencies": {
     "@kangmin/core": "*",
     "@kangmin/database": "*",
-    "@aws-sdk/client-s3": "^3.1101.0",
-    "@aws-sdk/s3-request-presigner": "^3.1101.0",
+    "@kangmin/integrations": "*",
     "pg": "^8.22.0"
   }
 }

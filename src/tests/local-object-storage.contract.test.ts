@@ -17,7 +17,7 @@ import { after, test } from "node:test";
 import assert from "node:assert/strict";
 
 import { DomainError } from "@kangmin/core/kernel/errors";
-import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
+import { LocalFilesystemObjectStorage } from "@kangmin/integrations/storage/local-filesystem-object-storage";
 
 const roots: string[] = [];
 

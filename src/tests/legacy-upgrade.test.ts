@@ -10,7 +10,7 @@ import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   AesGcmEncryption,
   parseEncryptionKeys
-} from "../infrastructure/aes-gcm-encryption.js";
+} from "@kangmin/integrations/security/aes-gcm-encryption";
 import { decryptStoredField } from "@kangmin/database/shared/encrypted-fields";
 
 // 测试进程以本地开发模式启动（明文开发实现，避免密钥配置）。

@@ -5,7 +5,7 @@ import {
   AesGcmEncryption,
   parseEncryptionKeys,
   PlaintextEncryption
-} from "../infrastructure/aes-gcm-encryption.js";
+} from "@kangmin/integrations/security/aes-gcm-encryption";
 import { EncryptionError } from "@kangmin/core/kernel/encryption";
 import { DomainError } from "@kangmin/core/kernel/errors";
 

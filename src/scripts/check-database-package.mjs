@@ -11,9 +11,11 @@ for (const path of ["package.json", "README.md", "src/sqlite", "src/postgres", "
 }
 
 const legacyRoot = join(workspaceRoot, "infrastructure");
-for (const entry of readdirSync(legacyRoot, { withFileTypes: true })) {
-  if (entry.name === "database.ts" || entry.name === "encrypted-fields.ts" || entry.name === "idempotency.ts" || entry.name === "postgres" || entry.name.startsWith("sqlite-")) {
-    throw new Error(`数据库实现仍残留在 infrastructure/${entry.name}`);
+if (existsSync(legacyRoot)) {
+  for (const entry of readdirSync(legacyRoot, { withFileTypes: true })) {
+    if (entry.name === "database.ts" || entry.name === "encrypted-fields.ts" || entry.name === "idempotency.ts" || entry.name === "postgres" || entry.name.startsWith("sqlite-")) {
+      throw new Error(`数据库实现仍残留在 infrastructure/${entry.name}`);
+    }
   }
 }
 

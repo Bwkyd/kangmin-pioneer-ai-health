@@ -13,7 +13,7 @@ import {
   type ReadinessProbe
 } from "./composition-root.js";
 import { KangminDatabase, appliedMigrationVersions } from "@kangmin/database/sqlite/database";
-import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import { S3ObjectStorage } from "@kangmin/integrations/storage/s3-object-storage";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type { ObjectStoragePort } from "@kangmin/core/operations/system/object-storage-ports";
 import {
@@ -34,8 +34,8 @@ import { SqliteContentAdminRepository } from "@kangmin/database/sqlite/content-a
 import { SqliteContentAuxRepository } from "@kangmin/database/sqlite/content-aux-repository";
 import { SqliteAuditRepository } from "@kangmin/database/sqlite/audit-repository";
 import { SqliteUserAdminRepository } from "@kangmin/database/sqlite/user-admin-repository";
-import { BuiltinSyndromeRegistry } from "../infrastructure/syndrome-registry.js";
-import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
+import { BuiltinSyndromeRegistry } from "@kangmin/integrations/clinical/syndrome-registry";
+import { DashscopeEmbeddingAdapter } from "@kangmin/integrations/ai/dashscope-embedding-adapter";
 import { SqliteKnowledgeRetrieval } from "@kangmin/database/sqlite/knowledge-retrieval";
 import { PgKnowledgeRetrieval } from "@kangmin/database/postgres/knowledge-retrieval";
 import type { KnowledgeEmbeddingPort } from "@kangmin/core/intelligence/agent/knowledge-ports";

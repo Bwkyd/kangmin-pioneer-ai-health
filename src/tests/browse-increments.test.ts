@@ -11,7 +11,7 @@ import test from "node:test";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { SqliteContentReadRepository } from "@kangmin/database/sqlite/content-read-repository";
-import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
+import { TestEnvironmentProvider } from "@kangmin/integrations/environment/test-environment-provider";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type {
   BrowseSearchResults,

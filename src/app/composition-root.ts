@@ -42,7 +42,7 @@ import {
   AesGcmEncryption,
   parseEncryptionKeys,
   PlaintextEncryption
-} from "../infrastructure/aes-gcm-encryption.js";
+} from "@kangmin/integrations/security/aes-gcm-encryption";
 import {
   KangminPgDatabase,
   appliedPgMigrationVersions
@@ -64,16 +64,16 @@ import { SqliteEnvironmentCacheRepository } from "@kangmin/database/sqlite/envir
 import { SqlitePlanRegistry } from "@kangmin/database/sqlite/plan-registry";
 import { SqliteRecordRepository } from "@kangmin/database/sqlite/record-repository";
 import { SqliteSessionRepository } from "@kangmin/database/sqlite/session-repository";
-import { TestEnvironmentProvider } from "../infrastructure/test-environment-provider.js";
-import { UnavailableEnvironmentProvider } from "../infrastructure/unavailable-environment-provider.js";
-import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
-import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
-import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
-import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
-import { WechatCodeLogin } from "../infrastructure/wechat-code-login.js";
+import { TestEnvironmentProvider } from "@kangmin/integrations/environment/test-environment-provider";
+import { UnavailableEnvironmentProvider } from "@kangmin/integrations/environment/unavailable-environment-provider";
+import { DeepSeekModelAdapter } from "@kangmin/integrations/ai/deepseek-model-adapter";
+import { QwenPlanDialogueAdapter } from "@kangmin/integrations/ai/qwen-plan-dialogue-adapter";
+import { LocalFilesystemObjectStorage } from "@kangmin/integrations/storage/local-filesystem-object-storage";
+import { S3ObjectStorage } from "@kangmin/integrations/storage/s3-object-storage";
+import { WechatCodeLogin } from "@kangmin/integrations/identity/wechat-code-login";
 import { SqliteKnowledgeRetrieval } from "@kangmin/database/sqlite/knowledge-retrieval";
 import { PgKnowledgeRetrieval } from "@kangmin/database/postgres/knowledge-retrieval";
-import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
+import { DashscopeEmbeddingAdapter } from "@kangmin/integrations/ai/dashscope-embedding-adapter";
 import type {
   ObjectHead,
   ObjectStoragePort,
@@ -88,7 +88,7 @@ export {
   type RequestLogEntry,
   type RequestLogger,
   type StructuredLogLevel
-} from "../infrastructure/structured-logger.js";
+} from "@kangmin/integrations/operations/structured-logger";
 import { AccountService } from "@kangmin/core/patient/account/account-service";
 import { SessionService } from "@kangmin/core/patient/account/session-service";
 import { ConsentGateAdapter } from "@kangmin/core/patient/consent-gate-adapter";

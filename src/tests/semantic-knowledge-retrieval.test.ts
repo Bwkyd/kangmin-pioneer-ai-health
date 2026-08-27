@@ -4,7 +4,7 @@ import test from "node:test";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { SqliteKnowledgeRetrieval } from "@kangmin/database/sqlite/knowledge-retrieval";
 import { SqliteAgentAdminRepository } from "@kangmin/database/sqlite/agent-admin-repository";
-import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import {
   encodeNormalizedEmbedding,

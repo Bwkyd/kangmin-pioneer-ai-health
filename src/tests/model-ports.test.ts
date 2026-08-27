@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 import test from "node:test";
 
-import { DeepSeekModelAdapter } from "../infrastructure/deepseek-model-adapter.js";
-import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
+import { DeepSeekModelAdapter } from "@kangmin/integrations/ai/deepseek-model-adapter";
+import { QwenPlanDialogueAdapter } from "@kangmin/integrations/ai/qwen-plan-dialogue-adapter";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import { KnowledgeQaService } from "@kangmin/core/intelligence/agent/knowledge-qa";
 import type { ClinicalVerdict } from "@kangmin/core/intelligence/clinical-rules/contracts";

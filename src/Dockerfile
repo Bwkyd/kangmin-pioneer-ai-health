@@ -11,6 +11,7 @@ COPY apps/kangmin-admin/package.json ./apps/kangmin-admin/package.json
 COPY apps/kangmin-miniprogram/package.json ./apps/kangmin-miniprogram/package.json
 COPY packages/kangmin-core/package.json ./packages/kangmin-core/package.json
 COPY packages/kangmin-database/package.json ./packages/kangmin-database/package.json
+COPY packages/kangmin-integrations/package.json ./packages/kangmin-integrations/package.json
 RUN npm ci
 COPY . .
 # 编译产物写入 dist/；随后按锁文件重装生产依赖，
@@ -32,6 +33,8 @@ COPY --from=builder --chown=node:node /app/packages/kangmin-core/package.json ./
 COPY --from=builder --chown=node:node /app/packages/kangmin-core/dist ./packages/kangmin-core/dist
 COPY --from=builder --chown=node:node /app/packages/kangmin-database/package.json ./packages/kangmin-database/package.json
 COPY --from=builder --chown=node:node /app/packages/kangmin-database/dist ./packages/kangmin-database/dist
+COPY --from=builder --chown=node:node /app/packages/kangmin-integrations/package.json ./packages/kangmin-integrations/package.json
+COPY --from=builder --chown=node:node /app/packages/kangmin-integrations/dist ./packages/kangmin-integrations/dist
 USER node
 EXPOSE 8787
 # node:22-bookworm-slim 不含 curl，健康检查用 node 内置 fetch 打 /live。

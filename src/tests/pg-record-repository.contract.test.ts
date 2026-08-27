@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import { decryptStoredField } from "@kangmin/database/shared/encrypted-fields";
 import { KangminPgDatabase } from "@kangmin/database/postgres/database";
 import { PgRecordRepository } from "@kangmin/database/postgres/record-repository";

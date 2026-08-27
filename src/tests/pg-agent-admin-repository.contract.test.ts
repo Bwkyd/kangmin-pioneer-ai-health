@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import { PgAgentAdminRepository } from "@kangmin/database/postgres/agent-admin-repository";
 import { PgEnvironmentCacheRepository } from "@kangmin/database/postgres/environment-cache-repository";
 import { KangminPgDatabase } from "@kangmin/database/postgres/database";
