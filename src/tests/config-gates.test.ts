@@ -5,7 +5,7 @@ import { join } from "node:path";
 import test from "node:test";
 
 import { createApplication } from "../app/composition-root.js";
-import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { exitCodeForCode } from "@kangmin/core/kernel/errors";
 import type { CommandResult } from "@kangmin/core/kernel/result";

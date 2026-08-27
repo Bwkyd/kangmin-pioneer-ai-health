@@ -45,7 +45,7 @@ import {
   AesGcmEncryption,
   parseEncryptionKeys,
   PlaintextEncryption
-} from "../infrastructure/aes-gcm-encryption.js";
+} from "@kangmin/integrations/security/aes-gcm-encryption";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { SqliteConversationRepository } from "@kangmin/database/sqlite/conversation-repository";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";

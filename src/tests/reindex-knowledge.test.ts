@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { SqliteAgentAdminRepository } from "@kangmin/database/sqlite/agent-admin-repository";
 import { reindexExistingKnowledge } from "../scripts/reindex-knowledge.js";

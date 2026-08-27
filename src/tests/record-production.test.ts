@@ -13,7 +13,7 @@ import {
   AesGcmEncryption,
   parseEncryptionKeys,
   PlaintextEncryption
-} from "../infrastructure/aes-gcm-encryption.js";
+} from "@kangmin/integrations/security/aes-gcm-encryption";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type { EncryptionPort } from "@kangmin/core/kernel/encryption";
 import type { CommandResult } from "@kangmin/core/kernel/result";

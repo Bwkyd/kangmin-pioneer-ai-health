@@ -27,7 +27,7 @@ import { fileURLToPath } from "node:url";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { createKangminHttpServer } from "../http/server.js";
-import { S3ObjectStorage } from "../infrastructure/s3-object-storage.js";
+import { S3ObjectStorage } from "@kangmin/integrations/storage/s3-object-storage";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";

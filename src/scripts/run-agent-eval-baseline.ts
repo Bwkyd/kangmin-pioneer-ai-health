@@ -4,9 +4,9 @@ import { basename, join, resolve } from "node:path";
 
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
-import { DashscopeEmbeddingAdapter } from "../infrastructure/dashscope-embedding-adapter.js";
+import { DashscopeEmbeddingAdapter } from "@kangmin/integrations/ai/dashscope-embedding-adapter";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
-import { QwenPlanDialogueAdapter } from "../infrastructure/qwen-plan-dialogue-adapter.js";
+import { QwenPlanDialogueAdapter } from "@kangmin/integrations/ai/qwen-plan-dialogue-adapter";
 import { SqliteKnowledgeRetrieval } from "@kangmin/database/sqlite/knowledge-retrieval";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type { KnowledgeRetrievalPort, KnowledgeSource } from "@kangmin/core/intelligence/agent/knowledge-ports";

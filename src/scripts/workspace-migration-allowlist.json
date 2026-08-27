@@ -8,7 +8,6 @@
     "cli",
     "dev",
     "evals",
-    "http",
-    "infrastructure"
+    "http"
   ]
 }

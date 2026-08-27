@@ -27,7 +27,7 @@ import type {
   FeedbackRow
 } from "@kangmin/core/intelligence/agent/conversation-contracts";
 import type { CommitTurnInput } from "@kangmin/core/intelligence/agent/conversation-repository";
-import { PlaintextEncryption } from "../infrastructure/aes-gcm-encryption.js";
+import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import {
   isUniqueViolation,
   KangminPgDatabase

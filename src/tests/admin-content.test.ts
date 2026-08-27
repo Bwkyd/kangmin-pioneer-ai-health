@@ -12,7 +12,7 @@ import test from "node:test";
 import { createAdminApplication } from "../app/admin-composition-root.js";
 import { createApplication } from "../app/composition-root.js";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
-import { LocalFilesystemObjectStorage } from "../infrastructure/local-filesystem-object-storage.js";
+import { LocalFilesystemObjectStorage } from "@kangmin/integrations/storage/local-filesystem-object-storage";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import { ContentAuxService } from "@kangmin/core/operations/admin/content-aux-service";
 import type {
