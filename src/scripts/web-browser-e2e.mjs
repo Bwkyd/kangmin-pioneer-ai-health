@@ -62,6 +62,18 @@ const browser = await chromium.launch({
 });
 const context = await browser.newContext({ viewport: { width: 390, height: 844 } });
 const page = await context.newPage();
+const browserErrors = [];
+const failedAdminResponses = [];
+
+page.on("console", (message) => {
+  if (message.type() === "error") browserErrors.push(`console: ${message.text()}`);
+});
+page.on("pageerror", (error) => browserErrors.push(`pageerror: ${error.message}`));
+page.on("response", (response) => {
+  if (response.url().startsWith(`${origin}/v1/admin/`) && response.status() >= 400) {
+    failedAdminResponses.push(`${response.status()} ${response.request().method()} ${response.url()}`);
+  }
+});
 
 try {
   const compatibleRoute = await context.request.get(`${origin}/admin`);
@@ -73,6 +85,7 @@ try {
   await page.getByTestId("admin-password").fill("browser-owner-password");
   await page.getByTestId("admin-login").click();
   await page.getByTestId("admin-nav-overview").waitFor({ state: "visible" });
+  assert.equal(await page.locator('[data-testid^="admin-nav-"]').count(), 5, "后台应保持五个侧栏主入口");
   await page.getByRole("heading", { name: "今日待办" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "快捷新建" }).waitFor({ state: "visible" });
   await page.getByRole("heading", { name: "内容概览" }).waitFor({ state: "visible" });
@@ -108,8 +121,14 @@ try {
   await page.getByRole("status").filter({ hasText: "用户端现在可见" }).waitFor({ state: "visible" });
   await page.getByTestId("admin-nav-video").click();
   await page.getByLabel("搜索视频").waitFor({ state: "visible" });
+  await page.getByTestId("admin-nav-message").click();
+  await page.getByRole("heading", { name: "站内消息", exact: true, level: 2 }).waitFor({ state: "visible" });
+  await page.getByLabel("搜索站内消息").waitFor({ state: "visible" });
   await page.getByTestId("admin-nav-knowledge").click();
   await page.getByLabel("搜索知识资料").waitFor({ state: "visible" });
+  await page.getByRole("button", { name: "文件管理", exact: true }).click();
+  await page.getByRole("heading", { name: "文件管理", exact: true, level: 2 }).waitFor({ state: "visible" });
+  await page.getByLabel("文件用途筛选").waitFor({ state: "visible" });
 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.getByTestId("admin-nav-overview").click();
@@ -124,8 +143,10 @@ try {
     desktopSections.every((box) => box.top >= 0 && box.bottom <= 900 && box.height > 40),
     "1440×900 应完整看到三个工作台区块"
   );
+  assert.deepEqual(browserErrors, [], "后台真实浏览器路径不应产生控制台或页面错误");
+  assert.deepEqual(failedAdminResponses, [], "后台真实浏览器路径不应产生失败的管理接口请求");
 
-  process.stdout.write("web-browser-e2e: PASS admin-root compatible-admin-route cookie publish mobile desktop navigation\n");
+  process.stdout.write("web-browser-e2e: PASS admin-root compatible-admin-route cookie publish five-primary-one-support mobile desktop navigation\n");
 } finally {
   await context.close();
   await browser.close();
