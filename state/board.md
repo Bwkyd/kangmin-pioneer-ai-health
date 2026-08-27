@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 管理后台最小分形样本完成复诊并停止（2026-08-27 第267轮 · 基线 `origin/main@5967e54`，待提交）
+> 本轮对应 #369，只处理演化趋势账本、分形评审和状态记录三个实体。`aias-meta-evolve` 重算显示用例密度 6.3 持平，TSX 冗余率 13.2%→12.8%、p50 121→120、超 600 行占比 14.4%→13.8%；导航成本 14.23→14.26 bit，明确记录新增 6 个文件的代价，没有只报好看的指标。管理后台自身 `AdminApp.tsx` 1348→212 行、`src` 文件 7→13，最大新功能文件 453 行，依赖为入口→功能→共享 UI/契约/客户端，无反向依赖和空转发层。
+> 护栏在正常树通过；临时增加第 19 个顶层目录时 exit 1 拦截，探针和暂存均已清除。#364–#368 均已独立 PR/CI/合并并关闭；每轮真实 Chromium、`test:acceptance` 与完整 `npm run check` 通过，远端 PostgreSQL/MinIO/OCI 门禁全绿。`km-review` 三视角未发现 P0–P2。结论是停止继续拆 Login/Overview、消息或文件；未来先观察两个真实后台变更的触达范围，再用证据决定是否调整。详见 `docs/reviews/044_admin-minimal-fractal-review.md`。
+
 > ## 🧩 AI 知识管理形成完整功能单元（2026-08-27 第266轮 · 基线 `origin/main@42352f8`，待提交）
 > 本轮对应 #368，只处理 `AdminApp` 与 AI 知识管理两个业务实体，连同状态记录。知识文件夹、条目、上传更新、索引、单资料检索测试和明确启用工作流整体迁入 `features/knowledge-manager.tsx`，仍共享现有契约、UI 与客户端；没有拆散临床安全状态机，也没有修改知识内容、API、权限或失败关闭规则。
 > `AdminApp.tsx` 565→212 行，只剩会话、数据刷新、导航、工作台和功能组合；知识单元 360 行。后台 typecheck/build、真实 Chromium 五主一辅入口、文章发布、`npm run test:acceptance` 与完整 `npm run check` 全部通过；完整门禁 436 项中 358 通过、78 项因未配置 PostgreSQL/S3 跳过、0 失败。#367 已经 PR #373 两项 CI 全绿并合并关闭；truth、患者数据与生产环境均未触碰。
