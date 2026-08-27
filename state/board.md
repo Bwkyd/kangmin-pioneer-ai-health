@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧹 机会型长文件 Issues 已退出活动队列（2026-08-27 第259轮 · `main@691c397`，待提交）
+> 重新读取 GitHub 全部开放项后确认，唯一 17 条 OPEN 为 #306–#312、#318–#327；每条正文均已明确标注“机会型候选，不单独排期”，不是当前缺陷、交付阻塞或承诺任务，且路径与基线多为 workspace 收口前状态。继续保持 OPEN 会把观察哨兵误导成待办。
+> 已逐条留言后以 `NOT_PLANNED` 关闭，说明未来只有真实功能或缺陷触及相应范围并出现定位、传播或隔离问题时，才按届时主线另开小 Issue；不因超 600 行或占比自动重开。回读 17 条均为 CLOSED/NOT_PLANNED，仓库 OPEN Issue 数为 0。此次只整理 GitHub 任务队列与状态记录，不改代码、truth、医学规则、生产环境或患者数据；根 worktree 的作者未提交内容保持不动。
+
 > ## 🚀 最小分形 workspace 已合并并部署（2026-08-27 第258轮 · `main@ec60f59`，待提交收尾记录）
 > PR #357 的 quality 3 分21秒、image 59秒全绿后 squash 合并，#350 保持 OPEN 等部署收尾。开工重新核对生产为旧 release、旧 `dist/http/server.js`、服务与 Nginx active、NRestarts=0；正式库 quick_check=ok、24 项迁移，实时计数 `28/11/21/136/136/47/17/26/20/38/26`，没有沿用旧缓存的 27/46/16。
 > 首个候选真实抓到 macOS 安装的 `@napi-rs/canvas` 不能在 Linux 加载，8788 启动失败但正式 8787 未受影响；第二版只传 lockfile/manifests/dist，在服务器执行生产 `npm ci` 和审计，候选 200/200/200/503、数据库副本 quick_check 与 28/47/17 通过。切换前正式备份 quick_check 与 SHA-256 已验证，原子链接回滚探针完成旧→新→模拟失败→旧。
