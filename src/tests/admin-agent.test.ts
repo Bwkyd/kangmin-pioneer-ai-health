@@ -9,8 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createAdminApplication } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import { LocalFilesystemObjectStorage } from "@kangmin/integrations/storage/local-filesystem-object-storage";

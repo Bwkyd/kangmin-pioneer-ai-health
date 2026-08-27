@@ -5,8 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
-import { createAdminApplication } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type { AdminArticle } from "@kangmin/core/operations/admin/content-admin-repository";
 
@@ -17,8 +17,8 @@ process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
 
 const here=dirname(fileURLToPath(import.meta.url));
-const adminCli=join(here,"../cli/kangmin-admin.js");
-const adminSessionCli=join(here,"../dev/create-admin-session.js");
+const adminCli=join(here,"../../apps/kangmin-cli/dist/kangmin-admin.js");
+const adminSessionCli=join(here,"../../apps/kangmin-cli/dist/dev/create-admin-session.js");
 function dataOf<T>(result:CommandResult):T { if(!result.ok) assert.fail(`${result.error.code}: ${result.error.message}`); return result.data as T; }
 async function fixture(){const directory=mkdtempSync(join(tmpdir(),"kangmin-admin-"));const databasePath=join(directory,"content.sqlite");const admin=createAdminApplication(databasePath);const session=await admin.sessions.createDevelopmentSession("owner-a");return{databasePath,admin,token:session.token};}
 

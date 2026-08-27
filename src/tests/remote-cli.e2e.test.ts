@@ -6,16 +6,16 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { createAdminApplication } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
-import { createKangminHttpServer } from "../http/server.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
+import { createKangminHttpServer } from "@kangmin/api/server";
 import { writeConsentForTest } from "./consent-fixture.js";
 
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const patientCli = join(here, "../cli/kangmin.js");
-const adminCli = join(here, "../cli/kangmin-admin.js");
+const patientCli = join(here, "../../apps/kangmin-cli/dist/kangmin.js");
+const adminCli = join(here, "../../apps/kangmin-cli/dist/kangmin-admin.js");
 interface RunningServer {
   patient: ReturnType<typeof createApplication>;
   admin: ReturnType<typeof createAdminApplication>;

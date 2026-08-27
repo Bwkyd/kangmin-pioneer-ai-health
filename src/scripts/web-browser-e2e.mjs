@@ -5,9 +5,9 @@ import { join } from "node:path";
 
 import { chromium } from "playwright";
 
-import { createApplication } from "../dist/app/composition-root.js";
-import { createAdminApplicationWithOps } from "../dist/app/admin-composition-root.js";
-import { createKangminHttpServer } from "../dist/http/server.js";
+import { createApplication } from "../packages/kangmin-runtime/dist/composition-root.js";
+import { createAdminApplicationWithOps } from "../packages/kangmin-runtime/dist/admin-composition-root.js";
+import { createKangminHttpServer } from "../apps/kangmin-api/dist/server.js";
 
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 

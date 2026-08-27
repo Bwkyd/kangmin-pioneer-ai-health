@@ -16,8 +16,8 @@ import { fileURLToPath } from "node:url";
 import test from "node:test";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const adminCli = join(here, "../cli/kangmin-admin.js");
-const patientCli = join(here, "../cli/kangmin.js");
+const adminCli = join(here, "../../apps/kangmin-cli/dist/kangmin-admin.js");
+const patientCli = join(here, "../../apps/kangmin-cli/dist/kangmin.js");
 let embeddingServer: ChildProcessWithoutNullStreams | undefined;
 let embeddingBaseUrl = "";
 

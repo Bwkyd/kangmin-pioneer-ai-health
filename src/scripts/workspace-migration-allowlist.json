@@ -3,11 +3,5 @@
   "expiresOn": "2026-08-27",
   "owner": "作者",
   "reason": "src workspace 迁移期间的精确旧目录清单；每次小交付只能缩小，第 350 号 Issue 必须清零并删除本文件。",
-  "legacyDirectories": [
-    "app",
-    "cli",
-    "dev",
-    "evals",
-    "http"
-  ]
+  "legacyDirectories": []
 }

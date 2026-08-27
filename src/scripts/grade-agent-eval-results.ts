@@ -1,9 +1,9 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { gradeEvaluationTrial } from "../evals/knowledge-qa/deterministic-grader.js";
-import { loadEvaluationJsonl } from "../evals/knowledge-qa/task-schema.js";
-import type { EvaluationTrialRecord } from "../evals/knowledge-qa/trial-record.js";
+import { gradeEvaluationTrial } from "@kangmin/runtime/evals/knowledge-qa/deterministic-grader";
+import { loadEvaluationJsonl } from "@kangmin/runtime/evals/knowledge-qa/task-schema";
+import type { EvaluationTrialRecord } from "@kangmin/runtime/evals/knowledge-qa/trial-record";
 
 function parseTrials(text: string, source: string): EvaluationTrialRecord[] {
   return text.split(/\r?\n/u).flatMap((line, index) => {

@@ -9,7 +9,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { seedContent } from "./content-fixture.js";
 import { writeConsentForTest } from "./consent-fixture.js";
 
@@ -20,7 +20,7 @@ process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
 
 const here = dirname(fileURLToPath(import.meta.url));
-const cli = join(here, "../cli/kangmin.js");
+const cli = join(here, "../../apps/kangmin-cli/dist/kangmin.js");
 
 function run(
   args: string[],

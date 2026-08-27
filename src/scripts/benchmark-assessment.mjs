@@ -8,7 +8,7 @@ if (databasePath === undefined) {
   console.error("用法：node scripts/benchmark-assessment.mjs <已 seed 的库>");
   process.exit(2);
 }
-const CLI = new URL("../dist/cli/kangmin.js", import.meta.url).pathname;
+const CLI = new URL("../apps/kangmin-cli/dist/kangmin.js", import.meta.url).pathname;
 const env = {
   ...process.env,
   KANGMIN_ALLOW_DEV_SESSION: "1",

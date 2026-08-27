@@ -24,9 +24,9 @@ import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { createAdminApplication } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
-import { createKangminHttpServer } from "../http/server.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
+import { createKangminHttpServer } from "@kangmin/api/server";
 import { S3ObjectStorage } from "@kangmin/integrations/storage/s3-object-storage";
 import { TestKnowledgeEmbedding } from "./test-knowledge-embedding.js";
 
@@ -40,7 +40,7 @@ const SKIP =
   ENDPOINT === undefined || BUCKET === undefined ? SKIP_REASON : false;
 
 const here = dirname(fileURLToPath(import.meta.url));
-const adminCli = join(here, "../cli/kangmin-admin.js");
+const adminCli = join(here, "../../apps/kangmin-cli/dist/kangmin-admin.js");
 
 interface RunningServer {
   patient: ReturnType<typeof createApplication>;

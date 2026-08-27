@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { createAdminApplication } from "../app/admin-composition-root.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
 const args=process.argv.slice(2); const subjectIndex=args.indexOf("--subject");
 const subject=subjectIndex === -1 ? undefined : args[subjectIndex+1];
 const environment=process.env.KANGMIN_APP_ENV ?? "production";

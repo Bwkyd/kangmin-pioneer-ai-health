@@ -17,7 +17,7 @@ import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { seedContent } from "./content-fixture.js";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const cli = join(here, "../cli/kangmin.js");
+const cli = join(here, "../../apps/kangmin-cli/dist/kangmin.js");
 
 function run(
   args: string[],

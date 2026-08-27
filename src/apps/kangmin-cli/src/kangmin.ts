@@ -5,11 +5,11 @@ import { createInterface as createPromptInterface } from "node:readline/promises
 import { resolve } from "node:path";
 import { createInterface as createPasswordInterface } from "node:readline";
 
-import { createApplication, runPatientDoctor } from "../app/composition-root.js";
+import { createApplication, runPatientDoctor } from "@kangmin/runtime/composition-root";
 import {
   createRemoteCommandClient,
   remoteCommandBaseUrl
-} from "../app/remote-command-composition-root.js";
+} from "@kangmin/runtime/remote-command-composition-root";
 import { DomainError, exitCodeForCode } from "@kangmin/core/kernel/errors";
 import { failure, success, type CommandResult } from "@kangmin/core/kernel/result";
 
@@ -17,7 +17,7 @@ import { failure, success, type CommandResult } from "@kangmin/core/kernel/resul
 const VERSION = (() => {
   try {
     const manifest = JSON.parse(
-      readFileSync(new URL("../../package.json", import.meta.url), "utf8")
+      readFileSync(new URL("../package.json", import.meta.url), "utf8")
     ) as { version?: unknown };
     return typeof manifest.version === "string" ? manifest.version : "unknown";
   } catch {

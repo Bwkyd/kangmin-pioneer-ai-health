@@ -1,0 +1,29 @@
+{
+  "name": "@kangmin/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "kangmin": "./dist/kangmin.js",
+    "kangmin-admin": "./dist/kangmin-admin.js"
+  },
+  "exports": {
+    "./*": {
+      "types": "./src/*.ts",
+      "default": "./dist/*.js"
+    }
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run typecheck"
+  },
+  "dependencies": {
+    "@kangmin/core": "*",
+    "@kangmin/runtime": "*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "typescript": "^5.9.3"
+  }
+}

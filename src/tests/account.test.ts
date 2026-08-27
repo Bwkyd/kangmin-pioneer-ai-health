@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { SqliteSessionRepository } from "@kangmin/database/sqlite/session-repository";
 import { SessionService } from "@kangmin/core/patient/account/session-service";

@@ -2,8 +2,8 @@ import { execFileSync } from "node:child_process";
 import { mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { basename, join, resolve } from "node:path";
 
-import { createAdminApplication } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { DashscopeEmbeddingAdapter } from "@kangmin/integrations/ai/dashscope-embedding-adapter";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { QwenPlanDialogueAdapter } from "@kangmin/integrations/ai/qwen-plan-dialogue-adapter";
@@ -13,15 +13,15 @@ import type { KnowledgeRetrievalPort, KnowledgeSource } from "@kangmin/core/inte
 import type { PlanDialoguePort } from "@kangmin/core/intelligence/agent/model-ports";
 import type { ConversationTurnResult } from "@kangmin/core/intelligence/agent/conversation-contracts";
 import type { KnowledgeItem } from "@kangmin/core/operations/agent-admin/contracts";
-import { runEvaluationTasks } from "../evals/knowledge-qa/runner.js";
-import { loadEvaluationJsonl, type EvaluationAction, type EvaluationTask } from "../evals/knowledge-qa/task-schema.js";
+import { runEvaluationTasks } from "@kangmin/runtime/evals/knowledge-qa/runner";
+import { loadEvaluationJsonl, type EvaluationAction, type EvaluationTask } from "@kangmin/runtime/evals/knowledge-qa/task-schema";
 import type {
   EvaluationExecutor,
   EvaluationRetrievedSource,
   EvaluationTrialRecord,
   EvaluationTurnRecord,
   ProviderOutcome
-} from "../evals/knowledge-qa/trial-record.js";
+} from "@kangmin/runtime/evals/knowledge-qa/trial-record";
 
 interface PlanSeed {
   id: string;

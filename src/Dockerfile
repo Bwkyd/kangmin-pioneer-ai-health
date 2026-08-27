@@ -8,10 +8,13 @@ COPY package.json package-lock.json ./
 # npm workspaces 的依赖归属由各包 manifest 决定；先复制 manifest，才能让
 # 缓存层中的 npm ci 安装完整构建依赖，而不是只看根 package.json。
 COPY apps/kangmin-admin/package.json ./apps/kangmin-admin/package.json
+COPY apps/kangmin-api/package.json ./apps/kangmin-api/package.json
+COPY apps/kangmin-cli/package.json ./apps/kangmin-cli/package.json
 COPY apps/kangmin-miniprogram/package.json ./apps/kangmin-miniprogram/package.json
 COPY packages/kangmin-core/package.json ./packages/kangmin-core/package.json
 COPY packages/kangmin-database/package.json ./packages/kangmin-database/package.json
 COPY packages/kangmin-integrations/package.json ./packages/kangmin-integrations/package.json
+COPY packages/kangmin-runtime/package.json ./packages/kangmin-runtime/package.json
 RUN npm ci
 COPY . .
 # 编译产物写入 dist/；随后按锁文件重装生产依赖，
@@ -35,9 +38,15 @@ COPY --from=builder --chown=node:node /app/packages/kangmin-database/package.jso
 COPY --from=builder --chown=node:node /app/packages/kangmin-database/dist ./packages/kangmin-database/dist
 COPY --from=builder --chown=node:node /app/packages/kangmin-integrations/package.json ./packages/kangmin-integrations/package.json
 COPY --from=builder --chown=node:node /app/packages/kangmin-integrations/dist ./packages/kangmin-integrations/dist
+COPY --from=builder --chown=node:node /app/packages/kangmin-runtime/package.json ./packages/kangmin-runtime/package.json
+COPY --from=builder --chown=node:node /app/packages/kangmin-runtime/dist ./packages/kangmin-runtime/dist
+COPY --from=builder --chown=node:node /app/apps/kangmin-api/package.json ./apps/kangmin-api/package.json
+COPY --from=builder --chown=node:node /app/apps/kangmin-api/dist ./apps/kangmin-api/dist
+COPY --from=builder --chown=node:node /app/apps/kangmin-cli/package.json ./apps/kangmin-cli/package.json
+COPY --from=builder --chown=node:node /app/apps/kangmin-cli/dist ./apps/kangmin-cli/dist
 USER node
 EXPOSE 8787
 # node:22-bookworm-slim 不含 curl，健康检查用 node 内置 fetch 打 /live。
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:8787/live').then((r) => process.exit(r.ok ? 0 : 1)).catch(() => process.exit(1))"
-ENTRYPOINT ["node", "dist/http/server.js"]
+ENTRYPOINT ["node", "apps/kangmin-api/dist/server.js"]

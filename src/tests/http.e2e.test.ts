@@ -4,9 +4,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createAdminApplication } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
-import { createKangminHttpServer } from "../http/server.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
+import { createKangminHttpServer } from "@kangmin/api/server";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type { ConversationTurnResult } from "@kangmin/core/intelligence/agent/conversation-contracts";

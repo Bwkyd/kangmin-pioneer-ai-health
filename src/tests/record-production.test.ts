@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { writeConsentForTest } from "./consent-fixture.js";
 import {
   AesGcmEncryption,
@@ -28,7 +28,7 @@ import type {
 } from "@kangmin/core/patient/record/contracts";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const cli = join(here, "../cli/kangmin.js");
+const cli = join(here, "../../apps/kangmin-cli/dist/kangmin.js");
 
 /** 固定的 32 字节测试密钥（base64），只用于测试，不进入任何生产数据。 */
 const KEY_V1 = Buffer.alloc(32, 1).toString("base64");
