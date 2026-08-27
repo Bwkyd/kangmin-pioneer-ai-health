@@ -30,7 +30,6 @@
       "docs/research": 12,
       "legacy": 8,
       "legacy/app/api/admin": 9,
-      "src": 9,
       "src/apps/kangmin-miniprogram/src/pages": 9
     },
     "file_lines": {
@@ -38,10 +37,10 @@
       "legacy/lib/agent/api.ts": 626,
       "src/packages/kangmin-core/src/operations/admin-application.ts": 1058,
       "src/packages/kangmin-core/src/patient/application.ts": 1083,
-      "src/app/composition-root.ts": 867,
-      "src/cli/kangmin-admin.ts": 925,
-      "src/cli/kangmin.ts": 1120,
-      "src/http/server.ts": 1288,
+      "src/packages/kangmin-runtime/src/composition-root.ts": 867,
+      "src/apps/kangmin-cli/src/kangmin-admin.ts": 925,
+      "src/apps/kangmin-cli/src/kangmin.ts": 1120,
+      "src/apps/kangmin-api/src/server.ts": 1288,
       "src/packages/kangmin-database/src/sqlite/database.ts": 1688,
       "src/packages/kangmin-database/src/postgres/agent-admin-repository.ts": 1372,
       "src/packages/kangmin-database/src/postgres/content-aux-repository.ts": 901,

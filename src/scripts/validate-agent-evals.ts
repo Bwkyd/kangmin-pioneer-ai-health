@@ -3,11 +3,11 @@ import { resolve } from "node:path";
 import {
   loadEvaluationJsonl,
   verifyKnowledgeEvidence
-} from "../evals/knowledge-qa/task-schema.js";
+} from "@kangmin/runtime/evals/knowledge-qa/task-schema";
 
 async function main(): Promise<void> {
   const [taskArgument, knowledgeArgument] = process.argv.slice(2);
-  const taskPath = resolve(taskArgument ?? "evals/knowledge-qa/tasks.v1.jsonl");
+  const taskPath = resolve(taskArgument ?? "tests/fixtures/knowledge-qa/tasks.v1.jsonl");
   const tasks = await loadEvaluationJsonl(taskPath);
   if (knowledgeArgument === undefined) {
     process.stdout.write(`${JSON.stringify({ tasks: tasks.length, evidence: "not-checked" })}\n`);

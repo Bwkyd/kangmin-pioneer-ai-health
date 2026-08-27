@@ -9,8 +9,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createAdminApplication } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type { RulePackage } from "@kangmin/core/intelligence/clinical-rules/domain";

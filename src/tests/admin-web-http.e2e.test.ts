@@ -5,9 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { after, before, test } from "node:test";
 
-import { createAdminApplicationWithOps } from "../app/admin-composition-root.js";
-import { createApplication } from "../app/composition-root.js";
-import { createKangminHttpServer } from "../http/server.js";
+import { createAdminApplicationWithOps } from "@kangmin/runtime/admin-composition-root";
+import { createApplication } from "@kangmin/runtime/composition-root";
+import { createKangminHttpServer } from "@kangmin/api/server";
 
 process.env.KANGMIN_APP_ENV = "integration";
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";

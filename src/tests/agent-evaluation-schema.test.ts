@@ -8,9 +8,9 @@ import {
   loadEvaluationJsonl,
   parseEvaluationTask,
   verifyKnowledgeEvidence
-} from "../evals/knowledge-qa/task-schema.js";
+} from "@kangmin/runtime/evals/knowledge-qa/task-schema";
 
-const taskPath = resolve("evals/knowledge-qa/tasks.v1.jsonl");
+const taskPath = resolve("tests/fixtures/knowledge-qa/tasks.v1.jsonl");
 
 test("首批评测集包含 10 条合法任务，并覆盖知识、规则和多轮任务", async () => {
   const tasks = await loadEvaluationJsonl(taskPath);

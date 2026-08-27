@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import { writeConsentForTest } from "./consent-fixture.js";
 import type {

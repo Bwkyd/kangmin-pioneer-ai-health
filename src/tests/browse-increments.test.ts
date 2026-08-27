@@ -8,7 +8,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { SqliteContentReadRepository } from "@kangmin/database/sqlite/content-read-repository";
 import { TestEnvironmentProvider } from "@kangmin/integrations/environment/test-environment-provider";

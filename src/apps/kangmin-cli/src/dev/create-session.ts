@@ -1,6 +1,6 @@
 import { resolve } from "node:path";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { DomainError } from "@kangmin/core/kernel/errors";
 
 function option(argv: string[], name: string): string | undefined {

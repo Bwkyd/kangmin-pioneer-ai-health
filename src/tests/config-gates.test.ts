@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import { PlaintextEncryption } from "@kangmin/integrations/security/aes-gcm-encryption";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { exitCodeForCode } from "@kangmin/core/kernel/errors";

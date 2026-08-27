@@ -14,11 +14,11 @@ import {
   logLevelForStatus,
   type ReadinessProbe,
   type RequestLogger
-} from "../app/composition-root.js";
+} from "@kangmin/runtime/composition-root";
 import {
   type KangminAdminApplication
 } from "@kangmin/core/operations/admin-application";
-import { createAdminApplicationWithOps } from "../app/admin-composition-root.js";
+import { createAdminApplicationWithOps } from "@kangmin/runtime/admin-composition-root";
 import {
   DomainError,
   exitCodeForCode,
@@ -605,7 +605,7 @@ export function createKangminHttpServer(
     options.allowDevelopmentSession === true &&
     (environment === "local" || environment === "integration");
   const webRoot =
-    options.webRoot ?? new URL("../web/", import.meta.url);
+    options.webRoot ?? new URL("../../../dist/web/", import.meta.url);
   const serviceMeta: CommandServiceMeta = {
     service: "kangmin-command-service",
     serviceVersion: options.serviceVersion ?? "0.1.0",

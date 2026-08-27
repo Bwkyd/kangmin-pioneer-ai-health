@@ -2,16 +2,16 @@ import assert from "node:assert/strict";
 import { resolve } from "node:path";
 import test from "node:test";
 
-import { gradeEvaluationTrial } from "../evals/knowledge-qa/deterministic-grader.js";
-import { runEvaluationTasks } from "../evals/knowledge-qa/runner.js";
-import { loadEvaluationJsonl, type EvaluationTask } from "../evals/knowledge-qa/task-schema.js";
+import { gradeEvaluationTrial } from "@kangmin/runtime/evals/knowledge-qa/deterministic-grader";
+import { runEvaluationTasks } from "@kangmin/runtime/evals/knowledge-qa/runner";
+import { loadEvaluationJsonl, type EvaluationTask } from "@kangmin/runtime/evals/knowledge-qa/task-schema";
 import type {
   EvaluationExecutor,
   EvaluationTrialRecord,
   EvaluationTurnRecord
-} from "../evals/knowledge-qa/trial-record.js";
+} from "@kangmin/runtime/evals/knowledge-qa/trial-record";
 
-const taskPath = resolve("evals/knowledge-qa/tasks.v1.jsonl");
+const taskPath = resolve("tests/fixtures/knowledge-qa/tasks.v1.jsonl");
 
 function turn(input: string, overrides: Partial<EvaluationTurnRecord> = {}): EvaluationTurnRecord {
   return {

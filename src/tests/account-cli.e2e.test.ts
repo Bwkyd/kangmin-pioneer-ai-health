@@ -16,7 +16,7 @@ import test from "node:test";
 import { KangminDatabase } from "@kangmin/database/sqlite/database";
 
 const here = dirname(fileURLToPath(import.meta.url));
-const cli = join(here, "../cli/kangmin.js");
+const cli = join(here, "../../apps/kangmin-cli/dist/kangmin.js");
 
 const PASSWORD = "s3cret-pass-1";
 

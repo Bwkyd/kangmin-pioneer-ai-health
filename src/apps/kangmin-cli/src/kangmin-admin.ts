@@ -4,12 +4,12 @@ import { createHash } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 
-import { createAdminApplication } from "../app/admin-composition-root.js";
+import { createAdminApplication } from "@kangmin/runtime/admin-composition-root";
 import {
   createRemoteCommandClient,
   remoteCommandBaseUrl,
   remoteTimeout
-} from "../app/remote-command-composition-root.js";
+} from "@kangmin/runtime/remote-command-composition-root";
 import { DomainError, exitCodeForCode } from "@kangmin/core/kernel/errors";
 import { failure, type CommandResult } from "@kangmin/core/kernel/result";
 import {

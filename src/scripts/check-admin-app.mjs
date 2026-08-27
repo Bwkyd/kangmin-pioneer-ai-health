@@ -36,7 +36,7 @@ if (!html.includes('id="admin-root"') || html.includes("patient-root")) {
   throw new Error("管理后台首页必须只挂载 admin-root");
 }
 
-const server = readFileSync(join(workspaceRoot, "http/server.ts"), "utf8");
+const server = readFileSync(join(workspaceRoot, "apps/kangmin-api/src/server.ts"), "utf8");
 if (server.includes('"admin.html"') || !server.includes('requestUrl.pathname === "/admin"')) {
   throw new Error("HTTP 壳必须让 /admin 复用唯一 index.html，不能恢复第二份 admin.html");
 }

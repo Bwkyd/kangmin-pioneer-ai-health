@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
 import type { CommandResult } from "@kangmin/core/kernel/result";
 import type { AgentSession } from "@kangmin/core/intelligence/agent/contracts";
 import { writeConsentForTest } from "./consent-fixture.js";

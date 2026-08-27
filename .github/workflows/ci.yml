@@ -119,7 +119,7 @@ jobs:
 
       - name: Smoke test CLI in container
         # 覆盖 ENTRYPOINT 直接跑 CLI 冒烟：--version 不依赖环境变量。
-        run: docker run --rm --entrypoint node kangmin-cli:ci dist/cli/kangmin.js --version
+        run: docker run --rm --entrypoint node kangmin-cli:ci apps/kangmin-cli/dist/kangmin.js --version
 
       - name: Audit production dependencies
         # 只审计生产依赖，出现 high 及以上漏洞即失败。

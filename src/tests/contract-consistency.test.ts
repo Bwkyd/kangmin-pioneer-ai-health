@@ -6,8 +6,8 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import test from "node:test";
 
-import { createApplication } from "../app/composition-root.js";
-import { createKangminHttpServer } from "../http/server.js";
+import { createApplication } from "@kangmin/runtime/composition-root";
+import { createKangminHttpServer } from "@kangmin/api/server";
 import { writeConsentForTest } from "./consent-fixture.js";
 
 // 测试进程以本地开发模式启动：未配置 KANGMIN_ENCRYPTION_KEYS 时，
@@ -17,7 +17,7 @@ process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
 
 const here = dirname(fileURLToPath(import.meta.url));
-const cli = join(here, "../cli/kangmin.js");
+const cli = join(here, "../../apps/kangmin-cli/dist/kangmin.js");
 
 /**
  * 契约一致性：CLI 与 HTTP 必须共享同一命令语义（架构 §10.3），

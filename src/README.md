@@ -75,8 +75,8 @@ AppSecret：`project.config.json` 的 `appid` 保持为空，首次导入时由�
 构建完成后的入口：
 
 ```bash
-node dist/cli/kangmin.js --help
-node dist/cli/kangmin-admin.js --help
+node apps/kangmin-cli/dist/kangmin.js --help
+node apps/kangmin-cli/dist/kangmin-admin.js --help
 ```
 
 ### 启动本地患者 Web 与 HTTP 服务
@@ -143,7 +143,7 @@ account  注册、登录、资料、同意与隐私
 能力声明以以下输出为准：
 
 ```bash
-node dist/cli/kangmin.js --help
+node apps/kangmin-cli/dist/kangmin.js --help
 ```
 
 关键边界：
@@ -166,7 +166,7 @@ auth     管理员登录、状态和普通管理员账号管理
 辅助命令：`help`、`doctor`、`--version`、`completion zsh`。精确命令树：
 
 ```bash
-node dist/cli/kangmin-admin.js --help
+node apps/kangmin-cli/dist/kangmin-admin.js --help
 ```
 
 密码和模型 API Key 从 stdin 读取，不进入 argv。发布、下架、删除、启用、
@@ -240,13 +240,10 @@ HTTP 服务同时托管 Vite 构建产物和命令接口：
 ## 架构与依赖方向
 
 ```text
-患者小程序 → HTTP 命令路由 ─┐
-kangmin CLI ────────────────┼→ Application Services → Modules / Ports
-kangmin-admin CLI ──────────┤                         ↓
-管理后台 → 管理 HTTP 路由 ───┘                    Infrastructure
-                                              SQLite / PostgreSQL
-                                              Filesystem / S3
-                                              DeepSeek / Provider
+患者小程序 → kangmin-api ───┐
+kangmin CLI ────────────────┼→ kangmin-runtime → kangmin-core
+kangmin-admin CLI ──────────┤          ↓                ↑
+管理后台 → kangmin-api ──────┘   database / integrations ┘
 ```
 
 目录职责：
@@ -255,10 +252,10 @@ kangmin-admin CLI ──────────┤                         ↓
 | --- | --- |
 | `packages/kangmin-core/` | 结果、错误、协议、四组业务领域、纯应用服务和端口；不得依赖外层适配器 |
 | `packages/kangmin-database/` | SQLite、PostgreSQL、迁移、幂等与加密字段适配；只实现核心端口 |
-| `app/` | 组合根与基础设施装配 |
-| `infrastructure/` | S3、模型、环境、身份、远程调用和日志等外部集成适配器 |
-| `cli/` | 两个命令行入口和参数/输出适配 |
-| `http/` | HTTP、静态资源、探针、限流和请求日志 |
+| `packages/kangmin-integrations/` | S3、模型、环境、身份、远程调用和日志等外部集成适配器 |
+| `packages/kangmin-runtime/` | 患者、管理和远程命令的唯一组合根 |
+| `apps/kangmin-cli/` | 两个命令行入口、开发入口和参数/输出适配 |
+| `apps/kangmin-api/` | HTTP、静态资源、探针、限流和请求日志 |
 | `apps/kangmin-miniprogram/` | 患者微信小程序壳 |
 | `apps/kangmin-admin/` | 运营管理后台壳 |
 | `tests/` | TypeScript 单元、契约、集成与 E2E 测试 |
@@ -267,8 +264,8 @@ kangmin-admin CLI ──────────┤                         ↓
 `npm run lint` 执行的架构门禁会阻止：
 
 - 任意新代码导入 `legacy/`；
-- `packages/kangmin-core/` 依赖 infrastructure/CLI/HTTP/apps；
-- CLI、HTTP、dev 绕过组合根直连基础设施；
+- `packages/kangmin-core/` 依赖 database/integrations/runtime/apps；
+- CLI、API 绕过 runtime 直连 database 或 integrations；
 - 核心包中的 kernel 反向依赖领域或应用层。
 
 ## 运行模式与配置
@@ -457,7 +454,7 @@ CI 的 `quality` job 还会提供 PostgreSQL 16、MinIO 和 Playwright，执行�
 ```bash
 docker build -t kangmin-cli:local .
 docker run --rm --entrypoint node kangmin-cli:local \
-  dist/cli/kangmin.js --version
+  apps/kangmin-cli/dist/kangmin.js --version
 ```
 
 Dockerfile 使用多阶段构建，运行阶段只保留 `dist/` 与生产依赖，以非 root
@@ -485,11 +482,11 @@ Dockerfile 使用多阶段构建，运行阶段只保留 `dist/` 与生产依赖
 ## 可核验源码入口
 
 - [`package.json`](package.json)：构建、测试与运行脚本
-- [`cli/kangmin.ts`](cli/kangmin.ts)：患者 CLI 帮助和命令解析
-- [`cli/kangmin-admin.ts`](cli/kangmin-admin.ts)：管理 CLI 帮助和命令解析
-- [`http/server.ts`](http/server.ts)：HTTP 路由、探针、限流与日志
-- [`app/composition-root.ts`](app/composition-root.ts)：患者组合根与生产门禁
-- [`app/admin-composition-root.ts`](app/admin-composition-root.ts)：管理组合根
+- [`apps/kangmin-cli/src/kangmin.ts`](apps/kangmin-cli/src/kangmin.ts)：患者 CLI 帮助和命令解析
+- [`apps/kangmin-cli/src/kangmin-admin.ts`](apps/kangmin-cli/src/kangmin-admin.ts)：管理 CLI 帮助和命令解析
+- [`apps/kangmin-api/src/server.ts`](apps/kangmin-api/src/server.ts)：HTTP 路由、探针、限流与日志
+- [`packages/kangmin-runtime/src/composition-root.ts`](packages/kangmin-runtime/src/composition-root.ts)：患者组合根与生产门禁
+- [`packages/kangmin-runtime/src/admin-composition-root.ts`](packages/kangmin-runtime/src/admin-composition-root.ts)：管理组合根
 - [`packages/kangmin-core/src/kernel/protocol.ts`](packages/kangmin-core/src/kernel/protocol.ts)：远程命令协议
 - [`packages/kangmin-core/src/kernel/errors.ts`](packages/kangmin-core/src/kernel/errors.ts)：错误码、HTTP 状态和 CLI 退出码
 - [`packages/kangmin-core/src/intelligence/clinical-rules/rule-package.ts`](packages/kangmin-core/src/intelligence/clinical-rules/rule-package.ts)：规则包状态与来源

@@ -11,7 +11,7 @@
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
 import { readFileSync } from "node:fs";
-import { createAdminApplication } from "../dist/app/admin-composition-root.js";
+import { createAdminApplication } from "../packages/kangmin-runtime/dist/admin-composition-root.js";
 
 const databasePath = process.argv[2];
 const dryRun = process.argv.includes("--dry-run");

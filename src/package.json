@@ -11,22 +11,22 @@
     "node": ">=22.13.0"
   },
   "bin": {
-    "kangmin": "./dist/cli/kangmin.js",
-    "kangmin-admin": "./dist/cli/kangmin-admin.js"
+    "kangmin": "./apps/kangmin-cli/dist/kangmin.js",
+    "kangmin-admin": "./apps/kangmin-cli/dist/kangmin-admin.js"
   },
   "scripts": {
-    "build": "node scripts/clean-dist.mjs && npm run build --workspace @kangmin/core && npm run build --workspace @kangmin/database && npm run build --workspace @kangmin/integrations && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && npm run build --workspace @kangmin/admin",
-    "typecheck": "npm run typecheck --workspace @kangmin/core && npm run typecheck --workspace @kangmin/database && npm run typecheck --workspace @kangmin/integrations && tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @kangmin/admin",
-    "lint": "node scripts/architecture-check.mjs --self-test && node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs && node scripts/check-admin-app.mjs && node scripts/check-core-package.mjs && node scripts/check-database-package.mjs && node scripts/check-integrations-package.mjs",
+    "build": "node scripts/clean-dist.mjs && npm run build --workspace @kangmin/core && npm run build --workspace @kangmin/database && npm run build --workspace @kangmin/integrations && npm run build --workspace @kangmin/runtime && npm run build --workspace @kangmin/cli && npm run build --workspace @kangmin/api && tsc -p tsconfig.json && node scripts/write-miniprogram-questionnaire.mjs && npm run build --workspace @kangmin/admin",
+    "typecheck": "npm run typecheck --workspace @kangmin/core && npm run typecheck --workspace @kangmin/database && npm run typecheck --workspace @kangmin/integrations && npm run typecheck --workspace @kangmin/runtime && npm run typecheck --workspace @kangmin/cli && npm run typecheck --workspace @kangmin/api && tsc -p tsconfig.json --noEmit && npm run typecheck --workspace @kangmin/admin",
+    "lint": "node scripts/architecture-check.mjs --self-test && node scripts/architecture-check.mjs && node scripts/check-miniprogram.mjs && node scripts/check-admin-app.mjs && node scripts/check-core-package.mjs && node scripts/check-database-package.mjs && node scripts/check-integrations-package.mjs && node scripts/check-runtime-entrypoints.mjs",
     "test": "npm run build && node --test dist/tests/*.test.js && npm test --workspace @kangmin/admin && node scripts/web-browser-e2e.mjs",
     "test:smoke:core": "npm run build --silent && node scripts/run-core-smoke.mjs",
     "test:smoke:content": "npm run build --silent && node scripts/run-content-smoke.mjs",
     "test:smoke:record": "npm run build --silent && node scripts/run-record-smoke.mjs",
     "test:smoke:shell": "npm run build --silent && node scripts/run-shell-smoke.mjs",
     "check": "npm run typecheck && npm run lint && npm test",
-    "dev:session": "npm run build --silent && node dist/dev/create-session.js",
-    "dev:admin-session": "npm run build --silent && node dist/dev/create-admin-session.js",
-    "start:http": "npm run build --silent && node dist/http/server.js",
+    "dev:session": "npm run build --silent && node apps/kangmin-cli/dist/dev/create-session.js",
+    "dev:admin-session": "npm run build --silent && node apps/kangmin-cli/dist/dev/create-admin-session.js",
+    "start:http": "npm run build --silent && node apps/kangmin-api/dist/server.js",
     "prepare:manual-knowledge": "npm run build --silent && node dist/scripts/prepare-manual-knowledge.js",
     "eval:validate": "npm run build --silent && node dist/scripts/validate-agent-evals.js",
     "eval:grade": "npm run build --silent && node dist/scripts/grade-agent-eval-results.js",
@@ -50,6 +50,9 @@
     "@kangmin/core": "*",
     "@kangmin/database": "*",
     "@kangmin/integrations": "*",
+    "@kangmin/runtime": "*",
+    "@kangmin/cli": "*",
+    "@kangmin/api": "*",
     "pg": "^8.22.0"
   }
 }

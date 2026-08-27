@@ -2,7 +2,7 @@
 // 用法：node scripts/smoke-assessment.mjs <数据库路径>
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
-import { createApplication } from "../dist/app/composition-root.js";
+import { createApplication } from "../packages/kangmin-runtime/dist/composition-root.js";
 
 const databasePath = process.argv[2];
 if (databasePath === undefined) {

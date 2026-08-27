@@ -8,14 +8,14 @@ import type { KangminApplication } from "@kangmin/core/patient/application";
 import {
   createAdminApplication,
   createAdminApplicationWithOps
-} from "../app/admin-composition-root.js";
+} from "@kangmin/runtime/admin-composition-root";
 import {
   createApplication,
   createApplicationWithOps,
   createStructuredRequestLogger,
   type ReadinessProbe
-} from "../app/composition-root.js";
-import { createKangminHttpServer } from "../http/server.js";
+} from "@kangmin/runtime/composition-root";
+import { createKangminHttpServer } from "@kangmin/api/server";
 import { DomainError } from "@kangmin/core/kernel/errors";
 import { COMMAND_SCHEMA_VERSION } from "@kangmin/core/kernel/protocol";
 import { success } from "@kangmin/core/kernel/result";
