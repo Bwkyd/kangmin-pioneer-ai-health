@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧪 #333 内容供给闭环快速冒烟入口完成有界验证（2026-08-27 第244轮 · 基线 `origin/main@78c17db`，待提交）
+> 开工重新 fetch 并回读 GitHub、分支/worktree 与公网只读状态：#333 仍 OPEN，最新主线为 `78c17db`；公网 `/live=200`、`/ready=503`，后者仍是既有加密配置限制。本轮只处理四个实体：内容供给闭环、快速冒烟入口、选择器失败护栏、交付记录，不需要拆子任务。
+> 先写校验标准，再新增 `npm run test:smoke:content` 与 `src/scripts/run-content-smoke.mjs`。入口逐个启动既有 `admin-agent` 生命周期测试和语义检索排除停用测试，逐字回读 TAP 中唯一实际执行的非跳过测试；零命中、部分命中或子进程失败均 exit 1。未复制 fixture，未改知识状态机、检索实现、truth、数据库、患者数据或医学规则。
+> Node 22.23.1 下正向 2/2 通过，含干净构建实测约 3.62 s；将第一个目标名故意改错后，第二条虽通过，入口仍以 exit 1 拦截；将启用断言改坏时子进程与入口均 exit 1，恢复后再次通过。`cd src && npm run check` 已通过：438 项中 360 通过、78 项按本地未配置 PostgreSQL/S3 跳过、0 失败，真实 Chromium E2E PASS。实验与停止线详见 `docs/experiments/028_content-smoke-entry.md`；双后端证据仍由 CI 提供。尚待 PR/CI、合并、生产是否需要发布的复核、Issue 关闭和分支清理。
+
 > ## ✅ 覆盖账本与核心冒烟已按两条小交付合并收尾（2026-08-27 第243轮 · `main@5eda7be`）
 > Issue #331 的 PR #335 经真实 `pull_request` CI 全绿后 squash 合并为 `069accf` 并自动关闭：`quality` 3 分 07 秒，覆盖 PostgreSQL 16、MinIO/S3、完整回归与真实浏览器 E2E；`image` 37 秒，覆盖 OCI 构建、容器冒烟、生产依赖审计和 SBOM。Issue #332 随后建立在该最新主线上，PR #336 的 `quality` 3 分 25 秒、`image` 47 秒全绿，squash 合并为 `5eda7be` 并自动关闭。核心冒烟在 Node 22.23.1 下含干净构建 3.40 秒，为同轮完整门禁 46.00 秒的 7.4%；2/2 正向通过，部分命中与零命中反证均 exit 1。
 > 两个合并树只增加测试覆盖账本、校验器、npm 测试入口、冒烟选择器和状态记录，没有产品运行时、依赖锁、生产配置、truth、医学规则或患者数据变化，因此没有重复构建 release、切换生产、重启服务或迁移数据库。公网只读复核首页、后台和 `/live` 为 200，`/ready` 仍为既有 503；默认 SSH 身份和两把有界候选密钥均未通过，故未冒充完成内部 `NRestarts` 与数据库复核。#331/#332 的 GitHub 远端、本地分支和任务 worktree 已删除；仓库没有 CNB remote，CNB 公共仓搜索也没有本项目，因此无 CNB 任务分支可清理。根 worktree 的既有演化记录与作者 `hi.md` 保持不覆盖；本记录分支约定合并后自动删除。
