@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ #333 内容供给闭环快速冒烟入口已合并并完成收尾（2026-08-27 第245轮 · `main@da742faf`）
+> PR #338 的真实 `pull_request` CI 全绿：`quality` 3 分 14 秒（含 PostgreSQL 16、MinIO/S3、完整回归与真实 Chromium E2E），`image` 41 秒（OCI、容器冒烟、生产依赖审计与 SBOM）；squash 合并为 `da742faf`，#333 自动关闭。合并树相对 `78c17db` 只有内容测试编排入口、文档和状态记录，无业务运行时、truth、数据库迁移或患者数据差异。
+> 合并后通过受控 SSH 对线上只读复核：`/srv/kangmin-cli/app` 仍指向 `releases/category-registry-bf44d26`，应用 active、`NRestarts=0`、仅监听 `127.0.0.1:8787`；正式 SQLite `quick_check=ok`，迁移最新 `0022_content_category_registry`，27 位患者/11 个启用方案/21 份启用知识/136 个分块/136 个向量/46 个对话/16 个评估/26 条已发布视频；公网 `/`、`/admin`、`/live` 为 200，`/ready=503` 仍只因既有加密密钥未配置。因没有运行时差异，本轮不重复切换 release、备份数据库或重启服务。
+> 内容入口正向 2/2、目标名漂移 exit 1、启用断言破坏传播 exit 1；`npm run check` 本地 438 项中 360 通过、78 项因未配置 PostgreSQL/S3 跳过、0 失败；sequential-thinking 与 `$km-review` P0–P2 均为 0。实验记录与评审见 `docs/experiments/028_content-smoke-entry.md`、`docs/reviews/035_content-smoke-entry-review.md`。本次 worktree、任务分支及远端任务分支已清理；仓库仍只有 GitHub `origin`，CNB 登录有效但没有本项目仓库/分支可清理；根 worktree 既有作者改动与 `hi.md` 保持不动。
+
 > ## 🧪 #333 内容供给闭环快速冒烟入口完成有界验证（2026-08-27 第244轮 · 基线 `origin/main@78c17db`，待提交）
 > 开工重新 fetch 并回读 GitHub、分支/worktree 与公网只读状态：#333 仍 OPEN，最新主线为 `78c17db`；公网 `/live=200`、`/ready=503`，后者仍是既有加密配置限制。本轮只处理四个实体：内容供给闭环、快速冒烟入口、选择器失败护栏、交付记录，不需要拆子任务。
 > 先写校验标准，再新增 `npm run test:smoke:content` 与 `src/scripts/run-content-smoke.mjs`。入口逐个启动既有 `admin-agent` 生命周期测试和语义检索排除停用测试，逐字回读 TAP 中唯一实际执行的非跳过测试；零命中、部分命中或子进程失败均 exit 1。未复制 fixture，未改知识状态机、检索实现、truth、数据库、患者数据或医学规则。
