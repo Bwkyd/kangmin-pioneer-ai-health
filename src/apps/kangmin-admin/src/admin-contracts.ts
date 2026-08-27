@@ -20,6 +20,11 @@ export interface ContentItem {
   updatedAt: string;
 }
 
+export interface ContentPreview extends ContentItem {
+  validation: { ok: boolean; missing: string[] };
+  patientVisible: boolean;
+}
+
 export interface MediaReference {
   entityType: "article" | "video" | "knowledge";
   entityId: string;

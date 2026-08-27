@@ -25,3 +25,18 @@ export const mediaKindLabels: Record<string, string> = {
 export function Empty({ icon, title, text }: { icon: string; title: string; text: string }) {
   return <div className="empty-state"><span>{icon}</span><strong>{title}</strong><p>{text}</p></div>;
 }
+
+export function Pagination({ currentPage, pageCount, totalItems, onChange, ariaLabel }: { currentPage: number; pageCount: number; totalItems: number; onChange: (page: number) => void; ariaLabel: string }) {
+  return (
+    <nav className="content-pagination" aria-label={ariaLabel}>
+      <span>第 {currentPage} / {pageCount} 页 · 共 {totalItems} 条</span>
+      <div>
+        <button type="button" aria-label="上一页" disabled={currentPage === 1} onClick={() => onChange(currentPage - 1)}>上一页</button>
+        {Array.from({ length: pageCount }, (_, index) => index + 1).map((page) => (
+          <button type="button" key={page} aria-label={`第 ${page} 页`} aria-current={page === currentPage ? "page" : undefined} className={page === currentPage ? "active" : ""} onClick={() => onChange(page)}>{page}</button>
+        ))}
+        <button type="button" aria-label="下一页" disabled={currentPage === pageCount} onClick={() => onChange(currentPage + 1)}>下一页</button>
+      </div>
+    </nav>
+  );
+}
