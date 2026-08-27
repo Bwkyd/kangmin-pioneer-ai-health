@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 覆盖账本与核心冒烟已按两条小交付合并收尾（2026-08-27 第243轮 · `main@5eda7be`）
+> Issue #331 的 PR #335 经真实 `pull_request` CI 全绿后 squash 合并为 `069accf` 并自动关闭：`quality` 3 分 07 秒，覆盖 PostgreSQL 16、MinIO/S3、完整回归与真实浏览器 E2E；`image` 37 秒，覆盖 OCI 构建、容器冒烟、生产依赖审计和 SBOM。Issue #332 随后建立在该最新主线上，PR #336 的 `quality` 3 分 25 秒、`image` 47 秒全绿，squash 合并为 `5eda7be` 并自动关闭。核心冒烟在 Node 22.23.1 下含干净构建 3.40 秒，为同轮完整门禁 46.00 秒的 7.4%；2/2 正向通过，部分命中与零命中反证均 exit 1。
+> 两个合并树只增加测试覆盖账本、校验器、npm 测试入口、冒烟选择器和状态记录，没有产品运行时、依赖锁、生产配置、truth、医学规则或患者数据变化，因此没有重复构建 release、切换生产、重启服务或迁移数据库。公网只读复核首页、后台和 `/live` 为 200，`/ready` 仍为既有 503；默认 SSH 身份和两把有界候选密钥均未通过，故未冒充完成内部 `NRestarts` 与数据库复核。#331/#332 的 GitHub 远端、本地分支和任务 worktree 已删除；仓库没有 CNB remote，CNB 公共仓搜索也没有本项目，因此无 CNB 任务分支可清理。根 worktree 的既有演化记录与作者 `hi.md` 保持不覆盖；本记录分支约定合并后自动删除。
+
 > ## 🧪 核心功能双行为冒烟入口完成有界验证（2026-08-27 第242轮 · 基线 `origin/main@069accf`，待提交）
 > 本轮只处理 Issue #332，在独立 worktree 复用既有“Q1–Q14 问卷、二次确认与分期闭环”和“模型不可用时规则结果仍有效”两条测试，不改测试正文、fixture、产品代码、truth、医学规则或患者文案。新增 `npm run test:smoke:core`：先完成干净构建，再用精确测试名只运行这两条核心行为；选择器会回读 TAP 结果并要求两条逐字匹配，拒绝把测试改名后的零命中或部分命中冒充通过。
 > #331 经 PR #335 合并后，本轮重新在 Node 22.23.1 与 `origin/main@069accf` 上验证：正向冒烟 2/2 通过，含构建实测 3.40 秒，为同轮完整门禁 46.00 秒的 7.4%；临时故意改错一个目标名后，Node 自身只执行 1 条且仍为成功，但选择器如期以 exit 1 拦截；两条同时改错、零命中时也以 exit 1 拦截，恢复原名后再次 2/2 通过。最终 `cd src && npm run check` 退出 0，类型、架构、小程序、438 项 Node 全量回归与真实 Chromium E2E 均通过，本机未配置 PostgreSQL/S3 的 78 项仍明确为跳过；`git diff --check` 与清单检查通过。sequential-thinking 与 `km-review` 三视角复核了 TAP 包装层假绿、重复/改名、失败传播、旧入口和医学边界，未发现 P0–P2、重大逻辑错误或旧功能破坏。隔离 worktree 的结构检查只因被忽略的私密 vault 缺失而失败；主工作区只报告任务前已有的两个 `_work/` 中文目录名。当前成果仅在 `issue-332-core-smoke` 本地分支，尚未提交、推送、创建 PR、关闭 Issue 或部署。
