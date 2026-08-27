@@ -3,6 +3,14 @@
 > 本文件回答三问：**变了什么、为什么变、对你意味着什么**。每个里程碑一条，倒序追加。
 > 想看更细：AI 工作流水见 `state/board.md`，完整历史见 git log。规则见 `meta/kangmin_directory-protocol.md` 第二节。
 
+## 2026-08-27 · src 收敛为应用与能力包的最小分形结构
+
+**变了什么**：`src` 顶层从多种并列实现收敛为 `apps / packages / scripts / tests`；管理后台、API、CLI、小程序与 core、database、integrations、runtime 八个 workspace 使用同一小壳。患者旧 Web 已退役，网页只保留管理后台；PR #351–#357 逐步合并，最终 release `workspace-fractal-ec60f59-r2` 已部署。
+
+**为什么变**：旧结构让同一改动要跨多套目录规则确认，入口还可能绕过组合根直连实现。此次没有重写业务，而是把目录、依赖方向、构建和交付入口变成机器可检查的协议，降低后续定位和回归确认成本。
+
+**对你意味着什么**：以后新增应用或能力可以沿用同一结构，CLI/API、CI、Docker 和生产 systemd 已统一到新入口；四组冒烟、完整回归、真实 PostgreSQL/S3/OCI、候选和线上浏览器均已跑通。超 600 行占比仍是 14.4%，不会靠增加小文件伪装改善，后续仍按真实变化轴小步实验。`/ready` 的既有加密配置 503 未借本轮越权修改；本次部署也不等于客户或临床验收。操作证据见 [`docs/changes/ops/016_workspace-fractal-deploy.md`](../docs/changes/ops/016_workspace-fractal-deploy.md)。
+
 ## 2026-08-26 · 管理后台知识库支持三级目录管理
 
 **变了什么**：运营人员可以像使用文件夹一样创建、改名、调整和删除空目录，最多三级；知识可上传到指定目录或随后移动，全部知识与未分类仍有独立入口。SQLite、PostgreSQL、CLI 和 Web 使用同一目录模型，旧分类可确定迁入一级目录。PR #268/#269 通过 CI 后合并并部署，部署记录见 [`docs/changes/ops/005_admin-knowledge-folder-deploy.md`](../docs/changes/ops/005_admin-knowledge-folder-deploy.md)。
