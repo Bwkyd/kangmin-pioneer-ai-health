@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧾 会话结束前完成遗留记录、记忆与分支对账（2026-08-28 第269轮 · 基线 `origin/main@ff6eb14`，待提交）
+> 重新 fetch 并核对根工作区、GitHub、部署服务器与历史记录：#364–#369、PR #370–#376 均已关闭/合并，上述实现任务的本地和远端分支为零，本收尾记录单独位于隔离分支；只剩 #261/#262 两条既有 Dependabot PR。根工作区 13:06 的演化 trend 已被远端 23:07 最终复诊覆盖，不倒灌旧数据；未提交的四组组合冒烟因 `028` 已占用改按 `039` 归档，并明确后续已由实验 028–030 的分组入口取代；作者确认的“无真实变化不强拆”决策补档并关联 #364–#369 的实际小步实施。
+> 部署教训去重并入 `state/memory/20260828-deploy-target-verify.md`：先查已成功历史再验证 SSH 私钥/用户/主机三元组，非交互 SSH 显式设置 PATH，workspace bin 按包目录解析，zsh 不用特殊变量 `path`。本轮只整理文档、状态和长期记忆，不改 `src`、truth、数据库、患者数据或生产服务；作者原件 `hi.md` 保持只读且不提交。待文档门禁、PR CI、合并、根工作区快进和对话私密导出完成后结束。
+
 > ## 🚀 管理后台最小分形拆分已部署收口（2026-08-28 第268轮 · `main@f5dc36a`，待提交部署记录）
 > Issue #364–#369、PR #370–#375 已全部关闭并合并。精确合并构建发布为 `/srv/kangmin-cli/releases/admin-fractal-f5dc36a`，发布包 SHA-256 为 `698702ca3d97cbee324ee6d30511f93e16746ca216ec1fbe6f088efe87eb83fd`；8788 候选使用正式 SQLite/媒体副本启动，真实 Chromium 登录后贯通工作台、文章、视频、消息和 AI 知识入口，控制台错误与失败请求均为 0。
 > 切换前备份为 `/srv/kangmin-cli/data/backups/kangmin-mvp-20260828-001019-before-admin-fractal-f5dc36a.sqlite`，原子软链回滚演练通过后切换。应用/Nginx active、`NRestarts=0`、只监听 8787；正式库与备份 `quick_check=ok`，24 项迁移及 `28/11/21/136/136/47/17/26/20/38/26` 关键计数切换前后不变。公网 `/`、`/admin`、`/live` 为 200，公网 Chromium 0 控制台错误/失败请求，管理 JS 与 release 哈希一致；`/ready=503` 仍是既有加密配置缺口。sequential-thinking 元反思与 `km-review` 三视角 P0–P2 为 0；详见 `docs/changes/ops/017_admin-fractal-deploy.md`。
