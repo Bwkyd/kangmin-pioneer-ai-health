@@ -3,10 +3,15 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🔐 当前主分支与部署通道复核（2026-08-28 第286轮 · 基线 `main@cf85d4c`，待提交）
+> 本轮重新核对本地 Git、远端 `main`、公网只读接口和受控部署通道，没有沿用上一轮缓存。当前本地 `main` 与 `origin/main` 均为 `cf85d4c978a7b01b0d1ddc653ff7110712b1bb37`；该提交只校正整体发车收口记录，运行时代码基线仍是 PR #398 合并的 `fa09f63`。工作区唯一未跟踪文件仍为作者原件 `hi.md`，未修改、不纳入提交。
+> 公网即时复核：`/`、`/admin`、`/live`、`/v1/meta` 均为 200，`/ready` 为 503；后者返回数据库和对象存储 ok，但加密为 `not_configured`，仍只能视为试运行降级。默认 SSH 身份和项目历史明确的 `~/.ssh/cezhang_tencent_120_53_103_145` 均以 `BatchMode` 连接 `chenqiqiang@140.143.120.176` 返回 `Permission denied (publickey,...)`；未试探口令或无关私钥，因此没有执行候选上传、8788 预演、SQLite 备份、原子切换或重启。
+> 结论：仓内代码和 CI 收口事实不变，当前不能安全发车到试运行服务器；下一步只需恢复该服务器的受控 SSH 公钥/账号，随后按既有 ops/017 的候选、备份、切换、回滚和线上复核顺序继续。#385–#388 仍保持 OPEN/blocked，正式云资源、微信身份链路、合法 HTTPS 域名、真机和客户/医学验收仍未具备。
+
 > ## ✅ 管理后台缺陷合并与整体发车收口（2026-08-28 第285轮 · 代码 `main@fa09f63`，最终收口 `main@529dd68`）
 > PR #398 已 squash 合并到 `main@fa09f63`；收口文档 PR #399 随后 squash 合并，最终主分支为 `main@529dd68`。首轮 quality 因 GitHub checkout 缺私密 `vault/` 暴露结构门禁缺口，补充显式 `--allow-missing-private` 后修复；PR #398 quality 4分36秒、image 59秒，合并后 main CI run `33150513262` 的 quality 4分21秒、image 57秒通过；PR #399 quality 4分09秒、image 58秒，最终 main CI run `33151411204` 的 quality 4分14秒、image 1分03秒通过。六步 sequential-thinking 元反思与 `km-review` 收口复核均未发现新的仓内 P0–P2。
 > 交付证据：本地 `src` 506 条 Node 测试 494 通过/0 失败/12 条无 S3 条件跳过，管理端 6/6、Chromium E2E 通过；PostgreSQL 127/127、官方 MinIO S3/远程上传 12/12、legacy 127/127；根清单、结构（本机严格与 CI 私有缺失模式）、覆盖、演化、staged gitleaks 全绿。#390–#397 已逐条评论并关闭；#385–#388 保持 OPEN/blocked。
-> 收口边界：本地 `main` 与 `origin/main` 同为 `529dd68`，两个远端 feature 分支均已删，工作区只保留作者原件 `hi.md`。公网 `/live=200`、`/v1/meta=200`、`/ready=503`，后者仍因试运行环境未配置加密密钥；受控 SSH 当前返回 `Permission denied (publickey,...)`，所以没有执行试运行备份、上传、切换或重启。正式 PostgreSQL/COS/AES、微信配置、双平台真机及客户/医学验收仍不是本轮已完成事实。详细收口复核见 `docs/reviews/049_overall-launch-closeout-review.md`。
+> 收口边界：记录校正 PR #400 合并后，本地 `main` 与 `origin/main` 为 `cf85d4c`；PR #398、#399、#400 的远端 feature 分支均已删，工作区只保留作者原件 `hi.md`。公网 `/live=200`、`/v1/meta=200`、`/ready=503`，后者仍因试运行环境未配置加密密钥；受控 SSH 当前返回 `Permission denied (publickey,...)`，所以没有执行试运行备份、上传、切换或重启。正式 PostgreSQL/COS/AES、微信配置、双平台真机及客户/医学验收仍不是本轮已完成事实。详细收口复核见 `docs/reviews/049_overall-launch-closeout-review.md`。
 
 > ## 🧱 修正 CI 私密资料区结构门禁（2026-08-28 第284轮 · 基线 `main@9e8bd47`，PR #398 修复候选）
 > PR #398 首轮 quality 在结构门禁失败，真实原因是 GitHub checkout 不包含按规约忽略的私有 `vault/`，而结构检查仍要求本机私有资料目录和导航目标。新增显式 `--allow-missing-private`：只在 CI 缺失私有 `vault/` 时跳过对应缺失项，默认本机命令仍严格检查；同步更新 CI 与脚本说明。

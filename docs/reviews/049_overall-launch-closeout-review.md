@@ -13,8 +13,8 @@ related: ["reviews/048", "experiments/041"]
 
 仓内管理后台 G1–G3 已由 PR [#398](https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/398)
 修复并 squash 合并到 `main@fa09f63`，收口文档再由 PR #399 合并，最终主分支为
-`main@529dd68`；#390–#397 已逐条关闭。合并前 PR quality/image、两次收口 PR 的 main
-push CI 均通过；本轮没有发现新的仓内 P0–P2。
+`main@529dd68`；记录校正 PR #400 随后合并，当前主分支为 `main@cf85d4c`；#390–#397 已逐条关闭。
+合并前 PR quality/image、三次收口 PR 的 main push CI 均通过；本轮没有发现新的仓内 P0–P2。
 
 这不是正式整体生产就绪结论：试运行部署尚未切换，当前远程 SSH 公钥被拒；正式
 PostgreSQL、COS、加密密钥、微信 AppID/权限/合法 HTTPS 域名、双平台真机及客户/医学负责人
@@ -33,7 +33,7 @@ PostgreSQL、COS、加密密钥、微信 AppID/权限/合法 HTTPS 域名、双�
 - GitHub：PR #398 的 quality 4分36秒、image 59秒通过；其合并后 main CI run `33150513262` 的 quality 4分21秒、image 57秒通过。收口 PR #399 的 quality 4分09秒、image 58秒及最终 main CI run `33151411204` 的 quality 4分14秒、image 1分03秒均通过；这些流水线包含结构/清单、MinIO、Playwright、完整 CLI、业务预验收、OCI、生产依赖审计和 SBOM。
 - 首轮 CI 曾发现 GitHub checkout 不含私密 `vault/` 的真实门禁缺口，已用显式 `--allow-missing-private` 修复；本机无参数模式仍严格检查。
 - staged gitleaks 0 命中；legacy 保留既有 2 条 moderate PostCSS/Next advisory，属于退役参考区 P3，不扩大为当前运行时已修复或零风险。
-- 本地 `main` 与 `origin/main` 均为 `529dd68`，两个 feature 远端分支已删除；工作区只保留作者原件 `hi.md`，未纳入提交。
+- 本地 `main` 与 `origin/main` 均为 `cf85d4c`，PR #398–#400 的 feature 远端分支已删除；工作区只保留作者原件 `hi.md`，未纳入提交。
 
 ## 外部状态与剩余门
 
