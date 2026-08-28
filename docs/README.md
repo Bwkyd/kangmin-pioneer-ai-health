@@ -44,7 +44,7 @@
 | [`plan/`](plan/) | 001–015 | 016 |
 | [`reviews/`](reviews/) | 001–043 | 044 |
 | [`research/`](research/) | 001–014（002 已归档） | 015 |
-| [`experiments/`](experiments/) | 001–038 | 039 |
+| [`experiments/`](experiments/) | 001–039 | 040 |
 | [`changes/arch/`](changes/arch/) | 001–006 | 007 |
 | [`changes/ops/`](changes/ops/) | 001–017 | 018 |
 | [故障复盘](changes/README.md#故障复盘) | — | 001 |

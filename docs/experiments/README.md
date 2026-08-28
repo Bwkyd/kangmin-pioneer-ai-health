@@ -44,8 +44,9 @@
 | 036 | 2026-08-27 | 已完成（runtime、CLI 与 API 收口） | [runtime、CLI 与 API 入口](036_runtime-cli-api-entrypoints.md) |
 | 037 | 2026-08-27 | 已完成（最终 workspace 交付链） | [workspace 交付链](037_workspace-delivery-chain.md) |
 | 038 | 2026-08-27 | 已完成，PR CI 通过 | [四条业务链技术预验收](038_business-preacceptance.md) |
+| 039 | 2026-08-27 | 已完成（历史组合实验；后续由分组快速入口取代） | [四组功能冒烟与有界反证](039_four-group-smoke-bounded-validation.md) |
 
-下一份实验编号从 `039` 开始。
+下一份实验编号从 `040` 开始。
 
 新增实验必须写明：状态、日期、事实或代码基线、假设与变量、证据来源、成本与耗时、
 验证方式和已知限制；结论与推断分开，推断不得写成当前事实。
