@@ -55,6 +55,7 @@ Page({
     qaAnswer: null,
     qaLoading: false,
     knowledgeAvailable: api.wechatLoginEnabled !== false,
+    contentAvailable: api.networkAvailable !== false,
     knowledgeNotice: "",
     loading: true,
     error: ""
@@ -128,6 +129,10 @@ Page({
     self.setData({ loading: true, error: "", detail: null, detailKind: "" });
     if (self.data.kind === "qa") {
       self.setData({ loading: false });
+      return;
+    }
+    if (api.networkAvailable === false) {
+      self.setData({ loading: false, error: pageUtils.errorMessage({ code: "network_unavailable" }) });
       return;
     }
     if (self.data.kind === "plan") {
