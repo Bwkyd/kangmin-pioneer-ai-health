@@ -17,6 +17,7 @@ related: ["ops/017"]
 - 收尾记录：PR #382，已 squash 合并为 `main@e51d7e6`
 - 状态校正：PR #383，已 squash 合并为 `main@70e8c77973c0ba68e626c26951ce6abbe00f58f0`，用于把最终主线、分支与收尾事实对齐
 - 关闭 Issue：[#378](https://github.com/Bwkyd/kangmin-pioneer-ai-health/issues/378)、[#379](https://github.com/Bwkyd/kangmin-pioneer-ai-health/issues/379)、[#380](https://github.com/Bwkyd/kangmin-pioneer-ai-health/issues/380)
+- 后续阻塞跟踪：[#385](https://github.com/Bwkyd/kangmin-pioneer-ai-health/issues/385) 由作者建立并标记 `blocked`/`risk-high`，追踪正式 AppID、合法域名、体验版上传、真机与客户验收；本记录不关闭该外部依赖项
 
 本轮修复了小程序网络不可用时暴露微信运行时错误、健康档案窄屏记录行溢出、我的页隐私/关于入口无行为三类回归，并补齐源码回归、页面用例和真实微信开发者工具复测。没有修改服务端运行时代码、数据库、患者数据、医学规则或 truth，因此不重复构建、切换或重启线上服务。
 
