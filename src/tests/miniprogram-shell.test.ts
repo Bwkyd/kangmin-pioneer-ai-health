@@ -522,6 +522,7 @@ test("小程序消息页读取列表，打开未读消息后标记为已读", as
     command: async (name: string, input: Record<string, unknown>, options: Record<string, unknown>) => {
       calls.push({ name, input, options });
       if (name === "browse message list") return { items: [message] };
+      if (name === "browse message unread-count") return { count: 1 };
       if (name === "browse message show") return message;
       if (name === "browse message read") return { ...message, readAt: "2026-08-17T08:01:00.000Z" };
       throw new Error(`unexpected command: ${name}`);
@@ -535,18 +536,16 @@ test("小程序消息页读取列表，打开未读消息后标记为已读", as
 
   page.onLoad();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(calls[0]?.name, "browse message list");
+  assert.equal(page.data.unreadCount, 1);
+  assert.equal(page.data.unreadCountKnown, true);
   assert.equal(page.data.items[0]?.displayDate, "2026年8月17日");
   assert.equal(page.data.items[0]?.readAt, null);
 
   page.openItem({ currentTarget: { dataset: { id: "message-1" } } });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(calls.slice(1).map((call) => call.name), [
-    "browse message show",
-    "browse message read"
-  ]);
   assert.notEqual(page.data.selected.readAt, null);
   assert.notEqual(page.data.items[0]?.readAt, null);
+  assert.equal(calls.filter((call) => call.name === "browse message unread-count").length, 2);
 });
 
 test("小程序消息详情失败时不展示缓存内容，旧请求不能覆盖新选择", async () => {
@@ -559,6 +558,7 @@ test("小程序消息详情失败时不展示缓存内容，旧请求不能覆�
           { id: "message-b", title: "新消息", body: "新正文", summary: "新摘要", publishedAt: "2026-08-17T09:00:00.000Z", readAt: null }
         ] });
       }
+      if (name === "browse message unread-count") return Promise.resolve({ count: 2 });
       if (name === "browse message show") {
         return new Promise((resolve, reject) => { pending.push({ id: String(input.id), resolve, reject }); });
       }

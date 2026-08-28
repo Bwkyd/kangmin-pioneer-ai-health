@@ -15,6 +15,9 @@ function viewOf(item) {
 Page({
   data: {
     items: [],
+    unreadCount: 0,
+    unreadCountKnown: false,
+    unreadError: "",
     selected: null,
     loading: true,
     detailLoading: false,
@@ -33,11 +36,28 @@ Page({
   isCurrentRequest: function (version) {
     return this._requestVersion === version;
   },
+  loadUnreadCount: function (requestVersion) {
+    var self = this;
+    api.command("browse message unread-count", {}, { auth: true })
+      .then(function (result) {
+        if (!self.isCurrentRequest(requestVersion)) return;
+        var count = Number(result && result.count);
+        if (!Number.isInteger(count) || count < 0) {
+          throw { code: "bad_response", message: "消息数量返回格式不正确" };
+        }
+        self.setData({ unreadCount: count, unreadCountKnown: true, unreadError: "" });
+      })
+      .catch(function (error) {
+        if (!self.isCurrentRequest(requestVersion)) return;
+        self.setData({ unreadCountKnown: false, unreadError: pageUtils.errorMessage(error) });
+      });
+  },
   load: function () {
     var self = this;
     var requestVersion = self.nextRequest();
     self._hasLoaded = true;
-    self.setData({ loading: true, error: "", selected: null, detailLoading: false });
+    self.setData({ loading: true, error: "", unreadError: "", unreadCountKnown: false, selected: null, detailLoading: false });
+    self.loadUnreadCount(requestVersion);
     api.command("browse message list", {}, { auth: true })
       .then(function (result) {
         if (!self.isCurrentRequest(requestVersion)) return;
@@ -74,6 +94,7 @@ Page({
           items: self.data.items.map(function (entry) { return entry.id === next.id ? next : entry; }),
           detailLoading: false
         });
+        self.loadUnreadCount(requestVersion);
       })
       .catch(function (error) {
         if (!self.isCurrentRequest(requestVersion)) return;
