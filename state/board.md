@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🧱 修正 CI 私密资料区结构门禁（2026-08-28 第284轮 · 基线 `main@9e8bd47`，PR #398 修复候选）
+> PR #398 首轮 quality 在结构门禁失败，真实原因是 GitHub checkout 不包含按规约忽略的私有 `vault/`，而结构检查仍要求本机私有资料目录和导航目标。新增显式 `--allow-missing-private`：只在 CI 缺失私有 `vault/` 时跳过对应缺失项，默认本机命令仍严格检查；同步更新 CI 与脚本说明。
+> 修复后 `python3 scripts/structure-lint.py .`、带 `--allow-missing-private`、清单、差异和演化护栏均通过；此前本机功能、PostgreSQL、S3、浏览器和 legacy 结果不受影响。待提交修复 commit，并等待 PR 重跑 CI。
+
 > ## 🚦 整体发车门禁补齐与前三视角复核（2026-08-28 第283轮 · 基线 `main@947e87a`，未提交）
 > 先按整体发车重新盘点仓内门禁、运行依赖、微信发布和真实验收边界。两个被忽略的历史 `_work/` 中文目录只保留内容、可逆改名为协议允许的英文 slug，当前研究索引同步；`CI` quality 新增根目录 `check-manifests` 与 `structure-lint`，从而本地与 CI 口径一致。
 > 实际验证：本机 PostgreSQL 隔离契约 127/127；带 PostgreSQL 的 `cd src && npm run check` 为 506 条 Node 测试 494 通过、0 失败、12 条 S3 因端点未注入而跳过，管理端 6/6、真实浏览器 E2E 通过；官方 MinIO 临时有界实验补齐 S3/远程上传 12/12；`npm run test:acceptance` 为 4 组、7 条严格入口、4 组冒烟和桌面/移动 Chromium 全通过；legacy 127/127，生产依赖高危审计 0；根结构、清单、覆盖账本、差异检查全绿。临时 MinIO 进程与目录已清理。

@@ -11,7 +11,7 @@
 
 | 脚本 | 职责 |
 | --- | --- |
-| `structure-lint.py` | 检查项目目录、命名、导航和双入口同步 |
+| `structure-lint.py` | 检查项目目录、命名、导航和双入口同步；CI 对不入库的私密 `vault/` 可显式使用 `--allow-missing-private` |
 | `check-manifests.py` | 校验 `plugin.json` 与 `42plugin.json` |
 | `check-tools.sh` | 只读检查本机工具，不自动安装 |
 | `check-test-coverage-ledger.py` | 检查四组行为账本的分组、证据、最窄命令和缺口是否可追溯 |
