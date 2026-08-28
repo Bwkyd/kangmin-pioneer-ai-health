@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 管理后台缺陷合并与整体发车收口（2026-08-28 第285轮 · `main@fa09f63`）
+> PR #398 已 squash 合并到 `main@fa09f63`。首轮 quality 因 GitHub checkout 缺私密 `vault/` 暴露结构门禁缺口，补充显式 `--allow-missing-private` 后修复；PR quality 4分36秒、image 59秒通过，合并后 main CI run `33150513262` 的 quality 4分21秒、image 57秒也通过。六步 sequential-thinking 元反思与 `km-review` 收口复核均未发现新的仓内 P0–P2。
+> 交付证据：本地 `src` 506 条 Node 测试 494 通过/0 失败/12 条无 S3 条件跳过，管理端 6/6、Chromium E2E 通过；PostgreSQL 127/127、官方 MinIO S3/远程上传 12/12、legacy 127/127；根清单、结构（本机严格与 CI 私有缺失模式）、覆盖、演化、staged gitleaks 全绿。#390–#397 已逐条评论并关闭；#385–#388 保持 OPEN/blocked。
+> 收口边界：本地 `main` 与 `origin/main` 同为 `fa09f63`，远端 feature 分支已删，工作区只保留作者原件 `hi.md`。公网 `/live=200`、`/v1/meta=200`、`/ready=503`，后者仍因试运行环境未配置加密密钥；受控 SSH 当前返回 `Permission denied (publickey,...)`，所以没有执行试运行备份、上传、切换或重启。正式 PostgreSQL/COS/AES、微信配置、双平台真机及客户/医学验收仍不是本轮已完成事实。详细收口复核见 `docs/reviews/049_overall-launch-closeout-review.md`。
+
 > ## 🧱 修正 CI 私密资料区结构门禁（2026-08-28 第284轮 · 基线 `main@9e8bd47`，PR #398 修复候选）
 > PR #398 首轮 quality 在结构门禁失败，真实原因是 GitHub checkout 不包含按规约忽略的私有 `vault/`，而结构检查仍要求本机私有资料目录和导航目标。新增显式 `--allow-missing-private`：只在 CI 缺失私有 `vault/` 时跳过对应缺失项，默认本机命令仍严格检查；同步更新 CI 与脚本说明。
 > 修复后 `python3 scripts/structure-lint.py .`、带 `--allow-missing-private`、清单、差异和演化护栏均通过；此前本机功能、PostgreSQL、S3、浏览器和 legacy 结果不受影响。待提交修复 commit，并等待 PR 重跑 CI。
