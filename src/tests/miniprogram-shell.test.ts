@@ -518,12 +518,17 @@ test("小程序消息页读取列表，打开未读消息后标记为已读", as
     publishedAt: "2026-08-17T08:00:00.000Z",
     readAt: null
   };
+  let unreadCount = 1;
   const api = {
     command: async (name: string, input: Record<string, unknown>, options: Record<string, unknown>) => {
       calls.push({ name, input, options });
       if (name === "browse message list") return { items: [message] };
+      if (name === "browse message unread-count") return { count: unreadCount };
       if (name === "browse message show") return message;
-      if (name === "browse message read") return { ...message, readAt: "2026-08-17T08:01:00.000Z" };
+      if (name === "browse message read") {
+        unreadCount = 0;
+        return { ...message, readAt: "2026-08-17T08:01:00.000Z" };
+      }
       throw new Error(`unexpected command: ${name}`);
     }
   };
@@ -535,18 +540,25 @@ test("小程序消息页读取列表，打开未读消息后标记为已读", as
 
   page.onLoad();
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.equal(calls[0]?.name, "browse message list");
+  assert.deepEqual(calls.slice(0, 2).map((call) => call.name).sort(), [
+    "browse message list",
+    "browse message unread-count"
+  ].sort());
+  assert.equal(page.data.unreadCount, 1);
+  assert.equal(page.data.unreadCountKnown, true);
   assert.equal(page.data.items[0]?.displayDate, "2026年8月17日");
   assert.equal(page.data.items[0]?.readAt, null);
 
   page.openItem({ currentTarget: { dataset: { id: "message-1" } } });
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(calls.slice(1).map((call) => call.name), [
+  assert.deepEqual(calls.slice(2).map((call) => call.name), [
     "browse message show",
-    "browse message read"
+    "browse message read",
+    "browse message unread-count"
   ]);
   assert.notEqual(page.data.selected.readAt, null);
   assert.notEqual(page.data.items[0]?.readAt, null);
+  assert.equal(page.data.unreadCount, 0, "打开消息后未读数应重新读取服务端结果");
 });
 
 test("小程序消息详情失败时不展示缓存内容，旧请求不能覆盖新选择", async () => {
@@ -559,6 +571,7 @@ test("小程序消息详情失败时不展示缓存内容，旧请求不能覆�
           { id: "message-b", title: "新消息", body: "新正文", summary: "新摘要", publishedAt: "2026-08-17T09:00:00.000Z", readAt: null }
         ] });
       }
+      if (name === "browse message unread-count") return Promise.resolve({ count: 2 });
       if (name === "browse message show") {
         return new Promise((resolve, reject) => { pending.push({ id: String(input.id), resolve, reject }); });
       }
@@ -859,6 +872,45 @@ test("小程序学一学固定四入口、目录内视频列表和五项主导�
   for (const label of ["首页", "问助手", "记录", "日历", "我的"]) {
     assert.ok(template.includes(`<text>${label}</text>`), `缺少主导航项：${label}`);
   }
+});
+
+test("小程序视频播放失败展示患者可懂提示，不暴露媒体地址", async () => {
+  const api = {
+    networkAvailable: true,
+    wechatLoginEnabled: true,
+    mediaUrl: (value: string) => "https://api.example.test" + value,
+    command: async (name: string) => {
+      if (name === "browse video list") {
+        return { items: [{ id: "video-1", categoryIds: ["video-adult-quick-content"], category: "成人", title: "护理视频" }] };
+      }
+      if (name === "browse video category-registry") return { items: categoryRegistryFixture() };
+      if (name === "browse video show") {
+        return { id: "video-1", title: "护理视频", category: "成人", summary: "视频摘要", source: "审核来源", mediaUrl: "/v1/media/med_0123456789ab", disclaimer: "仅供科普" };
+      }
+      throw new Error(`unexpected command: ${name}`);
+    }
+  };
+  const page = loadPage("pages/learn/index.js", {
+    "../../utils/request": api,
+    "../../utils/page": { errorMessage: () => "加载失败" },
+    "../../utils/content-body": { parseContentBody: () => [] },
+    "../../utils/learning-catalog": loadModule("utils/learning-catalog.js")
+  });
+  page.setData = (changes, callback) => {
+    page.data = { ...page.data, ...changes };
+    if (typeof callback === "function") callback();
+  };
+  page.onLoad({ kind: "video" });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  page.openItem({ currentTarget: { dataset: { id: "video-1" } } });
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(page.data.mediaError, "");
+  page.onMediaError();
+  assert.equal(page.data.mediaError, "视频暂时无法播放，请稍后重试。");
+  assert.doesNotMatch(page.data.mediaError, /https?:\/\//u);
+  const learnTemplate = readFileSync(resolve(`${miniprogramRoot}/pages/learn/index.wxml`), "utf8");
+  assert.match(learnTemplate, /binderror="onMediaError"/u);
+  assert.match(learnTemplate, /wx:if="\{\{kind !== 'video' && coverUrl\}\}"/u, "视频详情不能同时渲染文章封面图");
 });
 
 test("小程序问助手保留抽屉、结果卡和发送入口", () => {

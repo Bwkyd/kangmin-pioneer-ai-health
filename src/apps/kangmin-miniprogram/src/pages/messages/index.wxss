@@ -5,6 +5,8 @@
 .messages-intro text:first-child { color: #d2a43a; font-size: 14rpx; font-weight: 700; }
 .messages-intro text:nth-child(2) { margin: 4rpx 0; color: #172b45; font-family: STSong, serif; font-size: 29rpx; font-weight: 700; }
 .messages-intro text:last-child { color: #86958f; font-size: 16rpx; }
+.message-count { color: #1e5aa3; font-size: 16rpx; font-weight: 700; }
+.message-count.unavailable { color: #a04436; font-weight: 400; }
 .message-list { display: flex; flex-direction: column; gap: 16rpx; }
 .message-card { padding: 24rpx; border: 2rpx solid #dce6f2; border-radius: 27rpx; background: #fff; box-shadow: 0 12rpx 34rpx rgba(18,59,115,.055); }
 .message-card.unread { border-color: #9fc1e5; box-shadow: 0 12rpx 34rpx rgba(30,90,163,.11); }

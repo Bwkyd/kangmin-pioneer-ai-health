@@ -1,6 +1,6 @@
 <view class="page messages-page">
   <view wx:if="{{!selected}}">
-    <view class="messages-intro"><view>通知</view><view><text>应用内通知</text><text>消息中心</text><text>这里展示运营人员发布的鼻健康提醒</text></view></view>
+    <view class="messages-intro"><view>通知</view><view><text>应用内通知</text><text>消息中心</text><view wx:if="{{unreadCountKnown}}" class="message-count">未读 {{unreadCount}} 条</view><view wx:elif="{{unreadError}}" class="message-count unavailable">未读数暂不可用</view><text>这里展示运营人员发布的鼻健康提醒</text></view></view>
     <view wx:if="{{loading}}" class="empty-box">正在读取站内消息…</view>
     <view wx:if="{{error}}" class="error-box"><text>{{error}}</text><text class="retry" bindtap="retry">重新加载</text></view>
     <view wx:if="{{!loading && !error && !items.length}}" class="empty-box">暂无消息</view>

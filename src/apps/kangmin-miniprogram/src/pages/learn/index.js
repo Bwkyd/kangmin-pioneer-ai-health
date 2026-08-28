@@ -51,6 +51,7 @@ Page({
     bodyNodes: [],
     mediaUrl: "",
     coverUrl: "",
+    mediaError: "",
     qaQuestion: "",
     qaAnswer: null,
     qaLoading: false,
@@ -64,7 +65,7 @@ Page({
   onLoad: function (options) {
     var kind = options && ["article", "video", "plan", "qa"].indexOf(options.kind) >= 0 ? options.kind : "video";
     wx.setNavigationBarTitle({ title: "学一学" });
-    this.setData({ kind: kind, knowledgeNotice: kind === "qa" && !this.data.knowledgeAvailable ? "知识问答暂不可用，其他科普内容仍可正常查看。" : "" });
+    this.setData({ kind: kind, mediaError: "", knowledgeNotice: kind === "qa" && !this.data.knowledgeAvailable ? "知识问答暂不可用，其他科普内容仍可正常查看。" : "" });
     this.load();
   },
 
@@ -75,7 +76,7 @@ Page({
   switchKind: function (event) {
     var kind = event.currentTarget.dataset.kind;
     if (kind === this.data.kind) return;
-    this.setData({ kind: kind, detail: null, detailKind: "", query: "", qaAnswer: null, knowledgeNotice: kind === "qa" && !this.data.knowledgeAvailable ? "知识问答暂不可用，其他科普内容仍可正常查看。" : "" });
+    this.setData({ kind: kind, detail: null, detailKind: "", query: "", qaAnswer: null, mediaError: "", knowledgeNotice: kind === "qa" && !this.data.knowledgeAvailable ? "知识问答暂不可用，其他科普内容仍可正常查看。" : "" });
     wx.setNavigationBarTitle({ title: "学一学" });
     this.load();
   },
@@ -126,7 +127,7 @@ Page({
 
   load: function () {
     var self = this;
-    self.setData({ loading: true, error: "", detail: null, detailKind: "" });
+    self.setData({ loading: true, error: "", detail: null, detailKind: "", mediaError: "" });
     if (self.data.kind === "qa") {
       self.setData({ loading: false });
       return;
@@ -164,7 +165,7 @@ Page({
     var self = this;
     var id = event.currentTarget.dataset.id;
     if (!id) return;
-    self.setData({ loading: true, error: "", detail: null, detailKind: "content" });
+    self.setData({ loading: true, error: "", detail: null, detailKind: "content", mediaError: "" });
     api.command("browse " + self.data.kind + " show", { id: id }, { auth: false })
       .then(function (item) {
         self.setData({ detail: item, mediaUrl: api.mediaUrl(item.mediaUrl), coverUrl: api.mediaUrl(item.coverUrl), bodyNodes: bodyParser.parseContentBody(item.body || item.summary || "", api.mediaUrl), loading: false });
@@ -186,8 +187,12 @@ Page({
       .catch(function (error) { self.setData({ loading: false, error: pageUtils.errorMessage(error) }); });
   },
 
+  onMediaError: function () {
+    this.setData({ mediaError: "视频暂时无法播放，请稍后重试。" });
+  },
+
   closeDetail: function () {
-    this.setData({ detail: null, detailKind: "", error: "" });
+    this.setData({ detail: null, detailKind: "", mediaError: "", error: "" });
     wx.setNavigationBarTitle({ title: "学一学" });
   },
 
