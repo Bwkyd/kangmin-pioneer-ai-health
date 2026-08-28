@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 📦 自有 AppID 开发版上传与预览收尾（2026-08-28 · 基线 `main@a779cbb`，待提交）
+> 按用户选择使用其已确认的自有 AppID：只在 `/tmp` 隔离小程序副本的 `project.config.json` 临时注入，仓库 AppID 仍为空且未写 AppSecret。微信开发者工具 CLI `islogin` 回读 `login:true`；开发版 `0.1.15` 上传成功，包体 `786549` 字节；预览二维码生成并保存为 `_work/20260828-miniprogram-formal-upload/preview.jpg`，SHA-256 为 `52e95456fabca5821953e65a154e1524a2ea7f9c5d10fb2f53e33fe0cbcdf7fd`。上传/预览结束后关闭临时项目、退出 IDE，9434/9542 端口均无监听，上传副本移入 macOS 废纸篓可恢复。
+> 这证明自有 AppID 与当前开发者工具可以接受本次代码包，不等于体验版可见、客户成员可扫码、正式 HTTPS request/upload/download 域名、微信登录、真实媒体解码、iOS/Android 真机、审核发布或客户验收；当前小程序配置仍是安全降级（网络/微信登录关闭），服务端正式 AppSecret、PostgreSQL/COS/AES 和受控 SSH 仍未注入。因此 #385–#388 继续保持 OPEN/blocked，不把本轮上传写成正式交付。
+
 > ## ✅ #387/#388 正式链路仓内修复与端到端复核（2026-08-28 · `main@e4cdc94`，PR #402 已合并）
 > 按用户确认修复 #387/#388 的可控缺口：消息中心读取并刷新服务端未读数，计数异常不伪装为 0；视频媒体解码或播放失败显示患者可懂提示，不暴露 URL 或平台堆栈。新增正式模式小程序 `request.js` → 本地 HTTP 服务端到端测试，覆盖微信 code 会话、健康授权、症状新增/幂等/修改/CAS/未来日期、日历/趋势、重启后重登恢复、跨患者隔离，以及后台发布文章/视频/通知、媒体字节、未读→已读、下架隐藏。未修改医学 truth、问卷、证型、期别、方案或规则。验证：typecheck、小程序/record/content/shell 冒烟、正式 E2E 2/2、小程序回归与壳 37/37、完整 Node 448 项 370 通过/0 失败/78 因未配置 PostgreSQL/S3 跳过、管理端 6/6、Chromium E2E 通过；远端 quality 4 分 20 秒、image 1 分钟均通过；sequential-thinking 复盘与 `$km-review` 未发现 P0–P2。正式 AppID、合法 HTTPS 域名、服务端微信 AppSecret、SSH/部署、真实已审核内容、iOS/Android 真机和客户验收仍缺，因此 #385–#388 不关闭、不宣称正式交付。
 
