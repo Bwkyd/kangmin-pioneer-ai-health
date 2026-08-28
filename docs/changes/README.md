@@ -38,8 +38,9 @@
 | [015](ops/015_content-category-registry-deploy.md) | 2026-08-26 | 内容分类注册表部署与小程序开发版上传 |
 | [016](ops/016_workspace-fractal-deploy.md) | 2026-08-27 | 最小分形 workspace 部署 |
 | [017](ops/017_admin-fractal-deploy.md) | 2026-08-28 | 管理后台最小分形拆分部署 |
+| [018](ops/018_miniprogram-e2e-regression-closeout.md) | 2026-08-28 | 小程序逐页 E2E 回归修复预览与收尾 |
 
-下一份生产操作编号从 `018` 开始。
+下一份生产操作编号从 `019` 开始。
 
 ## 故障复盘
 
