@@ -3,6 +3,10 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 小程序 E2E 交付状态最终对账（2026-08-28 第274轮 · `main@e51d7e6`）
+> PR #382 已 squash 合并，`main` 与 `origin/main` 当前同为 `e51d7e6ef590fbbab19d7096c51891befa6d50aa`，`quality`/`image` 均成功；#378–#380 已关闭。实现合并为 PR #381 的 `1ea003d`，收尾记录为 `docs/changes/ops/018_miniprogram-e2e-regression-closeout.md`。
+> 最终本地对账：仅保留 `main` 分支和主 worktree，任务远端分支已删除；作者原件 `hi.md` 仍未跟踪且未修改。微信开发者工具本轮启动的 CLI 端口 9434、自动化端口 9542 均已通过 `lsof` 核验无监听，临时匿名测试工程已移入废纸篓。小程序开发版上传仍以微信服务 `41002 appid missing` 为阻塞，不扩大为部署成功；服务器只读复核仍为 active、`NRestarts=0`、`/live`/`/v1/meta` 200、SQLite `quick_check=ok`。
+
 > ## ✅ 小程序 E2E 回归修复合并、Issue 收尾与部署边界确认（2026-08-28 第273轮 · `main@1ea003d`，收尾分支 `codex/miniprogram-e2e-closeout`）
 > 再次 fetch 并核对真实状态：PR #381 已 squash 合并，`main` 与 `origin/main` 同为 `1ea003db`；`quality`、`image` CI 成功；#378、#379、#380 已逐条留言并关闭。修复范围仍只有四类实体：小程序网络安全降级、健康档案窄屏布局、我的页弹层行为、测试与交付记录，没有超过四个。
 > 合并后的源码回归 4/4、覆盖账本、manifest 和 `git diff --check` 通过；此前完整门禁为 442 条 Node 测试 364 通过、78 条因本机未配置 PostgreSQL/S3 跳过、0 失败，管理端 2/2、真实 Chromium E2E 通过。微信开发者工具 36.6.0/核心 2.02.2608031 的 iPhone 12/13 `390×753` 模拟器真实复测隐私、关于、健康档案 2 条记录、学一学安全降级、问助手不可用态通过，DevTools 异常 0，截图仍在 `_work/20260828-miniprogram-e2e/`。
