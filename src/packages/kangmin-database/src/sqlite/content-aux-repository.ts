@@ -105,7 +105,7 @@ function toMessage(row: MessageRow): ContentMessageRow {
 
 export class SqliteContentAuxRepository implements ContentAuxRepository {
   constructor(private readonly database: KangminDatabase) {}
-
+  async transaction<T>(operation: () => Promise<T> | T): Promise<T> { return await this.database.transaction(operation); }
   // ---- 分类 ----
 
   async listCategories(kind?: ContentCategoryRow["kind"]): Promise<ContentCategoryRow[]> {

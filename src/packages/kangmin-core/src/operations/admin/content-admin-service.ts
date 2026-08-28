@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { DomainError } from "../../kernel/errors.js";
-import type { AuditPort } from "../system/audit-ports.js";
+import type { AuditEntry, AuditPort } from "../system/audit-ports.js";
 import type { ContentAuxRepository } from "./content-aux-repository.js";
 import type {
   AdminContentItem,
@@ -54,32 +54,8 @@ export class ContentAdminService {
 
   // ==== 文章（#135 兼容，扩展媒体/分类校验） ====
 
-  async create(adminId: string, input: CreateContentInput) {
-    const category = await this.categoryDisplay("article", input.categoryIds);
-    const timestamp = new Date().toISOString();
-    const request = { ...this.businessFields(input), category };
-    const item: AdminContentItem = {
-      id: randomUUID(),
-      kind: "article",
-      ...request,
-      status: "draft",
-      revision: 1,
-      publishedAt: null,
-      updatedAt: timestamp
-    };
-    const outcome = await this.repository.create(
-      adminId,
-      item,
-      input.idempotencyKey,
-      hash(request)
-    );
-    if (outcome.kind === "conflict") {
-      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
-    }
-    if (outcome.kind === "stale_replay") {
-      throw new DomainError("stale_replay", "相同幂等键对应的内容已不存在");
-    }
-    return outcome.item;
+  async create(adminId: string, input: CreateContentInput, requestId?: string) {
+    return this.createItem(adminId, "article", input, requestId);
   }
 
   async list(status?: "draft" | "published" | "unpublished") {
@@ -99,11 +75,13 @@ export class ContentAdminService {
   }
 
   async update(
+    adminId: string,
     id: string,
     expectedRevision: number,
-    changes: ContentItemChanges
+    changes: ContentItemChanges,
+    requestId?: string
   ): Promise<AdminContentItem> {
-    return this.updateItem("article", id, expectedRevision, changes);
+    return this.updateItem("article", id, expectedRevision, changes, adminId, requestId);
   }
 
   async publish(
@@ -126,32 +104,8 @@ export class ContentAdminService {
 
   // ==== 视频 ====
 
-  async createVideo(adminId: string, input: CreateContentInput) {
-    const category = await this.categoryDisplay("video", input.categoryIds);
-    const timestamp = new Date().toISOString();
-    const request = { ...this.businessFields(input), category };
-    const item: AdminContentItem = {
-      id: randomUUID(),
-      kind: "video",
-      ...request,
-      status: "draft",
-      revision: 1,
-      publishedAt: null,
-      updatedAt: timestamp
-    };
-    const outcome = await this.repository.create(
-      adminId,
-      item,
-      input.idempotencyKey,
-      hash(request)
-    );
-    if (outcome.kind === "conflict") {
-      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
-    }
-    if (outcome.kind === "stale_replay") {
-      throw new DomainError("stale_replay", "相同幂等键对应的内容已不存在");
-    }
-    return outcome.item;
+  async createVideo(adminId: string, input: CreateContentInput, requestId?: string) {
+    return this.createItem(adminId, "video", input, requestId);
   }
 
   async listVideos(status?: "draft" | "published" | "unpublished") {
@@ -175,11 +129,13 @@ export class ContentAdminService {
   }
 
   async updateVideo(
+    adminId: string,
     id: string,
     expectedRevision: number,
-    changes: ContentItemChanges
+    changes: ContentItemChanges,
+    requestId?: string
   ): Promise<AdminContentItem> {
-    return this.updateItem("video", id, expectedRevision, changes);
+    return this.updateItem("video", id, expectedRevision, changes, adminId, requestId);
   }
 
   async publishVideo(
@@ -201,6 +157,57 @@ export class ContentAdminService {
   }
 
   // ==== 内部 ====
+
+  private async createItem(
+    adminId: string,
+    kind: ContentItemKind,
+    input: CreateContentInput,
+    requestId?: string
+  ): Promise<AdminContentItem> {
+    return this.repository.transaction(async () => {
+      const category = await this.categoryDisplay(kind, input.categoryIds);
+      const timestamp = new Date().toISOString();
+      const request = { ...this.businessFields(input), category };
+      const item: AdminContentItem = {
+        id: randomUUID(),
+        kind,
+        ...request,
+        status: "draft",
+        revision: 1,
+        publishedAt: null,
+        updatedAt: timestamp
+      };
+      const outcome = await this.repository.create(
+        adminId,
+        item,
+        input.idempotencyKey,
+        hash(request)
+      );
+      if (outcome.kind === "conflict") {
+        throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
+      }
+      if (outcome.kind === "stale_replay") {
+        throw new DomainError("stale_replay", "相同幂等键对应的内容已不存在");
+      }
+      if (outcome.kind === "created") {
+        await this.audit.record({
+          actorKind: "admin",
+          actorId: adminId,
+          action: `content.${kind}.create`,
+          entityType: "content_item",
+          entityId: item.id,
+          entityRevision: item.revision,
+          requestId,
+          details: {
+            status: item.status,
+            categoryCount: item.categoryIds.length,
+            hasBody: item.body.trim() !== ""
+          }
+        });
+      }
+      return outcome.item;
+    });
+  }
 
   private businessFields(input: CreateContentInput) {
     return {
@@ -238,7 +245,9 @@ export class ContentAdminService {
     kind: ContentItemKind,
     id: string,
     expectedRevision: number,
-    changes: ContentItemChanges
+    changes: ContentItemChanges,
+    adminId: string,
+    requestId?: string
   ): Promise<AdminContentItem> {
     const current =
       kind === "article" ? await this.get(id) : await this.getVideo(id);
@@ -269,7 +278,23 @@ export class ContentAdminService {
         revision: current.revision + 1,
         updatedAt: new Date().toISOString()
       },
-      expectedRevision
+      expectedRevision,
+      {
+        actorKind: "admin",
+        actorId: adminId,
+        action: `content.${kind}.update`,
+        entityType: "content_item",
+        entityId: id,
+        entityRevision: current.revision + 1,
+        requestId,
+        details: {
+          status: current.status === "published" ? "draft" : current.status,
+          previousStatus: current.status,
+          changedFields: Object.keys(provided).sort(),
+          categoryCount: (provided.categoryIds as string[] | undefined)?.length ?? current.categoryIds.length,
+          hasBody: (provided.body as string | undefined)?.trim() !== "" || ((provided.body as string | undefined) === undefined && current.body.trim() !== "")
+        }
+      }
     );
   }
 
@@ -296,29 +321,31 @@ export class ContentAdminService {
       );
     }
     const timestamp = new Date().toISOString();
-    const outcome = await this.repository.updateGuarded(
-      {
-        ...current,
-        status: "published",
-        revision: current.revision + 1,
-        publishedAt: timestamp,
-        updatedAt: timestamp
-      },
-      expectedRevision,
-      (state) => this.dependencyMissing(current, state)
-    );
-    const published = this.guardedOutcome(outcome, expectedRevision);
-    await this.audit.record({
-      actorKind: "admin",
-      actorId: adminId,
-      action: `content.${kind}.publish`,
-      entityType: "content_item",
-      entityId: id,
-      entityRevision: published.revision,
-      requestId,
-      details: { status: "published" }
+    return this.repository.transaction(async () => {
+      const outcome = await this.repository.updateGuarded(
+        {
+          ...current,
+          status: "published",
+          revision: current.revision + 1,
+          publishedAt: timestamp,
+          updatedAt: timestamp
+        },
+        expectedRevision,
+        (state) => this.dependencyMissing(current, state)
+      );
+      const published = this.guardedOutcome(outcome, expectedRevision);
+      await this.audit.record({
+        actorKind: "admin",
+        actorId: adminId,
+        action: `content.${kind}.publish`,
+        entityType: "content_item",
+        entityId: id,
+        entityRevision: published.revision,
+        requestId,
+        details: { status: "published" }
+      });
+      return published;
     });
-    return published;
   }
 
   private async unpublishItem(
@@ -333,26 +360,25 @@ export class ContentAdminService {
     if (current.status !== "published") {
       throw new DomainError("validation_failed", "只有已发布内容可以下架");
     }
-    const unpublished = await this.commitItem(
+    return this.commitItem(
       {
         ...current,
         status: "unpublished",
         revision: current.revision + 1,
         updatedAt: new Date().toISOString()
       },
-      expectedRevision
+      expectedRevision,
+      {
+        actorKind: "admin",
+        actorId: adminId,
+        action: `content.${kind}.unpublish`,
+        entityType: "content_item",
+        entityId: id,
+        entityRevision: current.revision + 1,
+        requestId,
+        details: { status: "unpublished", previousStatus: current.status }
+      }
     );
-    await this.audit.record({
-      actorKind: "admin",
-      actorId: adminId,
-      action: `content.${kind}.unpublish`,
-      entityType: "content_item",
-      entityId: id,
-      entityRevision: unpublished.revision,
-      requestId,
-      details: { status: "unpublished" }
-    });
-    return unpublished;
   }
 
   /** 写入只接受稳定分类 ID；category 仅由注册表路径派生用于展示。 */
@@ -534,20 +560,26 @@ export class ContentAdminService {
 
   private async commitItem(
     item: AdminContentItem,
-    expectedRevision: number
+    expectedRevision: number,
+    auditEntry?: AuditEntry
   ): Promise<AdminContentItem> {
-    const outcome = await this.repository.update(item, expectedRevision);
-    if (outcome.kind === "not_found") {
-      throw new DomainError("resource_not_found", "内容不存在");
-    }
-    if (outcome.kind === "version_conflict") {
-      throw new DomainError("version_conflict", "内容已更新，请重新读取", {
-        details: {
-          expectedRevision,
-          currentRevision: outcome.currentRevision
-        }
-      });
-    }
-    return outcome.item;
+    return this.repository.transaction(async () => {
+      const outcome = await this.repository.update(item, expectedRevision);
+      if (outcome.kind === "not_found") {
+        throw new DomainError("resource_not_found", "内容不存在");
+      }
+      if (outcome.kind === "version_conflict") {
+        throw new DomainError("version_conflict", "内容已更新，请重新读取", {
+          details: {
+            expectedRevision,
+            currentRevision: outcome.currentRevision
+          }
+        });
+      }
+      if (auditEntry !== undefined) {
+        await this.audit.record({ ...auditEntry, entityRevision: outcome.item.revision });
+      }
+      return outcome.item;
+    });
   }
 }

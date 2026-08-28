@@ -93,4 +93,6 @@ export interface KnowledgeHit {
   knowledgeId: string;
   name: string;
   snippet: string;
+  /** 单资料测试可能命中未启用资料；全库结果必须为 true。 */
+  enabled: boolean;
 }

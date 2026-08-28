@@ -11,6 +11,7 @@
  *   锁超时映射为可重试的 storage_unavailable，与 SQLite 的 BUSY 映射对齐。
  */
 import { Pool, type PoolClient, type QueryResultRow } from "pg";
+import { AsyncLocalStorage } from "node:async_hooks";
 
 import { DomainError } from "@kangmin/core/kernel/errors";
 import { PG_MIGRATIONS } from "./migrations.js";
@@ -55,6 +56,7 @@ function isRetryableConcurrency(error: unknown): boolean {
 
 export class KangminPgDatabase {
   private readonly pool: Pool;
+  private readonly transactionContext = new AsyncLocalStorage<PoolClient>();
   /**
    * 迁移完成 Promise。仓储方法必须先 await；迁移失败时所有方法
    * 统一抛出迁移期的 DomainError（fail-closed，不带病运行）。
@@ -83,6 +85,10 @@ export class KangminPgDatabase {
     text: string,
     params: readonly unknown[] = []
   ): Promise<{ rows: T[]; rowCount: number }> {
+    const active = this.transactionContext.getStore();
+    if (active !== undefined) {
+      return this.queryIn(active, text, params);
+    }
     await this.ready;
     const result = await this.pool.query<T>(text, [...params]);
     return { rows: result.rows, rowCount: result.rowCount ?? 0 };
@@ -95,33 +101,39 @@ export class KangminPgDatabase {
   async transaction<T>(
     operation: (client: PoolClient) => Promise<T>
   ): Promise<T> {
+    const active = this.transactionContext.getStore();
+    if (active !== undefined) {
+      return operation(active);
+    }
     await this.ready;
     const client = await this.pool.connect();
-    try {
-      await client.query("BEGIN");
-      const result = await operation(client);
-      await client.query("COMMIT");
-      return result;
-    } catch (error) {
+    return this.transactionContext.run(client, async () => {
       try {
-        await client.query("ROLLBACK");
-      } catch {
-        // 保留原始领域/存储错误。
-      }
-      if (error instanceof DomainError) {
+        await client.query("BEGIN");
+        const result = await operation(client);
+        await client.query("COMMIT");
+        return result;
+      } catch (error) {
+        try {
+          await client.query("ROLLBACK");
+        } catch {
+          // 保留原始领域/存储错误。
+        }
+        if (error instanceof DomainError) {
+          throw error;
+        }
+        if (isRetryableConcurrency(error)) {
+          throw new DomainError(
+            "storage_unavailable",
+            "健康记录存储正被其他请求占用，请稍后重试",
+            { retryable: true, cause: error }
+          );
+        }
         throw error;
+      } finally {
+        client.release();
       }
-      if (isRetryableConcurrency(error)) {
-        throw new DomainError(
-          "storage_unavailable",
-          "健康记录存储正被其他请求占用，请稍后重试",
-          { retryable: true, cause: error }
-        );
-      }
-      throw error;
-    } finally {
-      client.release();
-    }
+    });
   }
 
   /** 事务内查询的简洁封装。 */

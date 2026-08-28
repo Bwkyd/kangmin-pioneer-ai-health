@@ -71,8 +71,8 @@
 
 | 是什么 | 在哪 | 协议 | 角色 | 读多深 | 还活着吗 |
 |---|---|---|---|---|---|
-| Anthropic Agent 评测方法 | `_work/20260821-微信文章-md/9步-给你的AIAgent搭一套真正管用的评测体系.md` | 外部文章，只读借鉴 | 要学的 | 只读任务、参考答案、平衡样本、轨迹与 `pass^k` | 2026-08-18 转存 |
-| Anthropic 上下文工程方法 | `_work/20260821-微信文章-md/上下文工程-比提示词工程更重要的Agent构建心法.md` | 外部文章，只读借鉴 | 要学的 | 只读最小高信号、精选示例与渐进披露 | 2026-08-21 转存 |
+| Anthropic Agent 评测方法 | `_work/20260821-wechat-articles-md/9步-给你的AIAgent搭一套真正管用的评测体系.md` | 外部文章，只读借鉴 | 要学的 | 只读任务、参考答案、平衡样本、轨迹与 `pass^k` | 2026-08-18 转存 |
+| Anthropic 上下文工程方法 | `_work/20260821-wechat-articles-md/上下文工程-比提示词工程更重要的Agent构建心法.md` | 外部文章，只读借鉴 | 要学的 | 只读最小高信号、精选示例与渐进披露 | 2026-08-21 转存 |
 | DeepSeek 官方首次调用、模型列表与价格 | `https://api-docs.deepseek.com/zh-cn/`、`https://api-docs.deepseek.com/zh-cn/api/list-models/`、`https://api-docs.deepseek.com/zh-cn/quick_start/pricing` | 官方文档 | 要比的 | 核对公开模型名、接口和思考模式 | 2026-08-22 回读 |
 
 ⚠️ **读懂 → 自己写，绝不复制粘贴。** GPL / AGPL 只参考不链接。

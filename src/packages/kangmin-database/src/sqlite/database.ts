@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { createHash } from "node:crypto";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
 
 import { DomainError } from "@kangmin/core/kernel/errors";
@@ -10,6 +11,7 @@ import {
   VIDEO_TRUTH_ASSIGNMENTS
 } from "@kangmin/core/operations/admin/content-category-registry";
 import { encryptStoredField } from "../shared/encrypted-fields.js";
+import { runSqliteTransaction } from "./transaction.js";
 
 /**
  * 一个版本化迁移：version 单调递增，apply 在同一事务内执行。
@@ -1539,6 +1541,7 @@ const MIGRATIONS: Migration[] = [
 
 export class KangminDatabase {
   readonly connection: DatabaseSync;
+  private readonly transactionContext = new AsyncLocalStorage<symbol>();
 
   constructor(path: string, private readonly encryption?: EncryptionPort) {
     try {
@@ -1569,28 +1572,15 @@ export class KangminDatabase {
     this.connection.close();
   }
 
-  transaction<T>(operation: () => T): T {
-    this.beginImmediate();
-    try {
-      const result = operation();
-      this.connection.exec("COMMIT");
-      return result;
-    } catch (error) {
-      try {
-        this.connection.exec("ROLLBACK");
-      } catch {
-        // Preserve the original domain/storage failure.
-      }
-      if (String(error).includes("database is locked")) {
-        // 跨进程瞬时锁争用：可重试，不应归一化为内部错误。
-        throw new DomainError(
-          "storage_unavailable",
-          "健康记录存储正被其他进程占用，请稍后重试",
-          { retryable: true, cause: error }
-        );
-      }
-      throw error;
-    }
+  transaction<T>(operation: () => T): T;
+  transaction<T>(operation: () => Promise<T>): Promise<T>;
+  transaction<T>(operation: () => T | Promise<T>): T | Promise<T> {
+    return runSqliteTransaction(
+      this.connection,
+      this.transactionContext,
+      () => this.beginImmediate(),
+      operation
+    );
   }
 
   /**

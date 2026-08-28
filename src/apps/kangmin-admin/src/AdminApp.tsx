@@ -1,4 +1,4 @@
-import { FormEvent, useCallback, useEffect, useState } from "react";
+import { FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import {
   AdminRequestError,
   adminCommand,
@@ -61,6 +61,36 @@ export function AdminApp() {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
   const [synced, setSynced] = useState(false);
+  const adminDataEpoch = useRef(0);
+
+  const clearAdminData = useCallback(() => {
+    adminDataEpoch.current += 1;
+    setArticles([]);
+    setVideos([]);
+    setMedia([]);
+    setKnowledge([]);
+    setKnowledgeFolders([]);
+    setMessages([]);
+    setVideoCategoryRegistry([]);
+    setArticleCategoryRegistry([]);
+    setSynced(false);
+  }, []);
+
+  const invalidateSession = useCallback(() => {
+    clearAdminData();
+    setSession(null);
+    setSection("overview");
+    setSectionFocus("all");
+    setNotice("登录已失效，请重新登录");
+  }, [clearAdminData]);
+
+  const handleRequestError = useCallback((error: unknown) => {
+    if (error instanceof AdminRequestError && error.code === "authentication_required") {
+      invalidateSession();
+      return;
+    }
+    setNotice(messageOf(error));
+  }, [invalidateSession]);
 
   const navigate = useCallback((nextSection: Section, focus: SectionFocus = "all") => {
     setSection(nextSection);
@@ -68,6 +98,7 @@ export function AdminApp() {
   }, []);
 
   const refresh = useCallback(async () => {
+    const refreshEpoch = adminDataEpoch.current;
     setSynced(false);
     const [articleData, videoData, messageData, mediaData, knowledgeData, folderData, articleRegistryData, videoRegistryData] = await Promise.all([
       adminCommand<{ items: ContentItem[] }>("content article list"),
@@ -79,6 +110,7 @@ export function AdminApp() {
       adminCommand<{ items: CategoryRegistryItem[] }>("content article category-registry"),
       adminCommand<{ items: CategoryRegistryItem[] }>("content video category-registry")
     ]);
+    if (refreshEpoch !== adminDataEpoch.current) return;
     setArticles(articleData.items);
     setVideos(videoData.items);
     setMessages(messageData.items);
@@ -99,8 +131,56 @@ export function AdminApp() {
 
   useEffect(() => {
     if (session === null) return;
-    refresh().catch((error) => setNotice(messageOf(error)));
-  }, [refresh, session]);
+    refresh().catch(handleRequestError);
+  }, [handleRequestError, refresh, session]);
+
+  // 会话可能在另一个窗口被撤销，也可能在后台停留到期。定时、回到
+  // 前台和窗口重新获得焦点都重新问服务端；失效时先清空旧数据再回登录页。
+  const hasSession = session !== null;
+  const sessionExpiresAt = session?.expiresAt ?? null;
+  useEffect(() => {
+    if (!hasSession) return;
+    let active = true;
+    let checkingSession = false;
+    const verify = async () => {
+      if (!active || checkingSession) return;
+      checkingSession = true;
+      try {
+        const value = await sessionStatus();
+        if (!active) return;
+        if (value.loggedIn) {
+          setSession(value);
+        } else {
+          invalidateSession();
+        }
+      } catch (error) {
+        if (active) handleRequestError(error);
+      } finally {
+        checkingSession = false;
+      }
+    };
+    const interval = window.setInterval(() => void verify(), 30_000);
+    const onFocus = () => void verify();
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") void verify();
+    };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    let expiryTimer: number | undefined;
+    if (sessionExpiresAt !== null) {
+      const expiresIn = Date.parse(sessionExpiresAt) - Date.now();
+      if (Number.isFinite(expiresIn)) {
+        expiryTimer = window.setTimeout(() => void verify(), Math.max(0, expiresIn + 50));
+      }
+    }
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      if (expiryTimer !== undefined) window.clearTimeout(expiryTimer);
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+    };
+  }, [handleRequestError, hasSession, invalidateSession, sessionExpiresAt]);
 
   async function run(action: () => Promise<void>, success: string): Promise<boolean> {
     setBusy(true);
@@ -111,10 +191,7 @@ export function AdminApp() {
       setNotice(success);
       return true;
     } catch (error) {
-      setNotice(messageOf(error));
-      if (error instanceof AdminRequestError && error.code === "authentication_required") {
-        setSession(null);
-      }
+      handleRequestError(error);
       return false;
     } finally {
       setBusy(false);
@@ -122,7 +199,7 @@ export function AdminApp() {
   }
 
   if (checking) return <main className="admin-loading">正在验证管理员身份…</main>;
-  if (session === null) return <Login onSuccess={setSession} />;
+  if (session === null) return <Login initialError={notice} onSuccess={setSession} />;
 
   const current = navigation.find((item) => item.key === section) ?? navigation[0]!;
   return (
@@ -137,7 +214,7 @@ export function AdminApp() {
           <span className="admin-nav-label">消息</span>
           {supportNavigation.map((item) => <button data-testid={`admin-nav-${item.key}`} key={item.key} className={section === item.key ? "active" : ""} onClick={() => navigate(item.key)}><i>{item.icon}</i>{item.label}</button>)}
         </nav>
-        <div className="admin-account"><span>{session.username?.slice(0, 1).toUpperCase()}</span><div><strong>{session.username}</strong><small>{session.role === "owner" ? "主管理员" : "内容管理员"}</small></div><button onClick={() => void run(async () => { await logout(); setSession(null); }, "已安全退出")}>退出</button></div>
+        <div className="admin-account"><span>{session.username?.slice(0, 1).toUpperCase()}</span><div><strong>{session.username}</strong><small>{session.role === "owner" ? "主管理员" : "内容管理员"}</small></div><button onClick={() => void (async () => { setBusy(true); try { await logout(); clearAdminData(); setSession(null); setNotice("已安全退出"); } catch (error) { handleRequestError(error); } finally { setBusy(false); } })()}>退出</button></div>
       </aside>
       <section className="admin-main">
         <header className="admin-topbar"><div><small>抗敏先锋 / {current.label}</small><h1>{current.label}</h1><p className="topbar-description">{section === "overview" ? "处理待办，管理小程序内容" : "按状态完成当前运营任务，所有写操作由服务端确认。"}</p></div>{section === "overview" && <span className={`sync-badge${synced ? "" : " pending"}`}><i></i> {synced ? "数据已同步" : "正在同步…"}</span>}</header>
@@ -145,18 +222,18 @@ export function AdminApp() {
         {section === "overview" && (synced ? <Overview articles={articles} videos={videos} messages={messages} knowledge={knowledge} onNavigate={navigate} /> : <section className="workbench-loading" role="status">正在读取服务端内容状态…</section>)}
         {section === "article" && <ContentManager kind="article" items={articles} media={media} categoryRegistry={articleCategoryRegistry} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
         {section === "video" && <ContentManager kind="video" items={videos} media={media} categoryRegistry={videoCategoryRegistry} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "message" && <MessageManager items={messages} busy={busy} run={run} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
-        {section === "knowledge" && <KnowledgeFolderManager items={knowledge} folders={knowledgeFolders} busy={busy} run={run} onOpenFiles={() => navigate("media")} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
+        {section === "message" && <MessageManager items={messages} busy={busy} run={run} adminKey={session.adminId ?? session.username ?? "admin"} initialStatusFilter={sectionFocus === "draft" || sectionFocus === "published" || sectionFocus === "unpublished" ? sectionFocus : "all"} />}
+        {section === "knowledge" && <KnowledgeFolderManager items={knowledge} folders={knowledgeFolders} busy={busy} run={run} onOpenFiles={() => navigate("media")} adminKey={session.adminId ?? session.username ?? "admin"} initialCreate={sectionFocus === "create"} initialStatusFilter={sectionFocus === "processing" || sectionFocus === "indexed" || sectionFocus === "enabled" || sectionFocus === "disabled" || sectionFocus === "index_failed" ? sectionFocus : "all"} />}
         {section === "media" && <MediaManager items={media} busy={busy} run={run} />}
       </section>
     </main>
   );
 }
 
-function Login({ onSuccess }: { onSuccess: (session: AdminSession) => void }) {
+function Login({ initialError, onSuccess }: { initialError: string; onSuccess: (session: AdminSession) => void }) {
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
+  const [error, setError] = useState(initialError);
   const [busy, setBusy] = useState(false);
   async function submit(event: FormEvent) {
     event.preventDefault();

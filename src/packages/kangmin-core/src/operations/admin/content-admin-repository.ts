@@ -75,6 +75,8 @@ export type UpdateGuardedResult =
   | { kind: "validation_failed"; missing: string[] };
 
 export interface ContentAdminRepository {
+  /** 在内容写入与审计需要共享的数据库事务中执行操作。 */
+  transaction<T>(operation: () => Promise<T> | T): Promise<T>;
   listCategoryRegistry(kind: ContentItemKind): Promise<Array<{
     id: string;
     name: string;

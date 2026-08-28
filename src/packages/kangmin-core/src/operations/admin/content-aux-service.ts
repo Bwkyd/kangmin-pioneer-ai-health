@@ -19,9 +19,7 @@ import type {
   ContentAuxRepository,
   ContentCategoryRow,
   ContentMediaRow,
-  ContentMessageRow,
-  MediaReferenceRow,
-  MessageStatus
+  MediaReferenceRow
 } from "./content-aux-repository.js";
 import {
   assertContentMatchesDeclared,
@@ -31,6 +29,7 @@ import {
   servableMediaContentType
 } from "./media-validation.js";
 import { extractArticleDocument, type ArticleDocumentDraft } from "./article-document-import.js";
+import { ContentMessageService } from "./content-message-service.js";
 
 const CATEGORY_KINDS = new Set<CategoryKind>([
   "article",
@@ -121,11 +120,15 @@ function requireChange(changes: Record<string, unknown>): void {
 }
 
 export class ContentAuxService {
+  private readonly messages: ContentMessageService;
+
   constructor(
     private readonly repository: ContentAuxRepository,
     private readonly storage: ObjectStoragePort,
     private readonly audit: AuditPort
-  ) {}
+  ) {
+    this.messages = new ContentMessageService(repository, audit);
+  }
 
   // ==== 素材 ====
 
@@ -706,179 +709,27 @@ export class ContentAuxService {
 
   // ==== 站内公告 ====
 
-  async createMessage(
-    adminId: string,
-    input: {
-      title: string;
-      body: string;
-      summary?: string | undefined;
-      categoryId?: string | undefined;
-    },
-    idempotencyKey: string
-  ): Promise<ContentMessageRow> {
-    const title = input.title.trim();
-    const body = input.body.trim();
-    if (title === "") {
-      throw new DomainError("validation_failed", "公告标题不能为空");
-    }
-    if (body === "") {
-      throw new DomainError("validation_failed", "公告正文不能为空");
-    }
-    const timestamp = now();
-    const message: ContentMessageRow = {
-      id: newId("msg"),
-      title,
-      body,
-      summary: input.summary?.trim() || null,
-      categoryId: input.categoryId ?? null,
-      status: "draft",
-      revision: 1,
-      publishedAt: null,
-      createdBy: adminId,
-      createdAt: timestamp,
-      updatedAt: timestamp
-    };
-    // 幂等创建（事务与卫生残留批 P2-7）：确定性键同内容重试 → 重放
-    // 返回原公告；requestHash 取业务字段稳定哈希，重试内容一致时相同。
-    const outcome = await this.repository.createMessageIdempotent(
-      adminId,
-      message,
-      idempotencyKey,
-      hash({
-        title,
-        body,
-        summary: input.summary?.trim() || null,
-        categoryId: input.categoryId ?? null
-      })
-    );
-    if (outcome.kind === "conflict") {
-      throw new DomainError("idempotency_conflict", "相同幂等键已用于不同请求");
-    }
-    if (outcome.kind === "stale_replay") {
-      throw new DomainError("stale_replay", "相同幂等键对应的公告已不存在");
-    }
-    return outcome.item;
+  createMessage(...args: Parameters<ContentMessageService["createMessage"]>): ReturnType<ContentMessageService["createMessage"]> {
+    return this.messages.createMessage(...args);
   }
 
-  async listMessages(status?: string): Promise<ContentMessageRow[]> {
-    return this.repository.listMessages(
-      status === undefined ? undefined : (status as MessageStatus)
-    );
+  listMessages(...args: Parameters<ContentMessageService["listMessages"]>): ReturnType<ContentMessageService["listMessages"]> {
+    return this.messages.listMessages(...args);
   }
 
-  async getMessage(id: string): Promise<ContentMessageRow> {
-    const message = await this.repository.findMessage(id);
-    if (message === null) {
-      throw new DomainError("resource_not_found", "公告不存在");
-    }
-    return message;
+  getMessage(...args: Parameters<ContentMessageService["getMessage"]>): ReturnType<ContentMessageService["getMessage"]> {
+    return this.messages.getMessage(...args);
   }
 
-  async updateMessage(
-    id: string,
-    expectedRevision: number,
-    changes: OptionalOf<Pick<ContentMessageRow, "title" | "body" | "summary" | "categoryId">>
-  ): Promise<ContentMessageRow> {
-    requireChange(changes);
-    const current = await this.getMessage(id);
-    const next: ContentMessageRow = {
-      ...current,
-      title: changes.title ?? current.title,
-      body: changes.body ?? current.body,
-      summary: changes.summary === undefined ? current.summary : changes.summary,
-      categoryId:
-        changes.categoryId === undefined ? current.categoryId : changes.categoryId,
-      revision: current.revision + 1,
-      updatedAt: now()
-    };
-    const outcome = await this.repository.updateMessage(next, expectedRevision);
-    return this.messageOutcome(outcome, expectedRevision);
+  updateMessage(...args: Parameters<ContentMessageService["updateMessage"]>): ReturnType<ContentMessageService["updateMessage"]> {
+    return this.messages.updateMessage(...args);
   }
 
-  async publishMessage(
-    adminId: string,
-    id: string,
-    expectedRevision: number,
-    requestId?: string
-  ): Promise<ContentMessageRow> {
-    const current = await this.getMessage(id);
-    if (current.status === "published") {
-      throw new DomainError("validation_failed", "公告已经发布");
-    }
-    if (current.title.trim() === "" || current.body.trim() === "") {
-      throw new DomainError("validation_failed", "发布前公告标题和正文不能为空");
-    }
-    const timestamp = now();
-    const outcome = await this.repository.setMessageStatus(
-      id,
-      expectedRevision,
-      "published",
-      timestamp,
-      timestamp
-    );
-    const published = this.messageOutcome(outcome, expectedRevision);
-    await this.audit.record({
-      actorKind: "admin",
-      actorId: adminId,
-      action: "content.message.publish",
-      entityType: "content_message",
-      entityId: id,
-      entityRevision: published.revision,
-      requestId,
-      details: { title: published.title }
-    });
-    return published;
+  publishMessage(...args: Parameters<ContentMessageService["publishMessage"]>): ReturnType<ContentMessageService["publishMessage"]> {
+    return this.messages.publishMessage(...args);
   }
 
-  async unpublishMessage(
-    adminId: string,
-    id: string,
-    expectedRevision: number,
-    requestId?: string
-  ): Promise<ContentMessageRow> {
-    const current = await this.getMessage(id);
-    if (current.status !== "published") {
-      throw new DomainError("validation_failed", "只有已发布公告可以下架");
-    }
-    const outcome = await this.repository.setMessageStatus(
-      id,
-      expectedRevision,
-      "unpublished",
-      null,
-      now()
-    );
-    const unpublished = this.messageOutcome(outcome, expectedRevision);
-    await this.audit.record({
-      actorKind: "admin",
-      actorId: adminId,
-      action: "content.message.unpublish",
-      entityType: "content_message",
-      entityId: id,
-      entityRevision: unpublished.revision,
-      requestId,
-      details: { title: unpublished.title }
-    });
-    return unpublished;
-  }
-
-  private messageOutcome(
-    outcome:
-      | { kind: "updated"; message: ContentMessageRow }
-      | { kind: "not_found" }
-      | { kind: "version_conflict"; currentRevision: number },
-    expectedRevision: number
-  ): ContentMessageRow {
-    if (outcome.kind === "not_found") {
-      throw new DomainError("resource_not_found", "公告不存在");
-    }
-    if (outcome.kind === "version_conflict") {
-      throw new DomainError("version_conflict", "公告已更新，请重新读取", {
-        details: {
-          expectedRevision,
-          currentRevision: outcome.currentRevision
-        }
-      });
-    }
-    return outcome.message;
+  unpublishMessage(...args: Parameters<ContentMessageService["unpublishMessage"]>): ReturnType<ContentMessageService["unpublishMessage"]> {
+    return this.messages.unpublishMessage(...args);
   }
 }

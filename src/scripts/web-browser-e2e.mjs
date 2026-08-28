@@ -143,6 +143,23 @@ try {
     desktopSections.every((box) => box.top >= 0 && box.bottom <= 900 && box.height > 40),
     "1440×900 应完整看到三个工作台区块"
   );
+
+  // 模拟另一个管理端撤销当前会话：真实页面回到前台时必须重新校验，
+  // 清空已加载列表并回到登录页，不能继续展示旧的管理数据。
+  const adminCookie = (await context.cookies(origin)).find(
+    (item) => item.name === "kangmin_admin_session"
+  );
+  assert.ok(adminCookie !== undefined, "浏览器上下文应持有 HttpOnly 管理会话");
+  const revoked = await adminOps.application.execute({
+    command: "auth logout",
+    adminToken: decodeURIComponent(adminCookie.value),
+    requestId: "browser-session-revoked"
+  });
+  assert.equal(revoked.ok, true, "撤销当前管理会话的操作应成功");
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await page.getByTestId("admin-login").waitFor({ state: "visible" });
+  assert.equal(await page.getByTestId("admin-nav-overview").count(), 0, "会话失效后不得继续显示旧导航");
+
   assert.deepEqual(browserErrors, [], "后台真实浏览器路径不应产生控制台或页面错误");
   assert.deepEqual(failedAdminResponses, [], "后台真实浏览器路径不应产生失败的管理接口请求");
 

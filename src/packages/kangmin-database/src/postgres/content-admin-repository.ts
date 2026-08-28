@@ -83,6 +83,10 @@ function methodTagsJson(tags: readonly string[]): string {
 export class PgContentAdminRepository implements ContentAdminRepository {
   constructor(private readonly database: KangminPgDatabase) {}
 
+  async transaction<T>(operation: () => Promise<T> | T): Promise<T> {
+    return this.database.transaction(async () => operation());
+  }
+
   async listCategoryRegistry(kind: ContentItemKind) {
     const { rows } = await this.database.query<{
       id: string; name: string; kind: ContentItemKind; parent_id: string | null;
