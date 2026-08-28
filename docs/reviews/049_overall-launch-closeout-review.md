@@ -12,8 +12,9 @@ related: ["reviews/048", "experiments/041"]
 ## 结论
 
 仓内管理后台 G1–G3 已由 PR [#398](https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/398)
-修复并 squash 合并到 `main@fa09f63`，#390–#397 已逐条关闭。合并前 PR quality/image
-和合并后 main push CI 均通过；本轮没有发现新的仓内 P0–P2。
+修复并 squash 合并到 `main@fa09f63`，收口文档再由 PR #399 合并，最终主分支为
+`main@529dd68`；#390–#397 已逐条关闭。合并前 PR quality/image、两次收口 PR 的 main
+push CI 均通过；本轮没有发现新的仓内 P0–P2。
 
 这不是正式整体生产就绪结论：试运行部署尚未切换，当前远程 SSH 公钥被拒；正式
 PostgreSQL、COS、加密密钥、微信 AppID/权限/合法 HTTPS 域名、双平台真机及客户/医学负责人
@@ -29,10 +30,10 @@ PostgreSQL、COS、加密密钥、微信 AppID/权限/合法 HTTPS 域名、双�
 ## 工程与交付视角
 
 - 本地：`src` 完整检查 506 条 Node 测试 494 通过、0 失败、12 条只因未注入 S3 跳过；管理端 6/6、真实 Chromium E2E 通过；本机 PostgreSQL 127/127、官方 MinIO S3/远程上传 12/12、legacy 127/127。
-- GitHub：PR #398 的 quality 4分36秒、image 59秒通过；合并后 main CI run `33150513262` 的 quality 4分21秒、image 57秒通过，包含结构/清单、MinIO、Playwright、完整 CLI、业务预验收、OCI、生产依赖审计和 SBOM。
+- GitHub：PR #398 的 quality 4分36秒、image 59秒通过；其合并后 main CI run `33150513262` 的 quality 4分21秒、image 57秒通过。收口 PR #399 的 quality 4分09秒、image 58秒及最终 main CI run `33151411204` 的 quality 4分14秒、image 1分03秒均通过；这些流水线包含结构/清单、MinIO、Playwright、完整 CLI、业务预验收、OCI、生产依赖审计和 SBOM。
 - 首轮 CI 曾发现 GitHub checkout 不含私密 `vault/` 的真实门禁缺口，已用显式 `--allow-missing-private` 修复；本机无参数模式仍严格检查。
 - staged gitleaks 0 命中；legacy 保留既有 2 条 moderate PostCSS/Next advisory，属于退役参考区 P3，不扩大为当前运行时已修复或零风险。
-- 本地 `main` 与 `origin/main` 均为 `fa09f63`，feature 远端分支已删除；工作区只保留作者原件 `hi.md`，未纳入提交。
+- 本地 `main` 与 `origin/main` 均为 `529dd68`，两个 feature 远端分支已删除；工作区只保留作者原件 `hi.md`，未纳入提交。
 
 ## 外部状态与剩余门
 
