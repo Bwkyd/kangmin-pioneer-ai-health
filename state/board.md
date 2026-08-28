@@ -3,6 +3,11 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 小程序 E2E 回归修复合并、Issue 收尾与部署边界确认（2026-08-28 第273轮 · `main@1ea003d`，收尾分支 `codex/miniprogram-e2e-closeout`）
+> 再次 fetch 并核对真实状态：PR #381 已 squash 合并，`main` 与 `origin/main` 同为 `1ea003db`；`quality`、`image` CI 成功；#378、#379、#380 已逐条留言并关闭。修复范围仍只有四类实体：小程序网络安全降级、健康档案窄屏布局、我的页弹层行为、测试与交付记录，没有超过四个。
+> 合并后的源码回归 4/4、覆盖账本、manifest 和 `git diff --check` 通过；此前完整门禁为 442 条 Node 测试 364 通过、78 条因本机未配置 PostgreSQL/S3 跳过、0 失败，管理端 2/2、真实 Chromium E2E 通过。微信开发者工具 36.6.0/核心 2.02.2608031 的 iPhone 12/13 `390×753` 模拟器真实复测隐私、关于、健康档案 2 条记录、学一学安全降级、问助手不可用态通过，DevTools 异常 0，截图仍在 `_work/20260828-miniprogram-e2e/`。
+> 按有界实验继续尝试微信部署：官方 CLI `preview`/`upload` 与显式 `project + AppID` 的 `/v2/preview`/`/v2/upload` 均返回 `41002 appid missing`，无有效二维码或上传信息，因此不把开发版上传记为成功。服务器未受客户端改动影响：`kangmin-cli.service` active、`NRestarts=0`，公网 `/live`、`/v1/meta` 200，正式 SQLite `quick_check=ok`。运维记录见 `docs/changes/ops/018_miniprogram-e2e-regression-closeout.md`；微信账号/AppID 绑定、合法 HTTPS 域名、真机和体验成员验收仍是外部前置条件。
+
 > ## ✅ 小程序缺陷修复与真实 E2E 复测完成（2026-08-28 第272轮 · 基线 `main@56044fc`，候选分支 `codex/miniprogram-e2e-regressions`）
 > 本轮仍只处理四类实体：小程序网络配置与安全降级、健康档案窄屏记录行、我的页隐私/关于入口、测试与交付链路；没有超过四个，无需拆子任务。先重新 fetch 并核对 GitHub、服务器、证书和公开 API：服务器实际单元为 `kangmin-cli.service`，运行稳定；公网证书只有 IP SAN，没有客户合法 HTTPS 域名，因此没有把旧的 IP 配置继续带入微信请求。
 > #378 改为无合法域名时网络、登录和问助手显式 fail-closed，本地健康记录仍可用且不调用 `wx.request`；#379 记录正文可换行、操作按钮固定并有 360px 媒体兜底；#380 隐私与关于入口改为可关闭弹层，隐私弹层可管理授权。新增 6 条回归用例拆至 `src/tests/miniprogram-regression.test.ts`，既有 `miniprogram-shell.test.ts` 保持 1251 行。
