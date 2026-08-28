@@ -416,7 +416,7 @@ export function ContentManager({
               {kind === "video" && <fieldset className="category-registry-select"><legend>视频分类（可多选）</legend><p>按适用人群、方案类别、细分类逐级选择；跨人群内容必须分别勾选。</p>{videoCategoryGroups.map(({ audience, groups }) => <section key={audience.id}><h3>{audience.name}</h3>{groups.map(({ group, leaves }) => <div className="category-registry-group" key={group.id}><strong>{group.name}</strong><div>{leaves.map((category) => { const fullPath = categoryPath(category); return <label key={category.id}><input aria-label={fullPath} type="checkbox" checked={draft.categoryIds.includes(category.id)} onChange={(event) => setDraft((current) => ({ ...current, categoryIds: event.target.checked ? [...new Set([...current.categoryIds, category.id])] : current.categoryIds.filter((id) => id !== category.id) }))} /><span>{category.name}<small>{fullPath}</small></span></label>; })}</div></div>)}</section>)}{selectableRegistry.length === 0 && <small>暂无可用视频分类，请核对 truth 与迁移状态。</small>}</fieldset>}
               {kind === "article" && <p className="form-hint">文章统一归入“科普文章”，按最近更新时间排序；时间不是分类。</p>}
               <label>摘要<textarea rows={2} value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
-              <ContentBodyEditor label={kind === "article" ? "正文" : "视频说明"} value={draft.body} onChange={(body) => setDraft((current) => ({ ...current, body }))} run={run} />
+              <ContentBodyEditor label={kind === "article" ? "正文" : "视频说明"} value={draft.body} onChange={(body) => setDraft((current) => ({ ...current, body: typeof body === "function" ? body(current.body) : body }))} run={run} />
               <details className="content-advanced">
                 <summary>更多设置（来源、封面）</summary>
                 <div className="form-grid">
@@ -449,5 +449,4 @@ export function ContentManager({
     </section>
   );
 }
-
 

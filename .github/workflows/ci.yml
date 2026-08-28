@@ -42,6 +42,12 @@ jobs:
           python3 scripts/test-evolution-guard.py
           python3 scripts/evolution-guard.py .
 
+      - name: Repository structure and manifest gates
+        run: |
+          python3 scripts/check-manifests.py
+          # vault/ 是本地私密资料区，不进入 GitHub checkout；其余结构仍严格检查。
+          python3 scripts/structure-lint.py . --allow-missing-private
+
       - name: Set up Node.js
         uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:

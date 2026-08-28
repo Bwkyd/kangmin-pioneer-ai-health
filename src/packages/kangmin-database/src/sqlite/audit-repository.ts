@@ -4,7 +4,7 @@ import { KangminDatabase } from "./database.js";
 import type { AuditEntry, AuditPort } from "@kangmin/core/operations/system/audit-ports";
 
 /**
- * audit_events 的 SQLite 实现：只追加，独立事务。
+ * audit_events 的 SQLite 实现：只追加；默认独立事务，已在内容事务中时复用外层事务。
  *
  * 强制审计（外部评审 P1-3）：record 失败直接抛错，调用方命令失败，
  * 绝不静默丢弃强制审计；如确有观测性降级需求，由调用方显式 try/catch。

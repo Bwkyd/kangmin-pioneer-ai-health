@@ -81,6 +81,10 @@ function methodTagsJson(tags: readonly string[]): string {
 export class SqliteContentAdminRepository implements ContentAdminRepository {
   constructor(private readonly database: KangminDatabase) {}
 
+  async transaction<T>(operation: () => Promise<T> | T): Promise<T> {
+    return await this.database.transaction(operation);
+  }
+
   async listCategoryRegistry(kind: ContentItemKind) {
     return this.database.connection.prepare(`
       SELECT id, name, kind, parent_id, audience, node_type, status, selectable, display_order

@@ -33,6 +33,16 @@ import {
 } from "@kangmin/core/kernel/protocol";
 import type { ObjectStoragePort } from "@kangmin/core/operations/system/object-storage-ports";
 import type { WechatLoginPort } from "@kangmin/core/patient/account/wechat-login-port";
+import {
+  clientIp,
+  commandRateLimitClass,
+  DEFAULT_RATE_LIMITS,
+  DEFAULT_RATE_LIMIT_WINDOW_MS,
+  FixedWindowRateLimiter,
+  loginRateLimit,
+  type RateLimitOptions
+} from "./rate-limiter.js";
+export type { RateLimitOptions } from "./rate-limiter.js";
 
 /**
  * 请求体大小上限默认值：保持既有 64 KiB 契约（http.e2e 既有断言）。
@@ -47,28 +57,7 @@ const ADMIN_SESSION_COOKIE = "kangmin_admin_session";
 const PREVIEW_SUBJECT_MAX_AGE_SECONDS = 24 * 60 * 60;
 const PREVIEW_SUBJECT_PATTERN = /^preview-[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 
-/** 限流路由类：strict 最严，upload 次之，commands 普通命令。 */
-type RateLimitClass = "strict" | "upload" | "commands";
-
-const DEFAULT_RATE_LIMITS: Record<RateLimitClass, number> = {
-  strict: 10,
-  upload: 30,
-  commands: 120
-};
-const DEFAULT_RATE_LIMIT_WINDOW_MS = 60_000;
-
 type AppEnvironment = "local" | "integration" | "staging" | "production";
-
-export interface RateLimitOptions {
-  /** /dev/session 与登录类命令每窗口上限（默认 10）。 */
-  strictPerWindow?: number;
-  /** /v1/*commands 普通命令每窗口上限（默认 120）。 */
-  commandsPerWindow?: number;
-  /** 上传类命令每窗口上限（默认 30）。 */
-  uploadPerWindow?: number;
-  /** 固定窗口长度毫秒（默认 60000；测试可缩短验证窗口恢复）。 */
-  windowMs?: number;
-}
 
 export interface HttpServerOptions {
   appEnvironment?: AppEnvironment;
@@ -91,95 +80,6 @@ export interface HttpServerOptions {
   requestLogger?: RequestLogger;
 }
 
-interface RateBucket {
-  windowStart: number;
-  count: number;
-}
-
-interface RateLimitDecision {
-  allowed: boolean;
-  retryAfterSeconds: number;
-}
-
-/**
- * 进程内固定窗口限流器：维度 = 客户端 IP × 路由类。
- * 窗口过期条目由定时器定期清理，避免长期运行内存膨胀。
- */
-class FixedWindowRateLimiter {
-  private readonly buckets = new Map<string, RateBucket>();
-  private readonly sweeper: NodeJS.Timeout;
-
-  constructor(
-    private readonly limits: Record<RateLimitClass, number>,
-    private readonly windowMs: number
-  ) {
-    // unref：清理定时器不阻止进程退出。
-    this.sweeper = setInterval(() => {
-      this.sweep();
-    }, this.windowMs);
-    this.sweeper.unref();
-  }
-
-  check(ip: string, routeClass: RateLimitClass): RateLimitDecision {
-    const now = Date.now();
-    const key = `${routeClass}:${ip}`;
-    const existing = this.buckets.get(key);
-    if (existing === undefined || now - existing.windowStart >= this.windowMs) {
-      this.buckets.set(key, { windowStart: now, count: 1 });
-      return { allowed: true, retryAfterSeconds: 0 };
-    }
-    existing.count += 1;
-    if (existing.count > this.limits[routeClass]) {
-      return {
-        allowed: false,
-        retryAfterSeconds: Math.max(
-          1,
-          Math.ceil((existing.windowStart + this.windowMs - now) / 1000)
-        )
-      };
-    }
-    return { allowed: true, retryAfterSeconds: 0 };
-  }
-
-  dispose(): void {
-    clearInterval(this.sweeper);
-  }
-
-  private sweep(): void {
-    const now = Date.now();
-    for (const [key, bucket] of this.buckets) {
-      if (now - bucket.windowStart >= this.windowMs) {
-        this.buckets.delete(key);
-      }
-    }
-  }
-}
-
-/** 客户端 IP：x-forwarded-for 首段，缺省回退 socket 对端地址。 */
-function clientIp(request: IncomingMessage): string {
-  const forwarded = request.headers["x-forwarded-for"];
-  const raw = Array.isArray(forwarded) ? forwarded[0] : forwarded;
-  const first = raw?.split(",")[0]?.trim();
-  if (first !== undefined && first !== "") {
-    return first;
-  }
-  return request.socket.remoteAddress ?? "unknown";
-}
-
-/** 命令路由类判定：登录类最严；直传票据/远程素材入库归上传类。 */
-function commandRateLimitClass(command: string): RateLimitClass {
-  if (command === "account login" || command === "auth login") {
-    return "strict";
-  }
-  if (
-    command.includes("upload-init") ||
-    command.includes("upload-confirm") ||
-    command.includes("add-from-media")
-  ) {
-    return "upload";
-  }
-  return "commands";
-}
 
 async function readJson(
   request: IncomingMessage,
@@ -619,16 +519,15 @@ export function createKangminHttpServer(
     options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS;
   const requestLogger =
     options.requestLogger ?? createStructuredRequestLogger();
+  const trustProxy = options.rateLimits?.trustProxy === true;
+  const rateLimits = options.rateLimits ?? {};
   const rateLimiter = new FixedWindowRateLimiter(
     {
-      strict:
-        options.rateLimits?.strictPerWindow ?? DEFAULT_RATE_LIMITS.strict,
-      upload:
-        options.rateLimits?.uploadPerWindow ?? DEFAULT_RATE_LIMITS.upload,
-      commands:
-        options.rateLimits?.commandsPerWindow ?? DEFAULT_RATE_LIMITS.commands
+      strict: rateLimits.strictPerWindow ?? DEFAULT_RATE_LIMITS.strict,
+      upload: rateLimits.uploadPerWindow ?? DEFAULT_RATE_LIMITS.upload,
+      commands: rateLimits.commandsPerWindow ?? DEFAULT_RATE_LIMITS.commands
     },
-    options.rateLimits?.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS
+    rateLimits.windowMs ?? DEFAULT_RATE_LIMIT_WINDOW_MS
   );
 
   const server = createServer(async (request, response) => {
@@ -781,6 +680,20 @@ export function createKangminHttpServer(
           if (!isRecord(body)) {
             throw new DomainError("command_invalid", "登录请求格式无效");
           }
+          const decision = loginRateLimit(rateLimiter, request, body, trustProxy);
+          if (!decision.allowed) {
+            response.setHeader("retry-after", String(decision.retryAfterSeconds));
+            json(
+              response,
+              429,
+              rateLimitedResult(
+                "auth login",
+                requestId,
+                decision.retryAfterSeconds
+              )
+            );
+            return;
+          }
           const result = await options.adminApplication.execute({
             command: "auth login",
             input: body,
@@ -900,7 +813,7 @@ export function createKangminHttpServer(
       request.method === "POST" &&
       requestUrl.pathname === "/v1/auth/wechat"
     ) {
-      const decision = rateLimiter.check(clientIp(request), "strict");
+      const decision = rateLimiter.check(clientIp(request, trustProxy), "strict");
       if (!decision.allowed) {
         response.setHeader("retry-after", String(decision.retryAfterSeconds));
         json(response, 429, rateLimitedResult("wechat login", requestId, decision.retryAfterSeconds));
@@ -938,7 +851,7 @@ export function createKangminHttpServer(
       }
 
       // 开发会话路由按路径归 strict 类，解析请求体之前先限流。
-      const decision = rateLimiter.check(clientIp(request), "strict");
+      const decision = rateLimiter.check(clientIp(request, trustProxy), "strict");
       if (!decision.allowed) {
         response.setHeader("retry-after", String(decision.retryAfterSeconds));
         json(
@@ -1014,7 +927,7 @@ export function createKangminHttpServer(
         }
         requestId = body.requestId;
         response.setHeader("x-request-id", requestId);
-        const decision = rateLimiter.check(clientIp(request), "commands");
+        const decision = rateLimiter.check(clientIp(request, trustProxy), "commands");
         if (!decision.allowed) {
           response.setHeader("retry-after", String(decision.retryAfterSeconds));
           json(
@@ -1111,10 +1024,15 @@ export function createKangminHttpServer(
 
       // 命令路由按命令归类限流（登录类 strict、上传类 upload、其余
       // commands）；超限返回 429，信封保持 CommandResult 风格。
-      const decision = rateLimiter.check(
-        clientIp(request),
-        commandRateLimitClass(body.command)
-      );
+      const routeClass = commandRateLimitClass(body.command);
+      const decision = routeClass === "strict"
+        ? loginRateLimit(
+            rateLimiter,
+            request,
+            isRecord(body.input) ? body.input : {},
+            trustProxy
+          )
+        : rateLimiter.check(clientIp(request, trustProxy), routeClass);
       if (!decision.allowed) {
         response.setHeader("retry-after", String(decision.retryAfterSeconds));
         json(
@@ -1256,7 +1174,10 @@ async function main(): Promise<void> {
         ) ?? DEFAULT_RATE_LIMITS.commands,
       uploadPerWindow:
         positiveIntegerEnv(process.env.KANGMIN_RATE_LIMIT_UPLOAD_PER_MINUTE) ??
-        DEFAULT_RATE_LIMITS.upload
+        DEFAULT_RATE_LIMITS.upload,
+      // 只有进程网络入口已限制为受控反向代理时才开启；默认不信任
+      // 客户端可伪造的 x-forwarded-for。
+      trustProxy: process.env.KANGMIN_TRUST_PROXY === "1"
     }
   });
   const port = Number(process.env.PORT ?? "8787");

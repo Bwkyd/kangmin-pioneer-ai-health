@@ -3,16 +3,19 @@ import { type FormEvent, useEffect, useMemo, useState } from "react";
 import type { ContentItem, KnowledgeItem, MediaItem, MessageItem } from "../admin-contracts";
 import { contentStatusLabels, Empty, knowledgeStatusLabels, mediaKindLabels } from "../admin-ui";
 import { adminCommand } from "../client";
+import { hasMessageDraft, messageDraftStorageKey, readMessageDraft, removeMessageDraft, type MessageDraftRecovery, writeMessageDraft } from "../message-draft-recovery";
 
 type RunAdminAction = (action: () => Promise<void>, success: string) => Promise<boolean>;
 type MessageStatusFilter = "all" | MessageItem["status"];
 
-export function MessageManager({ items, busy, run, initialStatusFilter }: { items: MessageItem[]; busy: boolean; run: RunAdminAction; initialStatusFilter: MessageStatusFilter }) {
+export function MessageManager({ items, busy, run, adminKey, initialStatusFilter }: { items: MessageItem[]; busy: boolean; run: RunAdminAction; adminKey: string; initialStatusFilter: MessageStatusFilter }) {
+  const storageKey = messageDraftStorageKey(adminKey);
   const [editing, setEditing] = useState<MessageItem | null>(null);
   const [title, setTitle] = useState("");
   const [summary, setSummary] = useState("");
   const [body, setBody] = useState("");
   const [showForm, setShowForm] = useState(false);
+  const [recovery, setRecovery] = useState<MessageDraftRecovery | null>(() => readMessageDraft(storageKey));
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<MessageStatusFilter>(initialStatusFilter);
   useEffect(() => {
@@ -27,23 +30,89 @@ export function MessageManager({ items, busy, run, initialStatusFilter }: { item
       return matchesStatus && matchesQuery;
     });
   }, [items, query, statusFilter]);
-  function open(item?: MessageItem) {
-    setEditing(item ?? null); setTitle(item?.title ?? ""); setSummary(item?.summary ?? ""); setBody(item?.body ?? ""); setShowForm(true);
+  function hasUnsavedDraft(): boolean {
+    if (recovery !== null) return true;
+    if (editing === null) return title.trim() !== "" || summary.trim() !== "" || body.trim() !== "";
+    return title !== editing.title || summary !== (editing.summary ?? "") || body !== editing.body;
   }
+  function clearDraft() {
+    removeMessageDraft(storageKey);
+    setRecovery(null);
+  }
+  function restoreRecovery() {
+    if (recovery === null) return;
+    const saved = recovery;
+    const current = saved.editingId === null ? undefined : items.find((item) => item.id === saved.editingId);
+    setEditing(current ?? null);
+    setTitle(saved.title);
+    setSummary(saved.summary);
+    setBody(saved.body);
+    setShowForm(true);
+    setRecovery(null);
+  }
+  function open(item?: MessageItem) {
+    if (item === undefined && recovery !== null) {
+      restoreRecovery();
+      return;
+    }
+    setEditing(item ?? null);
+    setTitle(item?.title ?? "");
+    setSummary(item?.summary ?? "");
+    setBody(item?.body ?? "");
+    setShowForm(true);
+  }
+  function closeForm() {
+    if (busy) return;
+    if (hasUnsavedDraft() && !window.confirm("当前站内消息还有未保存内容，确定放弃吗？")) return;
+    clearDraft();
+    setShowForm(false);
+    setEditing(null);
+    setTitle("");
+    setSummary("");
+    setBody("");
+  }
+  useEffect(() => {
+    if (!showForm || !hasUnsavedDraft()) return;
+    writeMessageDraft(storageKey, {
+      version: 1,
+      task: "message",
+      editingId: editing?.id ?? null,
+      revision: editing?.revision ?? null,
+      title,
+      summary,
+      body
+    });
+  }, [body, editing, recovery, showForm, storageKey, summary, title]);
+  useEffect(() => {
+    function warnBeforeLeave(event: BeforeUnloadEvent) {
+      if (!showForm || !hasUnsavedDraft()) return;
+      event.preventDefault();
+      event.returnValue = "";
+    }
+    window.addEventListener("beforeunload", warnBeforeLeave);
+    return () => window.removeEventListener("beforeunload", warnBeforeLeave);
+  }, [body, editing, recovery, showForm, summary, title]);
   async function save(event: FormEvent) {
     event.preventDefault();
-    await run(async () => {
+    const succeeded = await run(async () => {
       if (editing === null) await adminCommand("content message create", { title, summary, body, idempotencyKey: crypto.randomUUID() });
       else await adminCommand("content message update", { id: editing.id, title, summary, body, expectedRevision: editing.revision });
-      setShowForm(false); setEditing(null);
     }, "站内消息已保存");
+    if (succeeded) {
+      clearDraft();
+      setShowForm(false);
+      setEditing(null);
+      setTitle("");
+      setSummary("");
+      setBody("");
+    }
   }
   async function toggle(item: MessageItem) {
     const action = item.status === "published" ? "unpublish" : "publish";
     const succeeded = await run(() => adminCommand(`content message ${action}`, { id: item.id, expectedRevision: item.revision, yes: true }).then(() => undefined), action === "publish" ? "消息已发布，登录用户现在可见" : "消息已下架");
     if (succeeded) setStatusFilter("all");
   }
-  return <section className="manager-card"><div className="manager-heading"><div><span className="section-kicker">消息与素材 / 应用内推送</span><h2>站内消息</h2><p>向登录用户发布应用内消息；支持草稿、编辑、发布和下架，不扩展到微信订阅通知。</p></div><button className="primary" onClick={() => open()}>新建消息</button></div><div className="manager-toolbar"><label className="filter-field">搜索消息<input aria-label="搜索站内消息" placeholder="按标题、摘要或正文搜索" value={query} onChange={(event) => setQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label="筛选站内消息状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as MessageStatusFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{items.filter((item) => item.status === "draft").length} 条草稿 · 发布后登录用户可见</small></div></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><label>标题<input required value={title} onChange={(event) => setTitle(event.target.value)}/></label><label>摘要<input value={summary} onChange={(event) => setSummary(event.target.value)}/></label><label>正文<textarea required rows={7} value={body} onChange={(event) => setBody(event.target.value)}/></label><div className="form-actions"><button type="button" onClick={() => setShowForm(false)}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}{filteredItems.length === 0 ? <Empty icon="信" title={items.length === 0 ? "还没有站内消息" : "没有匹配消息"} text={items.length === 0 ? "新建草稿并发布后，登录用户会在消息中心看到。" : "调整搜索词或状态筛选后继续。"}/> : <div className="table-wrap"><table><thead><tr><th>消息</th><th>状态 / 下一步</th><th>发布时间</th><th>操作</th></tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || item.body.slice(0, 48)}</small></td><td><span className={`status ${item.status}`}>{contentStatusLabels[item.status]}</span><small className="next-step">{item.status === "draft" ? "下一步：发布后进入消息中心" : item.status === "published" ? "登录用户当前可见" : "需要时重新发布"}</small></td><td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString("zh-CN") : "—"}</td><td className="row-actions"><button disabled={busy} onClick={() => open(item)}>编辑</button><button disabled={busy} onClick={() => void toggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>}</section>;
+  return <section className="manager-card"><div className="manager-heading"><div><span className="section-kicker">消息与素材 / 应用内推送</span><h2>站内消息</h2><p>向登录用户发布应用内消息；支持草稿、编辑、发布和下架，不扩展到微信订阅通知。</p></div><button className="primary" onClick={() => open()}>新建消息</button></div>{recovery !== null && <div className="draft-recovery" role="status"><span>发现上次离开页面时未保存的站内消息。</span><button type="button" onClick={restoreRecovery}>恢复未保存内容</button><button type="button" onClick={clearDraft}>放弃恢复</button></div>}<div className="manager-toolbar"><label className="filter-field">搜索消息<input aria-label="搜索站内消息" placeholder="按标题、摘要或正文搜索" value={query} onChange={(event) => setQuery(event.target.value)}/></label><label className="filter-field filter-status">状态筛选<select aria-label="筛选站内消息状态" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as MessageStatusFilter)}><option value="all">全部状态</option><option value="draft">草稿</option><option value="published">已发布</option><option value="unpublished">已下架</option></select></label><div className="status-summary"><strong>{filteredItems.length}</strong><span>当前显示</span><small>{items.filter((item) => item.status === "draft").length} 条草稿 · 发布后登录用户可见</small></div></div>{showForm && <form className="content-form" onSubmit={(event) => void save(event)}><label>标题<input required value={title} onChange={(event) => setTitle(event.target.value)}/></label><label>摘要<input value={summary} onChange={(event) => setSummary(event.target.value)}/></label><label>正文<textarea required rows={7} value={body} onChange={(event) => setBody(event.target.value)}/></label><div className="form-actions"><button type="button" onClick={closeForm}>取消</button><button className="primary" disabled={busy}>保存草稿</button></div></form>}{filteredItems.length === 0 ? <Empty icon="信" title={items.length === 0 ? "还没有站内消息" : "没有匹配消息"} text={items.length === 0 ? "新建草稿并发布后，登录用户会在消息中心看到。" : "调整搜索词或状态筛选后继续。"}/> : <div className="table-wrap"><table><thead><tr><th>消息</th><th>状态 / 下一步</th><th>发布时间</th><th>操作</th></tr></thead><tbody>{filteredItems.map((item) => <tr key={item.id}><td><strong>{item.title}</strong><small>{item.summary || item.body.slice(0, 48)}</small></td><td><span className={`status ${item.status}`}>{contentStatusLabels[item.status]}</span><small className="next-step">{item.status === "draft" ? "下一步：发布后进入消息中心" : item.status === "published" ? "登录用户当前可见" : "需要时重新发布"}</small></td><td>{item.publishedAt ? new Date(item.publishedAt).toLocaleString("zh-CN") : "—"}</td><td className="row-actions"><button type="button" disabled={busy} onClick={() => open(item)}>编辑</button><button type="button" disabled={busy} onClick={() => void toggle(item)}>{item.status === "published" ? "下架" : "发布"}</button></td></tr>)}</tbody></table></div>}</section>;
 }
 
 const mediaStatusLabels: Record<string, string> = {

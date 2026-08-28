@@ -94,6 +94,8 @@ export type GuardedMediaDeleteResult =
 type OptionalOf<T> = { [K in keyof T]?: T[K] | undefined };
 
 export interface ContentAuxRepository {
+  /** 在公告写入与审计需要共享的数据库事务中执行操作。 */
+  transaction<T>(operation: () => Promise<T> | T): Promise<T>;
   // ---- 分类 ----
   listCategories(kind?: CategoryKind): Promise<ContentCategoryRow[]>;
   findCategoryById(id: string): Promise<ContentCategoryRow | null>;

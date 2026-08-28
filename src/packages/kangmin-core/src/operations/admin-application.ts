@@ -275,7 +275,6 @@ export class KangminAdminApplication {
             ),
             request.requestId
           );
-
         // ---- content article ----
         case "content article category-registry":
           return success(command, { items: await this.content.categoryRegistry("article") }, request.requestId);
@@ -298,7 +297,7 @@ export class KangminAdminApplication {
               methodTags: optionalStringArray(input, "methodTags") ?? [],
               displayOrder: optionalIntegerInRange(input, "displayOrder", 0, 1_000_000) ?? 0,
               idempotencyKey: idempotencyKeyOf(command, input)
-            }),
+            }, request.requestId),
             request.requestId
           );
         case "content article list":
@@ -323,9 +322,11 @@ export class KangminAdminApplication {
           return success(
             command,
             await this.content.update(
+              adminId,
               requiredString(input, "id"),
               positiveInteger(input, "expectedRevision"),
-              this.contentChanges(input)
+              this.contentChanges(input),
+              request.requestId
             ),
             request.requestId
           );
@@ -349,7 +350,6 @@ export class KangminAdminApplication {
                 ),
             request.requestId
           );
-
         // ---- content video ----
         case "content video category-registry":
           return success(command, { items: await this.content.categoryRegistry("video") }, request.requestId);
@@ -372,7 +372,7 @@ export class KangminAdminApplication {
               methodTags: optionalStringArray(input, "methodTags") ?? [],
               displayOrder: optionalIntegerInRange(input, "displayOrder", 0, 1_000_000) ?? 0,
               idempotencyKey: idempotencyKeyOf(command, input)
-            }),
+            }, request.requestId),
             request.requestId
           );
         case "content video list":
@@ -397,9 +397,11 @@ export class KangminAdminApplication {
           return success(
             command,
             await this.content.updateVideo(
+              adminId,
               requiredString(input, "id"),
               positiveInteger(input, "expectedRevision"),
-              this.contentChanges(input)
+              this.contentChanges(input),
+              request.requestId
             ),
             request.requestId
           );
@@ -423,7 +425,6 @@ export class KangminAdminApplication {
                 ),
             request.requestId
           );
-
         // ---- content media ----
         case "content media upload":
           return success(
@@ -509,7 +510,6 @@ export class KangminAdminApplication {
             ),
             request.requestId
           );
-
         // ---- content category ----
         case "content category create":
           return success(
@@ -559,7 +559,6 @@ export class KangminAdminApplication {
             ),
             request.requestId
           );
-
         // ---- content message ----
         case "content message create":
           return success(
@@ -574,7 +573,8 @@ export class KangminAdminApplication {
               },
               // 幂等创建（事务与卫生残留批 P2-7）：确定性键同内容重试
               // → 重放返回原公告，不重复创建。
-              idempotencyKeyOf(command, input)
+              idempotencyKeyOf(command, input),
+              request.requestId
             ),
             request.requestId
           );
@@ -594,6 +594,7 @@ export class KangminAdminApplication {
           return success(
             command,
             await this.aux.updateMessage(
+              adminId,
               requiredString(input, "id"),
               positiveInteger(input, "expectedRevision"),
               {
@@ -601,7 +602,8 @@ export class KangminAdminApplication {
                 body: opt(input, "body"),
                 summary: opt(input, "summary"),
                 categoryId: opt(input, "categoryId")
-              }
+              },
+              request.requestId
             ),
             request.requestId
           );
@@ -623,13 +625,11 @@ export class KangminAdminApplication {
                   positiveInteger(input, "expectedRevision"),
                   request.requestId
                 ),
-            request.requestId
+          request.requestId
           );
-
         // ---- agent status ----
         case "agent status":
           return success(command, await this.agent.status(), request.requestId);
-
         // ---- agent knowledge ----
         case "agent knowledge folder list":
           return success(

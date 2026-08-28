@@ -49,8 +49,11 @@
 | 043 | 2026-08-27 | 元反思与三视角交付复核 | [四条业务链技术预验收复核](043_business-preacceptance-review.md) |
 | 044 | 2026-08-27 | 演化复诊与三视角交付复核 | [管理后台最小分形样本复诊](044_admin-minimal-fractal-review.md) |
 | 045 | 2026-08-28 | 元反思与三视角交付复核 | [小程序逐页 E2E 回归修复交付复核](045_miniprogram-e2e-regression-review.md) |
+| 046 | 2026-08-28 | 三视角报价对齐复核 | [小程序报价功能对齐评审](046_miniprogram-quotation-alignment-review.md) |
+| 047 | 2026-08-28 | 三视角管理后台缺陷复查 | [管理后台缺陷复查与 Issue 登记](047_admin-backend-defect-review.md) |
+| 048 | 2026-08-28 | 三视角整体发车复核 | [整体发车前三视角复核](048_overall-launch-readiness-review.md) |
 
-下一份评审编号从 `046` 开始。
+下一份评审编号从 `049` 开始。
 
 阅读顺序为 002 → 001 → 003。003 保留原始输出，因此其中旧工作区的绝对路径和
 当时行号不做重写；需要当前证据时回到现有代码重新定位。

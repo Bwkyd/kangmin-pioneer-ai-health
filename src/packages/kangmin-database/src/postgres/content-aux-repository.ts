@@ -1,5 +1,4 @@
 import type { PoolClient } from "pg";
-
 import type {
   ContentAuxRepository,
   ContentCategoryRow,
@@ -121,7 +120,7 @@ function toMessage(row: MessageRow): ContentMessageRow {
 
 export class PgContentAuxRepository implements ContentAuxRepository {
   constructor(private readonly database: KangminPgDatabase) {}
-
+  async transaction<T>(operation: () => Promise<T> | T): Promise<T> { return this.database.transaction(async () => operation()); }
   // ---- 分类 ----
 
   async listCategories(kind?: ContentCategoryRow["kind"]): Promise<ContentCategoryRow[]> {

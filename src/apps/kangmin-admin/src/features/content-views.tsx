@@ -4,10 +4,12 @@ import type { ContentItem, ContentPreview, MediaItem } from "../admin-contracts"
 import { contentStatusLabels, Empty, mediaKindLabels } from "../admin-ui";
 import { uploadFile } from "../client";
 import { ContentBody } from "../content-body";
+import { appendBodyAttachment } from "../content-body-editing";
 
 type RunAdminAction = (action: () => Promise<void>, success: string) => Promise<boolean>;
+type BodyChange = string | ((current: string) => string);
 
-export function ContentBodyEditor({ label, value, onChange, run }: { label: string; value: string; onChange: (value: string) => void; run: RunAdminAction }) {
+export function ContentBodyEditor({ label, value, onChange, run }: { label: string; value: string; onChange: (value: BodyChange) => void; run: RunAdminAction }) {
   const textarea = useRef<HTMLTextAreaElement | null>(null);
   const [uploadMessage, setUploadMessage] = useState("");
 
@@ -38,7 +40,9 @@ export function ContentBodyEditor({ label, value, onChange, run }: { label: stri
       const snippet = media.kind === "image"
         ? "![" + safeName + "](/v1/media/" + media.id + ")"
         : "[" + safeName + "](/v1/media/" + media.id + ")";
-      onChange(value.trim() === "" ? snippet : value + "\n\n" + snippet);
+      // 上传期间用户可能继续编辑正文；使用函数式更新合并到完成上传时的
+      // 最新正文，不能把 await 之前捕获的旧 value 写回去。
+      onChange((current) => appendBodyAttachment(current, snippet));
     }, "正文图片已上传并插入");
     setUploadMessage(succeeded ? `已上传并插入：${file.name}` : `上传失败：${file.name}，可重新选择重试`);
   }

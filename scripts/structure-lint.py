@@ -71,6 +71,15 @@ REQUIRED_DIRECTORIES = (
     "scripts",
 )
 
+PRIVATE_REQUIRED_FILES = {
+    "vault/raw/README.md",
+}
+
+PRIVATE_REQUIRED_DIRECTORIES = {
+    "vault/truth",
+    "vault/style",
+}
+
 NAVIGATION_FILES = (
     "AGENTS.md",
     "README.md",
@@ -100,16 +109,25 @@ NUMBERED_DOCUMENT = re.compile(r"^(\d{3})_[a-z0-9][a-z0-9-]*\.md$")
 MARKDOWN_LINK = re.compile(r"(?<!!)\[[^\]]*\]\(([^)]+)\)")
 
 
-def check_required(root: Path, errors: list[str]) -> None:
+def check_required(
+    root: Path,
+    errors: list[str],
+    *,
+    allow_missing_private: bool = False,
+) -> None:
     for relative in REQUIRED_FILES:
         path = root / relative
         if not path.is_file():
+            if allow_missing_private and relative in PRIVATE_REQUIRED_FILES:
+                continue
             errors.append(f"缺少必需文件：{relative}")
         elif path.stat().st_size == 0:
             errors.append(f"必需文件为空：{relative}")
 
     for relative in REQUIRED_DIRECTORIES:
         if not (root / relative).is_dir():
+            if allow_missing_private and relative in PRIVATE_REQUIRED_DIRECTORIES:
+                continue
             errors.append(f"缺少必需目录：{relative}/")
 
 
@@ -141,7 +159,12 @@ def check_memory(root: Path, errors: list[str]) -> None:
             errors.append(f"state/memory/ 条目命名不合规：{entry.name}")
 
 
-def check_navigation_links(root: Path, errors: list[str]) -> None:
+def check_navigation_links(
+    root: Path,
+    errors: list[str],
+    *,
+    allow_missing_private: bool = False,
+) -> None:
     for relative in NAVIGATION_FILES:
         document = root / relative
         if not document.is_file():
@@ -153,6 +176,14 @@ def check_navigation_links(root: Path, errors: list[str]) -> None:
                 continue
             resolved = (document.parent / target).resolve()
             if not resolved.exists():
+                try:
+                    resolved.relative_to(root / "vault")
+                except ValueError:
+                    is_missing_private = False
+                else:
+                    is_missing_private = True
+                if allow_missing_private and is_missing_private:
+                    continue
                 errors.append(f"导航链接失效：{relative} -> {target}")
 
 
@@ -252,16 +283,26 @@ def check_evolution_guard(root: Path, errors: list[str]) -> None:
 
 
 def main() -> int:
-    root = Path(sys.argv[1] if len(sys.argv) > 1 else ".").resolve()
+    arguments = sys.argv[1:]
+    allow_missing_private = "--allow-missing-private" in arguments
+    root_argument = next(
+        (argument for argument in arguments if not argument.startswith("--")),
+        ".",
+    )
+    root = Path(root_argument).resolve()
     errors: list[str] = []
 
-    check_required(root, errors)
+    check_required(root, errors, allow_missing_private=allow_missing_private)
     check_dated_directory(root, "_work", DATED_DIRECTORY, errors)
     check_dated_directory(root, "_archive", DATED_DIRECTORY, errors)
     check_dated_directory(root, "_build", BUILD_DIRECTORY, errors)
     check_memory(root, errors)
     check_document_numbers(root, errors)
-    check_navigation_links(root, errors)
+    check_navigation_links(
+        root,
+        errors,
+        allow_missing_private=allow_missing_private,
+    )
     check_agents_claude_sync(root, errors)
     check_codex_entrypoints(root, errors)
     check_removed_paths(root, errors)
