@@ -212,16 +212,16 @@ function nextQuestionsOf(verdict) {
 }
 
 function isCapabilityUnavailable(error) {
-  return !!error && error.code === "capability_unavailable";
+  return !!error && (error.code === "capability_unavailable" || error.code === "network_unavailable");
 }
 
 function agentAvailable() {
-  return api.wechatLoginEnabled !== false || api.anonymousAgentEnabled === true;
+  return api.networkAvailable !== false && (api.wechatLoginEnabled !== false || api.anonymousAgentEnabled === true);
 }
 
 /** 匿名体验没有患者级历史会话权限，不能把一次性会话 ID 带到下次页面恢复。 */
 function anonymousExperience() {
-  return api.wechatLoginEnabled === false && api.anonymousAgentEnabled === true;
+  return api.networkAvailable !== false && api.wechatLoginEnabled === false && api.anonymousAgentEnabled === true;
 }
 
 Page({

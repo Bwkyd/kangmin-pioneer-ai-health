@@ -3,6 +3,20 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## ✅ 小程序缺陷修复与真实 E2E 复测完成（2026-08-28 第272轮 · 基线 `main@56044fc`，候选分支 `codex/miniprogram-e2e-regressions`）
+> 本轮仍只处理四类实体：小程序网络配置与安全降级、健康档案窄屏记录行、我的页隐私/关于入口、测试与交付链路；没有超过四个，无需拆子任务。先重新 fetch 并核对 GitHub、服务器、证书和公开 API：服务器实际单元为 `kangmin-cli.service`，运行稳定；公网证书只有 IP SAN，没有客户合法 HTTPS 域名，因此没有把旧的 IP 配置继续带入微信请求。
+> #378 改为无合法域名时网络、登录和问助手显式 fail-closed，本地健康记录仍可用且不调用 `wx.request`；#379 记录正文可换行、操作按钮固定并有 360px 媒体兜底；#380 隐私与关于入口改为可关闭弹层，隐私弹层可管理授权。新增 6 条回归用例拆至 `src/tests/miniprogram-regression.test.ts`，既有 `miniprogram-shell.test.ts` 保持 1251 行。
+> 修复前 `test:smoke:miniprogram` 4/4 报红，修复后 4/4 通过；shell 6/6、record 3/3；完整 `npm run check` 为 442 条 Node 测试 364 通过、78 条因本机未配置 PostgreSQL/S3 跳过、0 失败，管理端 2/2，Chromium E2E 通过。微信开发者工具 iPhone 12/13 模拟器 `390×753` 用匿名本地 fixture 真实复测：隐私授权、关于弹层、健康档案 2 条记录几何、学一学安全降级、问助手不可用态通过，DevTools 异常 0；截图在 `_work/20260828-miniprogram-e2e/`。sequential-thinking 与 `km-review` 三视角复核为 P0/P1/P2 0、P3 仅保留客户域名/后台登记、真机和外部 Provider 待办。覆盖账本、manifest、diff 检查通过；结构检查仍只受任务前两个 `_work/` 中文目录名影响，gitleaks 仍只命中既有测试假 key。待提交、PR CI、合并、预览部署和关闭 #378–#380。
+
+> ## 🧪 小程序逐页回归测试与检查点补齐（2026-08-28 第271轮 · 基线 `main@56044fc`，待提交）
+> 先复跑既有 `test:smoke:shell` 6/6 与 `test:smoke:record` 3/3，确认基础壳和记录投影仍稳定；随后做有界实验 040，确定配置、错误文案、WXML 入口绑定可由源码门禁捕获，而健康档案实际像素几何必须留给微信开发者工具。新增 `npm run test:smoke:miniprogram` 及计划 016/实验 040，逐项检查 #378/API、#378/文案、#379/结构、#380/行为；当前基线按预期 4/4 报红，没有加入已知失败白名单。
+> 普通 `check-miniprogram`、覆盖账本、清单检查、`git diff --check` 和完整 `cd src && npm run check` 通过；完整门禁为 436 条 Node 测试 358 条通过、78 条因本机未配置 PostgreSQL/S3 按约定跳过，管理端 2/2，真实 Chromium E2E 通过。`structure-lint` 仍只报告任务前已有的两个 `_work/` 中文目录名；Computer Use 本轮只读通道启动失败，未执行 UI 操作。未改患者业务、truth、医学规则、微信外部配置或 `hi.md`，未提交/推送/建 PR；#378–#380 仍保持 open，待修复后重跑源码门禁与 DevTools 手工检查。
+
+> ## 🧪 小程序患者端 E2E 发现并登记 3 项问题（2026-08-28 第270轮 · 基线 `main@56044fc`，待提交）
+> 按 `km-review` 三视角在微信开发者工具 RC 2.02.2608031、390px iPhone 模拟器和匿名本地体验模式走查首页、问助手、学一学、日历、我的、健康档案与症状记录，未使用真实患者身份或健康数据。发现并创建 #378（API 合法域名阻断问助手与学一学，P1）、#379（健康档案窄屏记录逐字竖排且操作按钮溢出，P1）、#380（隐私与关于入口无行为，P2）；5 张证据图已内联到对应 Issue，截图源存于 secret Gist `59917b06d57b6804fcff34fd28150938`，未写入项目分支。
+> 小程序专用检查 `check-miniprogram: PASS`；`cd src && npm run check` 在补齐现有 lockfile 的 workspace 链接后通过：typecheck、架构/结构检查、436 条测试中 358 条通过、78 条因本机未配置 PostgreSQL/S3 按约定跳过，真实 Chrome 浏览器 E2E 通过。首次门禁失败仅为本地缺失 workspace 链接和 Playwright Chromium，未发现本轮代码改动。结构 lint 仍报告 `_work/20260814-福建省中医药适宜技术手册-md`、`_work/20260821-微信文章-md` 两个既有命名问题。
+> 遗留：#378 需先修复体验版合法 HTTPS request 域名/受控降级，#379 需修复小屏记录响应式布局，#380 需补齐真实隐私/关于行为或移除交互外观；模拟器结果不等同于真机、客户验收、医学批准或生产就绪。未改 `src`、truth、医学规则或 `hi.md`，未提交/推送/建 PR；commit：无。
+
 > ## 🧾 会话结束前完成遗留记录、记忆与分支对账（2026-08-28 第269轮 · 基线 `origin/main@ff6eb14`，待提交）
 > 重新 fetch 并核对根工作区、GitHub、部署服务器与历史记录：#364–#369、PR #370–#376 均已关闭/合并，上述实现任务的本地和远端分支为零，本收尾记录单独位于隔离分支；只剩 #261/#262 两条既有 Dependabot PR。根工作区 13:06 的演化 trend 已被远端 23:07 最终复诊覆盖，不倒灌旧数据；未提交的四组组合冒烟因 `028` 已占用改按 `039` 归档，并明确后续已由实验 028–030 的分组入口取代；作者确认的“无真实变化不强拆”决策补档并关联 #364–#369 的实际小步实施。
 > 部署教训去重并入 `state/memory/20260828-deploy-target-verify.md`：先查已成功历史再验证 SSH 私钥/用户/主机三元组，非交互 SSH 显式设置 PATH，workspace bin 按包目录解析，zsh 不用特殊变量 `path`。本轮只整理文档、状态和长期记忆，不改 `src`、truth、数据库、患者数据或生产服务；作者原件 `hi.md` 保持只读且不提交。待文档门禁、PR CI、合并、根工作区快进和对话私密导出完成后结束。

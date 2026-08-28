@@ -66,11 +66,12 @@ TypeScript 类型检查
 AppSecret：`project.config.json` 的 `appid` 保持为空，首次导入时由开发者工具在本机选择
 测试号或已获授权的 AppID；AppSecret 只允许留在服务端。
 
-当前配置只连接公开 Web 试用地址，微信登录显式关闭，但体验版允许匿名使用一次性问助手，
-并把症状、日历和健康档案数据隔离保存在当前小程序本地；这些链路不调用 `wx.login`，不伪造
-微信用户、不绑定患者身份，也不把体验健康数据上传服务端。文章、视频和问助手可用于客户体验，
-消息中心保持空态；正式微信登录启用后自动恢复患者级服务端记录与消息链路，本地体验数据不迁移。
-`urlCheck: false` 用于开发者工具/体验验证；正式服务仍需按微信平台要求配置网络与服务端登录能力。
+当前仓库不注入客户合法 HTTPS 域名，网络内容和问助手显式进入安全降级；健康档案、症状、日历
+等体验记录仍隔离保存在当前小程序本地。这些本地链路不调用 `wx.login`，不伪造微信用户、不绑定
+患者身份，也不把体验健康数据上传服务端。文章、视频和问助手只有在客户提供合法 HTTPS 域名并
+按微信后台完成登记后，才能打开正式联调；当前版本会显示患者可懂的“尚未开放”提示。消息中心
+保持空态。`urlCheck: false` 只用于开发者工具/体验验证；正式服务仍需按微信平台要求配置网络
+与服务端登录能力。
 
 构建完成后的入口：
 
@@ -431,6 +432,7 @@ HTTP 状态与 CLI 退出码分别映射；例如协议不兼容为 HTTP 426/CLI
 | `npm run check` | typecheck + lint + test |
 | `npm run test:smoke:record` | 构建后逐条确认症状保存/回读/日历趋势与缺失值边界 |
 | `npm run test:smoke:shell` | 构建后逐条确认小程序会话、重试、导航、流式和环境门禁 |
+| `npm run test:smoke:miniprogram` | 构建后逐项拦截小程序逐页 E2E 暴露的域名、错误文案、窄屏结构和入口行为回归 |
 | `npm run start:http` | build 后启动 HTTP/Web 服务 |
 | `npm run sbom` | 生成不入库的 CycloneDX SBOM |
 
@@ -441,9 +443,10 @@ npm run build
 node --test dist/tests/<name>.test.js
 ```
 
-两个 `test:smoke:*` 入口只复用现有高信号测试；每个目标独立进程运行并要求 TAP 中唯一、
-逐字命中的非跳过测试。目标名漂移、零/部分命中或断言失败都会退出非 0；它们不替代
-PostgreSQL、S3/MinIO 契约、真实微信身份或客户验收。
+`test:smoke:record` 与 `test:smoke:shell` 只复用现有高信号测试；每个目标独立进程运行并
+要求 TAP 中唯一、逐字命中的非跳过测试。`test:smoke:miniprogram` 逐项运行带 Issue 编号的
+小程序源码回归检查。目标名漂移、零/部分命中、源码约束失败或断言失败都会退出非 0；它们
+不替代 PostgreSQL、S3/MinIO 契约、真实微信身份、微信开发者工具几何检查或客户验收。
 
 CI 的 `quality` job 还会提供 PostgreSQL 16、MinIO 和 Playwright，执行全部
 `src` 门禁；仓库级 CI 同时检查 `legacy`。后续 `image` job 构建 OCI 镜像、

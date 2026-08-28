@@ -21,8 +21,30 @@
   <view class="profile-section">
     <text class="section-label">设置与服务</text>
     <view class="profile-item" bindtap="openMessages"><view class="item-icon violet">铃</view><view><text>消息中心</text><text>{{unreadError ? unreadError : '查看站内鼻健康提醒'}}</text></view><view class="message-action"><text wx:if="{{unreadCount > 0}}" class="message-badge">{{unreadCount}}</text><text>›</text></view></view>
-    <view class="profile-item"><view class="item-icon gray">盾</view><view><text>隐私与授权</text><text>查看和管理健康数据授权</text></view><text>›</text></view>
-    <view class="profile-item"><view class="item-icon gray">关</view><view><text>关于抗敏先锋</text><text>团队介绍、使用说明与意见反馈</text></view><text>›</text></view>
+    <view class="profile-item" bindtap="openPrivacy"><view class="item-icon gray">盾</view><view><text>隐私与授权</text><text>查看和管理健康数据授权</text></view><text>›</text></view>
+    <view class="profile-item" bindtap="openAbout"><view class="item-icon gray">关</view><view><text>关于抗敏先锋</text><text>团队介绍、使用说明与意见反馈</text></view><text>›</text></view>
   </view>
   <view class="profile-disclaimer">{{localExperience ? '体验数据仅保存在当前设备，清理微信缓存或删除小程序后可能丢失；' : ''}}已保存的记录仅供本人回顾，不能替代门诊诊断。</view>
+
+  <view wx:if="{{privacyOpen || aboutOpen}}" class="info-overlay">
+    <view class="info-mask" bindtap="closeInfo"></view>
+    <view class="info-sheet" catchtap="noop">
+      <view class="info-head"><text>{{privacyOpen ? '隐私与授权' : '关于抗敏先锋'}}</text><text class="info-close" role="button" aria-label="关闭" bindtap="closeInfo">×</text></view>
+      <view wx:if="{{privacyOpen}}">
+        <view class="info-copy">{{privacy && privacy.statement ? privacy.statement : privacyError || '正在读取隐私说明…'}}</view>
+        <view class="info-status">健康数据授权：{{consentGranted ? '已同意' : '未同意'}}</view>
+        <view wx:if="{{consentError}}" class="info-error">{{consentError}}</view>
+        <button class="primary-button info-button" loading="{{consentBusy}}" disabled="{{consentBusy}}" bindtap="toggleConsent">{{consentGranted ? '撤回健康数据授权' : '同意健康数据授权'}}</button>
+      </view>
+      <view wx:else>
+        <view class="info-section-title">我们是谁</view>
+        <view class="info-copy">抗敏先锋是鼻健康科普与居家记录工具，依据已确认的团队资料和已发布方案整理内容。</view>
+        <view class="info-section-title">怎么使用</view>
+        <view class="info-copy">你可以浏览已发布内容，记录自己的症状、暴露和用药情况。记录仅供本人回顾，不等于过敏诊断、疗效结论或就医建议。</view>
+        <view class="info-section-title">意见反馈</view>
+        <view class="info-copy">当前体验版未配置在线反馈入口，请通过项目约定渠道反馈；不要在公开渠道提交健康隐私。</view>
+        <button class="secondary-button info-button" bindtap="closeInfo">知道了</button>
+      </view>
+    </view>
+  </view>
 </view>

@@ -22,11 +22,17 @@ function uuid() {
   });
 }
 
+function isHttpsDomain(value) {
+  return /^https:\/\/(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,}(?::\d+)?$/i.test(value);
+}
+
 function createClient(wxApi, options) {
+  options = options || {};
   var baseUrl = String(options.apiBaseUrl || "").replace(/\/$/, "");
   var timeout = options.requestTimeoutMs || 15000;
   var wechatLoginEnabled = options.wechatLoginEnabled === true;
   var anonymousAgentEnabled = options.anonymousAgentEnabled === true;
+  var networkAvailable = options.networkEnabled !== false && isHttpsDomain(baseUrl);
   var localExperience = localExperienceFactory.createLocalExperience(
     wxApi,
     !wechatLoginEnabled && options.anonymousRecordsEnabled === true
@@ -40,6 +46,13 @@ function createClient(wxApi, options) {
       typeof error.message === "string" ? error.message : "服务返回格式不正确",
       statusCode,
       error.retryable === true
+    );
+  }
+
+  function unavailableError() {
+    return new CommandError(
+      "network_unavailable",
+      "当前体验版尚未配置可用的内容服务，文章、视频和问助手将在正式微信联调后开放。"
     );
   }
 
@@ -64,7 +77,7 @@ function createClient(wxApi, options) {
         fail: function (reason) {
           reject(new CommandError(
             "network_error",
-            reason && reason.errMsg ? reason.errMsg : "服务暂时无法连接",
+            "服务暂时无法连接",
             0,
             true
           ));
@@ -74,6 +87,7 @@ function createClient(wxApi, options) {
   }
 
   function login() {
+    if (!networkAvailable) return Promise.reject(unavailableError());
     if (!wechatLoginEnabled) {
       return Promise.reject(new CommandError(
         "capability_unavailable",
@@ -128,6 +142,7 @@ function createClient(wxApi, options) {
     if (localExperience.enabled && localExperience.supports(name)) {
       return Promise.resolve().then(function () { return localExperience.execute(name, input || {}); });
     }
+    if (!networkAvailable) return Promise.reject(unavailableError());
     var settings = optionsValue || {};
     var auth = settings.auth !== false;
     var body = {
@@ -331,7 +346,7 @@ function createClient(wxApi, options) {
         enableHttp2: false,
         success: settleSuccess,
         fail: function (reason) {
-          settleError(new CommandError("network_error", reason && reason.errMsg ? reason.errMsg : "回答传输中断，请稍后重试", 0, true));
+          settleError(new CommandError("network_error", "回答传输中断，请稍后重试", 0, true));
         }
       });
       controller.task = task;
@@ -347,12 +362,17 @@ function createClient(wxApi, options) {
         catch (error) { settleError(error instanceof CommandError ? error : new CommandError("bad_response", "流式回答解析失败", 200)); }
       });
     } catch (error) {
-      settleError(new CommandError("network_error", error && error.message ? error.message : "回答传输中断，请稍后重试", 0, true));
+      settleError(new CommandError("network_error", "回答传输中断，请稍后重试", 0, true));
     }
     return promise;
   }
 
   function streamAgent(input, handlers) {
+    if (!networkAvailable) {
+      var unavailable = Promise.reject(unavailableError());
+      unavailable.abort = function () {};
+      return unavailable;
+    }
     var controller = { task: null, abortImpl: null, aborted: false, reject: null };
     function abortedError() {
       return new CommandError("stream_aborted", "回答已停止，结果可能已保存，请稍后确认", 0, true);
@@ -425,6 +445,7 @@ function createClient(wxApi, options) {
   function mediaUrl(path) {
     if (!path) return "";
     if (/^https?:\/\//.test(path)) return path;
+    if (!baseUrl) return "";
     return baseUrl + (path.charAt(0) === "/" ? path : "/" + path);
   }
 
@@ -433,6 +454,7 @@ function createClient(wxApi, options) {
     login: login,
     streamAgent: streamAgent,
     mediaUrl: mediaUrl,
+    networkAvailable: networkAvailable,
     tokenKey: TOKEN_KEY
   };
 }
@@ -445,6 +467,7 @@ module.exports = {
   wechatLoginEnabled: config.wechatLoginEnabled === true,
   anonymousAgentEnabled: config.anonymousAgentEnabled === true,
   anonymousRecordsEnabled: config.anonymousRecordsEnabled === true,
+  networkAvailable: client.networkAvailable,
   login: client.login,
   streamAgent: client.streamAgent,
   mediaUrl: client.mediaUrl,
