@@ -3,6 +3,14 @@
 > 本文件回答三问：**变了什么、为什么变、对你意味着什么**。每个里程碑一条，倒序追加。
 > 想看更细：AI 工作流水见 `state/board.md`，完整历史见 git log。规则见 `meta/kangmin_directory-protocol.md` 第二节。
 
+## 2026-08-28 · 小程序验收任务单按交付策略收尾
+
+**变了什么**：#385–#388 按作者确认的交付节奏全部关闭，PR #406 已合并；Issue 评论、状态板和 `ops/019` 记录了关闭原因、已有代码/测试/开发版证据，以及客户后续反馈另开 issue 的分流方式。
+
+**为什么变**：客户不会按现有任务单逐条验收，继续让历史任务单保持阻塞会把“当前交付范围收口”和“未来反馈处理”混在一起。关闭任务单不改变尚未具备的正式体验版、真机、生产配置和客户实效事实。
+
+**对你意味着什么**：当前可以按统一交付节奏交给客户体验；客户若发现具体问题，直接新建带环境和复现步骤的 issue。`CLOSED` 仍不能单独证明体验版正式可见、生产发布或医学验收完成。通用边界已沉淀到 [`state/memory/20260828-issue-closeout-acceptance-boundary.md`](memory/20260828-issue-closeout-acceptance-boundary.md)。
+
 ## 2026-08-27 · src 收敛为应用与能力包的最小分形结构
 
 **变了什么**：`src` 顶层从多种并列实现收敛为 `apps / packages / scripts / tests`；管理后台、API、CLI、小程序与 core、database、integrations、runtime 八个 workspace 使用同一小壳。患者旧 Web 已退役，网页只保留管理后台；PR #351–#357 逐步合并，最终 release `workspace-fractal-ec60f59-r2` 已部署。

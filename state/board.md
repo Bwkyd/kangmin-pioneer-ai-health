@@ -4,7 +4,7 @@
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
 > ## 🔒 按交付策略关闭小程序验收 Issue（2026-08-28 · 基线 `main@472b08a`）
-> 按作者最新确认，客户不逐条验收现有任务单；本轮通过 GitHub CLI 将 #385、#386、#387、#388 全部关闭，并在每个 Issue 留下说明：仓内实现、自动化验证和开发版上传工作已完成，客户后续发现具体问题时另开 Issue 跟踪修复。关闭动作是交付管理策略，不等同于逐项客户验收、体验版正式可见或生产发布；此前记录的 `/ready=503`、正式云资源/微信权限、真机与客户实效边界仍然有效。未修改 `src/`、truth 或作者原件 `hi.md`。
+> 按作者最新确认，客户不逐条验收现有任务单；本轮通过 GitHub CLI 将 #385、#386、#387、#388 全部关闭，并在每个 Issue 留下说明：仓内实现、自动化验证和开发版上传工作已完成，客户后续发现具体问题时另开 Issue 跟踪修复。关闭动作是交付管理策略，不等同于逐项客户验收、体验版正式可见或生产发布；此前记录的 `/ready=503`、正式云资源/微信权限、真机与客户实效边界仍然有效。详细操作记录见 [`docs/changes/ops/019_miniprogram-issue-closeout.md`](../docs/changes/ops/019_miniprogram-issue-closeout.md)，通用边界见 [`state/memory/20260828-issue-closeout-acceptance-boundary.md`](memory/20260828-issue-closeout-acceptance-boundary.md)。未修改 `src/`、truth 或作者原件 `hi.md`。
 
 > ## 📦 自有 AppID 开发版上传与预览收尾（2026-08-28 · `main@cba6f74`，PR #404 已合并）
 > 按用户选择使用其已确认的自有 AppID：只在 `/tmp` 隔离小程序副本的 `project.config.json` 临时注入，仓库 AppID 仍为空且未写 AppSecret。微信开发者工具 CLI `islogin` 回读 `login:true`；开发版 `0.1.15` 上传成功，包体 `786549` 字节；预览二维码生成并保存为 `_work/20260828-miniprogram-formal-upload/preview.jpg`，SHA-256 为 `52e95456fabca5821953e65a154e1524a2ea7f9c5d10fb2f53e33fe0cbcdf7fd`。上传/预览结束后关闭临时项目、退出 IDE，9434/9542 端口均无监听，上传副本移入 macOS 废纸篓可恢复。
