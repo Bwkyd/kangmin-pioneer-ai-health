@@ -418,6 +418,7 @@ export class ConversationService {
     //    过滤后 allQuestions 为空（全部字段已答 unknown）→ every() 对
     //    空集为 true → 立即 fail-closed 收尾，不再循环。
     const escalated = this.failClosedIfNoProgress(displayVerdict, unknownAnswered);
+    if (!urgent && (escalated !== null || ["blocked", "conflict", "non_applicable", "no_match"].includes(verdict.outcome))) freeAnswer = null;
 
     // 5. 解释阶段：只有规则包 approved 时才调用模型解释；
     //    candidate 包正式输出被硬阻断，绝不输出个性化方案。
@@ -462,8 +463,7 @@ export class ConversationService {
         generatedPlan = null;
       }
     }
-    const finalOutput =
-      freeAnswer ?? escalated ?? generatedPlan ?? validated;
+    const finalOutput = freeAnswer ?? escalated ?? generatedPlan ?? validated;
     const visibleQuestions = urgent ? [] : freeAnswer === null ? verdict.nextQuestions : lastQuestions;
 
     // 6-8. 决策凭证 + 消息 + 会话状态：构造后单事务提交

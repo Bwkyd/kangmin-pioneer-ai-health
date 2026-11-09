@@ -77,17 +77,27 @@ export function parseStructuredAnswers(
     answers.push({ fieldCode, state });
   }
 
-  // 形式二：完整的“有/没有/不知道 + 标签”陈述；复合陈述逐段处理。
-  for (const declaration of trimmed.split(/[。.!！,，;；、\n]+/u)) {
-    const text = declaration.trim();
+  // 形式二：整句均由完整的明确陈述组成，不能截取问句的一部分。
+  const declarations = trimmed.split(/(?:[。.!！,，;；、\n]+|而且|并且|和|且|又)/u).map((part) => part.trim()).filter(Boolean);
+  const statements = declarations.map((text): StructuredAnswer | null => {
     for (const [fieldCode, label] of Object.entries(FIELD_LABELS)) {
-      if (answeredFields.has(fieldCode) || !text.endsWith(label)) continue;
-      // 问句或解释尾部不匹配完整标签，不能截成患者确认事实。
+      if (!text.endsWith(label)) continue;
       const state = stateOf(text.slice(0, -label.length));
-      if (state !== null) {
-        answeredFields.add(fieldCode);
-        answers.push({ fieldCode, state });
-      }
+      if (state !== null) return { fieldCode, state };
+    }
+    return null;
+  });
+  if (statements.length > 0 && statements.every((answer) => answer !== null)) {
+    const unique = new Map<string, StructuredAnswer>();
+    let conflict = false;
+    for (const answer of statements) {
+      if (unique.has(answer.fieldCode) && unique.get(answer.fieldCode)?.state !== answer.state) conflict = true;
+      unique.set(answer.fieldCode, answer);
+    }
+    if (!conflict) for (const answer of unique.values()) {
+      if (answeredFields.has(answer.fieldCode)) continue;
+      answeredFields.add(answer.fieldCode);
+      answers.push(answer);
     }
   }
 

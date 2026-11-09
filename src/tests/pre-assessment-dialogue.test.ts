@@ -11,16 +11,19 @@ import { KangminDatabase } from "@kangmin/database/sqlite/database";
 import { parseStructuredAnswers } from "@kangmin/core/intelligence/agent/answer-parser";
 import { createKangminHttpServer } from "@kangmin/api/server";
 import vm from "node:vm";
+import type { RulePackage } from "@kangmin/core/intelligence/clinical-rules/domain";
+import { DRAFT_RULE_PACKAGE } from "@kangmin/core/intelligence/clinical-rules/rule-package";
 
 process.env.KANGMIN_ALLOW_DEV_SESSION = "1";
 
-function fixture() {
+function fixture(rulePackage?: RulePackage, dialogueFailure = false) {
   const calls: PreAssessmentDialogueInput[] = [];
   let extractionCalls = 0;
   let sessionToken: string | undefined;
   const databasePath = join(mkdtempSync(join(tmpdir(), "kangmin-pre-assessment-")), "test.sqlite");
   const application = createApplication(databasePath, {
     appEnvironment: "integration",
+    ...(rulePackage === undefined ? {} : { rulePackage }),
     extraction: { async extractCandidates() { extractionCalls++; return []; } },
     planKnowledgeRetrieval: { async searchEnabled() { return []; } },
     planDialogue: {
@@ -28,9 +31,9 @@ function fixture() {
       async answerFollowUp() { return null; },
       async answerBeforeAssessment(input): Promise<PreAssessmentDialogueResult> {
         calls.push(input);
-        return input.question === "开始评估"
-          ? { mode: "assessment" }
-          : { mode: "answer", answer: "过敏性鼻炎与感冒的原因不同。" };
+        if (input.question === "开始评估") return { mode: "assessment" };
+        if (dialogueFailure) throw new Error("simulated provider failure");
+        return { mode: "answer", answer: "过敏性鼻炎与感冒的原因不同。" };
       }
     }
   });
@@ -121,9 +124,28 @@ test("明确症状陈述可解析，询问症状原因不能被截取成确认�
     { fieldCode: "thirst", state: "yes" }, { fieldCode: "fear_wind", state: "no" }
   ]);
   assert.deepEqual(parseStructuredAnswers("有口渴.", []), [{ fieldCode: "thirst", state: "yes" }]);
+  assert.deepEqual(parseStructuredAnswers("有口渴和没有怕风", []), [
+    { fieldCode: "thirst", state: "yes" }, { fieldCode: "fear_wind", state: "no" }
+  ]);
+  assert.deepEqual(parseStructuredAnswers("有口渴和没有怕风有什么区别？", []), []);
+  assert.deepEqual(parseStructuredAnswers("有口渴又没有口渴", []), []);
   for (const question of ["有口渴是什么原因？", "有口渴吗？", "没有怕风就是好了吗？"]) {
     assert.deepEqual(parseStructuredAnswers(question, []), []);
   }
+});
+
+test("规则安全阻断优先于已生成的科普回答并关闭会话", async () => {
+  const rule = DRAFT_RULE_PACKAGE.rules.find((entry) => entry.id === "SAF-01");
+  assert.ok(rule);
+  const f = fixture({ ...DRAFT_RULE_PACKAGE, questionnaireStrategy: undefined, rules: [{ ...rule, conditions: [] }] });
+  try {
+    const result = await f.exec("什么是过敏性鼻炎？");
+    assert.equal(f.calls.length, 1);
+    assert.equal(result.verdict?.outcome, "blocked");
+    assert.equal(result.closed, true);
+    assert.match(result.message?.content ?? "", /立即就医/u);
+    assert.doesNotMatch(result.message?.content ?? "", /原因不同/u);
+  } finally { f.application.close(); }
 });
 
 test("患者 HTTP 流式科普、历史回读与插问后的选项一致，急症终止旧评估", async () => {
@@ -213,4 +235,22 @@ test("Qwen 问卷前回答严格校验分流 JSON，失败不退回机械问卷"
   assert.deepEqual(await adapter.answerBeforeAssessment(input), { mode: "answer", answer: null });
   assert.deepEqual(await adapter.answerBeforeAssessment(input), { mode: "answer", answer: null });
   assert.equal(await new QwenPlanDialogueAdapter({}).answerBeforeAssessment(input), null);
+});
+
+
+test("生成失败保留自由文本与原题，确定性选项仍可继续而不依赖模型", async () => {
+  const f = fixture(undefined, true);
+  try {
+    await f.login();
+    const first = await f.exec("开始评估");
+    const message = "早上打喷嚏特别多";
+    const failed = await f.exec(message, first.conversationId);
+    assert.match(failed.message?.content ?? "", /稍后再试/u);
+    assert.equal(failed.verdict?.nextQuestions[0]?.fieldCode, "q1");
+    const detail = await f.show(first.conversationId);
+    assert.ok(detail.messages.some((entry) => entry.role === "user" && entry.content === message));
+    const resumed = await f.exec("q1=C", first.conversationId);
+    assert.equal(resumed.verdict?.nextQuestions[0]?.fieldCode, "q2");
+    assert.equal(f.calls.length, 2);
+  } finally { f.application.close(); }
 });
