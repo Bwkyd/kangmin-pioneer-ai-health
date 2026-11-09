@@ -35,3 +35,5 @@
 - [内容关联必须全量可达并在消费时复核](20260823-content-link-completeness-and-revalidation.md) — 关联查找不能只看首屏；分页去重终止、详情状态复核并防近似内容误配
 
 - [问答入口与阶段验收矩阵](20261109-dialogue-entry-and-phase-coverage.md) — 独立科普与评估后成功不能替代新会话/中途插问验收，以同Key入口对照和持久化恢复定位漏接
+
+- [外部评审核对有效请求与终态](20261109-review-provider-request-verification.md) — 超时先核对实际供应商请求与配置优先级，保持指定模型/认证/只读边界，以响应元数据和完整正文计完成

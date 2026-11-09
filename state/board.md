@@ -3,6 +3,16 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 📦 公网、服务预发布与主分支保护同步（2026-11-09 · 主线 `463edb8`）
+> 已独立验证公网live/ready/admin及JS/CSS均200，无效微信code返回401/authentication_required；不等于真实微信登录。GitHub客户服务预发布customer-dialogue-2026-11-09已创建，目标463edb8，上传脱敏overlay及manifest；未执行小程序正式发布。
+> 主工作区已回到跟踪GitHub的main。原main@19f4204的四个未推送历史提交及14项WIP已恢复在preserve/local-main-20261109和/Users/chenqiqiang/work2/kangmin-local-preserved；含原地hi.md共15项SHA256/删除状态均一致，并保留命名stash。未丢弃原成果或混入此次PR。
+> 本跟进仅补系统事实、部署/验收/发布记录、里程碑和评审工具请求验证经验，不改变已上线制品。后续文档合并与已授权任务清理以Git/会话归档终态回读为准，不提前声称完成；保护工作区含原WIP，不清理。作者已取消CNB同步，微信真机和客户验收边界保持。
+
+> ## 🚀 问助手修复合并并部署客户服务（2026-11-09 · 主线 `463edb8`，PR #424）
+> 作者明确授权完整交付。PR424已合并，合并树与91ff19e完全一致；CI42632394168的quality/image全绿，Node517/517、管理端6/6、真实PG/S3跳过0，四条业务预验、镜像、生产审计及SBOM均执行。指定DeepSeek与GLM的业务及最终CI补丁双谱系已完成，真实发现已闭环；三项本地CI复核与独立部署审核无遗留P0–P2。已补齐相关94项回归及项目入口/阶段验收记忆。
+> 客户机候选隔离库真实Qwen7项通过，20个补丁摘要与98个保留API/后台文件一致；app已原子切换dialogue-20261109-91ff19e，MainPID3186686实际运行新入口，active/running、NRestarts0、错误日志0，live/ready均200。旧release保留，回滚三条模拟失败/成功分支及独立审核通过。系统当前事实更新.42cog/real.md，详细证据补到评审050，里程碑记入changelog。
+> 公网验证、GitHub release最终回执及主分支/WIP保护与清理仍在本轮后续执行，不提前记为完成。作者已取消CNB同步，最终以GitHub origin/main为准。真实微信登录、真机与客户验收仍为独立边界；本轮没有重复上传小程序或执行微信正式发布。
+
 > ## 🚆 完整交付获授权与审核闭环（2026-11-09 · 基线 `7b50964`，PR #424）
 > 作者明确授权测试/PR/CI/合并/发版部署/主分支同步/任务分支清理/对话保存；无需再次申请合并。CNB无既有远端，询问后作者取消CNB同步，改以GitHub为准。指定两条独立模型已完成同一冻结材料评审：DeepSeek响应deepseek-flash且success；GLM响应glm-5.3-flash且stop。GLM两项P2为与明确输出/事实确认契约冲突的放宽建议，已逐项核对不采纳，未遗留真实P0–P2。评审050保存事实与裁决，敏感信息不入库。
 > 旧依赖完整门禁通过；CI后续因ubuntu-latest迁移26.04而浏览器安装失败，已用独立7b50964固定24.04并重跑全部门禁。新增问答入口/会话阶段验收矩阵记忆，避免独立知识问答或评估后成功被扩大为新会话也正常。当前等待真实PG/S3与镜像CI终态，尚未合并、部署或清理。
