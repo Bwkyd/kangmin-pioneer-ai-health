@@ -17,7 +17,8 @@ concurrency:
 jobs:
   quality:
     name: quality
-    runs-on: ubuntu-latest
+    # 固定在当前锁定 Playwright 1.60 支持的系统，避免 latest 标签迁移使门禁失效。
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     services:
       postgres:
@@ -103,7 +104,8 @@ jobs:
 
   image:
     name: image
-    runs-on: ubuntu-latest
+    # 固定在当前锁定 Playwright 1.60 支持的系统，避免 latest 标签迁移使门禁失效。
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     # 镜像交付依赖 quality 先行：质量门不过不构建镜像。
     needs: quality
