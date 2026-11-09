@@ -2,12 +2,12 @@
 type: review
 number: "050"
 date: 2026-11-09
-title: 问卷前科普修复候选验证与评审
+title: 问卷前科普修复、验证与交付复核
 tags: [agent, qwen, dialogue, regression]
 related: ["changes/arch/005_general-knowledge-answering-with-qwen"]
 ---
 
-# 问卷前科普修复候选验证与评审
+# 问卷前科普修复、验证与交付复核
 
 ## 问题与边界
 
@@ -52,7 +52,7 @@ Next、sharp、source-map-js 等命中当前漏洞库；升级作为作者授权
 - 共用的检索和历史读取抽到无状态 helper，写库和 CAS 仍由会话服务负责。检索失败可
   一般科普，历史完整性错误不吞掉，模型失败明确提示重试。
 
-## 验证与评审
+## 候选阶段验证与评审
 
 - 最终相关窄测 94/94 通过，包含登录患者 exec→show、本地真实 HTTP NDJSON 分片→done
   →历史正文一致、原生 Page 恢复状态，以及 mixed 急症后续评拒绝。
@@ -70,14 +70,14 @@ Next、sharp、source-map-js 等命中当前漏洞库；升级作为作者授权
 过程证据保存在主工作区 `_work/20261109-pre-assessment-launch/`，包括冻结材料摘要、
 三视角报告、CLI 输出、完整测试日志与外部评审原始事件；不含真实密钥或患者数据。
 
-## 结构复核与交付边界
+## 结构复核与候选阶段边界
 
 作者已明确授权逐项复核过期结构基线，截止日设为 `2026-12-09`；未增加任何存量额度。
 本次核心长文件由 1250 行缩为 1240 行，模型端口测试由 766 行缩为 765 行；新的无状态
 helper 为 55 行。演化、清单、结构与差异检查通过，到期仍须再次人工复核，不自动延期。
 
-本记录描述修复候选，不证明合并或部署。正式微信身份、微信真机和客户体验保留独立
-验收边界；服务端配置曾上线不代表这次业务代码已经上线。
+以上是合并、部署前的候选阶段证据，当时尚未证明业务代码交付；最终合并与部署结果见下文。
+真实微信身份、微信真机和客户体验始终保留独立验收边界，服务端配置上线也不能替代这些验收。
 
 ## 最终独立评审与 CI 环境复核
 
@@ -104,3 +104,49 @@ CI 第二次失败是 `ubuntu-latest` 迁移到 26.04 后，锁定 Playwright 1.
 依据为真实失败日志与官方公告：
 https://github.blog/changelog/2026-09-17-ubuntu-26-generally-available-and-latest-migration/ 。
 作者要求的 CNB 同步因本仓无该远端而询问目标，作者已答“那就算了”，本轮只同步 GitHub。
+
+## 合并、真实外部检查与客户部署
+
+- PR [#424](https://github.com/Bwkyd/kangmin-pioneer-ai-health/pull/424) 已合并为
+  `463edb8edded86e2839085c43b7274340c45acc0`；合并树与已审分支 `91ff19e` 完全一致。
+- [CI 42632394168](https://github.com/Bwkyd/kangmin-pioneer-ai-health/actions/runs/42632394168)
+  的 quality（4分58秒）和 image（1分6秒）均成功。Node 517/517、管理端6/6，跳过0；
+  实际 PostgreSQL/S3、浏览器、四条业务预验、OCI、生产依赖审计和 SBOM 均执行。
+- 后续 MinIO 夹具补丁以同一冻结材料 `dual-review-ci-r7.md` 再次独立评审，SHA-256
+  `bdd0aaf1fa5885c27865e6cc25259690c8afe861f4c6543baddc0c7255b4cd85`。
+  DeepSeek 响应 deepseek-flash/终态success，GLM响应glm-5.3-flash/终态stop，两者无P0–P2；
+  三项本地独立复核也闭环至P0–P2为0。下载失败及端口占用立即阻断的模拟验证通过。
+- 制品 `dialogue-overlay.tar.gz` SHA-256 为
+  `79e33ffd5808226e04a65d260b32e1bcff1590307c98d2bb13f69a918ddb21f8`。
+  在客户机复制既有release，只覆盖20个源码/编译产物；全部摘要一致，保留API/后台98个
+  文件摘要一致。未使用缺少既有后台修复的整包覆盖，未改环境文件或业务数据库。
+- 候选在客户服务器独立SQLite库中使用真实Qwen完成7项测试：三轮科普/指代追问、主动
+  评估、题中插问、q1=C继续到q2、混合急症。模拟文本与正式患者数据隔离。
+- 已原子切换 `/srv/kangmin-cli/app` 到
+  `/srv/kangmin-cli/releases/dialogue-20261109-91ff19e` 并重启既有服务。独立回读
+  MainPID=3186686，实际cmdline来自新release，active/running、NRestarts=0、错误日志0；
+  localhost live/ready均200。公网检查与发布回执见同轮board最终读回。
+- 原release `admin-http-fix-uncommitted-20260829-customer` 完整保留。切换脚本先验证旧入口
+  与补丁摘要；失败会原子切回、重启并回读旧进程/健康，恢复证据不足明确标记人工介入。
+  脚本已独立审核至无P0–P2；软链失败、重启失败、回滚成功三条模拟分支均验证输出终态。
+
+服务发布不替代真实微信code登录、小程序真机、体验版切换、提审、正式微信发布或客户验收。
+本轮业务改动在服务端，小程序已联网版本不需重复上传。当前系统资源事实已同步唯一正本
+`.42cog/real.md`；本轮新增的可复用经验是“入口×会话阶段”验收矩阵，已去重写入项目记忆。
+
+## 公网、发布与本地成果保护读回
+
+公网默认TLS校验下 `/live`、`/ready`、`/admin` 及后台JS/CSS资源均200；无效合成
+code调用 `/v1/auth/wechat` 返回401/authentication_required，不再是配置未开放。
+这仍不证明真实微信身份成功。
+
+GitHub客户服务预发布为
+[customer-dialogue-2026-11-09](https://github.com/Bwkyd/kangmin-pioneer-ai-health/releases/tag/customer-dialogue-2026-11-09)，
+目标为合并主线 `463edb8`，附脱敏补丁制品与摘要清单。该标记不表示小程序微信正式发布。
+
+为同步主分支且不丢弃作者既有成果，原 `main@19f4204` 的四个未推送历史提交保留到
+`preserve/local-main-20261109`，原14项未提交改动恢复到
+`/Users/chenqiqiang/work2/kangmin-local-preserved`；作者 `hi.md` 原地保留在主工作区。
+15项原始文件（含hi.md）的SHA256/删除状态逐项一致，另有命名stash作为冗余保护。
+主工作区已切回跟踪GitHub的main；保护分支与工作区含既有成果，不属于本次可删除任务分支。
+最终任务分支清理由合并状态、最新main包含代码、worktree干净和squash树等价核对后执行。
