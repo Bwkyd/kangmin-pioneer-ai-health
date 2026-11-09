@@ -87,19 +87,13 @@ test("未配置 API key 时抛 provider_unavailable（绝不伪造回答）", as
 });
 
 test("千问方案与统一患者回答：指定模型、关闭思考并使用严格 JSON", async () => {
-  let requestedModel: unknown;
-  let requestedThinking: unknown;
-  let requestedPayload: Record<string, unknown> = {};
+  let requestedBody: Record<string, unknown> = {};
   const adapter = new QwenPlanDialogueAdapter({
     apiKey: "test-qwen-key",
     model: "qwen3.7-flash",
     baseUrl: BASE_URL,
     fetchImpl: (async (_url: unknown, init?: RequestInit) => {
-      const body = JSON.parse(String(init?.body)) as Record<string, unknown>;
-      requestedModel = body.model;
-      requestedThinking = body.enable_thinking;
-      const messages = body.messages as Array<{ role: string; content: string }>;
-      requestedPayload = JSON.parse(messages.at(-1)?.content ?? "{}") as Record<string, unknown>;
+      requestedBody = JSON.parse(String(init?.body)) as Record<string, unknown>;
       const content = JSON.stringify({ answer: "通俗方案说明" });
       return new Response(JSON.stringify({ choices: [{ message: { content } }] }), {
         status: 200,
@@ -108,8 +102,8 @@ test("千问方案与统一患者回答：指定模型、关闭思考并使用�
     }) as typeof fetch
   });
   assert.equal(await adapter.generatePlan(classifiedPlanVerdict()), "通俗方案说明");
-  assert.equal(requestedModel, "qwen3.7-flash");
-  assert.equal(requestedThinking, false, "患者方案对话必须显式关闭千问推理模式");
+  assert.equal(requestedBody.model, "qwen3.7-flash");
+  assert.equal(requestedBody.enable_thinking, false, "患者方案对话必须显式关闭千问推理模式");
 
   await adapter.answerFollowUp({
     question: "我不明白",
@@ -128,14 +122,19 @@ test("千问方案与统一患者回答：指定模型、关闭思考并使用�
       recentMessages: [{ role: "assistant", content: "这是当前评估方案。" }]
     }
   });
+  const requestedMessages = requestedBody.messages as Array<{ role: string; content: string }>;
+  const requestedPayload = JSON.parse(requestedMessages.at(-1)?.content ?? "{}");
   const assessment = requestedPayload.assessment as {
     questionnaire: Array<{ question: string; answer: string }>;
   };
   assert.equal(assessment.questionnaire[0]?.question, "您打喷嚏的情况是？");
   assert.match(assessment.questionnaire[0]?.answer ?? "", /频繁打喷嚏/u);
-  assert.deepEqual(requestedPayload.recentConversation, [
+  assert.deepEqual(requestedMessages.slice(1, -1), [
     { role: "assistant", content: "这是当前评估方案。" }
   ]);
+  assert.equal(requestedMessages.at(-1)?.role, "user");
+  assert.equal(requestedPayload.question, "我不明白");
+  assert.equal(requestedPayload.recentConversation, undefined, "历史只作为 role 消息，不在本轮载荷重复尾置");
   assert.deepEqual(requestedPayload.sources, [{
     index: 1,
     name: "鼻健康资料",

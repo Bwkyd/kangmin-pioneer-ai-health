@@ -3,6 +3,12 @@
 > 开工先读 `AGENTS.md` + 本文件 + `state/memory/MEMORY.md` + `.42cog/intent.md`；目录语义见 `meta/kangmin_directory-protocol.md`。
 > 轮规则：每轮有效项目工作必更新本文件（倒序追加，带日期与 commit hash；git 初始化前省略 hash）。
 
+> ## 🚆 问卷前科普修复发车（2026-11-09 · 基线 `origin/main@7563140`，任务分支待提交）
+> 作者确认原聊天强迫问卷是缺陷并要求发车。以最新远端 main 建立独立 `fix/pre-assessment-dialogue`，保留主工作区四个既有本地提交及域名/密钥/作者文件等 WIP；未复制它们进任务。普通科普接入 Qwen，问卷前后都按历史 role→本轮最后传递消息；结构化问卷与临床规则继续确定性处理。
+> pr-ready 的 sibling、并发和边界评审已闭环普通问句误记事实、插问实时/恢复不一致、混合急症绕过及急症终态误导等问题；本地相关 92 项测试通过。最新真实 CLI 冻结批次 12 次：11 次正常退出，急症旧会话续答按预期退出 7；包含普通科普、指代追问、症状原因、开始评估、插问保留 q1→续 q2、急症/药量分流和独立知识问答。本地完整检查 Node 454 条中 376 通过、78 条因未配置 PostgreSQL/S3 跳过，管理端 6/6、真实浏览器 E2E 通过；原生 Page 恢复状态已做代码执行回归，不冒充微信真机验收。
+> 作者已明确授权复核过期结构基线并将期限设为 2026-12-09；逐项核对额度未扩大，核心长文件及模型端口测试已分别收紧到 1240/765 行，演化与结构门禁通过。新增通用消息顺序验证记忆并更新索引，未写入临时配额或状态数字。修复记录见 `docs/reviews/050_pre-assessment-dialogue-review.md`。
+> 指定 DeepSeek/GLM 使用相同冻结材料做正式评审；首轮 DeepSeek 480 秒无正文，不能视为通过；GLM 完成后，复合陈述兼容问题已补齐，两项与完整源码不符的意见已核对，当前以含完整适配器的第二轮材料重新独立评审。过程材料在主工作区 `_work/20261109-pre-assessment-launch/`，没有密钥或真实患者数据。双谱系、PR/CI、合并及本次代码部署尚待完成，不把此前服务端配置上线当成本修复已交付。
+
 > ## 🔒 按交付策略关闭小程序验收 Issue（2026-08-28 · 基线 `main@472b08a`）
 > 按作者最新确认，客户不逐条验收现有任务单；本轮通过 GitHub CLI 将 #385、#386、#387、#388 全部关闭，并在每个 Issue 留下说明：仓内实现、自动化验证和开发版上传工作已完成，客户后续发现具体问题时另开 Issue 跟踪修复。关闭动作是交付管理策略，不等同于逐项客户验收、体验版正式可见或生产发布；此前记录的 `/ready=503`、正式云资源/微信权限、真机与客户实效边界仍然有效。详细操作记录见 [`docs/changes/ops/019_miniprogram-issue-closeout.md`](../docs/changes/ops/019_miniprogram-issue-closeout.md)，通用边界见 [`state/memory/20260828-issue-closeout-acceptance-boundary.md`](memory/20260828-issue-closeout-acceptance-boundary.md)。未修改 `src/`、truth 或作者原件 `hi.md`。
 

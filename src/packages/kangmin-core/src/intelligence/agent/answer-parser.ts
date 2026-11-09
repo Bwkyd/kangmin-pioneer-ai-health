@@ -77,20 +77,17 @@ export function parseStructuredAnswers(
     answers.push({ fieldCode, state });
   }
 
-  // 形式二：有/没有/不知道 + 标签（如 "有口渴"、"没有怕风"）。
-  for (const [fieldCode, label] of Object.entries(FIELD_LABELS)) {
-    if (answeredFields.has(fieldCode)) {
-      continue;
-    }
-    const index = trimmed.indexOf(label);
-    if (index < 0) {
-      continue;
-    }
-    const prefix = trimmed.slice(0, index);
-    const state = stateOf(prefix);
-    if (state !== null) {
-      answeredFields.add(fieldCode);
-      answers.push({ fieldCode, state });
+  // 形式二：完整的“有/没有/不知道 + 标签”陈述；复合陈述逐段处理。
+  for (const declaration of trimmed.split(/[。.!！,，;；、\n]+/u)) {
+    const text = declaration.trim();
+    for (const [fieldCode, label] of Object.entries(FIELD_LABELS)) {
+      if (answeredFields.has(fieldCode) || !text.endsWith(label)) continue;
+      // 问句或解释尾部不匹配完整标签，不能截成患者确认事实。
+      const state = stateOf(text.slice(0, -label.length));
+      if (state !== null) {
+        answeredFields.add(fieldCode);
+        answers.push({ fieldCode, state });
+      }
     }
   }
 
