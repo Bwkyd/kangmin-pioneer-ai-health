@@ -233,7 +233,7 @@ test("客户体验版在无微信登录时把健康记录保存在本机并贯�
     allergyHistory: null
   }, { auth: true });
   const symptomInput = {
-    localDate: "2026-08-26",
+    localDate: new Date().toLocaleDateString("sv-SE"),
     sneezing: 1,
     runnyNose: 2,
     nasalCongestion: 3,
@@ -263,8 +263,8 @@ test("客户体验版在无微信登录时把健康记录保存在本机并贯�
 
   const restoredClient = createClient(wxMock.api, options);
   const overview = await restoredClient.command("record overview", {}, { auth: true });
-  const calendar = await restoredClient.command("record calendar", { month: "2026-08" }, { auth: true });
-  const trend = await restoredClient.command("record trend", { from: "2026-08-01", to: "2026-08-31" }, { auth: true });
+  const calendar = await restoredClient.command("record calendar", { month: symptomInput.localDate.slice(0, 7) }, { auth: true });
+  const trend = await restoredClient.command("record trend", { from: symptomInput.localDate, to: symptomInput.localDate }, { auth: true });
   const profile = await restoredClient.command("record profile show", {}, { auth: true });
   const unread = await restoredClient.command("browse message unread-count", {}, { auth: true });
 
@@ -277,7 +277,7 @@ test("客户体验版在无微信登录时把健康记录保存在本机并贯�
     displayName: profile.displayName,
     unread: unread.count
   }, {
-    recentSymptomDate: "2026-08-26",
+    recentSymptomDate: symptomInput.localDate,
     monthRecordCount: 1,
     lastTnss: 6,
     calendarTotal: 6,
@@ -326,7 +326,7 @@ test("客户体验版真实页面链路可授权、保存症状并在日历和�
     "../../utils/page": pageUtils
   }, wxPage);
   symptom.setData = (changes) => { symptom.data = { ...symptom.data, ...changes }; };
-  symptom.onLoad({ date: "2026-08-26" });
+  symptom.onLoad({ date: new Date().toLocaleDateString("sv-SE") });
   await new Promise((resolve) => setTimeout(resolve, 0));
   assert.equal(symptom.data.error, "");
   assert.equal(symptom.data.consentGranted, false);
@@ -350,7 +350,7 @@ test("客户体验版真实页面链路可授权、保存症状并在日历和�
   assert.equal(calendar.data.error, "");
   assert.equal(calendar.data.trend.length, 1);
   assert.equal(calendar.data.trend[0]?.tnssTotal, 4);
-  assert.equal(calendar.data.cells.find((cell: any) => cell.date === "2026-08-26")?.hasSymptom, true);
+  assert.equal(calendar.data.cells.find((cell: any) => cell.date === symptom.data.date)?.hasSymptom, true);
 
   const mine = loadPage("pages/mine/index.js", {
     "../../utils/request": api,

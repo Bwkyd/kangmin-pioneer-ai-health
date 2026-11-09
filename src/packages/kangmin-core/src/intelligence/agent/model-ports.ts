@@ -83,13 +83,27 @@ export interface PlanDialogueContext {
   }>;
 }
 
+/** 问卷前的科普与问卷意图分流；不能输出或修改任何临床事实。 */
+export interface PreAssessmentDialogueInput {
+  question: string;
+  pendingQuestions: readonly NextQuestion[];
+  sources: readonly PlanDialogueSource[];
+  recentMessages: PlanDialogueContext["recentMessages"];
+}
+
+export type PreAssessmentDialogueResult =
+  | { mode: "assessment" }
+  | { mode: "answer"; answer: string | null };
+
 /**
- * 规则判定后的患者对话端口。
+ * 患者科普、问卷意图分流及规则判定后的对话端口。
  *
  * 输入中的证型、期别、方案和资料都由服务端准备；模型只能转译和答疑，
  * 无权改变裁决或补充方案。输出仍须经过服务端医学校验后才能展示。
  */
 export interface PlanDialoguePort {
+  /** 未配置时允许返回 null，保留既有确定性问卷入口。 */
+  answerBeforeAssessment?(input: PreAssessmentDialogueInput): Promise<PreAssessmentDialogueResult | null>;
   generatePlan(verdict: ClinicalVerdict): Promise<string | null>;
   /** 服务端固定完成一次只读搜索后，使用同一患者回答提示词生成回答。 */
   answerFollowUp(input: {

@@ -51,10 +51,10 @@ import type {
   ExtractionCandidate,
   ModelExplanationPort,
   ModelExtractionPort,
-  PlanDialoguePort,
-  PlanDialogueSource
+  PlanDialoguePort
 } from "./model-ports.js";
 import type { KnowledgeRetrievalPort } from "./knowledge-ports.js";
+import { answerBeforeAssessment, patientDialogueContext } from "./patient-dialogue.js";
 import {
   EXTRACTION_UNAVAILABLE_NOTICE,
   FAIL_CLOSED_INFO_NOTICE,
@@ -290,7 +290,8 @@ export class ConversationService {
     //    命中时确定性映射（option-mapping.ts），严禁 message=""（空串解析
     //    返回 [] 死循环，评审二轮 P0-1）。
     const pendingAnswers: ConfirmedAnswerRow[] = [];
-    const optionHit = parseOptionPayload(message, lastQuestions);
+    const urgent = isEmergencyMessage(message);
+    const optionHit = urgent ? null : parseOptionPayload(message, lastQuestions);
     if (optionHit !== null && optionHit.field !== null && optionHit.state !== null) {
       pendingAnswers.push({
         sessionId: session.id,
@@ -305,7 +306,7 @@ export class ConversationService {
       });
       unknownAnswered.delete(optionHit.field);
     }
-    const parsedAnswers = parseStructuredAnswers(message, lastQuestions);
+    const parsedAnswers = urgent ? [] : parseStructuredAnswers(message, lastQuestions);
     for (const answer of parsedAnswers) {
       const row: ConfirmedAnswerRow = {
         sessionId: session.id,
@@ -346,7 +347,14 @@ export class ConversationService {
     let extractionFailed = false;
     let extracted: ExtractionCandidate[] = [];
     const deterministicHit = optionHit !== null || parsedAnswers.length > 0;
-    if (!deterministicHit && message !== "") {
+    let freeAnswer: ValidatedOutput | null = urgent ? renderEmergencyFollowUp() : null;
+    if (!urgent && !deterministicHit && message !== "" && this.planDialogue?.answerBeforeAssessment !== undefined) {
+      freeAnswer = await answerBeforeAssessment({
+        message, pendingQuestions: lastQuestions, dialogue: this.planDialogue,
+        retrieval: this.knowledgeRetrieval, readMessages: () => this.readVerifiedMessages(session.id)
+      });
+    }
+    if (!deterministicHit && message !== "" && freeAnswer === null) {
       try {
         extracted = await this.extraction.extractCandidates({
           message,
@@ -410,12 +418,14 @@ export class ConversationService {
     //    过滤后 allQuestions 为空（全部字段已答 unknown）→ every() 对
     //    空集为 true → 立即 fail-closed 收尾，不再循环。
     const escalated = this.failClosedIfNoProgress(displayVerdict, unknownAnswered);
+    if (!urgent && (escalated !== null || ["blocked", "conflict", "non_applicable", "no_match"].includes(verdict.outcome))) freeAnswer = null;
 
     // 5. 解释阶段：只有规则包 approved 时才调用模型解释；
     //    candidate 包正式输出被硬阻断，绝不输出个性化方案。
     let modelFields: ExplanationFields | null = null;
     if (
       verdict.outcome === "classified" &&
+      freeAnswer === null &&
       this.kernel.rulePackageStatus === "approved"
     ) {
       try {
@@ -437,6 +447,7 @@ export class ConversationService {
     let generatedPlan = null;
     if (
       escalated === null &&
+      freeAnswer === null &&
       verdict.outcome === "classified" &&
       verdict.planBundle !== null &&
       this.kernel.rulePackageStatus === "approved" &&
@@ -452,8 +463,8 @@ export class ConversationService {
         generatedPlan = null;
       }
     }
-    const finalOutput =
-      escalated ?? generatedPlan ?? validated;
+    const finalOutput = freeAnswer ?? escalated ?? generatedPlan ?? validated;
+    const visibleQuestions = urgent ? [] : freeAnswer === null ? verdict.nextQuestions : lastQuestions;
 
     // 6-8. 决策凭证 + 消息 + 会话状态：构造后单事务提交
     //      （评审 B P1-2 原子化：任何一步失败整轮回滚；
@@ -477,7 +488,8 @@ export class ConversationService {
       phaseCode: verdict.phaseCode,
       audience: verdict.audience,
       rulePackageStatus: this.kernel.rulePackageStatus,
-      nextQuestionsJson: JSON.stringify(verdict.nextQuestions),
+      // 科普插问保留之前的待答节点；不让后台评估结果自动开启或推进问卷。
+      nextQuestionsJson: JSON.stringify(visibleQuestions),
       matchedRuleIdsJson: JSON.stringify(verdict.matchedRuleIds),
       rulePackageVersion: session.rulePackageVersion,
       rulePackageHash: session.rulePackageHash,
@@ -530,15 +542,16 @@ export class ConversationService {
       notices.push({ content: notice.content, contentHash: notice.contentHash });
     }
 
-    const closed =
+    const closed = urgent || (freeAnswer === null && (
       escalated !== null ||
       verdict.outcome === "blocked" ||
       verdict.outcome === "non_applicable" ||
       verdict.outcome === "conflict" ||
       verdict.outcome === "no_match" ||
-      verdict.outcome === "classified";
+      verdict.outcome === "classified"));
     const completedAssessment =
       verdict.outcome === "classified" &&
+      freeAnswer === null &&
       verdict.planBundle !== null &&
       verdict.syndromeCode !== null &&
       verdict.phaseCode !== null &&
@@ -602,7 +615,9 @@ export class ConversationService {
         decisionId
       },
       notices,
-      verdict: this.patientVerdict(verdict),
+      verdict: freeAnswer === null || visibleQuestions.length > 0
+        ? this.patientVerdict({ ...verdict, nextQuestions: visibleQuestions })
+        : null,
       proposedCandidates: proposedViews,
       saveConfirmationRequired,
       saved,
@@ -732,23 +747,6 @@ export class ConversationService {
       );
     }
 
-    const recentMessages = (await this.readVerifiedMessages(session.id))
-      .filter((entry) => entry.role === "user" || entry.role === "assistant")
-      .slice(-6)
-      .map((entry) => ({
-        role: entry.role as "user" | "assistant",
-        content: entry.role === "assistant"
-          ? entry.content.replace(/\n\n【依据】[\s\S]*$/u, "")
-          : entry.content
-      }));
-    const dialogueContext = {
-      assessment: {
-        completedAt: inherited?.completedAt ?? session.closedAt ?? timestamp,
-        answers: facts
-      },
-      recentMessages
-    };
-
     let finalOutput: ValidatedOutput;
     if (isEmergencyMessage(message)) {
       finalOutput = renderEmergencyFollowUp();
@@ -762,21 +760,13 @@ export class ConversationService {
         "这涉及需要结合具体情况确认的药物或专业操作参数。请查看药品说明书或咨询医生、药师；你也可以继续问相关原理、用途或常见风险。"
       );
     } else {
-      let sources: PlanDialogueSource[] = [];
-      if (this.knowledgeRetrieval !== null) {
-        try {
-          sources = (await this.knowledgeRetrieval.searchEnabled(message, 3)).map(
-            (source) => ({
-              knowledgeId: source.knowledgeId,
-              name: source.name,
-              source: source.source,
-              text: source.text
-            })
-          );
-        } catch {
-          sources = [];
-        }
-      }
+      const { sources, recentMessages } = await patientDialogueContext(
+        message, this.knowledgeRetrieval, () => this.readVerifiedMessages(session.id)
+      );
+      const dialogueContext = {
+        assessment: { completedAt: inherited?.completedAt ?? session.closedAt ?? timestamp, answers: facts },
+        recentMessages
+      };
       let generated: string | null = null;
       if (this.planDialogue !== null) {
         try {

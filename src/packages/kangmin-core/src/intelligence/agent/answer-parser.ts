@@ -77,20 +77,27 @@ export function parseStructuredAnswers(
     answers.push({ fieldCode, state });
   }
 
-  // 形式二：有/没有/不知道 + 标签（如 "有口渴"、"没有怕风"）。
-  for (const [fieldCode, label] of Object.entries(FIELD_LABELS)) {
-    if (answeredFields.has(fieldCode)) {
-      continue;
+  // 形式二：整句均由完整的明确陈述组成，不能截取问句的一部分。
+  const declarations = trimmed.split(/(?:[。.!！,，;；、\n]+|而且|并且|和|且|又)/u).map((part) => part.trim()).filter(Boolean);
+  const statements = declarations.map((text): StructuredAnswer | null => {
+    for (const [fieldCode, label] of Object.entries(FIELD_LABELS)) {
+      if (!text.endsWith(label)) continue;
+      const state = stateOf(text.slice(0, -label.length));
+      if (state !== null) return { fieldCode, state };
     }
-    const index = trimmed.indexOf(label);
-    if (index < 0) {
-      continue;
+    return null;
+  });
+  if (statements.length > 0 && statements.every((answer) => answer !== null)) {
+    const unique = new Map<string, StructuredAnswer>();
+    let conflict = false;
+    for (const answer of statements) {
+      if (unique.has(answer.fieldCode) && unique.get(answer.fieldCode)?.state !== answer.state) conflict = true;
+      unique.set(answer.fieldCode, answer);
     }
-    const prefix = trimmed.slice(0, index);
-    const state = stateOf(prefix);
-    if (state !== null) {
-      answeredFields.add(fieldCode);
-      answers.push({ fieldCode, state });
+    if (!conflict) for (const answer of unique.values()) {
+      if (answeredFields.has(answer.fieldCode)) continue;
+      answeredFields.add(answer.fieldCode);
+      answers.push(answer);
     }
   }
 
