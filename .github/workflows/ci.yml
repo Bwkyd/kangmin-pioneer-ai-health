@@ -71,16 +71,36 @@ jobs:
         working-directory: src
 
       - name: Start MinIO
-        # S3 契约测试与远程上传 E2E 依赖真实 S3 兼容端点；
-        # 二进制后台运行，健康检查通过后才进入测试。
+        # 固定官方历史测试制品并校验摘要；测试服务只监听 loopback。
+        # 当前无版本下载地址已返回410，下载/启动/健康检查任一失败都必须阻断。
         run: |
-          curl -L https://dl.min.io/server/minio/release/linux-amd64/minio -o /tmp/minio
+          set -euo pipefail
+          curl --fail --location --retry 3 --max-time 120 \
+            https://github.com/minio/minio/releases/download/RELEASE.2025-09-07T16-13-09Z/minio.linux-amd64.RELEASE.2025-09-07T16-13-09Z \
+            -o /tmp/minio
+          printf '%s  %s\n' 7c5bd8512c6e966455b1d198209358b2d191c77a83ab377c4073281065fb855f /tmp/minio | sha256sum --check
           chmod +x /tmp/minio
-          MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin \
-            nohup /tmp/minio server /tmp/minio-data --address 127.0.0.1:9000 &
+          if ss -H -ltn 'sport = :9000' | grep -q .; then
+            echo 'MinIO测试端口已被占用，拒绝复用未知服务'
+            exit 1
+          fi
+          MINIO_ROOT_USER=minioadmin MINIO_ROOT_PASSWORD=minioadmin MINIO_BROWSER=off \
+            nohup /tmp/minio server /tmp/minio-data --address 127.0.0.1:9000 --console-address 127.0.0.1:9001 > /tmp/minio.log 2>&1 &
+          minio_pid=$!
           for i in $(seq 1 30); do
-            curl -sf http://127.0.0.1:9000/minio/health/live && break || sleep 1
+            if ! kill -0 "$minio_pid" 2>/dev/null; then
+              cat /tmp/minio.log
+              exit 1
+            fi
+            if curl --fail --silent --max-time 2 http://127.0.0.1:9000/minio/health/live; then
+              kill -0 "$minio_pid"
+              exit 0
+            fi
+            sleep 1
           done
+          cat /tmp/minio.log
+          kill "$minio_pid" || true
+          exit 1
 
       - name: Install Playwright Chromium
         run: npx playwright install --with-deps chromium
